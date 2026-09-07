@@ -89,6 +89,20 @@
 	</div>
 
 	<div id="graph"></div>
+
+	<!-- What the node colours mean, in the corner opposite the controls: the
+	     legend answers a question you ask while reading the graph, not while
+	     changing it. Built per render in graph.js, and hidden until there is
+	     something to explain. Sibling of #graph for the same reason as the
+	     panel: force-graph empties its container. -->
+	<div id="legend" hidden="hidden">
+		<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
+			<span id="legend-chevron">▾</span>
+			<span id="legend-title"></span>
+		</button>
+		<div id="legend-body"></div>
+	</div>
+
 	<!-- Outside #graph deliberately: force-graph's init() does
 	     container.innerHTML = "", which would delete anything nested inside.
 	     Same reason the action popover is a sibling and not a child. -->

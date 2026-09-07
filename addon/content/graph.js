@@ -25,6 +25,9 @@
 	// nothing else.
 	const GHOST_COLOR = '#8e8e93';
 
+	// Held items with nothing to colour BY: no date, when colouring by year.
+	const NO_KEY_COLOR = '#9aa0a6';
+
 	// How far the graph outside the isolated node's neighbourhood is faded.
 	// Faded and not hidden: the whole point of isolating is to read one node's
 	// citations against the shape of the graph they sit in.
@@ -33,6 +36,9 @@
 
 	// Whether the control panel was left collapsed, remembered across openings.
 	const COLLAPSE_KEY = 'zg.panel.collapsed';
+
+	// Same, for the legend.
+	const LEGEND_KEY = 'zg.legend.collapsed';
 
 	// Published by nodeScale.js and nodeLinks.js, which graph.html loads first.
 	const Scale = ZGScale;
@@ -74,6 +80,10 @@
 	let elIsolate = el('isolate-clear');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
+	let elLegend = el('legend');
+	let elLegendToggle = el('legend-toggle');
+	let elLegendTitle = el('legend-title');
+	let elLegendBody = el('legend-body');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -219,14 +229,24 @@
 	function baseColor(n) {
 		if (n.ghost) return GHOST_COLOR;
 		let key = colorKey(n);
-		if (key === null) return '#9aa0a6'; // no date, when colouring by year
+		if (key === null) return NO_KEY_COLOR;
 		// Year is ordinal, so a ramp says something a hash cannot: old papers
 		// read blue, recent ones orange.
 		if (elColorBy.value === 'year' && yearRange) {
 			let [lo, hi] = yearRange;
-			let t = hi > lo ? (n.year - lo) / (hi - lo) : 1;
-			return 'hsl(' + Math.round(215 - 190 * t) + ', 62%, 52%)';
+			return yearColor(hi > lo ? (n.year - lo) / (hi - lo) : 1);
 		}
+		return keyColor(key);
+	}
+
+	/** Both palettes as functions of the thing being coloured, so the legend
+	 *  paints its swatches from the same source the nodes take their colour
+	 *  from and the two cannot drift apart. */
+	function yearColor(t) {
+		return 'hsl(' + Math.round(215 - 190 * t) + ', 62%, 52%)';
+	}
+
+	function keyColor(key) {
 		return 'hsl(' + hashHue(key) + ', 58%, 55%)';
 	}
 
@@ -236,6 +256,122 @@
 		let h = 0;
 		for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
 		return ((h % 360) + 360) % 360;
+	}
+
+	// --- legend -----------------------------------------------------------
+
+	/**
+	 * What the node colours mean right now, in the corner opposite the
+	 * controls. "Which collection is the blue one" is a question you ask while
+	 * reading the graph rather than while changing it, so the answer sits away
+	 * from the settings -- and clear of the status line bottom left.
+	 *
+	 * Rebuilt on every render, because every input to it moves: the colour
+	 * mode, the year range, and which nodes survived the filters.
+	 */
+	const LEGEND_TITLE = {
+		year: 'year',
+		collection: 'collection',
+		author: 'first author',
+		type: 'item type',
+	};
+
+	// Author and collection have long tails: a legend with two hundred rows is
+	// a wall, and each row past this one explains a single node.
+	const LEGEND_MAX = 12;
+
+	function renderLegend(nodes) {
+		let mode = elColorBy.value;
+		elLegendTitle.textContent = LEGEND_TITLE[mode] || mode;
+		elLegendBody.textContent = '';
+
+		let held = [];
+		let ghosts = 0;
+		for (let n of nodes) {
+			if (n.ghost) ghosts++;
+			else held.push(n);
+		}
+
+		if (mode === 'year') yearLegend(held);
+		else keyLegend(held);
+
+		// Outside references are the one population coloured by what they are
+		// rather than by any metadata they carry, so they get an entry of their
+		// own in every mode.
+		if (ghosts) elLegendBody.appendChild(legendRow(GHOST_COLOR, 'outside refs', ghosts));
+
+		elLegend.hidden = !elLegendBody.firstChild;
+	}
+
+	/** Year is a continuum, so its legend is the ramp itself with the ends
+	 *  labelled -- one swatch per year would be fifty rows saying nothing. */
+	function yearLegend(nodes) {
+		let undated = 0;
+		for (let n of nodes) if (n.year == null) undated++;
+
+		if (yearRange) {
+			let stops = [];
+			for (let i = 0; i <= 8; i++) stops.push(yearColor(i / 8));
+			let ramp = document.createElement('div');
+			ramp.className = 'legend-ramp';
+			ramp.style.background = 'linear-gradient(to right, ' + stops.join(', ') + ')';
+			elLegendBody.appendChild(ramp);
+
+			let ends = document.createElement('div');
+			ends.className = 'legend-ends';
+			let lo = document.createElement('span');
+			lo.textContent = yearRange[0];
+			let hi = document.createElement('span');
+			hi.textContent = yearRange[1];
+			ends.appendChild(lo);
+			ends.appendChild(hi);
+			elLegendBody.appendChild(ends);
+		}
+
+		if (undated) elLegendBody.appendChild(legendRow(NO_KEY_COLOR, 'no date', undated));
+	}
+
+	/** The hashed modes: one swatch per key, commonest first, so the colours
+	 *  covering most of the screen are the ones explained first. */
+	function keyLegend(nodes) {
+		let counts = new Map();
+		for (let n of nodes) {
+			let key = colorKey(n);
+			counts.set(key, (counts.get(key) || 0) + 1);
+		}
+		let keys = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)
+			|| (a < b ? -1 : a > b ? 1 : 0));
+		for (let key of keys.slice(0, LEGEND_MAX)) {
+			elLegendBody.appendChild(legendRow(keyColor(key), key, counts.get(key)));
+		}
+		let rest = keys.length - LEGEND_MAX;
+		if (rest > 0) {
+			let more = document.createElement('div');
+			more.className = 'legend-more';
+			more.textContent = '+' + rest + ' more';
+			elLegendBody.appendChild(more);
+		}
+	}
+
+	function legendRow(color, label, count) {
+		let row = document.createElement('div');
+		row.className = 'legend-row';
+		// The name is clipped to the panel width, so the whole of it has to be
+		// reachable somewhere.
+		row.title = label + ' — ' + count + (count === 1 ? ' node' : ' nodes');
+		let dot = document.createElement('span');
+		dot.className = 'dot';
+		dot.style.background = color;
+		let name = document.createElement('span');
+		name.className = 'legend-name';
+		name.textContent = label;
+		let n = document.createElement('span');
+		n.className = 'legend-count';
+		n.textContent = count;
+		row.appendChild(dot);
+		row.appendChild(name);
+		row.appendChild(n);
+		return row;
 	}
 
 	// --- strategy toggles -------------------------------------------------
@@ -445,6 +581,8 @@
 			.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
 			.d3VelocityDecay(0.3);
 
+		renderLegend(nodes);
+
 		let phase = raw.meta && raw.meta.phase;
 		let ghostCount = visibleGhosts.size;
 		let named = 0;
@@ -608,6 +746,23 @@
 		return force;
 	}
 
+	/**
+	 * Label sizing. The name is painted ON the node, not under it, so a circle
+	 * and its name read as one object: with captions hanging below, a dense
+	 * graph becomes a field of text whose ownership you have to guess.
+	 *
+	 * The size follows the node's radius on screen, so a much-cited paper says
+	 * its name loudly -- clamped at both ends, because below the floor a label
+	 * is not worth drawing and above the ceiling one landmark shouts over the
+	 * whole graph. A label wider than its own circle is then shrunk to fit, but
+	 * never below the floor; past that it simply overhangs, which is what the
+	 * halo is for.
+	 */
+	const LABEL_MIN_PX = 13;
+	const LABEL_MAX_PX = 28;
+	const LABEL_PER_RADIUS = 0.85; // screen px of type per px of node radius
+	const LABEL_FIT = 1.9;         // how far past its diameter a label may run
+
 	function drawLabel(node, ctx, globalScale) {
 		if (!node.label) return;
 		// Dimmed nodes lose their label entirely rather than fading it. A halo
@@ -615,18 +770,30 @@
 		// halo over a faded label is just a smudge.
 		if (dimmed(node)) return;
 		let theme = themeColors();
-		ctx.font = (10 / globalScale) + 'px sans-serif';
+		// Everything here is reasoned in screen pixels and divided by
+		// globalScale on the way into the canvas, which is in graph units --
+		// that is what keeps the type a constant size at any zoom.
+		let r = nodeRadius(node) * globalScale;
+		let px = Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, r * LABEL_PER_RADIUS));
+		ctx.font = (px / globalScale) + 'px sans-serif';
+		let fit = 2 * r * LABEL_FIT;
+		let w = ctx.measureText(node.label).width * globalScale;
+		if (w > fit) {
+			px = Math.max(LABEL_MIN_PX, px * (fit / w));
+			ctx.font = (px / globalScale) + 'px sans-serif';
+		}
 		ctx.textAlign = 'center';
-		ctx.textBaseline = 'top';
-		let y = node.y + nodeRadius(node) + 2 / globalScale;
-		// Halo first: labels sit on top of edges and would otherwise be unreadable
-		// wherever the graph is dense. Painted in the page background colour so it
-		// works in Zotero's dark theme too.
-		ctx.lineWidth = 3 / globalScale;
+		ctx.textBaseline = 'middle';
+		// Halo first: the label sits over its own node and over whatever edges
+		// cross it, and neither is a surface you can read type off. Painted in
+		// the page background colour so it works in Zotero's dark theme too,
+		// and joined round so the stroke does not spike off the glyphs.
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = (px * 0.3) / globalScale;
 		ctx.strokeStyle = theme.halo;
-		ctx.strokeText(node.label, node.x, y);
+		ctx.strokeText(node.label, node.x, node.y);
 		ctx.fillStyle = node.ghost ? theme.muted : theme.fg;
-		ctx.fillText(node.label, node.x, y);
+		ctx.fillText(node.label, node.x, node.y);
 	}
 
 	/** Read from the stylesheet rather than hardcoded, so light/dark both work. */
@@ -1005,6 +1172,27 @@
 
 	try {
 		if (window.localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
+	}
+	catch (e) { /* see setCollapsed */ }
+
+	// The legend collapses the same way and for the same reason: on a narrow
+	// pane a twelve-author list is more legend than graph.
+	function setLegendCollapsed(on) {
+		elLegend.classList.toggle('collapsed', on);
+		elLegendToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
+		elLegendToggle.title = on ? 'Show legend' : 'Collapse legend';
+		try {
+			window.localStorage.setItem(LEGEND_KEY, on ? '1' : '0');
+		}
+		catch (e) { /* no persistence, no problem */ }
+	}
+
+	elLegendToggle.addEventListener('click', () => {
+		setLegendCollapsed(!elLegend.classList.contains('collapsed'));
+	});
+
+	try {
+		if (window.localStorage.getItem(LEGEND_KEY) === '1') setLegendCollapsed(true);
 	}
 	catch (e) { /* see setCollapsed */ }
 

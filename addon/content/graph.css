@@ -29,7 +29,8 @@ html, body {
 
 body {
 	/* The controls float over the canvas now, so the body is nothing but the
-	   canvas. #panel, #status, #action and #menu all position against this. */
+	   canvas. #panel, #legend, #status, #action and #menu all position against
+	   this. */
 	position: relative;
 }
 
@@ -57,7 +58,8 @@ body {
 
 /* The whole header is the toggle, not just the chevron: a wide target, and
    there is nothing else in the header to click. */
-#panel-toggle {
+#panel-toggle,
+#legend-toggle {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
@@ -71,18 +73,21 @@ body {
 	cursor: pointer;
 }
 
-#panel-toggle:hover {
+#panel-toggle:hover,
+#legend-toggle:hover {
 	background: var(--bg);
 }
 
-#panel-chevron {
+#panel-chevron,
+#legend-chevron {
 	color: var(--muted);
 	/* Rotated rather than swapped for a second glyph, so both states sit on
 	   the same baseline and the arrow animates between them. */
 	transition: transform 120ms ease;
 }
 
-#panel.collapsed #panel-chevron {
+#panel.collapsed #panel-chevron,
+#legend.collapsed #legend-chevron {
 	transform: rotate(-90deg);
 }
 
@@ -196,6 +201,119 @@ body {
 #stats {
 	color: var(--muted);
 	font-variant-numeric: tabular-nums;
+}
+
+/* --- The colour legend ------------------------------------------------- */
+
+/* Top right, the corner opposite the controls: it explains the graph rather
+   than changing it, and that keeps it clear of both the panel and the status
+   line bottom left. Same chrome as #panel, so the two read as one family. */
+#legend {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	/* Same layer as #panel, below #action (10) and #menu (11). */
+	z-index: 9;
+	width: 176px;
+	max-width: calc(100% - 20px);
+	max-height: calc(100% - 20px);
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	overflow: hidden;
+}
+
+/* display:flex above is an author rule and would otherwise beat the UA
+   stylesheet's [hidden] { display: none }. */
+#legend[hidden] {
+	display: none;
+}
+
+#legend-title {
+	font-weight: 600;
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#legend-body {
+	/* Scrolls rather than clipping, for the same reason #panel-body does: the
+	   row count comes from the data. */
+	overflow-y: auto;
+	min-height: 0;
+	padding: 0 9px 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+#legend.collapsed #legend-body {
+	display: none;
+}
+
+.legend-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--muted);
+}
+
+.legend-row .dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	display: inline-block;
+	flex: 0 0 auto;
+}
+
+/* A DOI or a long author string must not widen the box; the row's title
+   attribute carries the whole of it. */
+.legend-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.legend-count {
+	flex: 0 0 auto;
+	font-variant-numeric: tabular-nums;
+	opacity: 0.75;
+}
+
+.legend-more {
+	color: var(--muted);
+	opacity: 0.75;
+	padding-left: 15px;
+}
+
+/* The year ramp: a continuum gets a gradient, not fifty swatches. */
+.legend-ramp {
+	height: 10px;
+	border-radius: 3px;
+	border: 1px solid var(--border);
+}
+
+.legend-ends {
+	display: flex;
+	justify-content: space-between;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Two floating boxes do not fit side by side on a narrow Zotero pane. The
+   legend gives way first: the panel is the one you interact with, and a
+   clipped label still has its title attribute. */
+@media (max-width: 460px) {
+	#legend {
+		width: 128px;
+	}
 }
 
 #graph {
