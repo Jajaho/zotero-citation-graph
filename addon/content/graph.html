@@ -8,15 +8,22 @@
 <body>
 	<div id="toolbar">
 		<span id="collection-name"></span>
+		<span id="strategies"></span>
 		<label id="conf-label">
 			min confidence
 			<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
 			<span id="conf-value">0.00</span>
 		</label>
+		<label id="hide-label">
+			<input id="hide-isolated" type="checkbox"/>
+			hide unconnected
+		</label>
 		<span id="stats"></span>
 		<button id="rebuild" type="button">Rebuild</button>
 	</div>
 	<div id="graph"></div>
+	<!-- Outside #graph deliberately: force-graph's init() does
+	     container.innerHTML = "", which would delete anything nested inside. -->
 	<div id="status">Loading…</div>
 
 	<!-- Both scripts are same-origin resource:// URLs, so no inline script is

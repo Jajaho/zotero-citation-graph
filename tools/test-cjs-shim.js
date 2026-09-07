@@ -41,9 +41,27 @@ if (typeof shim.makeRequire !== 'function') {
 	process.exit(1);
 }
 
+// Stubs for the chrome globals lib/ touches. Nothing here is exercised beyond
+// module load -- the point is that the chrome modules parse and resolve through
+// the same loader, so a typo cannot wait until Zotero is running to show up.
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
-	Zotero: { debug: () => {} },
+	Zotero: {
+		debug: () => {},
+		logError: () => {},
+		Promise: { delay: ms => new Promise(r => setTimeout(r, ms)) },
+		DataDirectory: { dir: addonDir },
+	},
+	IOUtils: {
+		exists: async () => false,
+		read: async () => new Uint8Array(),
+		stat: async () => ({ size: 0, lastModified: 0 }),
+		readJSON: async () => { throw new Error('no cache'); },
+		writeJSON: async () => {},
+		makeDirectory: async () => {},
+	},
+	PathUtils: { join: (...p) => p.join('/'), parent: p => p.slice(0, p.lastIndexOf('/')) },
+	setTimeout, clearTimeout,
 	fetch: () => { throw new Error('network disabled in this harness'); },
 });
 
@@ -145,6 +163,101 @@ check('short text is refused by segmentation (no bogus edges)', () => {
 	return cg.build(adapter, { offline: true }).then((r) => {
 		if (r.edges.length) throw new Error('expected no edges, got ' + r.edges.length);
 	});
+});
+
+// --- chrome-side modules ---------------------------------------------------
+
+check('lib/ modules load through the shim', () => {
+	const za = require_('./lib/zoteroAdapter.js');
+	if (typeof za.ZoteroAdapter !== 'function') throw new Error('no ZoteroAdapter');
+	const c = require_('./lib/pdfLinkCache.js');
+	if (typeof c.PdfLinkCache !== 'function') throw new Error('no PdfLinkCache');
+	const t = require_('./lib/graphTab.js');
+	if (typeof t.open !== 'function') throw new Error('no open()');
+});
+
+check('ZoteroAdapter implements the whole adapter contract', () => {
+	const { ZoteroAdapter } = require_('./lib/zoteroAdapter.js');
+	// The four methods every strategy is allowed to call. If one is renamed here
+	// but not in localSqlite.js, the two hosts have silently diverged.
+	for (const m of ['listItems', 'getAttachments', 'getAttachmentText', 'getPdfLinkUris']) {
+		if (typeof ZoteroAdapter.prototype[m] !== 'function') throw new Error('missing ' + m);
+	}
+	const node = fs.readFileSync(path.join(addonDir, 'citation-graph/adapters/localSqlite.js'), 'utf8');
+	for (const m of ['listItems', 'getAttachments', 'getAttachmentText', 'getPdfLinkUris']) {
+		if (!node.includes('async ' + m + '(')) throw new Error('localSqlite lost ' + m);
+	}
+});
+
+check('bytesToBinaryString maps every byte 1:1 across chunk boundaries', () => {
+	const { bytesToBinaryString } = require_('./lib/zoteroAdapter.js');
+	// 0x8000 is the chunk size, so this spans several chunks and lands a byte in
+	// the 0x80-0x9F range -- exactly where TextDecoder('latin1') would corrupt it.
+	const bytes = new Uint8Array(0x8000 * 2 + 7);
+	for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+	const s = bytesToBinaryString(bytes);
+	if (s.length !== bytes.length) throw new Error('length ' + s.length + ' != ' + bytes.length);
+	for (let i = 0; i < bytes.length; i++) {
+		if (s.charCodeAt(i) !== bytes[i]) {
+			throw new Error('byte ' + i + ': ' + s.charCodeAt(i) + ' != ' + bytes[i]);
+		}
+	}
+	// And the specific failure mode, stated outright.
+	const ctrl = bytesToBinaryString(new Uint8Array([0x80, 0x9F]));
+	if (ctrl.charCodeAt(0) !== 0x80 || ctrl.charCodeAt(1) !== 0x9F) {
+		throw new Error('0x80-0x9F remapped to ' + ctrl.charCodeAt(0) + ',' + ctrl.charCodeAt(1)
+			+ " -- windows-1252 would give 8364,376");
+	}
+});
+
+check('scanUriAnnotations matches the Node adapter on the same bytes', () => {
+	const { scanUriAnnotations, bytesToBinaryString } = require_('./lib/zoteroAdapter.js');
+	const pdf = '%PDF-1.7\n'
+		+ '5 0 obj<</Type/Annot/Subtype/Link/A<</URI(https://doi.org/10.1038/nature12373)>>>>endobj\n'
+		+ '6 0 obj<</A<</URI(https://doi.org/10.1103/PhysRevX.5.041037)>>>>endobj\n'
+		// An escaped paren inside the string, plus a high byte in the padding.
+		+ '7 0 obj<</A<</URI(https://example.org/a\\(b\\))>>>>endobj\n'
+		+ 'ÿ trailing binary padding\n';
+	const bytes = Uint8Array.from([...pdf].map(c => c.charCodeAt(0) & 0xff));
+	const got = scanUriAnnotations(bytes).sort();
+	const want = [
+		'https://doi.org/10.1038/nature12373',
+		'https://doi.org/10.1103/PhysRevX.5.041037',
+		'https://example.org/a(b)',
+	].sort();
+	if (JSON.stringify(got) !== JSON.stringify(want)) {
+		throw new Error('got ' + JSON.stringify(got));
+	}
+	// The Node adapter's own regex, applied to the same string, must agree --
+	// that equality is what makes the CLI a valid cross-check of the plugin.
+	const nodeRe = /\/URI\s*\(((?:[^()\\]|\\[\s\S])*)\)/g;
+	const viaNode = [];
+	let m;
+	const s = bytesToBinaryString(bytes);
+	while ((m = nodeRe.exec(s))) viaNode.push(m[1].replace(/\\([()\\])/g, '$1'));
+	if (JSON.stringify(viaNode.sort()) !== JSON.stringify(want)) {
+		throw new Error('adapters disagree: ' + JSON.stringify(viaNode));
+	}
+});
+
+check('mergeEdges keeps max confidence and the union of provenance', () => {
+	const { mergeEdges } = require_('./lib/graphTab.js');
+	const out = mergeEdges(
+		[{ from: 'A', to: 'B', confidence: 0.4, via: ['title-match'], evidence: [{ via: 'title-match' }] }],
+		[{ from: 'A', to: 'B', confidence: 0.95, via: ['pdf-links'], evidence: [{ via: 'pdf-links', doi: '10.1/x' }] },
+			{ from: 'B', to: 'C', confidence: 0.95, via: ['pdf-links'], evidence: [] }]
+	);
+	if (out.length !== 2) throw new Error('expected 2 edges, got ' + out.length);
+	const ab = out.find(e => e.from === 'A' && e.to === 'B');
+	if (ab.confidence !== 0.95) throw new Error('confidence ' + ab.confidence);
+	if (JSON.stringify(ab.via.sort()) !== JSON.stringify(['pdf-links', 'title-match'])) {
+		throw new Error('via ' + JSON.stringify(ab.via));
+	}
+	if (ab.evidence.length !== 2) throw new Error('evidence dropped');
+	// Direction must survive: A->B and B->A are different edges.
+	const one = mergeEdges([{ from: 'A', to: 'B', confidence: 0.5, via: ['x'] }],
+		[{ from: 'B', to: 'A', confidence: 0.5, via: ['x'] }]);
+	if (one.length !== 2) throw new Error('direction collapsed');
 });
 
 Promise.all(pending).then(() => {

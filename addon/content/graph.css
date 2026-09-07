@@ -30,6 +30,8 @@ html, body {
 body {
 	display: flex;
 	flex-direction: column;
+	/* #status is positioned against this. */
+	position: relative;
 }
 
 #toolbar {
@@ -78,15 +80,53 @@ body {
 	min-height: 0;
 }
 
+/* Bottom-left rather than centred: it reports build progress while a partial
+   graph is already on screen, so it must not sit on top of the nodes. */
 #status {
 	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
+	left: 10px;
+	bottom: 8px;
+	max-width: calc(100% - 20px);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding: 2px 8px;
+	border-radius: 3px;
+	background: var(--toolbar-bg);
+	border: 1px solid var(--border);
 	color: var(--muted);
 	pointer-events: none;
 }
 
 #status:empty {
 	display: none;
+}
+
+#strategies {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.via-toggle {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	color: var(--muted);
+	cursor: pointer;
+}
+
+.via-toggle .dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	display: inline-block;
+}
+
+#hide-label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--muted);
+	cursor: pointer;
 }

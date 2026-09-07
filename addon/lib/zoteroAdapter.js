@@ -1,0 +1,283 @@
+/* global Zotero, IOUtils, PathUtils */
+
+'use strict';
+
+/**
+ * The citation-graph adapter backed by the running Zotero client.
+ *
+ * Implements exactly the four methods citation-graph/adapters/localSqlite.js
+ * implements, so every strategy under citation-graph/edges/ runs unchanged here
+ * and in the Node benchmark harness. That is the whole point of the adapter
+ * seam: the same core, two hosts, comparable numbers.
+ *
+ *   listItems()               -> Item[]
+ *   getAttachments(itemKey)   -> Attachment[]
+ *   getAttachmentText(attKey) -> string|null
+ *   getPdfLinkUris(attKey)    -> string[]
+ *
+ * Scope: one collection, not the whole library. Edge counts therefore only
+ * match the CLI's library-wide figures when the collection is the library.
+ */
+
+const FT_CACHE = '.zotero-ft-cache';
+
+// PDFs are read whole into a JS string to be scanned. 256 MB is far above
+// anything real (the sample library's largest is 42 MB) and only exists so a
+// pathological file cannot wedge the build.
+const MAX_PDF_BYTES = 256 * 1024 * 1024;
+
+class ZoteroAdapter {
+	/**
+	 * @param {Zotero.Collection} collection
+	 * @param {Object} [opts]
+	 * @param {Object} [opts.cache]      PdfLinkCache, or null to always rescan
+	 * @param {boolean} [opts.recursive] include items in subcollections
+	 */
+	constructor(collection, { cache = null, recursive = false } = {}) {
+		this.collection = collection;
+		this.cache = cache;
+		this.recursive = recursive;
+		this._items = null;
+		this._itemByKey = new Map();  // item key -> Zotero.Item
+		this._attsByItem = new Map(); // item key -> Attachment[]
+		this._attByKey = new Map();   // att key  -> { rec, item }
+		this.stats = { pdfsScanned: 0, pdfsFromCache: 0, textFound: 0, textMissing: 0 };
+	}
+
+	async listItems() {
+		if (this._items) return this._items;
+
+		let zItems = await collectionItems(this.collection, this.recursive);
+		await Zotero.Items.loadDataTypes(zItems);
+
+		let out = [];
+		for (let item of zItems) {
+			if (!item.isRegularItem()) continue;
+			let title = field(item, 'title', { baseMapped: true });
+			if (!title) continue;
+			this._itemByKey.set(item.key, item);
+			out.push({
+				key: item.key,
+				// Not part of the adapter contract, but the graph page needs it to
+				// ask the chrome side to select the item in the library pane.
+				itemID: item.id,
+				itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+				title,
+				doi: field(item, 'DOI') || null,
+				// Unformatted: the raw multipart date, matching what the SQLite
+				// adapter reads straight out of itemDataValues.
+				date: field(item, 'date', { unformatted: true }) || null,
+				extra: field(item, 'extra') || null,
+				url: field(item, 'url') || null,
+				creators: item.getCreators().map(c => c.lastName).filter(Boolean),
+			});
+		}
+		this._items = out;
+		return out;
+	}
+
+	async getAttachments(itemKey) {
+		if (this._attsByItem.has(itemKey)) return this._attsByItem.get(itemKey);
+
+		let out = [];
+		let item = this._itemByKey.get(itemKey);
+		if (item) {
+			// getAttachments() returns itemIDs, not items.
+			let atts = await Zotero.Items.getAsync(item.getAttachments());
+			await Zotero.Items.loadDataTypes(atts);
+			for (let att of atts) {
+				if (att.attachmentLinkMode === Zotero.Attachments.LINK_MODE_LINKED_URL) continue;
+				// Returns false when the file is missing on disk -- the equivalent
+				// of the SQLite adapter's fs.existsSync() filter.
+				let file = await att.getFilePathAsync();
+				if (!file) continue;
+				let rec = {
+					key: att.key,
+					parentKey: itemKey,
+					contentType: att.attachmentContentType || '',
+					hash: null,
+					file,
+				};
+				out.push(rec);
+				this._attByKey.set(att.key, { rec, item: att });
+			}
+		}
+		this._attsByItem.set(itemKey, out);
+		return out;
+	}
+
+	/**
+	 * Zotero has already extracted this text for its own full-text index, so the
+	 * text strategies cost a file read and nothing else. No pdftotext fallback:
+	 * shelling out is not available here, and an un-indexed attachment simply
+	 * contributes no edges.
+	 */
+	async getAttachmentText(attKey) {
+		let entry = this._attByKey.get(attKey);
+		if (!entry) return null;
+		let path = ftCachePath(entry.item);
+		if (!path) return null;
+		try {
+			if (!(await IOUtils.exists(path))) {
+				this.stats.textMissing++;
+				return null;
+			}
+			let text = await Zotero.File.getContentsAsync(path, 'utf-8');
+			this.stats.textFound++;
+			return text;
+		}
+		catch (e) {
+			this.stats.textMissing++;
+			return null;
+		}
+	}
+
+	/**
+	 * Raw-byte scan for /URI link annotations.
+	 *
+	 * pdf.js is unreachable from chrome JS (it only runs inside the reader's
+	 * document worker) and Zotero has no 'link' annotation type, so the file is
+	 * read directly. Uncompressed object streams carry 87% of the linked DOIs in
+	 * the sample library (113 of 127 PDFs need no inflation at all), so the MVP
+	 * inflates nothing; resource://zotero/pako.js is there if the remaining 13%
+	 * turn out to matter.
+	 */
+	async getPdfLinkUris(attKey) {
+		let entry = this._attByKey.get(attKey);
+		if (!entry || entry.rec.contentType !== 'application/pdf') return [];
+		let file = entry.rec.file;
+
+		let stat;
+		try {
+			stat = await IOUtils.stat(file);
+		}
+		catch (e) {
+			return [];
+		}
+		if (stat.size > MAX_PDF_BYTES) return [];
+		let stamp = stat.size + ':' + Number(stat.lastModified || 0);
+
+		if (this.cache) {
+			let hit = this.cache.get(attKey, stamp);
+			if (hit) {
+				this.stats.pdfsFromCache++;
+				return hit;
+			}
+		}
+
+		let uris;
+		try {
+			uris = scanUriAnnotations(await IOUtils.read(file));
+		}
+		catch (e) {
+			return [];
+		}
+		this.stats.pdfsScanned++;
+		if (this.cache) this.cache.set(attKey, stamp, uris);
+		return uris;
+	}
+
+	/** How many PDFs a pdf-links pass would have to read, for the progress UI. */
+	pdfCount() {
+		let n = 0;
+		for (let atts of this._attsByItem.values()) {
+			for (let a of atts) if (a.contentType === 'application/pdf') n++;
+		}
+		return n;
+	}
+}
+
+/** Items directly in the collection (plus descendants when asked). */
+async function collectionItems(collection, recursive) {
+	let collections = [collection];
+	if (recursive) {
+		try {
+			collections = collections.concat(
+				collection.getDescendents(false, 'collection')
+					.map(d => Zotero.Collections.get(d.id))
+					.filter(Boolean)
+			);
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+	let byKey = new Map();
+	for (let c of collections) {
+		try {
+			await c.loadDataType('childItems');
+		}
+		catch (e) {
+			// Already loaded, or not lazily loaded in this version.
+		}
+		for (let item of c.getChildItems(false, false)) {
+			byKey.set(item.key, item);
+		}
+	}
+	return [...byKey.values()];
+}
+
+/**
+ * getField() throws for a field that is not valid for the item's type, which is
+ * routine here -- 'DOI' does not exist on a book or a thesis.
+ */
+function field(item, name, { unformatted = false, baseMapped = false } = {}) {
+	try {
+		return item.getField(name, unformatted, baseMapped) || '';
+	}
+	catch (e) {
+		return '';
+	}
+}
+
+function ftCachePath(att) {
+	let FT = Zotero.FullText || Zotero.Fulltext;
+	try {
+		let f = FT && FT.getItemCacheFile && FT.getItemCacheFile(att);
+		if (f && f.path) return f.path;
+	}
+	catch (e) {
+		// Fall through to composing the path by hand.
+	}
+	try {
+		return PathUtils.join(Zotero.Attachments.getStorageDirectory(att).path, FT_CACHE);
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+const URI_RE = /\/URI\s*\(((?:[^()\\]|\\[\s\S])*)\)/g;
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {string[]}
+ */
+function scanUriAnnotations(bytes) {
+	let s = bytesToBinaryString(bytes);
+	let uris = new Set();
+	URI_RE.lastIndex = 0;
+	let m;
+	while ((m = URI_RE.exec(s))) {
+		uris.add(m[1].replace(/\\([()\\])/g, '$1'));
+	}
+	return [...uris];
+}
+
+/**
+ * Byte -> code unit, 1:1.
+ *
+ * NOT TextDecoder('latin1'): that label aliases windows-1252, which remaps
+ * 0x80-0x9F to other code points and so shifts every offset after the first
+ * such byte. String.fromCharCode is the only faithful mapping available.
+ */
+function bytesToBinaryString(bytes) {
+	const CHUNK = 0x8000; // apply() blows the argument limit above ~64k
+	let parts = [];
+	for (let i = 0; i < bytes.length; i += CHUNK) {
+		parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
+	}
+	return parts.join('');
+}
+
+module.exports = { ZoteroAdapter, scanUriAnnotations, bytesToBinaryString };

@@ -1,7 +1,7 @@
 /* global Zotero, console */
 
 /**
- * Tab creation and the chrome<->content bridge.
+ * Tab creation, the chrome<->content bridge, and the phased graph build.
  *
  * Mirrors core's ReaderTab (xpcom/reader.js:1976-2090): Zotero_Tabs.add() returns
  * a <tab-content> container, we append a <browser type="content">, wait for
@@ -13,7 +13,16 @@
  * of nested objects -- which removes the fiddliest part of the integration.
  */
 
-let open_ = new Map(); // tabID -> { win, browser, collection }
+let cg = require('../citation-graph/index.js');
+let { ZoteroAdapter } = require('./zoteroAdapter.js');
+let { PdfLinkCache } = require('./pdfLinkCache.js');
+
+// Ordered fastest-first. Everything here is offline; `openalex` is registered
+// but never selected, so no build can reach the network by accident.
+const TEXT_STRATEGIES = ['text-doi', 'title-match'];
+const PDF_STRATEGIES = ['pdf-links'];
+
+let open_ = new Map(); // tabID -> { win, browser, collection, generation }
 
 async function open(win, collection, config) {
 	let title = 'Citation Graph — ' + collection.name;
@@ -38,7 +47,7 @@ async function open(win, collection, config) {
 	browser.setAttribute('src', `resource://${config.resRoot}/content/graph.html`);
 	container.appendChild(browser);
 
-	open_.set(id, { win, browser, collection });
+	open_.set(id, { win, browser, collection, generation: 0 });
 
 	let onDOMContentLoaded = (event) => {
 		if (browser.contentWindow && browser.contentWindow.document === event.target) {
@@ -73,8 +82,7 @@ async function ready(win, tabID, cw, collection) {
 		handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
 	});
 
-	let payload = await buildPayload(collection);
-	cw.wrappedJSObject.zgSetData(JSON.stringify(payload));
+	await runBuild(tabID);
 }
 
 async function handleMessage(win, tabID, collection, msg) {
@@ -86,39 +94,166 @@ async function handleMessage(win, tabID, collection, msg) {
 			}
 			break;
 		case 'rebuild':
-			await rebuild(win, tabID, collection);
+			await runBuild(tabID);
 			break;
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
 }
 
-async function rebuild(win, tabID, collection) {
+/**
+ * Build in phases, pushing a payload after each, because the phases differ in
+ * cost by more than an order of magnitude:
+ *
+ *   items      instant        nodes on screen straight away
+ *   text       ~1-2s          reads Zotero's existing .zotero-ft-cache files
+ *   pdf-links  ~30s uncached  reads every PDF whole; cached per file thereafter
+ *
+ * Doing this as one build would mean staring at an empty tab for half a minute
+ * on first open. The renderer keeps node positions across pushes, so later
+ * phases add edges to a settled layout instead of restarting it.
+ */
+async function runBuild(tabID) {
 	let entry = open_.get(tabID);
 	if (!entry) return;
-	let payload = await buildPayload(collection);
-	entry.browser.contentWindow.wrappedJSObject.zgSetData(JSON.stringify(payload));
+
+	// Guards against a rebuild racing the build it replaced.
+	let generation = ++entry.generation;
+	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
+
+	let { collection } = entry;
+	let cache = await PdfLinkCache.forProfile().load();
+	let adapter = new ZoteroAdapter(collection, { cache });
+	let items = [];
+
+	let push = (edges, meta) => {
+		if (!alive()) return;
+		send(entry, 'zgSetData', {
+			collection: { key: collection.key, name: collection.name },
+			items,
+			edges: edges.map(toWireEdge),
+			meta,
+		});
+	};
+	let status = (text) => {
+		if (alive()) send(entry, 'zgSetStatus', text);
+	};
+
+	// --- phase 1: nodes -------------------------------------------------
+	status('Loading collection…');
+	items = await adapter.listItems();
+	if (!alive()) return;
+	push([], { phase: 'items', items: items.length });
+	if (!items.length) {
+		status('This collection has no regular items.');
+		return;
+	}
+
+	// --- phase 2: text strategies ---------------------------------------
+	status('Reading indexed text…');
+	let textResult = await cg.build(adapter, {
+		enable: TEXT_STRATEGIES,
+		offline: true,
+		onProgress: throttle(p => status(
+			`Reading indexed text… ${p.done}/${p.total} (${p.provider})`)),
+	});
+	if (!alive()) return;
+	push(textResult.edges, {
+		phase: 'text',
+		items: items.length,
+		perProvider: textResult.meta.perProvider,
+		errors: textResult.meta.errors,
+	});
+	logMeta('text', textResult);
+
+	// --- phase 3: PDF hyperlink scan ------------------------------------
+	let pdfs = adapter.pdfCount();
+	status(pdfs ? `Scanning ${pdfs} PDFs for DOI links…` : 'Scanning PDFs…');
+	let pdfResult = await cg.build(adapter, {
+		enable: PDF_STRATEGIES,
+		offline: true,
+		onProgress: throttle(p => status(
+			`Scanning PDFs for DOI links… ${p.done}/${p.total}`)),
+	});
+	await cache.flush();
+	if (!alive()) return;
+
+	let edges = mergeEdges(textResult.edges, pdfResult.edges);
+	push(edges, {
+		phase: 'done',
+		items: items.length,
+		perProvider: { ...textResult.meta.perProvider, ...pdfResult.meta.perProvider },
+		errors: [...textResult.meta.errors, ...pdfResult.meta.errors],
+		adapter: adapter.stats,
+	});
+	logMeta('pdf-links', pdfResult);
+	status('');
 }
 
 /**
- * Step 3 placeholder: a hardcoded graph, so the tab + content page + renderer can
- * be verified before any Zotero data or edge derivation is involved.
+ * Same merge policy as core's graphBuilder: one edge per ordered pair, keeping
+ * the highest confidence any strategy assigned and the union of provenance.
+ * Applied here because the phases are separate build() calls.
  */
-async function buildPayload(collection) {
+function mergeEdges(...groups) {
+	let merged = new Map();
+	for (let group of groups) {
+		for (let e of group) {
+			let k = e.from + ' ' + e.to;
+			let prev = merged.get(k);
+			if (!prev) {
+				merged.set(k, { ...e, via: [...e.via], evidence: [...(e.evidence || [])] });
+				continue;
+			}
+			prev.confidence = Math.max(prev.confidence, e.confidence);
+			for (let v of e.via) if (!prev.via.includes(v)) prev.via.push(v);
+			if (e.evidence) prev.evidence.push(...e.evidence);
+		}
+	}
+	return [...merged.values()];
+}
+
+/** Evidence can be large; the renderer only needs enough to explain an edge. */
+function toWireEdge(e) {
 	return {
-		collection: { key: collection.key, name: collection.name },
-		items: [
-			{ key: 'A', title: 'Placeholder paper A', date: '2019' },
-			{ key: 'B', title: 'Placeholder paper B', date: '2021' },
-			{ key: 'C', title: 'Placeholder paper C', date: '2023' },
-		],
-		edges: [
-			{ from: 'C', to: 'A', confidence: 0.95, via: ['pdf-links'] },
-			{ from: 'C', to: 'B', confidence: 0.6, via: ['title-match'] },
-			{ from: 'B', to: 'A', confidence: 0.9, via: ['text-doi'] },
-		],
-		meta: { placeholder: true },
+		from: e.from,
+		to: e.to,
+		confidence: e.confidence,
+		via: e.via,
+		doi: (e.evidence || []).map(x => x.doi).find(Boolean) || null,
 	};
+}
+
+function send(entry, fn, value) {
+	let cw = entry.browser.contentWindow;
+	if (!cw || !cw.wrappedJSObject[fn]) return;
+	try {
+		cw.wrappedJSObject[fn](typeof value === 'string' ? value : JSON.stringify(value));
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/** Progress fires per item; the bridge does not need 400 crossings a second. */
+function throttle(fn, ms = 200) {
+	let last = 0;
+	return (...args) => {
+		let now = Date.now();
+		if (now - last < ms) return;
+		last = now;
+		fn(...args);
+	};
+}
+
+function logMeta(phase, result) {
+	let per = Object.entries(result.meta.perProvider)
+		.map(([id, s]) => `${id}: ${s.newEdges} edges in ${s.ms}ms`)
+		.join(', ');
+	Zotero.debug(`[zotero-graph] ${phase} -> ${per || 'nothing'}`);
+	for (let err of result.meta.errors) {
+		Zotero.logError(new Error(`[zotero-graph] ${err.provider}: ${err.message}`));
+	}
 }
 
 function closeAllInWindow(win) {
@@ -140,4 +275,4 @@ function closeAll() {
 	open_.clear();
 }
 
-module.exports = { open, closeAll, closeAllInWindow };
+module.exports = { open, closeAll, closeAllInWindow, mergeEdges };
