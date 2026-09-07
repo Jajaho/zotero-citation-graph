@@ -911,7 +911,7 @@ check('an unknown prefix is a search term, not a syntax error', () => {
 	// DOIs, times and "Vol 3: something" all contain colons. Rejecting them, or
 	// silently dropping the half before the colon, would both be wrong.
 	const f = F.parse('10.1038:x');
-	if (f.field !== null || f.value !== '10.1038:x') throw new Error(JSON.stringify(f));
+	if (f.field !== null || f.terms[0].value !== '10.1038:x') throw new Error(JSON.stringify(f));
 });
 
 check('completions come from the survivors, so one can never empty the graph', () => {
@@ -922,8 +922,9 @@ check('completions come from the survivors, so one can never empty the graph', (
 	// nodes on screen, which is exactly the dead end the panel must not lead to.
 	const survivors = lib.filter((f) => F.matches(F.parse('author:Socrates'), f));
 	for (const s of F.suggest('', survivors)) {
-		if (!s.filter) continue;
-		const left = survivors.filter((f) => F.matches(s.filter, f));
+		if (!s.term) continue;
+		const picked = F.parse(F.spliceTerm('', s.field, s.term));
+		const left = survivors.filter((f) => F.matches(picked, f));
 		if (!left.length) throw new Error('offered a dead end: ' + s.label);
 	}
 	// And the counts have to be the survivors' counts, not the library's.
@@ -935,7 +936,7 @@ check('completions rank by coverage and offer the fields before the values', () 
 	const F = loadFilters();
 	const lib = library(F);
 	const empty = F.suggest('', lib);
-	if (empty[0].kind !== 'field' || empty[0].insert !== 'author:') {
+	if (empty[0].kind !== 'field' || empty[0].insert !== 'author: ') {
 		throw new Error('an empty box should name the fields: ' + JSON.stringify(empty[0]));
 	}
 	// Within one field, the value covering the most items comes first.
@@ -943,7 +944,7 @@ check('completions rank by coverage and offer the fields before the values', () 
 	if (authors[0] !== 'Kucsko' && authors[0] !== 'Maurer') throw new Error(authors.join());
 	if (authors[authors.length - 1] !== 'Socrates') throw new Error(authors.join());
 	// A half-typed field name is still a field name, not a value search.
-	if (!F.suggest('pub', lib).some((s) => s.insert === 'publication:')) {
+	if (!F.suggest('pub', lib).some((s) => s.insert === 'publication: ')) {
 		throw new Error('"pub" did not complete to publication:');
 	}
 });
@@ -964,6 +965,102 @@ check('a picked completion pins the value where typed text stays a substring', (
 	// must not stack two chips that do the same thing.
 	if (F.key(F.exact('author', 'Socrates')) !== F.key(F.exact('author', 'SOCRATES'))) {
 		throw new Error('identity is case-sensitive');
+	}
+});
+
+check('several values in one mask widen it, where a second mask narrows', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// The grammar in one test. Terms inside a mask OR; masks AND. Getting these
+	// the same way round would make "publication: Nature, Science" mean nothing
+	// at all, since no paper appears in two journals at once.
+	const or = F.parse('publication: "Nature", "Science"');
+	const passed = lib.filter((f) => F.matches(or, f)).length;
+	if (passed !== 2) throw new Error('terms did not OR: ' + passed);
+	// ...and adding a mask over the top still only takes away.
+	const narrowed = lib.filter((f) => F.matchesAll([or, F.parse('year:2013')], f)).length;
+	if (narrowed !== 1) throw new Error('a second mask did not narrow: ' + narrowed);
+	// Order carries no meaning, so two spellings of one mask are one mask.
+	if (F.key(F.parse('author: A, B')) !== F.key(F.parse('author: B, A'))) {
+		throw new Error('term order changed a mask identity');
+	}
+	// A repeat inside a mask is a no-op, not a second term.
+	if (F.parse('author: "A", "A"').terms.length !== 1) throw new Error('duplicate term kept');
+});
+
+check('a comma inside a value survives, and years mix with ranges', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// "Ann. Phys., Lpz." is one journal. Splitting a term list without honouring
+	// quotes would turn it into two masks-worth of nonsense, neither matching.
+	if (F.splitTerms('"Ann. Phys., Lpz.", Nature').length !== 2) throw new Error('quoted comma split');
+	const f = F.parse('publication: "Ann. Phys., Lpz.", Nature');
+	if (f.terms.length !== 2 || f.terms[0].value !== 'Ann. Phys., Lpz.') {
+		throw new Error(JSON.stringify(f));
+	}
+	const awkward = F.facets({ publication: 'Ann. Phys., Lpz.' });
+	if (!F.matches(f, awkward)) throw new Error('the quoted value did not match its own journal');
+	// ...and the value after it is still a term of its own, not part of it.
+	if (lib.filter((x) => F.matches(f, x)).length !== 1) throw new Error('the term after a quoted one was lost');
+	// One mask can hold a plain year and a span side by side: 2013, or 1990-2000.
+	const mixed = F.parse('year: 2013, 1990-2000');
+	if (mixed.terms.length !== 2) throw new Error(JSON.stringify(mixed));
+	if (lib.filter((x) => F.matches(mixed, x)).length !== 2) throw new Error('mixed year terms');
+});
+
+check('a chip round-trips through the box it is edited in', () => {
+	const F = loadFilters();
+	// Chips are clickable and go back into the box as text, so toInput() and
+	// parse() have to be exact inverses -- otherwise editing a chip would
+	// quietly change what it masks. The awkward cases are all here: a pinned
+	// value, a substring, a comma, a quote, and a range.
+	for (const text of [
+		'publication: "Nature", "Science"',
+		'publication: "Ann. Phys., Lpz.", ~rev',
+		'author: soc',
+		'year: 2013, 1990-2000, >=2020, <=1899',
+		'title: "He said ""hi"""',
+		'tales',
+	]) {
+		const f = F.parse(text);
+		if (!f) throw new Error('did not parse: ' + text);
+		const back = F.parse(F.toInput(f));
+		if (!back || F.key(back) !== F.key(f)) {
+			throw new Error(text + ' -> ' + F.toInput(f) + ' -> ' + JSON.stringify(back));
+		}
+	}
+});
+
+check('picking a value extends the mask being built rather than replacing it', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// The panel commits the chip on the first pick and rewrites it on every one
+	// after, so spliceTerm has to drop only the half-typed tail and leave a
+	// trailing comma for the next value.
+	let box = F.spliceTerm('publication:', 'publication', '"Nature"');
+	box = F.spliceTerm(box, 'publication', '"Science"');
+	if (box !== 'publication: "Nature", "Science", ') throw new Error(JSON.stringify(box));
+	if (F.parse(box).terms.length !== 2) throw new Error('trailing comma became a term');
+	// A half-typed tail is replaced, not kept alongside.
+	if (F.spliceTerm('publication: "Nature", Sci', 'publication', '"Science"')
+		!== 'publication: "Nature", "Science", ') {
+		throw new Error(F.spliceTerm('publication: "Nature", Sci', 'publication', '"Science"'));
+	}
+	// Reaching for a value from another field rescopes the box: there is no way
+	// to say "publication:X or author:Y" in one mask, and keeping the old field
+	// would silently mask on the wrong one.
+	if (F.spliceTerm('nat', 'author', '"Socrates"') !== 'author: "Socrates", ') {
+		throw new Error(F.spliceTerm('nat', 'author', '"Socrates"'));
+	}
+	// Values already in the mask are not offered again -- a top row that does
+	// nothing is worse than a shorter list.
+	const after = F.suggest('publication: "Nature", ', lib).map((s) => s.label);
+	if (after.includes('Nature')) throw new Error('offered a value already in the mask');
+	if (!after.includes('Science')) throw new Error(after.join());
+	// Past the first comma the field is settled, so field names stop being
+	// offered -- "publication: Nature, author:" is not a thing that parses.
+	if (F.suggest('publication: "Nature", a', lib).some((s) => s.insert)) {
+		throw new Error('offered a field name mid-list');
 	}
 });
 

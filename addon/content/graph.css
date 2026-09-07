@@ -230,13 +230,28 @@ body {
 	color: var(--fg);
 }
 
-/* A journal name or a long surname must not widen the panel; the chip's title
-   attribute carries the whole of it. */
+/* A three-value list must not widen the panel. The chip's title attribute
+   carries the whole of it, and clicking puts it back in the box -- which is
+   the only way to reach a value the ellipsis has eaten. */
 .chip-text {
 	min-width: 0;
+	font: inherit;
+	text-align: left;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* The chip the box is authoring right now. Picking another value widens this
+   one instead of starting a second, and nothing else on screen says so. */
+.chip.editing {
+	border-color: var(--muted);
+	background: var(--surface);
 }
 
 .chip-x {

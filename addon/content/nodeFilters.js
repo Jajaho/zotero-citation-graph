@@ -1,15 +1,22 @@
 /**
  * Filter masks over the held items.
  *
- * A filter is one predicate over one item. Several of them stack by AND, so
- * every filter added narrows what is left and none can ever widen it -- the
- * "overlaying mask" model, where what you end up looking at is the intersection
- * of every mask you laid down.
+ * A filter is one field and a list of terms. Terms inside a filter OR; filters
+ * AND. That pairing is the whole grammar:
+ *
+ *     publication: Nature, Nature Reviews, APL     one mask, three ways to pass
+ *     + author: Kucsko                             a second mask over the first
+ *
+ * Widening happens inside a chip and narrowing happens between them, so every
+ * chip added narrows what is left and none can widen it -- the "overlaying
+ * mask" model, where what you end up looking at is the intersection of every
+ * mask you laid down.
  *
  * Separate from graph.js for the same reason nodeScale.js and nodeLinks.js are:
- * this is pure. Parsing "year:>2010" into a range, and ranking the values worth
- * offering as completions, are exactly the kind of thing that is tedious to
- * check by clicking around a graph and trivial to check in a test.
+ * this is pure. Parsing "year:>2010" into a range, splitting a quoted list on
+ * its top-level commas, and ranking the values worth offering as completions
+ * are exactly the kind of thing that is tedious to check by clicking around a
+ * graph and trivial to check in a test.
  *
  * Loaded as a plain <script> and published as a global; the content page has no
  * module loader. tools/test-cjs-shim.js evaluates this same file.
@@ -59,8 +66,8 @@
 
 	/**
 	 * Year accepts comparisons and ranges, because "papers since 2015" is a
-	 * question people actually ask, and stacking eleven year filters to ask it
-	 * would be absurd. Every other facet is a string and gets no operators.
+	 * question people actually ask, and listing eleven years to ask it would be
+	 * absurd. Every other facet is a string and gets no operators.
 	 *
 	 * Returns { lo, hi }, inclusive, either end null for an open one, or null
 	 * when the term is not a year expression at all -- the caller then falls
@@ -83,39 +90,148 @@
 	}
 
 	/**
-	 * Split "author:soc" into its halves. An unrecognised prefix is not a field
-	 * and not an error either -- "10.1038:x" is a string someone is looking for,
-	 * so the whole of it stays the search term.
+	 * Split a term list on its commas, leaving anything inside quotes alone --
+	 * "Ann. Phys., Lpz." is one journal, not two. Quotes are kept in the pieces
+	 * for parseTerm() to read, because whether a value was quoted is what says
+	 * how it matches.
+	 */
+	function splitTerms(s) {
+		var out = [];
+		var cur = '';
+		var quoted = false;
+		for (var i = 0; i < s.length; i++) {
+			var c = s.charAt(i);
+			if (c === '"') {
+				// A doubled quote inside a quoted value is one literal quote,
+				// the way it is everywhere else that quotes a comma-separated
+				// list. It stays doubled here and is folded in parseTerm().
+				if (quoted && s.charAt(i + 1) === '"') {
+					cur += '""';
+					i++;
+					continue;
+				}
+				quoted = !quoted;
+				cur += c;
+				continue;
+			}
+			if (c === ',' && !quoted) {
+				out.push(cur);
+				cur = '';
+				continue;
+			}
+			cur += c;
+		}
+		out.push(cur);
+		return out;
+	}
+
+	/**
+	 * Split "publication: Nature, Science" into its field and its raw terms. An
+	 * unrecognised prefix is not a field and not an error either -- "10.1038:x"
+	 * is a string someone is looking for, so the whole of it stays the term.
 	 */
 	function split(text) {
 		var s = String(text == null ? '' : text);
 		var i = s.indexOf(':');
-		if (i < 0) return { field: null, term: s.trim() };
-		var name = s.slice(0, i).trim().toLowerCase();
-		if (NAMES.indexOf(name) < 0) return { field: null, term: s.trim() };
-		return { field: name, term: s.slice(i + 1).trim() };
+		if (i >= 0) {
+			var name = s.slice(0, i).trim().toLowerCase();
+			if (NAMES.indexOf(name) >= 0) return { field: name, raw: splitTerms(s.slice(i + 1)) };
+		}
+		return { field: null, raw: splitTerms(s) };
 	}
 
 	/**
-	 * Text the user typed -> a filter, or null when there is nothing to filter
-	 * on. Typed text always matches as a substring: someone who types "soc"
-	 * means Socrates, and making them spell the surname out exactly would
-	 * defeat the point of typing at all. Picking a value off the completion
-	 * list pins it in full instead -- see exact().
+	 * One term of a list.
+	 *
+	 * A bare value is a substring: someone who types "soc" means Socrates, and
+	 * making them spell the surname out would defeat the point of typing at
+	 * all. A quoted value is pinned to exactly that string, which is what
+	 * picking a value off the completion list writes -- otherwise `type:
+	 * "book"` would drag in every bookSection. A leading `~` forces the
+	 * substring reading back on, so a substring containing a comma can still be
+	 * quoted against splitTerms().
 	 */
+	function parseTerm(field, raw) {
+		var t = String(raw).trim();
+		var loose = false;
+		if (t.charAt(0) === '~') {
+			loose = true;
+			t = t.slice(1).trim();
+		}
+		var quoted = t.length >= 2 && t.charAt(0) === '"' && t.charAt(t.length - 1) === '"';
+		if (quoted) t = t.slice(1, -1).replace(/""/g, '"');
+		if (!t) return null;
+		if (quoted && !loose) return { op: 'is', value: t };
+		if (field === 'year' && !quoted) {
+			var r = parseYear(t);
+			if (r) return { op: 'range', lo: r.lo, hi: r.hi };
+		}
+		return { op: 'contains', value: t };
+	}
+
+	/** Text in the box -> a filter, or null when there is nothing to mask on. */
 	function parse(text) {
 		var p = split(text);
-		if (!p.term) return null;
-		if (p.field === 'year') {
-			var r = parseYear(p.term);
-			if (r) return { field: 'year', op: 'range', lo: r.lo, hi: r.hi, value: p.term };
+		var terms = [];
+		for (var i = 0; i < p.raw.length; i++) {
+			var t = parseTerm(p.field, p.raw[i]);
+			// Duplicates inside one mask do nothing, and a trailing comma --
+			// which is exactly what the box holds mid-edit -- is not a term.
+			if (t && !terms.some(function (x) { return termKey(x) === termKey(t); })) terms.push(t);
 		}
-		return { field: p.field, op: 'contains', value: p.term };
+		return terms.length ? { field: p.field, terms: terms } : null;
 	}
 
 	/** A filter pinned to one value in full, which is what a completion means. */
 	function exact(field, value) {
-		return { field: field, op: 'is', value: String(value) };
+		return { field: field, terms: [{ op: 'is', value: String(value) }] };
+	}
+
+	// --- writing it back out ----------------------------------------------
+
+	function quote(v) {
+		return '"' + String(v).replace(/"/g, '""') + '"';
+	}
+
+	function rangeText(t) {
+		if (t.lo != null && t.hi != null) {
+			return t.lo === t.hi ? String(t.lo) : t.lo + '-' + t.hi;
+		}
+		return t.lo != null ? '>=' + t.lo : '<=' + t.hi;
+	}
+
+	/** One term as the box would spell it. parse(toInput(f)) must give f back:
+	 *  the chips are editable, so this round trip is load-bearing. */
+	function termText(t) {
+		if (t.op === 'range') return rangeText(t);
+		if (t.op === 'is') return quote(t.value);
+		return /[,"]/.test(t.value) || t.value.charAt(0) === '~'
+			? '~' + quote(t.value)
+			: t.value;
+	}
+
+	function toInput(f) {
+		return (f.field ? f.field + ': ' : '') + f.terms.map(termText).join(', ');
+	}
+
+	/**
+	 * The box text after a completion is taken: the half-typed term at the end
+	 * is replaced by the chosen one, and a comma is left behind so the next
+	 * value can follow without any punctuation being typed.
+	 *
+	 * Taking a value from a field the box is not scoped to rescopes the box.
+	 * There is no way to say "publication:X or author:Y" in one mask -- terms
+	 * OR within a single field -- and the value pointed at is the unambiguous
+	 * half of the two.
+	 */
+	function spliceTerm(text, field, term) {
+		var p = split(text);
+		var kept = p.field === field ? p.raw.slice(0, -1) : [];
+		// Trimmed on the way back out, or the space after each comma the box
+		// itself left behind would double every time a term is added.
+		kept = kept.map(function (t) { return t.trim(); }).filter(Boolean);
+		kept.push(term);
+		return (field ? field + ': ' : '') + kept.join(', ') + ', ';
 	}
 
 	// --- matching ---------------------------------------------------------
@@ -128,79 +244,113 @@
 		return false;
 	}
 
-	function matches(filter, fac) {
-		if (!filter) return true;
-		if (filter.op === 'range') {
+	function matchTerm(field, t, fac) {
+		if (t.op === 'range') {
 			var ys = fac.year || [];
 			for (var i = 0; i < ys.length; i++) {
 				var y = Number(ys[i]);
-				if (filter.lo != null && y < filter.lo) continue;
-				if (filter.hi != null && y > filter.hi) continue;
+				if (t.lo != null && y < t.lo) continue;
+				if (t.hi != null && y > t.hi) continue;
 				return true;
 			}
 			return false;
 		}
-		var needle = String(filter.value).toLowerCase();
-		if (filter.field) return hit(fac[filter.field] || [], filter.op, needle);
+		var needle = String(t.value).toLowerCase();
+		if (field) return hit(fac[field] || [], t.op, needle);
 		// A bare term is asked of every facet at once. That is what lets
 		// "Tales" work without the user having to know which field it lives in.
 		for (var j = 0; j < NAMES.length; j++) {
-			if (hit(fac[NAMES[j]] || [], filter.op, needle)) return true;
+			if (hit(fac[NAMES[j]] || [], t.op, needle)) return true;
 		}
 		return false;
 	}
 
+	/** Terms OR: any one of them passing is what the mask asks for. */
+	function matches(filter, fac) {
+		if (!filter || !filter.terms.length) return true;
+		for (var i = 0; i < filter.terms.length; i++) {
+			if (matchTerm(filter.field, filter.terms[i], fac)) return true;
+		}
+		return false;
+	}
+
+	/** Filters AND: this is the narrowing half of the grammar. */
 	function matchesAll(filters, fac) {
 		for (var i = 0; i < filters.length; i++) if (!matches(filters[i], fac)) return false;
 		return true;
 	}
 
-	/** Identity, so the same mask cannot be laid down twice. */
-	function key(f) {
-		if (f.op === 'range') return 'year|range|' + f.lo + '|' + f.hi;
-		return (f.field || '*') + '|' + f.op + '|' + String(f.value).toLowerCase();
+	function termKey(t) {
+		return t.op === 'range'
+			? 'r|' + t.lo + '|' + t.hi
+			: t.op + '|' + String(t.value).toLowerCase();
 	}
 
-	/** The chip's text. Short, because it sits in a 220px panel. */
-	function describe(f) {
-		if (f.op === 'range') {
-			if (f.lo != null && f.hi != null) {
-				return f.lo === f.hi ? 'year: ' + f.lo : 'year: ' + f.lo + '–' + f.hi;
+	/** Identity, so the same mask cannot be laid down twice. Terms are sorted:
+	 *  they OR, so the order they were picked in means nothing. */
+	function key(f) {
+		return (f.field || '*') + '|' + f.terms.map(termKey).sort().join('|');
+	}
+
+	function termLabel(t) {
+		if (t.op === 'range') {
+			if (t.lo != null && t.hi != null) {
+				return t.lo === t.hi ? String(t.lo) : t.lo + '–' + t.hi;
 			}
-			return f.lo != null ? 'year: ≥' + f.lo : 'year: ≤' + f.hi;
+			return t.lo != null ? '≥' + t.lo : '≤' + t.hi;
 		}
-		// ':' for a pinned value and '~' for a substring. The two behave
-		// differently often enough that the chip has to say which it is.
-		var head = f.field || 'any';
-		return head + (f.op === 'is' ? ': ' : ' ~ ') + f.value;
+		// '~' marks a substring. Pinned values are the common case and read
+		// plainly; the odd one out is the one that has to be marked. A value
+		// with a comma in it is quoted, or a three-value chip would read as
+		// four and there would be no telling where one value ended.
+		var v = t.value.indexOf(',') >= 0 ? '"' + t.value + '"' : t.value;
+		return (t.op === 'contains' ? '~' : '') + v;
+	}
+
+	/** The chip's text. Short, because it sits in a 220px panel -- the chip's
+	 *  title attribute carries the long form. */
+	function describe(f) {
+		return (f.field || 'any') + ': ' + f.terms.map(termLabel).join(', ');
 	}
 
 	// --- completions ------------------------------------------------------
 
 	/**
 	 * What to offer for the half-typed text, given the items that survive the
-	 * masks already laid down.
+	 * masks already down.
 	 *
-	 * Drawing from the SURVIVORS rather than from the whole collection is the
-	 * point: a value on this list always leaves something on screen, so
-	 * stacking masks walks down a narrowing tree instead of dead-ending on a
-	 * combination that matches nothing.
+	 * Drawing candidates from the SURVIVORS rather than from the whole
+	 * collection is the point: a value on this list always leaves something on
+	 * screen, so stacking masks walks down a narrowing tree instead of
+	 * dead-ending on a combination that matches nothing. The mask being edited
+	 * is not one of the survivors' constraints -- see masked() in graph.js --
+	 * because its terms OR, and widening it cannot empty anything either way.
 	 *
 	 * @param {string} text        what is in the box
 	 * @param {Object[]} entries   facets() of each surviving item
 	 * @param {number} [limit]
-	 * @returns {Object[]} { kind, label, hint, count?, filter?, insert? }
+	 * @returns {Object[]} { kind, label, hint, count?, field?, term?, insert? }
+	 *   `insert` replaces the whole box; `term` is spliced in by spliceTerm().
 	 */
 	function suggest(text, entries, limit) {
 		limit = limit || 12;
 		var p = split(text);
-		var term = p.term.toLowerCase();
+		var partial = p.raw[p.raw.length - 1].trim().replace(/^~/, '').replace(/^"|"$/g, '');
+		var term = partial.toLowerCase();
 		var out = [];
 
-		// A field name still being typed. Only while nothing is committed to a
-		// field yet, and only while the term still looks like one -- past that
-		// the user is plainly after a value.
-		if (!p.field) {
+		// Values already in this mask. Offering one again would be a no-op, and
+		// a list whose top row does nothing is worse than a shorter list.
+		var chosen = new Set();
+		for (var c = 0; c < p.raw.length - 1; c++) {
+			var t = parseTerm(p.field, p.raw[c]);
+			if (t && t.op !== 'range') chosen.add(String(t.value).toLowerCase());
+		}
+
+		// A field name still being typed. Only before any term is committed to
+		// this mask -- past the first comma the field is settled -- and only
+		// while the text still looks like a field name.
+		if (!p.field && p.raw.length === 1) {
 			for (var i = 0; i < FIELDS.length; i++) {
 				var f = FIELDS[i];
 				if (term && f.name.indexOf(term) !== 0) continue;
@@ -208,22 +358,22 @@
 					kind: 'field',
 					label: f.name + ':',
 					hint: 'filter by ' + f.label,
-					insert: f.name + ':',
+					insert: f.name + ': ',
 				});
 			}
 		}
 
 		// Year comparisons cannot be enumerated, so a parsed range is offered as
 		// its own entry rather than as one of the values below.
-		if (p.field === 'year' && p.term) {
-			var r = parseYear(p.term);
+		if (p.field === 'year' && partial) {
+			var r = parseYear(partial);
 			if (r && !(r.lo != null && r.lo === r.hi)) {
-				var range = { field: 'year', op: 'range', lo: r.lo, hi: r.hi, value: p.term };
 				out.push({
 					kind: 'range',
-					label: describe(range),
+					label: termLabel({ op: 'range', lo: r.lo, hi: r.hi }),
 					hint: 'a span of years',
-					filter: range,
+					field: 'year',
+					term: partial,
 				});
 			}
 		}
@@ -243,7 +393,8 @@
 					var value = String(values[v]);
 					if (!value) continue;
 					if (term && value.toLowerCase().indexOf(term) < 0) continue;
-					var id = name + ' ' + value;
+					if (chosen.has(value.toLowerCase())) continue;
+					var id = name + ' ' + value;
 					if (seen.has(id)) continue;
 					seen.add(id);
 					var rec = counts.get(id);
@@ -267,24 +418,25 @@
 				label: ranked[s].value,
 				hint: ranked[s].field,
 				count: ranked[s].count,
-				filter: exact(ranked[s].field, ranked[s].value),
+				field: ranked[s].field,
+				term: quote(ranked[s].value),
 			});
 		}
 
 		// The escape hatch: whatever was typed, as a substring. Last, and
 		// dropped when a value already on the list says the same thing.
-		var free = parse(text);
-		if (free && free.op !== 'range') {
+		var free = partial ? parseTerm(p.field, p.raw[p.raw.length - 1]) : null;
+		if (free && free.op === 'contains') {
 			var dup = out.some(function (o) {
-				return o.filter && String(o.filter.value).toLowerCase()
-					=== String(free.value).toLowerCase();
+				return o.kind === 'value' && o.label.toLowerCase() === term;
 			});
 			if (!dup) {
 				out.push({
 					kind: 'free',
-					label: describe(free),
+					label: termLabel(free),
 					hint: 'anything containing this',
-					filter: free,
+					field: p.field,
+					term: termText(free),
 				});
 			}
 		}
@@ -298,9 +450,12 @@
 		parse: parse,
 		exact: exact,
 		parseYear: parseYear,
+		splitTerms: splitTerms,
 		matches: matches,
 		matchesAll: matchesAll,
 		describe: describe,
+		toInput: toInput,
+		spliceTerm: spliceTerm,
 		key: key,
 		suggest: suggest,
 	};

@@ -441,6 +441,18 @@
 	 */
 	let filters = [];
 
+	/**
+	 * Which chip the box is currently authoring, or -1 for none.
+	 *
+	 * A mask holds several values that OR, so building one is not a single
+	 * gesture: pick "Nature", then "Science", then "APL". Rather than make the
+	 * user finish the list before seeing anything, the chip is committed on the
+	 * first pick and then rewritten in place on every one after -- the graph
+	 * widens under the pointer as the list grows. This index is what says
+	 * "rewrite" instead of "add a second chip".
+	 */
+	let editing = -1;
+
 	/** A raw item in the shape nodeFilters.js matches against. */
 	function itemFacets(it) {
 		return Filters.facets({
@@ -458,6 +470,11 @@
 	 * graph needs the items and the completion list needs the facets, and
 	 * deriving them separately would mean two rules for what is visible.
 	 *
+	 * `skip` leaves one mask out. The completion list passes the chip being
+	 * edited, because that chip is about to be widened: constraining the
+	 * candidates by a mask whose terms OR would hide exactly the values the
+	 * user is reaching for. The graph itself skips nothing.
+	 *
 	 * Outside references are deliberately NOT masked here. A ghost is a DOI
 	 * and, with lookup on, a title; masking it on author or publication would
 	 * delete every one of them the moment any filter existed. Instead it keeps
@@ -465,34 +482,68 @@
 	 * survived still cites it -- which makes "author:Kucsko" read as "his
 	 * papers, and what they cite".
 	 */
-	function masked() {
+	function masked(skip) {
 		let items = [];
 		let facets = [];
 		for (let it of raw.items) {
 			let f = itemFacets(it);
-			if (filters.length && !Filters.matchesAll(filters, f)) continue;
+			let ok = true;
+			for (let i = 0; i < filters.length && ok; i++) {
+				if (i !== skip && !Filters.matches(filters[i], f)) ok = false;
+			}
+			if (!ok) continue;
 			items.push(it);
 			facets.push(f);
 		}
 		return { items, facets };
 	}
 
-	function addFilter(f) {
+	/**
+	 * Whatever is in the box becomes a mask: a new chip, or the one being
+	 * edited rewritten in place.
+	 */
+	function commit() {
+		let f = Filters.parse(elFilterInput.value);
 		if (!f) return;
-		let k = Filters.key(f);
-		// Re-adding a mask that is already down would look like the box
-		// swallowed the input, so it is a no-op that still clears the field.
-		if (!filters.some(x => Filters.key(x) === k)) filters.push(f);
-		elFilterInput.value = '';
-		hideSuggest();
+		if (editing >= 0) {
+			filters[editing] = f;
+		}
+		else {
+			let k = Filters.key(f);
+			// Laying down a mask that is already down would look like the box
+			// swallowed the input. Edit the one that exists instead.
+			let same = filters.findIndex(x => Filters.key(x) === k);
+			editing = same >= 0 ? same : filters.push(f) - 1;
+		}
 		renderChips();
 		render();
 	}
 
+	/** The box is done with whatever it was authoring. The chip keeps every
+	 *  term that was committed; a half-typed one was never part of it. */
+	function endEdit() {
+		editing = -1;
+		elFilterInput.value = '';
+	}
+
 	function removeFilter(i) {
 		filters.splice(i, 1);
+		if (editing === i) endEdit();
+		else if (editing > i) editing--;
 		renderChips();
 		render();
+	}
+
+	/**
+	 * Put a chip back in the box with a trailing comma, ready for more values.
+	 * This is the only way to reach a value that the chip's own width has
+	 * clipped, and the only way to drop one value out of several.
+	 */
+	function editChip(i) {
+		editing = i;
+		elFilterInput.value = Filters.toInput(filters[i]) + ', ';
+		elFilterInput.focus();
+		refreshSuggest();
 	}
 
 	function renderChips() {
@@ -500,10 +551,13 @@
 		filters.forEach((f, i) => {
 			let chip = document.createElement('span');
 			chip.className = 'chip';
-			chip.title = chipHint(f);
-			let text = document.createElement('span');
+			if (i === editing) chip.classList.add('editing');
+			let text = document.createElement('button');
+			text.type = 'button';
 			text.className = 'chip-text';
+			text.title = chipHint(f);
 			text.textContent = Filters.describe(f);
+			text.addEventListener('click', () => editChip(i));
 			let x = document.createElement('button');
 			x.type = 'button';
 			x.className = 'chip-x';
@@ -517,17 +571,21 @@
 		elFilterChips.hidden = !filters.length;
 	}
 
-	/** The chip is clipped to the panel width, and the difference between an
-	 *  exact value and a substring is real, so both get spelled out on hover. */
+	/** The chip is clipped to the panel width, so the long form -- every value,
+	 *  and which of them are exact -- has to be reachable on hover. */
 	function chipHint(f) {
-		if (f.op === 'range') {
-			if (f.lo != null && f.hi != null) return 'published ' + f.lo + ' to ' + f.hi;
-			return f.lo != null
-				? 'published in ' + f.lo + ' or later'
-				: 'published in ' + f.hi + ' or earlier';
-		}
 		let what = f.field || 'any field';
-		return what + (f.op === 'is' ? ' is exactly ' : ' contains ') + '"' + f.value + '"';
+		let bits = f.terms.map((t) => {
+			if (t.op === 'range') {
+				if (t.lo != null && t.hi != null) {
+					return t.lo === t.hi ? 'is ' + t.lo : 'is between ' + t.lo + ' and ' + t.hi;
+				}
+				return t.lo != null ? 'is ' + t.lo + ' or later' : 'is ' + t.hi + ' or earlier';
+			}
+			return (t.op === 'is' ? 'is exactly ' : 'contains ') + '"' + t.value + '"';
+		});
+		// "or", because terms widen. It is the chips between them that narrow.
+		return what + ' ' + bits.join(', or ') + '\nClick to edit';
 	}
 
 	// --- the completion list ----------------------------------------------
@@ -543,14 +601,14 @@
 	/**
 	 * Rebuild the list under the box.
 	 *
-	 * The candidates come from the items that survive the masks ALREADY down,
-	 * never from the whole collection. That is what makes the list narrow as
-	 * filters stack, and it means anything offered here is guaranteed to leave
+	 * The candidates come from the items that survive the other masks, never
+	 * from the whole collection. That is what makes the list narrow as chips
+	 * stack, and it means anything offered here is guaranteed to leave
 	 * something on screen rather than emptying the graph.
 	 */
 	function refreshSuggest() {
 		if (!raw) return;
-		suggestions = Filters.suggest(elFilterInput.value, masked().facets);
+		suggestions = Filters.suggest(elFilterInput.value, masked(editing).facets);
 		suggestIndex = -1;
 		elSuggest.textContent = '';
 		for (let i = 0; i < suggestions.length; i++) {
@@ -621,6 +679,12 @@
 		return b;
 	}
 
+	/**
+	 * Take a completion. A value is spliced into the box and committed at once,
+	 * so the chip and the graph both move on the first pick -- and the box is
+	 * left with a trailing comma and the list still open, so the pick after it
+	 * widens the same mask instead of starting a new one.
+	 */
 	function accept(i) {
 		let s = suggestions[i];
 		if (!s) return;
@@ -631,7 +695,9 @@
 			refreshSuggest();
 			return;
 		}
-		addFilter(s.filter);
+		elFilterInput.value = Filters.spliceTerm(elFilterInput.value, s.field, s.term);
+		commit();
+		refreshSuggest();
 	}
 
 	function moveSuggest(d) {
@@ -655,7 +721,15 @@
 	// only thing that says which fields exist at all.
 	elFilterInput.addEventListener('focus', refreshSuggest);
 	// After the row's own mousedown, which fires first and may have accepted.
-	elFilterInput.addEventListener('blur', () => window.setTimeout(hideSuggest, 0));
+	// Leaving the box ends the edit: everything committed is on the chip
+	// already, so there is nothing in the text worth keeping.
+	elFilterInput.addEventListener('blur', () => window.setTimeout(() => {
+		hideSuggest();
+		if (editing >= 0) {
+			endEdit();
+			renderChips();
+		}
+	}, 0));
 
 	elFilterInput.addEventListener('keydown', (e) => {
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -666,8 +740,16 @@
 		}
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			if (suggestIndex >= 0) accept(suggestIndex);
-			else addFilter(Filters.parse(elFilterInput.value));
+			// On a highlighted row, take it and stay on this mask -- the next
+			// Enter can add another value. On typed text, commit and be done.
+			if (suggestIndex >= 0) {
+				accept(suggestIndex);
+				return;
+			}
+			commit();
+			endEdit();
+			hideSuggest();
+			renderChips();
 			return;
 		}
 		if (e.key === 'Escape') {
@@ -676,6 +758,10 @@
 			// must not reach past either.
 			e.stopPropagation();
 			if (!elSuggest.hidden) hideSuggest();
+			else if (editing >= 0) {
+				endEdit();
+				renderChips();
+			}
 			else elFilterInput.value = '';
 			return;
 		}
@@ -701,7 +787,7 @@
 		// outside reference, and a masked-out paper must not turn into a ghost of
 		// itself. `shown` is the visibility half.
 		let inCollection = new Set(raw.items.map(i => i.key));
-		let held = masked().items;
+		let held = masked(-1).items;
 		let shown = new Set(held.map(i => i.key));
 
 		// 1. Edges surviving the confidence, strategy and mask filters. An edge
