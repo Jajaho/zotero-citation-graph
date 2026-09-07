@@ -38,11 +38,41 @@ body {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	gap: 16px;
+	/* Wraps rather than overflowing: the controls outgrew one line on a narrow
+	   Zotero window, and a clipped toolbar hides settings the user needs. */
+	flex-wrap: wrap;
+	gap: 6px 16px;
 	padding: 6px 10px;
 	background: var(--toolbar-bg);
 	border-bottom: 1px solid var(--border);
 	white-space: nowrap;
+}
+
+#toolbar .group {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+#toolbar label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--muted);
+	cursor: pointer;
+}
+
+#toolbar label.disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+#min-cites {
+	width: 3.5em;
+}
+
+#color-by {
+	font: inherit;
 }
 
 #collection-name {
@@ -123,10 +153,4 @@ body {
 	display: inline-block;
 }
 
-#hide-label {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	color: var(--muted);
-	cursor: pointer;
-}
+

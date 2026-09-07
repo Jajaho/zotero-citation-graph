@@ -47,7 +47,7 @@ class ZoteroAdapter {
 	async listItems() {
 		if (this._items) return this._items;
 
-		let zItems = await collectionItems(this.collection, this.recursive);
+		let { items: zItems, collectionsByKey } = await collectionItems(this.collection, this.recursive);
 		await Zotero.Items.loadDataTypes(zItems);
 
 		let out = [];
@@ -70,6 +70,10 @@ class ZoteroAdapter {
 				extra: field(item, 'extra') || null,
 				url: field(item, 'url') || null,
 				creators: item.getCreators().map(c => c.lastName).filter(Boolean),
+				// Which of the in-scope collections hold this item. Only
+				// interesting once subcollections are included -- without them
+				// every item shares one name.
+				collections: collectionsByKey.get(item.key) || [],
 			});
 		}
 		this._items = out;
@@ -187,7 +191,14 @@ class ZoteroAdapter {
 	}
 }
 
-/** Items directly in the collection (plus descendants when asked). */
+/**
+ * Items directly in the collection, plus every descendant collection's when
+ * `recursive`. Also records which in-scope collections each item belongs to, so
+ * the renderer can colour by collection.
+ *
+ * getDescendents(false, 'collection') is flat and includes all levels, not just
+ * the immediate children -- so one call covers the whole subtree.
+ */
 async function collectionItems(collection, recursive) {
 	let collections = [collection];
 	if (recursive) {
@@ -203,6 +214,7 @@ async function collectionItems(collection, recursive) {
 		}
 	}
 	let byKey = new Map();
+	let collectionsByKey = new Map();
 	for (let c of collections) {
 		try {
 			await c.loadDataType('childItems');
@@ -212,9 +224,12 @@ async function collectionItems(collection, recursive) {
 		}
 		for (let item of c.getChildItems(false, false)) {
 			byKey.set(item.key, item);
+			let names = collectionsByKey.get(item.key);
+			if (!names) collectionsByKey.set(item.key, names = []);
+			if (!names.includes(c.name)) names.push(c.name);
 		}
 	}
-	return [...byKey.values()];
+	return { items: [...byKey.values()], collectionsByKey };
 }
 
 /**

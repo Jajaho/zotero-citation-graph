@@ -17,6 +17,11 @@ const { segment } = require('./refSection');
  * corroboration, only 49% were confirmed by OpenAlex. Confidence is therefore
  * tied to segmentation quality, and edges drawn from a guessed ('tail') scope
  * are emitted at a markedly lower score so the UI can style or hide them.
+ *
+ * This strategy cannot contribute external nodes and ignores `includeExternal`:
+ * it searches the reference text for titles it already holds, so a reference to
+ * something outside the collection is invisible to it by construction. Only the
+ * DOI strategies can name a work they do not have.
  */
 module.exports.id = register({
 	id: 'title-match',

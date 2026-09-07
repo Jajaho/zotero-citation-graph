@@ -1,7 +1,7 @@
 'use strict';
 
 const { register } = require('../core/registry');
-const { edge } = require('../core/types');
+const { edge, externalKey } = require('../core/types');
 const { findDois } = require('../core/normalize');
 const { segment } = require('./refSection');
 
@@ -26,7 +26,7 @@ module.exports.id = register({
 		minSegmentQuality: 'tail',
 	},
 
-	async *derive({ adapter, items, index, options, onProgress }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress }) {
 		const rank = { heading: 3, numbered: 2, tail: 1, none: 0 };
 		let done = 0;
 		for (const item of items) {
@@ -38,9 +38,16 @@ module.exports.id = register({
 				if (rank[seg.quality] < rank[options.minSegmentQuality]) continue;
 				for (const d of findDois(seg.flat)) {
 					const target = index.lookupDoi(d);
-					if (target && target !== item.key) {
-						yield edge(item.key, target, 'text-doi', 0.9,
-							{ doi: d, attachment: att.key, segment: seg.quality });
+					if (target) {
+						if (target !== item.key) {
+							yield edge(item.key, target, 'text-doi', 0.9,
+								{ doi: d, attachment: att.key, segment: seg.quality });
+						}
+					}
+					else if (includeExternal) {
+						// A cited work we do not hold; the DOI is all we know.
+						yield edge(item.key, externalKey('doi', d), 'text-doi', 0.9,
+							{ doi: d, attachment: att.key, segment: seg.quality, external: true });
 					}
 				}
 			}

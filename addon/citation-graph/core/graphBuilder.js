@@ -2,7 +2,7 @@
 
 const registry = require('./registry');
 const { CollectionIndex } = require('./collectionIndex');
-const { edgeKey } = require('./types');
+const { edgeKey, isExternalKey, parseExternalKey } = require('./types');
 
 /**
  * Runs the selected providers and merges their output into one graph.
@@ -12,6 +12,13 @@ const { edgeKey } = require('./types');
  * them. Provenance is never collapsed -- the UI needs it to explain an edge,
  * to style inferred edges differently from publisher-asserted ones, and to let
  * a user disable a noisy strategy without re-deriving everything else.
+ *
+ * `config.includeExternal` additionally keeps edges pointing at works that are
+ * NOT in the collection, as namespaced keys (see types.js externalKey). They
+ * are reported separately in `externalNodes` with a citedBy count, because
+ * there are far too many to show unfiltered -- 4,564 distinct DOIs across 127
+ * PDFs on the sample library. The count is the useful filter: a work several of
+ * your papers cite but you do not hold is a gap; one cited once is noise.
  */
 async function build(adapter, config = {}) {
 	const t0 = Date.now();
@@ -35,6 +42,11 @@ async function build(adapter, config = {}) {
 				items,
 				index,
 				options: p.options,
+				// Global rather than per-provider: it changes what the graph *is*,
+				// not how one strategy behaves. Providers that cannot produce
+				// external targets (title-match searches for titles it already
+				// knows) simply ignore it.
+				includeExternal: !!config.includeExternal,
 				signal: config.signal,
 				onProgress: (done, total, note) =>
 					config.onProgress && config.onProgress({ provider: p.id, done, total, note }),
@@ -42,7 +54,13 @@ async function build(adapter, config = {}) {
 			const out = await p.derive(ctx);
 			for await (const e of toAsyncIterable(out)) {
 				if (!e || !e.from || !e.to || e.from === e.to) continue;
-				if (!index.byKey.has(e.from) || !index.byKey.has(e.to)) continue;
+				// The citing side must always be a real collection item -- an edge
+				// between two works we do not hold says nothing about this library.
+				if (!index.byKey.has(e.from)) continue;
+				if (!index.byKey.has(e.to)
+						&& !(config.includeExternal && isExternalKey(e.to))) {
+					continue;
+				}
 				produced++;
 				const k = edgeKey(e.from, e.to);
 				const conf = e.confidence != null ? e.confidence : p.defaultConfidence;
@@ -74,10 +92,12 @@ async function build(adapter, config = {}) {
 	const edges = [...merged.values()];
 	const nodes = new Set();
 	for (const e of edges) { nodes.add(e.from); nodes.add(e.to); }
+	const externalNodes = collectExternalNodes(edges, k => index.byKey.has(k));
 
 	return {
 		items,
 		edges,
+		externalNodes,
 		nodeKeys: [...nodes],
 		index,
 		meta: {
@@ -89,6 +109,38 @@ async function build(adapter, config = {}) {
 			ms: Date.now() - t0,
 		},
 	};
+}
+
+/**
+ * Roll edges pointing outside the collection up into one node each.
+ *
+ * Exported because a caller that stitches several build() results together (the
+ * plugin runs the fast text strategies and the slow PDF scan as separate
+ * builds) has to recompute this over the combined edge list -- summing two
+ * builds' counts would double-count a work both strategies found.
+ *
+ * @param {import('./types').MergedEdge[]} edges
+ * @param {(key: string) => boolean} isInCollection
+ */
+function collectExternalNodes(edges, isInCollection) {
+	const externals = new Map();
+	for (const e of edges) {
+		if (isInCollection(e.to)) continue;
+		let x = externals.get(e.to);
+		if (!x) {
+			const parsed = parseExternalKey(e.to) || { ns: '', id: e.to };
+			x = { key: e.to, ns: parsed.ns, id: parsed.id, citedBy: 0, citedByKeys: [], confidence: 0, via: [] };
+			externals.set(e.to, x);
+		}
+		// Edges are already unique per ordered pair, so one edge is one citer.
+		x.citedBy++;
+		x.citedByKeys.push(e.from);
+		x.confidence = Math.max(x.confidence, e.confidence);
+		for (const v of e.via) if (!x.via.includes(v)) x.via.push(v);
+	}
+	// Most-cited first: the head of this list is "works several of your papers
+	// cite but you do not hold", which is the reason to compute it at all.
+	return [...externals.values()].sort((a, b) => b.citedBy - a.citedBy);
 }
 
 /** Accept a provider returning an array, a promise, or an async generator. */
@@ -113,4 +165,4 @@ function filterEdges(edges, { minConfidence = 0, via = null, excludeVia = [] } =
 	});
 }
 
-module.exports = { build, filterEdges };
+module.exports = { build, filterEdges, collectExternalNodes };

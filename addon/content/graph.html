@@ -8,19 +8,54 @@
 <body>
 	<div id="toolbar">
 		<span id="collection-name"></span>
-		<span id="strategies"></span>
-		<label id="conf-label">
-			min confidence
-			<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
-			<span id="conf-value">0.00</span>
-		</label>
-		<label id="hide-label">
-			<input id="hide-isolated" type="checkbox"/>
-			hide unconnected
-		</label>
+
+		<!-- Scope. Both of these change what gets derived, so they cost a
+		     rebuild; everything after them only filters the built graph. -->
+		<span class="group">
+			<label title="Include items from every subcollection">
+				<input id="recursive" type="checkbox"/>
+				subcollections
+			</label>
+			<label title="Show cited works that are not in the collection">
+				<input id="include-external" type="checkbox" checked="checked"/>
+				outside refs
+			</label>
+			<label id="min-cites-label" title="Hide outside works cited by fewer than this many of your papers">
+				cited by ≥
+				<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
+			</label>
+		</span>
+
+		<span class="group">
+			<label>
+				colour
+				<select id="color-by">
+					<option value="year">year</option>
+					<option value="collection">collection</option>
+					<option value="author">first author</option>
+					<option value="type">item type</option>
+				</select>
+			</label>
+		</span>
+
+		<span id="strategies" class="group"></span>
+
+		<span class="group">
+			<label id="conf-label">
+				min confidence
+				<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
+				<span id="conf-value">0.00</span>
+			</label>
+			<label>
+				<input id="hide-isolated" type="checkbox"/>
+				hide unconnected
+			</label>
+		</span>
+
 		<span id="stats"></span>
 		<button id="rebuild" type="button">Rebuild</button>
 	</div>
+
 	<div id="graph"></div>
 	<!-- Outside #graph deliberately: force-graph's init() does
 	     container.innerHTML = "", which would delete anything nested inside. -->

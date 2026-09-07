@@ -11,12 +11,13 @@ require('./edges/titleMatch');
 require('./edges/openalex');
 
 const registry = require('./core/registry');
-const { build, filterEdges } = require('./core/graphBuilder');
+const { build, filterEdges, collectExternalNodes } = require('./core/graphBuilder');
 const { CollectionIndex } = require('./core/collectionIndex');
 
 module.exports = {
 	build,
 	filterEdges,
+	collectExternalNodes,
 	registry,
 	CollectionIndex,
 	/** For a settings pane: everything the user can toggle. */

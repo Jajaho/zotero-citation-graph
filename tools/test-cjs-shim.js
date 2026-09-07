@@ -94,7 +94,9 @@ check('loads citation-graph/index.js through the shim', () => {
 
 check('all four strategies registered via nested requires', () => {
 	const cg = require_('./citation-graph/index.js');
-	const ids = cg.listStrategies().map(s => s.id).sort();
+	// Ignore anything a later check registers -- the registry is process-wide and
+	// this must not depend on which check ran first.
+	const ids = cg.listStrategies().map(s => s.id).filter(id => !id.startsWith('test-')).sort();
 	const want = ['openalex', 'pdf-links', 'text-doi', 'title-match'];
 	if (JSON.stringify(ids) !== JSON.stringify(want)) {
 		throw new Error('got ' + JSON.stringify(ids));
@@ -163,6 +165,101 @@ check('short text is refused by segmentation (no bogus edges)', () => {
 	return cg.build(adapter, { offline: true }).then((r) => {
 		if (r.edges.length) throw new Error('expected no edges, got ' + r.edges.length);
 	});
+});
+
+// --- external (out-of-collection) nodes -------------------------------------
+
+/** One item citing three DOIs, only one of which the collection holds. */
+function externalFixture() {
+	const items = [
+		{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Citing paper with a nice long title', doi: '10.1000/citing', date: '2020', creators: ['Smith'] },
+		{ key: 'BBBBBBBB', itemType: 'journalArticle', title: 'Nanometre-scale thermometry in a living cell', doi: '10.1038/nature12373', date: '2013', creators: ['Kucsko'] },
+		{ key: 'CCCCCCCC', itemType: 'journalArticle', title: 'A second citing paper with a long enough title', doi: '10.1000/citing2', date: '2021', creators: ['Jones'] },
+	];
+	return {
+		listItems: async () => items,
+		getAttachments: async k => (k === 'BBBBBBBB' ? [] : [{ key: k + '1', parentKey: k, contentType: 'application/pdf' }]),
+		getAttachmentText: async () => null,
+		getPdfLinkUris: async (attKey) => {
+			// Both citing papers link the same outside work; only one links the
+			// second outside work. That difference is what citedBy has to capture.
+			const common = ['https://doi.org/10.1038/nature12373', 'https://doi.org/10.5555/shared'];
+			return attKey === 'AAAAAAAA1' ? common.concat('https://doi.org/10.5555/lonely') : common;
+		},
+	};
+}
+
+check('external targets are dropped unless includeExternal is set', () => {
+	const cg = require_('./citation-graph/index.js');
+	return cg.build(externalFixture(), { enable: ['pdf-links'], offline: true }).then((r) => {
+		if (r.externalNodes.length) throw new Error('leaked ' + r.externalNodes.length + ' external nodes');
+		// The in-collection edges must be entirely unaffected by the new code path.
+		const keys = r.edges.map(e => e.from + '->' + e.to).sort();
+		if (JSON.stringify(keys) !== JSON.stringify(['AAAAAAAA->BBBBBBBB', 'CCCCCCCC->BBBBBBBB'])) {
+			throw new Error('in-collection edges changed: ' + JSON.stringify(keys));
+		}
+	});
+});
+
+check('includeExternal adds ghost nodes with a citedBy count', () => {
+	const cg = require_('./citation-graph/index.js');
+	return cg.build(externalFixture(), { enable: ['pdf-links'], offline: true, includeExternal: true }).then((r) => {
+		const byKey = Object.fromEntries(r.externalNodes.map(x => [x.key, x]));
+		if (!byKey['doi:10.5555/shared']) throw new Error('missing shared external node');
+		if (byKey['doi:10.5555/shared'].citedBy !== 2) {
+			throw new Error('shared citedBy = ' + byKey['doi:10.5555/shared'].citedBy);
+		}
+		if (byKey['doi:10.5555/lonely'].citedBy !== 1) throw new Error('lonely citedBy wrong');
+		// Sorted most-cited first, which is what makes the payload cap safe.
+		if (r.externalNodes[0].key !== 'doi:10.5555/shared') throw new Error('not sorted by citedBy');
+		// A work the collection DOES hold must stay a real node, never a ghost.
+		if (byKey['doi:10.1038/nature12373']) throw new Error('resolved DOI became a ghost');
+	});
+});
+
+check('an edge between two outside works is never kept', () => {
+	const cg = require_('./citation-graph/index.js');
+	const registry = require_('./citation-graph/core/registry');
+	// Register a deliberately misbehaving provider rather than trusting that no
+	// real one ever does this: the citing side must be a collection item.
+	if (!registry._providers.has('test-rogue')) {
+		registry.register({
+			id: 'test-rogue',
+			label: 'rogue',
+			defaultEnabled: false,
+			derive: () => [{ from: 'doi:10.1/a', to: 'doi:10.1/b', via: 'test-rogue', confidence: 1 }],
+		});
+	}
+	return cg.build(externalFixture(), { enable: ['test-rogue'], offline: true, includeExternal: true })
+		.then((r) => {
+			if (r.edges.length) throw new Error('kept ' + r.edges.length + ' ghost-to-ghost edges');
+		});
+});
+
+check('external keys cannot collide with Zotero item keys', () => {
+	const t = require_('./citation-graph/core/types');
+	// Zotero item keys are 8 uppercase alphanumerics -- no colon, so no overlap.
+	if (t.isExternalKey('ABCD1234')) throw new Error('item key read as external');
+	if (!t.isExternalKey('doi:10.1038/nature12373')) throw new Error('doi key not recognised');
+	if (t.isExternalKey('nonsense:x')) throw new Error('unknown namespace accepted');
+	const p = t.parseExternalKey(t.externalKey('doi', '10.1038/nature12373'));
+	if (p.ns !== 'doi' || p.id !== '10.1038/nature12373') throw new Error('round-trip failed');
+});
+
+check('collectExternalNodes merges across separate builds without double-counting', () => {
+	const cg = require_('./citation-graph/index.js');
+	// The plugin runs text strategies and the PDF scan as two builds, so the same
+	// outside work can appear in both edge lists. Summing the two builds' counts
+	// would say 2 citers where there is 1.
+	const edges = [
+		{ from: 'AAAAAAAA', to: 'doi:10.5555/x', confidence: 0.9, via: ['text-doi'] },
+		{ from: 'AAAAAAAA', to: 'doi:10.5555/x', confidence: 0.95, via: ['pdf-links'] },
+	];
+	const merged = require_('./lib/graphTab.js').mergeEdges([edges[0]], [edges[1]]);
+	const out = cg.collectExternalNodes(merged, () => false);
+	if (out.length !== 1) throw new Error('expected 1 external node, got ' + out.length);
+	if (out[0].citedBy !== 1) throw new Error('double-counted: citedBy = ' + out[0].citedBy);
+	if (out[0].via.length !== 2) throw new Error('lost provenance: ' + JSON.stringify(out[0].via));
 });
 
 // --- chrome-side modules ---------------------------------------------------

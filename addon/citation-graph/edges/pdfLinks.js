@@ -1,7 +1,7 @@
 'use strict';
 
 const { register } = require('../core/registry');
-const { edge } = require('../core/types');
+const { edge, externalKey } = require('../core/types');
 const { normDoi } = require('../core/normalize');
 
 /**
@@ -26,7 +26,7 @@ module.exports.id = register({
 		ignoreSelfOnly: true,
 	},
 
-	async *derive({ adapter, items, index, options, onProgress }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress }) {
 		let done = 0;
 		for (const item of items) {
 			onProgress && onProgress(++done, items.length, item.key);
@@ -47,8 +47,16 @@ module.exports.id = register({
 				}
 				for (const d of dois) {
 					const target = index.lookupDoi(d);
-					if (target && target !== item.key) {
-						yield edge(item.key, target, 'pdf-links', 0.95, { doi: d, attachment: att.key });
+					if (target) {
+						if (target !== item.key) {
+							yield edge(item.key, target, 'pdf-links', 0.95, { doi: d, attachment: att.key });
+						}
+					}
+					else if (includeExternal) {
+						// A cited work we do not hold. The DOI is all there is --
+						// resolving it to a title would need the network.
+						yield edge(item.key, externalKey('doi', d), 'pdf-links', 0.95,
+							{ doi: d, attachment: att.key, external: true });
 					}
 				}
 			}

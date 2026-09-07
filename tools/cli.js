@@ -8,6 +8,7 @@
  *   node citation-graph/cli.js --enable pdf-links,title-match
  *   node citation-graph/cli.js --enable openalex --mailto me@example.com
  *   node citation-graph/cli.js --compare pdf-links,text-doi,title-match,openalex
+ *   node citation-graph/cli.js --include-external      also count works NOT held
  *
  * --compare runs each named strategy on its own, then reports overlap. That is
  * how the precision question gets settled: an edge found only by title-match
@@ -20,7 +21,7 @@ const { LocalSqliteAdapter } = require('../addon/citation-graph/adapters/localSq
 const cg = require('../addon/citation-graph/index');
 
 function parseArgs(argv) {
-	const a = { dataDir: null, db: null, enable: null, disable: [], offline: false, compare: null, json: null, mailto: null, apiKey: null };
+	const a = { dataDir: null, db: null, enable: null, disable: [], offline: false, compare: null, json: null, mailto: null, apiKey: null, includeExternal: false };
 	for (let i = 2; i < argv.length; i++) {
 		const k = argv[i];
 		const next = () => argv[++i];
@@ -30,6 +31,7 @@ function parseArgs(argv) {
 		else if (k === '--disable') a.disable = next().split(',').map((s) => s.trim()).filter(Boolean);
 		else if (k === '--compare') a.compare = next().split(',').map((s) => s.trim()).filter(Boolean);
 		else if (k === '--offline') a.offline = true;
+		else if (k === '--include-external') a.includeExternal = true;
 		else if (k === '--json') a.json = next();
 		else if (k === '--mailto') a.mailto = next();
 		else if (k === '--api-key') a.apiKey = next();
@@ -112,6 +114,7 @@ function rpad(s, n) { return String(s).padStart(n); }
 		enable: args.enable,
 		disable: args.disable,
 		offline: args.offline,
+		includeExternal: args.includeExternal,
 		providers: providerOpts,
 		onProgress: ({ provider, done, total }) => {
 			const note = `${provider} ${done}/${total}`;
@@ -128,12 +131,31 @@ function rpad(s, n) { return String(s).padStart(n); }
 	for (const [id, s] of Object.entries(r.meta.perProvider)) {
 		console.log(' ', pad(id, 14), rpad(s.produced, 6), 'produced', rpad(s.newEdges, 6), 'new', rpad((s.ms / 1000).toFixed(1) + 's', 8));
 	}
-	console.log('\nTOTAL', r.edges.length, 'edges over', r.nodeKeys.length, 'of', r.items.length, 'items',
-		'in', (r.meta.ms / 1000).toFixed(1) + 's');
+	// nodeKeys includes out-of-collection targets when --include-external is on,
+	// so count the two populations separately rather than printing "3969 of 395".
+	const held = r.nodeKeys.filter((k) => r.index.byKey.has(k)).length;
+	console.log('\nTOTAL', r.edges.length, 'edges over', held, 'of', r.items.length, 'items'
+		+ (r.externalNodes.length ? ' (+' + r.externalNodes.length + ' outside)' : ''),
+	'in', (r.meta.ms / 1000).toFixed(1) + 's');
 
 	const byN = {};
 	for (const e of r.edges) { const n = e.via.length; byN[n] = (byN[n] || 0) + 1; }
 	console.log('edges by number of corroborating strategies:', JSON.stringify(byN));
+
+	if (args.includeExternal) {
+		// Nearly all of these are cited exactly once, which is why the plugin
+		// filters on the count rather than showing them all.
+		const hist = {};
+		for (const x of r.externalNodes) {
+			const b = x.citedBy >= 5 ? '5+' : String(x.citedBy);
+			hist[b] = (hist[b] || 0) + 1;
+		}
+		console.log('\noutside works cited:', r.externalNodes.length, 'by citedBy:', JSON.stringify(hist));
+		console.log('most cited:');
+		for (const x of r.externalNodes.slice(0, 10)) {
+			console.log(' ', rpad(x.citedBy, 4), pad(x.key, 44), x.via.join(','));
+		}
+	}
 
 	for (const t of [0.9, 0.7, 0.5]) {
 		console.log(`  confidence >= ${t}:`, cg.filterEdges(r.edges, { minConfidence: t }).length, 'edges');

@@ -22,7 +22,18 @@ let { PdfLinkCache } = require('./pdfLinkCache.js');
 const TEXT_STRATEGIES = ['text-doi', 'title-match'];
 const PDF_STRATEGIES = ['pdf-links'];
 
-let open_ = new Map(); // tabID -> { win, browser, collection, generation }
+// External nodes are unbounded in principle -- 4,564 distinct DOIs across 127
+// PDFs on the sample library, nearly all cited exactly once. The renderer's
+// min-citations control does the real filtering; this only stops a pathological
+// payload from crossing the bridge. Sorted most-cited first, so the cut only
+// ever loses singletons.
+const MAX_EXTERNAL_NODES = 4000;
+
+// Rebuild-triggering options. Everything else the toolbar offers is a filter
+// over an already-built graph and never comes back to chrome.
+const DEFAULT_OPTIONS = { recursive: false, includeExternal: true };
+
+let open_ = new Map(); // tabID -> { win, browser, collection, generation, options }
 
 async function open(win, collection, config) {
 	let title = 'Citation Graph — ' + collection.name;
@@ -47,7 +58,7 @@ async function open(win, collection, config) {
 	browser.setAttribute('src', `resource://${config.resRoot}/content/graph.html`);
 	container.appendChild(browser);
 
-	open_.set(id, { win, browser, collection, generation: 0 });
+	open_.set(id, { win, browser, collection, generation: 0, options: { ...DEFAULT_OPTIONS } });
 
 	let onDOMContentLoaded = (event) => {
 		if (browser.contentWindow && browser.contentWindow.document === event.target) {
@@ -93,9 +104,12 @@ async function handleMessage(win, tabID, collection, msg) {
 				await win.ZoteroPane.selectItem(msg.itemID);
 			}
 			break;
-		case 'rebuild':
+		case 'rebuild': {
+			let entry = open_.get(tabID);
+			if (entry && msg.options) Object.assign(entry.options, msg.options);
 			await runBuild(tabID);
 			break;
+		}
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
@@ -121,16 +135,27 @@ async function runBuild(tabID) {
 	let generation = ++entry.generation;
 	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
 
-	let { collection } = entry;
+	let { collection, options } = entry;
 	let cache = await PdfLinkCache.forProfile().load();
-	let adapter = new ZoteroAdapter(collection, { cache });
+	let adapter = new ZoteroAdapter(collection, { cache, recursive: options.recursive });
 	let items = [];
+	let inCollection = new Set();
 
 	let push = (edges, meta) => {
 		if (!alive()) return;
+		// External nodes are recomputed over the combined edge list rather than
+		// carried from each build: a work found by both text-doi and pdf-links is
+		// one node cited once, not two.
+		let external = options.includeExternal
+			? cg.collectExternalNodes(edges, k => inCollection.has(k))
+				.slice(0, MAX_EXTERNAL_NODES)
+				.map(toWireExternal)
+			: [];
 		send(entry, 'zgSetData', {
 			collection: { key: collection.key, name: collection.name },
+			options,
 			items,
+			external,
 			edges: edges.map(toWireEdge),
 			meta,
 		});
@@ -140,8 +165,9 @@ async function runBuild(tabID) {
 	};
 
 	// --- phase 1: nodes -------------------------------------------------
-	status('Loading collection…');
+	status(options.recursive ? 'Loading collection and subcollections…' : 'Loading collection…');
 	items = await adapter.listItems();
+	inCollection = new Set(items.map(i => i.key));
 	if (!alive()) return;
 	push([], { phase: 'items', items: items.length });
 	if (!items.length) {
@@ -154,6 +180,7 @@ async function runBuild(tabID) {
 	let textResult = await cg.build(adapter, {
 		enable: TEXT_STRATEGIES,
 		offline: true,
+		includeExternal: options.includeExternal,
 		onProgress: throttle(p => status(
 			`Reading indexed text… ${p.done}/${p.total} (${p.provider})`)),
 	});
@@ -172,6 +199,7 @@ async function runBuild(tabID) {
 	let pdfResult = await cg.build(adapter, {
 		enable: PDF_STRATEGIES,
 		offline: true,
+		includeExternal: options.includeExternal,
 		onProgress: throttle(p => status(
 			`Scanning PDFs for DOI links… ${p.done}/${p.total}`)),
 	});
@@ -222,6 +250,11 @@ function toWireEdge(e) {
 		via: e.via,
 		doi: (e.evidence || []).map(x => x.doi).find(Boolean) || null,
 	};
+}
+
+/** citedByKeys is only needed for the count, which is already computed. */
+function toWireExternal(x) {
+	return { key: x.key, ns: x.ns, id: x.id, citedBy: x.citedBy, via: x.via };
 }
 
 function send(entry, fn, value) {
