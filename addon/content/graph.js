@@ -271,6 +271,7 @@
 			n.creators = it.creators || [];
 			n.collections = it.collections || [];
 			n.year = year(it);
+			n.deg = deg;
 			n.inDeg = inDegree[it.key] || 0;
 			n.label = shortLabel(it, n.year);
 			nodes.push(n);
@@ -281,6 +282,7 @@
 			n.ghost = true;
 			n.name = x.id;
 			n.itemID = null;
+			n.deg = cites;
 			n.inDeg = cites;
 			n.label = ghostLabel(x);
 			nodes.push(n);
@@ -291,6 +293,11 @@
 			fg.onNodeClick(n => {
 				if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
 			});
+			// d3 re-initialises every registered force whenever the node array
+			// is replaced, so these pick up new nodes and new radii on their
+			// own and only ever need registering once.
+			fg.d3Force('centerPull', centerPull());
+			fg.d3Force('collide', collide());
 		}
 
 		fg.width(elGraph.clientWidth)
@@ -343,6 +350,125 @@
 	 *  coordinates. The label has to clear that, so it uses the same formula. */
 	function nodeRadius(n) {
 		return Math.sqrt(nodeVal(n)) * NODE_REL_SIZE;
+	}
+
+	// --- layout forces ----------------------------------------------------
+
+	/**
+	 * Pull every node toward the origin. force-graph's built-in centring force
+	 * only translates the whole cloud so its centroid sits at 0,0 -- it exerts
+	 * nothing on an individual node. A node with no edges therefore feels only
+	 * charge repulsion, which is purely outward, and drifts away forever.
+	 *
+	 * Connected nodes get a light pull (their links already hold them, and a
+	 * hard pull would crush the layout into a disc); unconnected ones get a
+	 * firm one, which parks them in a ring at the edge of the graph instead of
+	 * off screen.
+	 */
+	const PULL = 0.02;
+	const PULL_ORPHAN = 0.15;
+
+	function centerPull() {
+		let nodes = [];
+		function force(alpha) {
+			for (let n of nodes) {
+				let k = (n.deg ? PULL : PULL_ORPHAN) * alpha;
+				n.vx -= n.x * k;
+				n.vy -= n.y * k;
+			}
+		}
+		force.initialize = ns => {
+			nodes = ns;
+		};
+		return force;
+	}
+
+	/**
+	 * Hard-sphere collision, sized per node. Charge repulsion falls off with
+	 * distance and is balanced against link attraction, so it happily lets two
+	 * circles overlap -- and ours differ in radius several-fold, because a
+	 * much-cited paper is drawn much bigger. This is the same resolution rule
+	 * d3's forceCollide uses: if two circles interpenetrate at their projected
+	 * next position, push them apart along the line of centres and split the
+	 * correction by area, so the big node barely moves and the small one gives
+	 * way. Run at full strength over two passes -- overlap is a hard constraint
+	 * here, not a preference.
+	 *
+	 * Candidate pairs come from a uniform grid whose cell is the largest
+	 * distance at which any two nodes can touch, so only the 3x3 neighbourhood
+	 * has to be searched and the tick stays linear in node count.
+	 */
+	const COLLIDE_PAD = 3; // graph units of clear space left between circles
+	const COLLIDE_PASSES = 2;
+
+	function collide() {
+		let nodes = [];
+		let radii = [];
+		let cell = 1;
+
+		function force() {
+			if (nodes.length < 2) return;
+			for (let pass = 0; pass < COLLIDE_PASSES; pass++) {
+				let grid = new Map();
+				for (let i = 0; i < nodes.length; i++) {
+					let n = nodes[i];
+					let key = Math.floor((n.x + n.vx) / cell) + ',' + Math.floor((n.y + n.vy) / cell);
+					let bucket = grid.get(key);
+					if (bucket) bucket.push(i);
+					else grid.set(key, [i]);
+				}
+				for (let i = 0; i < nodes.length; i++) {
+					let a = nodes[i];
+					let ri = radii[i];
+					let cx = Math.floor((a.x + a.vx) / cell);
+					let cy = Math.floor((a.y + a.vy) / cell);
+					for (let gx = cx - 1; gx <= cx + 1; gx++) {
+						for (let gy = cy - 1; gy <= cy + 1; gy++) {
+							let bucket = grid.get(gx + ',' + gy);
+							if (!bucket) continue;
+							for (let j of bucket) {
+								// Each pair is resolved once, by its lower index.
+								if (j <= i) continue;
+								let b = nodes[j];
+								let rj = radii[j];
+								let r = ri + rj + COLLIDE_PAD;
+								let dx = (b.x + b.vx) - (a.x + a.vx);
+								let dy = (b.y + b.vy) - (a.y + a.vy);
+								let l2 = dx * dx + dy * dy;
+								if (l2 >= r * r) continue;
+								// Exactly coincident: no line of centres to push
+								// along, so pick an arbitrary one.
+								if (l2 < 1e-12) {
+									dx = (Math.random() - 0.5) * 1e-4;
+									dy = (Math.random() - 0.5) * 1e-4;
+									l2 = dx * dx + dy * dy;
+								}
+								let l = Math.sqrt(l2);
+								let push = (r - l) / l;
+								dx *= push;
+								dy *= push;
+								// Share of the correction taken by b, weighted by
+								// a's area: the heavier circle stays put.
+								let wb = (ri * ri) / (ri * ri + rj * rj);
+								b.vx += dx * wb;
+								b.vy += dy * wb;
+								a.vx -= dx * (1 - wb);
+								a.vy -= dy * (1 - wb);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		force.initialize = ns => {
+			nodes = ns;
+			radii = nodes.map(nodeRadius);
+			let maxR = 0;
+			for (let r of radii) if (r > maxR) maxR = r;
+			cell = 2 * maxR + COLLIDE_PAD;
+		};
+		return force;
 	}
 
 	function drawLabel(node, ctx, globalScale) {
