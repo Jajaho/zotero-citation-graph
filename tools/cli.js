@@ -24,6 +24,7 @@ const path = require('path');
 const fs = require('fs');
 const { LocalSqliteAdapter } = require('../addon/citation-graph/adapters/localSqlite');
 const cg = require('../addon/citation-graph/index');
+const { normDoi } = require('../addon/citation-graph/core/normalize');
 
 function parseArgs(argv) {
 	const a = { dataDir: null, db: null, enable: null, disable: [], offline: false, compare: null, json: null, apiKey: null, includeExternal: false, enrich: false, maxEnrich: 500 };
@@ -172,7 +173,18 @@ function rpad(s, n) { return String(s).padStart(n); }
 		console.log('\noutside works cited:', r.externalNodes.length, 'by citedBy:', JSON.stringify(hist));
 
 		if (args.enrich) {
-			const toName = r.externalNodes.slice(0, args.maxEnrich).map((x) => x.key);
+			// Held items are looked up too, exactly as the plugin does: sizing or
+			// ranking by global citations is meaningless if only half the graph
+			// has a count. Both populations key off the same doi: namespace.
+			const heldByDoiKey = new Map();
+			for (const it of r.items) {
+				const d = normDoi(it.doi);
+				if (d) heldByDoiKey.set('doi:' + d, it.key);
+			}
+			const toName = [...new Set([
+				...r.externalNodes.slice(0, args.maxEnrich).map((x) => x.key),
+				...heldByDoiKey.keys(),
+			])];
 			process.stderr.write(`resolving ${toName.length} identifiers…\r`);
 			const e = await cg.enrich(toName, {
 				providers: { openalex: { apiKey: args.apiKey || null } },
@@ -180,8 +192,22 @@ function rpad(s, n) { return String(s).padStart(n); }
 			process.stderr.write(''.padEnd(40) + '\r');
 			metadata = e.metadata;
 			console.log('enriched  :', e.meta.resolved, 'of', e.meta.requested,
+				`(${heldByDoiKey.size} held, ${toName.length - heldByDoiKey.size} outside)`,
 				'via', e.meta.ran.join(', ') || '(none)', 'in', (e.meta.ms / 1000).toFixed(1) + 's');
 			if (e.meta.errors.length) console.log('errors    :', JSON.stringify(e.meta.errors));
+
+			// The comparison the graph's two sizing modes make visually: what this
+			// library leans on, versus what the literature does.
+			const held = [...heldByDoiKey].map(([dk, key]) => ({ key, m: metadata[dk] }))
+				.filter((x) => x.m && x.m.citedByGlobal != null)
+				.sort((a, b) => b.m.citedByGlobal - a.m.citedByGlobal);
+			if (held.length) {
+				console.log('\nheld items, most cited globally:');
+				for (const h of held.slice(0, 5)) {
+					console.log(' ', rpad(h.m.citedByGlobal, 8), pad(h.key, 10),
+						String(h.m.title || '').slice(0, 58));
+				}
+			}
 		}
 
 		// "cited by N here" is the signal the ghost feature exists to surface;

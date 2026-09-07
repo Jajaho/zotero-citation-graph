@@ -23,15 +23,22 @@ const FIELDS = ['title', 'creators', 'year', 'itemType', 'doi', 'url', 'citedByG
  * either right or wrong and two sources disagreeing about one is a data bug
  * rather than something to average.
  *
+ * A `config.cache` short-circuits the whole chain per key. It is injected
+ * rather than imported because the only implementation touches IOUtils and
+ * would drag a chrome-only dependency into this host-agnostic tree; see
+ * lib/metadataCache.js.
+ *
  * @param {(string|{key:string,ns:string,id:string})[]} keys
  *        External node keys ('doi:10.1038/nature12373'), or pre-parsed refs.
  * @param {Object} [config]  enable/disable/offline/providers, as registry.select
  * @param {Function} [config.onProgress]  ({ provider, done, total }) => void
+ * @param {{get: Function, set: Function}} [config.cache]
  * @returns {Promise<{metadata: Object<string, Metadata>, meta: Object}>}
  */
 async function enrich(keys, config = {}) {
 	const t0 = Date.now();
 	const { providers, skippedForOffline } = enrichRegistry.select(config);
+	const cache = config.cache || null;
 
 	/** @type {Object<string, import('./types').Metadata>} */
 	const metadata = Object.create(null);
@@ -45,6 +52,17 @@ async function enrich(keys, config = {}) {
 		if (!ref || seen.has(ref.key)) continue;
 		seen.add(ref.key);
 		allRefs.push(ref);
+	}
+
+	// Seed from the cache first. A cached entry is complete by construction --
+	// only complete ones are written back -- so the per-provider filter below
+	// then skips it, and a fully cached run makes no requests at all.
+	const cached = new Set();
+	if (cache) {
+		for (const ref of allRefs) {
+			const hit = cache.get(ref.key);
+			if (hit && hit.title) { metadata[ref.key] = hit; cached.add(ref.key); }
+		}
 	}
 
 	for (const p of providers) {
@@ -77,6 +95,17 @@ async function enrich(keys, config = {}) {
 		perProvider[p.id] = { asked: refs.length, resolved, ms: Date.now() - started };
 	}
 
+	// Write back only what a provider produced this run (never what the cache
+	// just handed us, which would refresh its own timestamp forever and defeat
+	// the TTL), and only when it carries a title: caching a half-answer would
+	// stop the chain from ever completing it.
+	if (cache) {
+		for (const ref of allRefs) {
+			const m = metadata[ref.key];
+			if (m && m.title && !cached.has(ref.key)) cache.set(ref.key, m);
+		}
+	}
+
 	return {
 		metadata,
 		meta: {
@@ -86,6 +115,7 @@ async function enrich(keys, config = {}) {
 			errors,
 			requested: allRefs.length,
 			resolved: Object.keys(metadata).length,
+			fromCache: cached.size,
 			ms: Date.now() - t0,
 		},
 	};

@@ -16,6 +16,9 @@
 let cg = require('../citation-graph/index.js');
 let { ZoteroAdapter } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
+let { MetadataCache } = require('./metadataCache.js');
+let { normDoi } = require('../citation-graph/core/normalize.js');
+let { externalKey } = require('../citation-graph/core/types.js');
 
 // Ordered fastest-first. Every EDGE strategy here is offline; `openalex` is
 // registered but never selected, so no edge build reaches the network. The
@@ -126,6 +129,9 @@ async function handleMessage(win, tabID, collection, msg) {
 			await runBuild(tabID);
 			break;
 		}
+		case 'add-item':
+			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi);
+			break;
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
@@ -160,6 +166,10 @@ async function runBuild(tabID) {
 	// later push. Held here rather than in the payload so a re-push before
 	// enrichment finishes simply carries no names, instead of dropping them.
 	let metadata = Object.create(null);
+	// Zotero item key -> global citation count, for the held items. Separate
+	// from `metadata` because these nodes already have a name from the library;
+	// the only thing enrichment adds is the count.
+	let heldCounts = Object.create(null);
 
 	let push = (edges, meta) => {
 		if (!alive()) return;
@@ -174,7 +184,11 @@ async function runBuild(tabID) {
 		send(entry, 'zgSetData', {
 			collection: { key: collection.key, name: collection.name },
 			options,
-			items,
+			// citedByGlobal is folded in rather than carried on the item objects
+			// themselves, so the adapter's output stays exactly what the CLI sees.
+			items: items.map(it => (heldCounts[it.key] != null
+				? { ...it, citedByGlobal: heldCounts[it.key] }
+				: it)),
 			external,
 			edges: edges.map(toWireEdge),
 			meta,
@@ -243,27 +257,107 @@ async function runBuild(tabID) {
 	// Last on purpose: it is the only network phase, it is optional, and a
 	// failure here must cost names and nothing else -- the graph is already
 	// on screen and correct by this point.
-	if (!options.enrich || !external.length) {
+	if (!options.enrich) {
 		status('');
 		return;
 	}
-	let toName = external.slice(0, MAX_ENRICH).map(x => x.key);
-	status(`Looking up ${toName.length} outside works…`);
-	let enriched = await cg.enrich(toName, {
+
+	// Ghosts need a name; held items already have one and need only the global
+	// count, which is what makes "size by global citations" meaningful for the
+	// whole graph rather than half of it. Both are DOIs, so they go in one
+	// batched pass -- doiKey is the shared address space.
+	let ghostKeys = external.slice(0, MAX_ENRICH).map(x => x.key);
+	let heldByDoiKey = new Map();
+	for (let it of items) {
+		let d = normDoi(it.doi);
+		if (d) heldByDoiKey.set(externalKey('doi', d), it.key);
+	}
+	let toLookUp = [...new Set([...ghostKeys, ...heldByDoiKey.keys()])];
+	if (!toLookUp.length) {
+		status('');
+		return;
+	}
+
+	let metaCache = await MetadataCache.forProfile().load();
+	status(`Looking up ${toLookUp.length} works…`);
+	let enriched = await cg.enrich(toLookUp, {
 		enable: enricherList(),
+		cache: metaCache,
 		providers: { openalex: { apiKey: pref('openalex.apiKey') || null } },
 		onProgress: throttle(p => status(
-			`Looking up outside works… ${p.done}/${p.total} (${p.provider})`)),
+			`Looking up works… ${p.done}/${p.total} (${p.provider})`)),
 	});
+	await metaCache.flush();
 	if (!alive()) return;
+
 	metadata = enriched.metadata;
+	heldCounts = Object.create(null);
+	for (let [doiKey, itemKey] of heldByDoiKey) {
+		let m = enriched.metadata[doiKey];
+		if (m && m.citedByGlobal != null) heldCounts[itemKey] = m.citedByGlobal;
+	}
+
 	push(edges, { phase: 'done', ...baseMeta, enrich: enriched.meta });
 	Zotero.debug(`[zotero-graph] enrich -> ${enriched.meta.resolved}/${enriched.meta.requested}`
-		+ ` named in ${enriched.meta.ms}ms`);
+		+ ` named (${enriched.meta.fromCache} cached) in ${enriched.meta.ms}ms`);
 	for (let err of enriched.meta.errors) {
 		Zotero.logError(new Error(`[zotero-graph] enrich ${err.provider}: ${err.message}`));
 	}
 	status('');
+}
+
+/**
+ * Add an outside reference to the library, by DOI.
+ *
+ * This is Zotero's own add-by-identifier path (chrome/content/zotero/lookup.js,
+ * Zotero_Lookup.addItemsFromIdentifier) called directly. Handing the whole
+ * translator list to setTranslator() is deliberate and load-bearing: on no
+ * result, Zotero.Translate.Search#complete shifts to the next one and retries,
+ * so this inherits the entire DOI fallback chain for free.
+ *
+ * extractIdentifiers() is not needed -- a ghost's key already holds a DOI that
+ * normDoi produced.
+ */
+async function addByDoi(win, tabID, collection, doi) {
+	let entry = open_.get(tabID);
+	let status = (t) => entry && send(entry, 'zgSetStatus', t);
+	let d = normDoi(doi);
+	if (!d) {
+		status('Not a usable DOI: ' + doi);
+		return;
+	}
+
+	status('Adding ' + d + '…');
+	let translate = new Zotero.Translate.Search();
+	translate.setIdentifier({ DOI: d });
+	let newItems = [];
+	try {
+		let translators = await translate.getTranslators();
+		if (!translators.length) throw new Error('no translator accepted the DOI');
+		translate.setTranslator(translators);
+		newItems = await translate.translate({
+			libraryID: collection.libraryID,
+			collections: [collection.id],
+			// Zotero's own open-access PDF lookup, for free.
+			saveAttachments: true,
+		});
+	}
+	catch (e) {
+		Zotero.logError(e);
+		status('Could not add ' + d + ': ' + (e && e.message ? e.message : e));
+		return;
+	}
+	if (!newItems.length) {
+		status('No metadata found for ' + d);
+		return;
+	}
+
+	// The ghost's key was 'doi:<doi>'; the work is now a real item with an
+	// 8-character key, and every edge pointing at it has to be re-derived.
+	// A rebuild is the only way to get that consistently, and it is cheap here:
+	// phase 3 comes off the warm pdfLinkCache and phase 4 off the metadata cache.
+	status('Added "' + newItems[0].getDisplayTitle() + '" — rebuilding…');
+	await runBuild(tabID);
 }
 
 /** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */

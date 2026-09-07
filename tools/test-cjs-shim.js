@@ -474,6 +474,73 @@ check('enrichment honours the global offline switch', () => {
 	});
 });
 
+check('a cache hit short-circuits the providers entirely', () => {
+	const cg = require_('./citation-graph/index.js');
+	const enrichRegistry = require_('./citation-graph/core/enrichRegistry');
+	let calls = 0;
+	if (!enrichRegistry._providers.has('test-counting')) {
+		enrichRegistry.register({
+			id: 'test-counting',
+			label: 'counting',
+			requiresNetwork: false,
+			supports: ['doi'],
+			resolve: ({ refs }) => {
+				calls++;
+				return refs.map(r => ({ key: r.key, title: 'T', citedByGlobal: 1 }));
+			},
+		});
+	}
+	const store = new Map();
+	const cache = { get: k => store.get(k) || null, set: (k, m) => store.set(k, m) };
+	const cfg = () => ({ enable: ['test-counting'], cache });
+
+	return cg.enrich(['doi:10.1000/a'], cfg()).then((first) => {
+		if (calls !== 1) throw new Error('first run made ' + calls + ' provider calls');
+		if (first.meta.fromCache !== 0) throw new Error('reported a hit on a cold cache');
+		if (!store.has('doi:10.1000/a')) throw new Error('nothing was written back');
+		return cg.enrich(['doi:10.1000/a'], cfg());
+	}).then((second) => {
+		// The whole point: a warm cache costs no requests at all.
+		if (calls !== 1) throw new Error('warm run still called the provider (' + calls + ')');
+		if (second.meta.fromCache !== 1) throw new Error('fromCache ' + second.meta.fromCache);
+		if (second.metadata['doi:10.1000/a'].title !== 'T') throw new Error('lost the cached value');
+	});
+});
+
+check('a half-answer is never cached, so the chain can still complete it', () => {
+	const cg = require_('./citation-graph/index.js');
+	const enrichRegistry = require_('./citation-graph/core/enrichRegistry');
+	if (!enrichRegistry._providers.has('test-countonly')) {
+		enrichRegistry.register({
+			id: 'test-countonly',
+			label: 'count only',
+			requiresNetwork: false,
+			supports: ['doi'],
+			// Knows the count but not the title -- exactly the case that must not
+			// be cached, or the enricher that knows the title never gets asked.
+			resolve: ({ refs }) => refs.map(r => ({ key: r.key, citedByGlobal: 5 })),
+		});
+	}
+	const store = new Map();
+	const cache = { get: k => store.get(k) || null, set: (k, m) => store.set(k, m) };
+	return cg.enrich(['doi:10.1000/b'], { enable: ['test-countonly'], cache }).then(() => {
+		if (store.has('doi:10.1000/b')) throw new Error('cached a titleless entry');
+	});
+});
+
+check('MetadataCache expires on age, unlike the content-stamped PDF cache', () => {
+	const { MetadataCache } = require_('./lib/metadataCache.js');
+	const c = new MetadataCache('/tmp/nowhere', { ttl: 50 });
+	c.set('doi:10.1000/a', { key: 'doi:10.1000/a', title: 'T' });
+	if (!c.get('doi:10.1000/a')) throw new Error('fresh entry missed');
+	// Backdate past the TTL rather than sleeping.
+	c.data.entries['doi:10.1000/a'].at = Date.now() - 1000;
+	if (c.get('doi:10.1000/a')) throw new Error('stale entry served');
+	// A citation count has no local invalidation signal, which is the whole
+	// reason this cache ages out where pdfLinkCache stamps instead.
+	if (c.size !== 1) throw new Error('expiry should not evict, only refuse');
+});
+
 check('toWireExternal keeps local and global counts as separate fields', () => {
 	const { toWireExternal } = require_('./lib/graphTab.js');
 	const x = { key: 'doi:10.1/a', ns: 'doi', id: '10.1/a', citedBy: 3, via: ['pdf-links'] };
@@ -493,6 +560,8 @@ check('lib/ modules load through the shim', () => {
 	if (typeof za.ZoteroAdapter !== 'function') throw new Error('no ZoteroAdapter');
 	const c = require_('./lib/pdfLinkCache.js');
 	if (typeof c.PdfLinkCache !== 'function') throw new Error('no PdfLinkCache');
+	const m = require_('./lib/metadataCache.js');
+	if (typeof m.MetadataCache !== 'function') throw new Error('no MetadataCache');
 	const t = require_('./lib/graphTab.js');
 	if (typeof t.open !== 'function') throw new Error('no open()');
 });

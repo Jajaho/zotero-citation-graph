@@ -41,6 +41,15 @@
 					<option value="type">item type</option>
 				</select>
 			</label>
+			<!-- Applies to outside refs as well as held items. "global citations"
+			     needs "look up names" on, or nothing has a count to size by. -->
+			<label>
+				size
+				<select id="size-by">
+					<option value="here">cited here</option>
+					<option value="global">global citations</option>
+				</select>
+			</label>
 		</span>
 
 		<span id="strategies" class="group"></span>
@@ -63,8 +72,21 @@
 
 	<div id="graph"></div>
 	<!-- Outside #graph deliberately: force-graph's init() does
-	     container.innerHTML = "", which would delete anything nested inside. -->
+	     container.innerHTML = "", which would delete anything nested inside.
+	     Same reason the action popover is a sibling and not a child. -->
 	<div id="status">Loading…</div>
+
+	<!-- Shown when an outside reference is clicked. Adding to Zotero is a write
+	     to the library, so it is behind an explicit button rather than the
+	     click itself -- a stray click while panning must not add an item. -->
+	<div id="action" hidden="hidden">
+		<div id="action-title"></div>
+		<div id="action-sub"></div>
+		<div id="action-buttons">
+			<button id="action-add" type="button">Add to Zotero</button>
+			<button id="action-close" type="button">Close</button>
+		</div>
+	</div>
 
 	<!-- Both scripts are same-origin resource:// URLs, so no inline script is
 	     needed and every CSP configuration in Zotero 7-11 allows them. -->

@@ -30,6 +30,10 @@
 	let nodeCache = new Map(); // id -> node object, so x/y survive a re-render
 	let disabledVia = new Set();
 	let yearRange = null;
+	// Largest global citation count among the nodes actually on screen, which is
+	// what nodeVal normalises against. Recomputed every render because filtering
+	// out the one landmark paper should rescale everything else.
+	let globalMax = 0;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -45,6 +49,8 @@
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
 	let elColorBy = el('color-by');
+	let elSizeBy = el('size-by');
+	let elAction = el('action');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -73,6 +79,9 @@
 			elEnrich.checked = !!raw.options.enrich;
 		}
 		yearRange = null;
+		// The ghost the popover describes may not exist in this payload -- after
+		// an add it is a real item, and after a rebuild it may be filtered out.
+		hideAction();
 		renderStrategyToggles();
 		// Only auto-hide unconnected nodes the first time edges show up; after
 		// that the checkbox belongs to the user.
@@ -150,7 +159,19 @@
 		if (x.citedByGlobal != null) {
 			bits.push(x.citedByGlobal.toLocaleString() + ' citations total');
 		}
+		bits.push('click to add to Zotero');
 		return 'Not in collection — ' + head + '<br/>' + bits.join(' · ');
+	}
+
+	/** Held items. Same two counts, same wording, so they read side by side. */
+	function itemTooltip(n) {
+		let bits = [];
+		if (n.inDeg) bits.push('cited by ' + n.inDeg + ' here');
+		if (n.citedByGlobal != null) {
+			bits.push(n.citedByGlobal.toLocaleString() + ' citations total');
+		}
+		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
+			+ (bits.length ? '<br/>' + bits.join(' · ') : '');
 	}
 
 	// --- colour -----------------------------------------------------------
@@ -307,6 +328,7 @@
 			n.year = year(it);
 			n.deg = deg;
 			n.inDeg = inDegree[it.key] || 0;
+			n.citedByGlobal = it.citedByGlobal != null ? it.citedByGlobal : null;
 			n.label = shortLabel(it, n.year);
 			nodes.push(n);
 		}
@@ -321,15 +343,26 @@
 			// Node size stays on local in-degree; citedByGlobal is tooltip-only.
 			// A famous paper you do not hold is not a gap in your library.
 			n.meta = x;
+			n.citedByGlobal = x.citedByGlobal != null ? x.citedByGlobal : null;
 			n.label = ghostLabel(x);
 			nodes.push(n);
 		}
 
+		// After both populations are in: the scale spans held items and ghosts
+		// alike, so the two are directly comparable at a glance.
+		globalMax = 0;
+		for (let n of nodes) {
+			if (n.citedByGlobal != null && n.citedByGlobal > globalMax) globalMax = n.citedByGlobal;
+		}
+
 		if (!fg) {
 			fg = ForceGraph()(elGraph);
-			fg.onNodeClick(n => {
-				if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
+			fg.onNodeClick((n, event) => {
+				if (n.ghost) showAction(n, event);
+				else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
 			});
+			// Clicking empty canvas dismisses, the way a popover should.
+			fg.onBackgroundClick(hideAction);
 			// d3 re-initialises every registered force whenever the node array
 			// is replaced, so these pick up new nodes and new radii on their
 			// own and only ever need registering once.
@@ -341,10 +374,7 @@
 			.height(elGraph.clientHeight)
 			.graphData({ nodes, links })
 			.nodeId('id')
-			.nodeLabel(n => (n.ghost
-				? ghostTooltip(n)
-				: escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
-					+ (n.inDeg ? ' — cited by ' + n.inDeg + ' here' : '')))
+			.nodeLabel(n => (n.ghost ? ghostTooltip(n) : itemTooltip(n)))
 			.nodeRelSize(NODE_REL_SIZE)
 			.nodeVal(nodeVal)
 			.nodeColor(nodeColor)
@@ -379,11 +409,33 @@
 	 */
 	const NODE_REL_SIZE = 4;
 
-	/** In-degree = how many papers in this collection cite it. Sizing by it is the
-	 *  whole reason the graph is directed. Ghosts stay small: they are context,
-	 *  not the subject. */
+	/**
+	 * Node area. Two metrics, chosen in the toolbar, and both apply to outside
+	 * references as well as held items.
+	 *
+	 *  cited here      in-degree: how many papers in THIS collection cite it.
+	 *                  The default, and the reason the graph is directed at all.
+	 *  global citations how often the whole literature cites it. Needs "look up
+	 *                  names" on, and is log-scaled: raw counts span 0 to ~10^5,
+	 *                  so a linear map would leave everything but a handful of
+	 *                  landmark papers as indistinguishable dots.
+	 *
+	 * Anything with no known global count sizes as UNKNOWN_VAL rather than as
+	 * zero, so "not looked up" stays visually distinct from "never cited".
+	 */
+	const UNKNOWN_VAL = 0.6;
+
 	function nodeVal(n) {
-		return n.ghost ? 0.6 : 1 + n.inDeg * 2;
+		if (elSizeBy.value === 'global') {
+			if (n.citedByGlobal == null) return UNKNOWN_VAL;
+			// Normalised against the largest count on screen so the full size
+			// range is used whatever the field: a maths collection topping out
+			// at 300 citations should not render smaller than a genomics one.
+			let top = Math.log10(1 + (globalMax || 1));
+			let frac = top > 0 ? Math.log10(1 + n.citedByGlobal) / top : 0;
+			return 1 + 8 * frac;
+		}
+		return 1 + n.inDeg * 2;
 	}
 
 	/** force-graph draws a node as a circle of sqrt(val) * nodeRelSize, in graph
@@ -560,6 +612,67 @@
 			c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 	}
 
+	// --- the outside-reference action popover -----------------------------
+
+	/**
+	 * Adding an item WRITES to the library, so it sits behind an explicit
+	 * button. Doing it on the node click itself would mean a stray click while
+	 * panning silently files a paper -- cheap to undo, but not something to do
+	 * without being asked.
+	 */
+	let actionNode = null;
+
+	function showAction(n, event) {
+		actionNode = n;
+		let x = n.meta || {};
+		el('action-title').textContent = x.title || n.name;
+		let sub = [];
+		if (x.creators && x.creators.length) {
+			sub.push(x.creators.slice(0, 3).join(', ') + (x.creators.length > 3 ? ' et al.' : ''));
+		}
+		if (x.year) sub.push(x.year);
+		sub.push('cited by ' + n.inDeg + ' here');
+		if (x.citedByGlobal != null) sub.push(x.citedByGlobal.toLocaleString() + ' citations total');
+		// The DOI is the thing actually being added, so show it verbatim.
+		sub.push(n.name);
+		el('action-sub').textContent = sub.join(' · ');
+
+		let add = el('action-add');
+		add.disabled = false;
+		add.textContent = 'Add to Zotero';
+
+		// Position at the pointer, clamped so the popover cannot open off-screen
+		// at the right or bottom edge where the graph is usually densest.
+		elAction.hidden = false;
+		let w = elAction.offsetWidth;
+		let h = elAction.offsetHeight;
+		let px = event ? event.clientX : window.innerWidth / 2;
+		let py = event ? event.clientY : window.innerHeight / 2;
+		elAction.style.left = Math.max(4, Math.min(px + 12, window.innerWidth - w - 8)) + 'px';
+		elAction.style.top = Math.max(4, Math.min(py + 12, window.innerHeight - h - 8)) + 'px';
+	}
+
+	function hideAction() {
+		elAction.hidden = true;
+		actionNode = null;
+	}
+
+	el('action-close').addEventListener('click', hideAction);
+	el('action-add').addEventListener('click', () => {
+		if (!actionNode) return;
+		let add = el('action-add');
+		add.disabled = true;
+		add.textContent = 'Adding…';
+		// Chrome answers by rebuilding, which re-pushes and re-renders; the
+		// popover is dismissed now because the node it describes is about to
+		// stop existing as a ghost.
+		emit({ type: 'add-item', doi: actionNode.name });
+		hideAction();
+	});
+	window.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape') hideAction();
+	});
+
 	// --- controls ---------------------------------------------------------
 
 	function syncEnabled() {
@@ -568,6 +681,16 @@
 		elEnrich.disabled = !on;
 		el('min-cites-label').classList.toggle('disabled', !on);
 		el('enrich-label').classList.toggle('disabled', !on);
+
+		// Nothing has a global count until the lookup has run, so offering to
+		// size by one would just flatten every node to the same dot.
+		let haveCounts = !!(raw && raw.options && raw.options.enrich);
+		let globalOpt = elSizeBy.querySelector('option[value="global"]');
+		globalOpt.disabled = !haveCounts;
+		globalOpt.textContent = haveCounts
+			? 'global citations'
+			: 'global citations (needs look up names)';
+		if (!haveCounts && elSizeBy.value === 'global') elSizeBy.value = 'here';
 	}
 
 	/** Scope changes cannot be filtered into existence -- they need a new build. */
@@ -593,6 +716,12 @@
 	elMinConf.addEventListener('input', render);
 	elMinCites.addEventListener('input', render);
 	elColorBy.addEventListener('change', render);
+	// Size changes node radii, which the collision force sizes its grid from --
+	// re-registering it is what makes it pick the new radii up.
+	elSizeBy.addEventListener('change', () => {
+		render();
+		if (fg) fg.d3Force('collide', collide()).d3ReheatSimulation();
+	});
 	elHideIsolated.addEventListener('change', () => {
 		elHideIsolated.dataset.touched = '1';
 		render();
