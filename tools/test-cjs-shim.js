@@ -819,6 +819,154 @@ check('an outside reference resolves through whichever namespace keyed it', () =
 	if (L.externalUrl('pmid', '12345') !== null) throw new Error('invented a URL for an unknown ns');
 });
 
+// --- filter masks (content/nodeFilters.js) ----------------------------------
+
+/** Same trick as loadScale(): evaluate the content-page script as a browser would. */
+function loadFilters() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/nodeFilters.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'nodeFilters.js' });
+	if (!ctx.ZGFilters) throw new Error('nodeFilters.js did not publish ZGFilters');
+	return ctx.ZGFilters;
+}
+
+/** A small library with the shapes that actually break things: a second-position
+ *  author, an item in two collections, and one with no venue at all. */
+function library(F) {
+	return [
+		{
+			creators: ['Kucsko', 'Maurer'], year: 2013, itemType: 'journalArticle',
+			publication: 'Nature', collections: ['Quantum'], title: 'Nanometre-scale thermometry',
+		},
+		{
+			creators: ['Maurer', 'Kucsko'], year: 2012, itemType: 'journalArticle',
+			publication: 'Science', collections: ['Quantum', 'Sensing'], title: 'Room-temperature memory',
+		},
+		{
+			creators: ['Socrates'], year: 1999, itemType: 'book',
+			publication: null, collections: ['Philosophy'], title: 'Tales of the Republic',
+		},
+	].map(F.facets);
+}
+
+const hits = (F, lib, ...texts) => lib
+	.map((f, i) => (F.matchesAll(texts.map(F.parse), f) ? i : -1))
+	.filter((i) => i >= 0);
+
+check('a filter matches every author, not just the one on the label', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// The node label is "Kucsko2013" for one of these and "Maurer2012" for the
+	// other. Matching only the first creator -- which is what the colour-by-author
+	// mode does -- would make author:Kucsko miss the paper he is second on.
+	const both = hits(F, lib, 'author:Kucsko');
+	if (both.length !== 2) throw new Error('second-position author missed: ' + both);
+	if (hits(F, lib, 'collection:Sensing').join() !== '1') throw new Error('second collection missed');
+});
+
+check('stacking filters can only narrow, never widen', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	const one = hits(F, lib, 'author:Kucsko');
+	const two = hits(F, lib, 'author:Kucsko', 'publication:Nature');
+	const three = hits(F, lib, 'author:Kucsko', 'publication:Nature', 'year:2013');
+	if (!two.every((i) => one.includes(i))) throw new Error('a second mask let something back in');
+	if (!three.every((i) => two.includes(i))) throw new Error('a third mask let something back in');
+	if (two.join() !== '0' || three.join() !== '0') throw new Error(two + ' / ' + three);
+	// Masks that cannot both hold leave nothing, rather than falling back to OR.
+	if (hits(F, lib, 'author:Socrates', 'publication:Nature').length) {
+		throw new Error('contradictory masks behaved as a union');
+	}
+});
+
+check('a bare term searches every facet at once', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// The reason bare terms exist: nobody knows, or should have to know, which
+	// field "Tales" or "Quantum" lives in.
+	if (hits(F, lib, 'Tales').join() !== '2') throw new Error('title not searched');
+	if (hits(F, lib, 'Quantum').join() !== '0,1') throw new Error('collection not searched');
+	if (hits(F, lib, 'Socrates').join() !== '2') throw new Error('creator not searched');
+	if (hits(F, lib, 'nature').join() !== '0') throw new Error('publication not searched, or case-sensitive');
+});
+
+check('year takes comparisons and ranges, and a prefix still means a decade', () => {
+	const F = loadFilters();
+	const lib = library(F); // 2013, 2012, 1999
+	if (hits(F, lib, 'year:2013').join() !== '0') throw new Error('exact year');
+	if (hits(F, lib, 'year:>2012').join() !== '0') throw new Error('> is exclusive');
+	if (hits(F, lib, 'year:>=2012').join() !== '0,1') throw new Error('>= is inclusive');
+	if (hits(F, lib, 'year:<2000').join() !== '2') throw new Error('< is exclusive');
+	if (hits(F, lib, 'year:2012-2013').join() !== '0,1') throw new Error('range');
+	if (hits(F, lib, 'year:2013-2012').join() !== '0,1') throw new Error('a backwards range should still be a range');
+	// Three digits is not a year, so it falls through to a text match and
+	// "year:201" keeps meaning the 2010s -- which is the useful reading.
+	if (hits(F, lib, 'year:201').join() !== '0,1') throw new Error('prefix should mean a decade');
+	if (F.parseYear('201') !== null) throw new Error('three digits parsed as a year');
+});
+
+check('an unknown prefix is a search term, not a syntax error', () => {
+	const F = loadFilters();
+	// DOIs, times and "Vol 3: something" all contain colons. Rejecting them, or
+	// silently dropping the half before the colon, would both be wrong.
+	const f = F.parse('10.1038:x');
+	if (f.field !== null || f.value !== '10.1038:x') throw new Error(JSON.stringify(f));
+});
+
+check('completions come from the survivors, so one can never empty the graph', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// The narrowing tree: once Socrates is masked in, no completion may offer a
+	// value that only his co-less papers have -- picking one would leave zero
+	// nodes on screen, which is exactly the dead end the panel must not lead to.
+	const survivors = lib.filter((f) => F.matches(F.parse('author:Socrates'), f));
+	for (const s of F.suggest('', survivors)) {
+		if (!s.filter) continue;
+		const left = survivors.filter((f) => F.matches(s.filter, f));
+		if (!left.length) throw new Error('offered a dead end: ' + s.label);
+	}
+	// And the counts have to be the survivors' counts, not the library's.
+	const nature = F.suggest('Nature', lib).find((s) => s.kind === 'value');
+	if (!nature || nature.count !== 1) throw new Error(JSON.stringify(nature));
+});
+
+check('completions rank by coverage and offer the fields before the values', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	const empty = F.suggest('', lib);
+	if (empty[0].kind !== 'field' || empty[0].insert !== 'author:') {
+		throw new Error('an empty box should name the fields: ' + JSON.stringify(empty[0]));
+	}
+	// Within one field, the value covering the most items comes first.
+	const authors = F.suggest('author:', lib).map((s) => s.label);
+	if (authors[0] !== 'Kucsko' && authors[0] !== 'Maurer') throw new Error(authors.join());
+	if (authors[authors.length - 1] !== 'Socrates') throw new Error(authors.join());
+	// A half-typed field name is still a field name, not a value search.
+	if (!F.suggest('pub', lib).some((s) => s.insert === 'publication:')) {
+		throw new Error('"pub" did not complete to publication:');
+	}
+});
+
+check('a picked completion pins the value where typed text stays a substring', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	// Typing "soc" has to find Socrates -- nobody types surnames in full. But a
+	// value picked off the list means that value and not merely something
+	// containing it, or "type: book" would drag in every bookSection.
+	if (hits(F, lib, 'author:soc').join() !== '2') throw new Error('typed text should be a substring');
+	const pinned = F.exact('author', 'Socrate');
+	if (lib.some((f) => F.matches(pinned, f))) throw new Error('a pinned value matched a prefix');
+	if (F.key(F.exact('author', 'Socrates')) === F.key(F.parse('author:Socrates'))) {
+		throw new Error('pinned and typed filters share an identity, so both cannot be held');
+	}
+	// Case is not part of the identity: adding the same mask twice, once shouted,
+	// must not stack two chips that do the same thing.
+	if (F.key(F.exact('author', 'Socrates')) !== F.key(F.exact('author', 'SOCRATES'))) {
+		throw new Error('identity is case-sensitive');
+	}
+});
+
 Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);

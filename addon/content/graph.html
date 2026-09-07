@@ -49,6 +49,7 @@
 						<option value="year">year</option>
 						<option value="collection">collection</option>
 						<option value="author">first author</option>
+						<option value="publication">publication</option>
 						<option value="type">item type</option>
 					</select>
 				</label>
@@ -61,6 +62,18 @@
 						<option value="global">global citations</option>
 					</select>
 				</label>
+			</div>
+
+			<!-- Filters. Each one is a mask over the held items, and they stack:
+			     every filter added narrows what is left, never widens it. The
+			     suggestions are drawn from the items that survive the filters
+			     already applied, so an offered value can never empty the graph. -->
+			<div class="group" id="filter-group">
+				<div id="filter-chips"></div>
+				<input id="filter-input" type="text" autocomplete="off" spellcheck="false"
+					placeholder="filter — author:, year:, …"
+					title="Type a term, or field:value. Filters stack: each one narrows what is left."
+					role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
 			</div>
 
 			<div id="strategies" class="group"></div>
@@ -126,11 +139,19 @@
 	     same reason as the two above. -->
 	<div id="menu" hidden="hidden"></div>
 
+	<!-- The filter box's completion list. Out here rather than under the box it
+	     completes, because #panel and #panel-body both clip: a twelve-row list
+	     opened from a control halfway down the panel would be cut in half.
+	     graph.js places it against the input by hand, the way #menu is placed
+	     against the pointer. -->
+	<div id="filter-suggest" role="listbox" hidden="hidden"></div>
+
 	<!-- Every script is a same-origin resource:// URL, so no inline script is
 	     needed and every CSP configuration in Zotero 7-11 allows them. -->
 	<script src="lib/force-graph.min.js"></script>
 	<script src="nodeScale.js"></script>
 	<script src="nodeLinks.js"></script>
+	<script src="nodeFilters.js"></script>
 	<script src="graph.js"></script>
 </body>
 </html>

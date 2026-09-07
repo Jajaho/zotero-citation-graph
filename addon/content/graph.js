@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -40,9 +40,11 @@
 	// Same, for the legend.
 	const LEGEND_KEY = 'zg.legend.collapsed';
 
-	// Published by nodeScale.js and nodeLinks.js, which graph.html loads first.
+	// Published by nodeScale.js, nodeLinks.js and nodeFilters.js, which
+	// graph.html loads first.
 	const Scale = ZGScale;
 	const Links = ZGLinks;
+	const Filters = ZGFilters;
 
 	let fg = null;
 	let raw = null;
@@ -84,6 +86,9 @@
 	let elLegendToggle = el('legend-toggle');
 	let elLegendTitle = el('legend-title');
 	let elLegendBody = el('legend-body');
+	let elFilterChips = el('filter-chips');
+	let elFilterInput = el('filter-input');
+	let elSuggest = el('filter-suggest');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -116,6 +121,7 @@
 		// an add it is a real item, and after a rebuild it may be filtered out.
 		hideAction();
 		hideMenu();
+		hideSuggest();
 		hoverNode = null;
 		renderStrategyToggles();
 		// Only auto-hide unconnected nodes the first time edges show up; after
@@ -216,6 +222,7 @@
 		switch (elColorBy.value) {
 			case 'collection': return (n.collections || [])[0] || '(no collection)';
 			case 'author': return (n.creators || [])[0] || '(no author)';
+			case 'publication': return n.publication || '(no publication)';
 			case 'type': return n.itemType || '(unknown type)';
 			default: return n.year == null ? null : String(n.year);
 		}
@@ -273,6 +280,7 @@
 		year: 'year',
 		collection: 'collection',
 		author: 'first author',
+		publication: 'publication',
 		type: 'item type',
 	};
 
@@ -424,6 +432,262 @@
 		return via[0];
 	}
 
+	// --- filter masks -----------------------------------------------------
+
+	/**
+	 * The masks currently laid down, oldest first. AND commutes, so the order
+	 * carries no meaning -- it is kept only so a chip does not jump around the
+	 * panel when another one is removed.
+	 */
+	let filters = [];
+
+	/** A raw item in the shape nodeFilters.js matches against. */
+	function itemFacets(it) {
+		return Filters.facets({
+			creators: it.creators,
+			year: year(it),
+			itemType: it.itemType,
+			publication: it.publication,
+			collections: it.collections,
+			title: it.title,
+		});
+	}
+
+	/**
+	 * The held items surviving every mask, with their facets alongside -- the
+	 * graph needs the items and the completion list needs the facets, and
+	 * deriving them separately would mean two rules for what is visible.
+	 *
+	 * Outside references are deliberately NOT masked here. A ghost is a DOI
+	 * and, with lookup on, a title; masking it on author or publication would
+	 * delete every one of them the moment any filter existed. Instead it keeps
+	 * the treatment it already had -- a ghost is drawn when a held item that
+	 * survived still cites it -- which makes "author:Kucsko" read as "his
+	 * papers, and what they cite".
+	 */
+	function masked() {
+		let items = [];
+		let facets = [];
+		for (let it of raw.items) {
+			let f = itemFacets(it);
+			if (filters.length && !Filters.matchesAll(filters, f)) continue;
+			items.push(it);
+			facets.push(f);
+		}
+		return { items, facets };
+	}
+
+	function addFilter(f) {
+		if (!f) return;
+		let k = Filters.key(f);
+		// Re-adding a mask that is already down would look like the box
+		// swallowed the input, so it is a no-op that still clears the field.
+		if (!filters.some(x => Filters.key(x) === k)) filters.push(f);
+		elFilterInput.value = '';
+		hideSuggest();
+		renderChips();
+		render();
+	}
+
+	function removeFilter(i) {
+		filters.splice(i, 1);
+		renderChips();
+		render();
+	}
+
+	function renderChips() {
+		elFilterChips.textContent = '';
+		filters.forEach((f, i) => {
+			let chip = document.createElement('span');
+			chip.className = 'chip';
+			chip.title = chipHint(f);
+			let text = document.createElement('span');
+			text.className = 'chip-text';
+			text.textContent = Filters.describe(f);
+			let x = document.createElement('button');
+			x.type = 'button';
+			x.className = 'chip-x';
+			x.textContent = '✕';
+			x.title = 'Lift this mask';
+			x.addEventListener('click', () => removeFilter(i));
+			chip.appendChild(text);
+			chip.appendChild(x);
+			elFilterChips.appendChild(chip);
+		});
+		elFilterChips.hidden = !filters.length;
+	}
+
+	/** The chip is clipped to the panel width, and the difference between an
+	 *  exact value and a substring is real, so both get spelled out on hover. */
+	function chipHint(f) {
+		if (f.op === 'range') {
+			if (f.lo != null && f.hi != null) return 'published ' + f.lo + ' to ' + f.hi;
+			return f.lo != null
+				? 'published in ' + f.lo + ' or later'
+				: 'published in ' + f.hi + ' or earlier';
+		}
+		let what = f.field || 'any field';
+		return what + (f.op === 'is' ? ' is exactly ' : ' contains ') + '"' + f.value + '"';
+	}
+
+	// --- the completion list ----------------------------------------------
+
+	// A list taller than this is a wall, not a menu.
+	const SUGGEST_MAX_PX = 240;
+
+	let suggestions = [];
+	// -1 means nothing is highlighted, which is a state in its own right:
+	// Enter then commits whatever was typed rather than a row.
+	let suggestIndex = -1;
+
+	/**
+	 * Rebuild the list under the box.
+	 *
+	 * The candidates come from the items that survive the masks ALREADY down,
+	 * never from the whole collection. That is what makes the list narrow as
+	 * filters stack, and it means anything offered here is guaranteed to leave
+	 * something on screen rather than emptying the graph.
+	 */
+	function refreshSuggest() {
+		if (!raw) return;
+		suggestions = Filters.suggest(elFilterInput.value, masked().facets);
+		suggestIndex = -1;
+		elSuggest.textContent = '';
+		for (let i = 0; i < suggestions.length; i++) {
+			elSuggest.appendChild(suggestRow(suggestions[i], i));
+		}
+		let open = suggestions.length > 0;
+		elSuggest.hidden = !open;
+		elFilterInput.setAttribute('aria-expanded', open ? 'true' : 'false');
+		// Only once it is visible: placing it needs its height.
+		if (open) placeSuggest();
+	}
+
+	/**
+	 * Put the list against the box it completes.
+	 *
+	 * It lives outside #panel, which clips, so nothing positions it for free --
+	 * see the comment on it in graph.html. It opens downward, flips above the
+	 * box when the room below is worse, and is capped to whichever side it took
+	 * so it can never run off the window.
+	 */
+	function placeSuggest() {
+		let r = elFilterInput.getBoundingClientRect();
+		let below = window.innerHeight - r.bottom - 8;
+		let above = r.top - 8;
+		let down = below >= above;
+		elSuggest.style.maxHeight = Math.max(80, Math.min(SUGGEST_MAX_PX, down ? below : above)) + 'px';
+		elSuggest.style.left = r.left + 'px';
+		elSuggest.style.width = r.width + 'px';
+		elSuggest.style.top = (down ? r.bottom + 2 : Math.max(4, r.top - elSuggest.offsetHeight - 2)) + 'px';
+	}
+
+	function hideSuggest() {
+		elSuggest.hidden = true;
+		suggestIndex = -1;
+		elFilterInput.setAttribute('aria-expanded', 'false');
+	}
+
+	function suggestRow(s, i) {
+		let b = document.createElement('button');
+		b.type = 'button';
+		b.className = 'suggest-item';
+		b.setAttribute('role', 'option');
+		if (s.hint) b.title = s.hint;
+		let label = document.createElement('span');
+		label.className = 'suggest-label';
+		label.textContent = s.label;
+		b.appendChild(label);
+		// Which facet a value came from: a bare search spans all of them, and
+		// Nature the journal is not Nature the collection.
+		if (s.kind === 'value') {
+			let f = document.createElement('span');
+			f.className = 'suggest-field';
+			f.textContent = s.hint;
+			b.appendChild(f);
+		}
+		if (s.count != null) {
+			let c = document.createElement('span');
+			c.className = 'suggest-count';
+			c.textContent = s.count;
+			b.appendChild(c);
+		}
+		// mousedown rather than click: the input's own blur fires first and
+		// would have torn the list down before a click could land on it.
+		b.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			accept(i);
+		});
+		return b;
+	}
+
+	function accept(i) {
+		let s = suggestions[i];
+		if (!s) return;
+		// A field name is only half a filter. Put it in the box and let the
+		// list come straight back with that field's values.
+		if (s.insert) {
+			elFilterInput.value = s.insert;
+			refreshSuggest();
+			return;
+		}
+		addFilter(s.filter);
+	}
+
+	function moveSuggest(d) {
+		let n = suggestions.length;
+		if (!n) return;
+		suggestIndex = suggestIndex < 0
+			? (d > 0 ? 0 : n - 1)
+			: (suggestIndex + d + n) % n;
+		let rows = elSuggest.children;
+		for (let i = 0; i < rows.length; i++) rows[i].classList.toggle('active', i === suggestIndex);
+		if (rows[suggestIndex]) rows[suggestIndex].scrollIntoView({ block: 'nearest' });
+	}
+
+	// The list is positioned against the box, and the panel it sits in scrolls
+	// independently of it -- so a scroll would leave it stranded. Dismiss rather
+	// than chase: it is one keystroke away from coming back.
+	el('panel-body').addEventListener('scroll', hideSuggest);
+
+	elFilterInput.addEventListener('input', refreshSuggest);
+	// On focus too, and with an empty box: with nothing typed the list is the
+	// only thing that says which fields exist at all.
+	elFilterInput.addEventListener('focus', refreshSuggest);
+	// After the row's own mousedown, which fires first and may have accepted.
+	elFilterInput.addEventListener('blur', () => window.setTimeout(hideSuggest, 0));
+
+	elFilterInput.addEventListener('keydown', (e) => {
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (elSuggest.hidden) refreshSuggest();
+			moveSuggest(e.key === 'ArrowDown' ? 1 : -1);
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			if (suggestIndex >= 0) accept(suggestIndex);
+			else addFilter(Filters.parse(elFilterInput.value));
+			return;
+		}
+		if (e.key === 'Escape') {
+			// The window handler further down would clear the isolation. Inside
+			// this box Escape belongs to the list first and then to the box, and
+			// must not reach past either.
+			e.stopPropagation();
+			if (!elSuggest.hidden) hideSuggest();
+			else elFilterInput.value = '';
+			return;
+		}
+		// Backspace on an empty box lifts the last mask -- the gesture everyone
+		// already has from every other chips-in-front-of-an-input there is.
+		if (e.key === 'Backspace' && !elFilterInput.value && filters.length) {
+			removeFilter(filters.length - 1);
+		}
+	});
+
+	renderChips();
+
 	// --- rendering --------------------------------------------------------
 
 	function render() {
@@ -433,12 +697,21 @@
 		let minCites = Math.max(1, Number(elMinCites.value) || 1);
 		let showGhosts = elIncludeExternal.checked && raw.external.length > 0;
 
+		// Identity, not visibility: this is what tells a held item apart from an
+		// outside reference, and a masked-out paper must not turn into a ghost of
+		// itself. `shown` is the visibility half.
 		let inCollection = new Set(raw.items.map(i => i.key));
+		let held = masked().items;
+		let shown = new Set(held.map(i => i.key));
 
-		// 1. Edges surviving the confidence and strategy filters.
+		// 1. Edges surviving the confidence, strategy and mask filters. An edge
+		//    with a masked-out end is gone in both directions: it can neither
+		//    keep a ghost alive nor draw itself to a node nobody can see.
 		let candidates = [];
 		for (let e of raw.edges) {
 			if (e.confidence < minConf) continue;
+			if (!shown.has(e.from)) continue;
+			if (inCollection.has(e.to) && !shown.has(e.to)) continue;
 			// An edge survives if any strategy that produced it is still enabled.
 			let via = e.via.filter(v => !disabledVia.has(v));
 			if (via.length) candidates.push({ e, via });
@@ -476,14 +749,14 @@
 		//    position: later build phases then add edges to a settled layout
 		//    instead of restarting it from scratch.
 		let years = [];
-		for (let it of raw.items) {
+		for (let it of held) {
 			let y = year(it);
 			if (y) years.push(y);
 		}
 		yearRange = years.length ? [Math.min(...years), Math.max(...years)] : null;
 
 		let nodes = [];
-		for (let it of raw.items) {
+		for (let it of held) {
 			let deg = (inDegree[it.key] || 0) + (outDegree[it.key] || 0);
 			if (elHideIsolated.checked && !deg) continue;
 			let n = nodeCache.get(it.key);
@@ -496,6 +769,7 @@
 			n.url = it.url || null;
 			n.creators = it.creators || [];
 			n.collections = it.collections || [];
+			n.publication = it.publication || null;
 			n.year = year(it);
 			n.deg = deg;
 			n.inDeg = inDegree[it.key] || 0;
@@ -1198,9 +1472,10 @@
 
 	window.addEventListener('resize', () => {
 		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
-		// Both were positioned against the viewport they opened in.
+		// All three were positioned against the viewport they opened in.
 		hideMenu();
 		hideAction();
+		hideSuggest();
 	});
 
 	syncEnabled();

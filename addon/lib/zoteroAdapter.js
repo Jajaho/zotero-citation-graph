@@ -69,6 +69,11 @@ class ZoteroAdapter {
 				date: field(item, 'date', { unformatted: true }) || null,
 				extra: field(item, 'extra') || null,
 				url: field(item, 'url') || null,
+				// The venue a work appeared in. baseMapped folds proceedingsTitle and
+				// bookTitle onto publicationTitle, so one facet covers every item type
+				// that has a venue at all instead of three that each cover a third of
+				// the library.
+				publication: field(item, 'publicationTitle', { baseMapped: true }) || null,
 				creators: item.getCreators().map(c => c.lastName).filter(Boolean),
 				// Which of the in-scope collections hold this item. Only
 				// interesting once subcollections are included -- without them

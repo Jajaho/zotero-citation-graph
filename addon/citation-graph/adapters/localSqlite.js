@@ -40,13 +40,23 @@ class LocalSqliteAdapter {
 
 	async listItems() {
 		const F = this._fields;
+		// The venue, under whichever name this item type gives it. Zotero base-field
+		// maps proceedingsTitle and bookTitle onto publicationTitle, but that mapping
+		// lives in the schema rather than these tables, so it is spelled out here. An
+		// item carries at most one of the three, so MAX picks the only value there is.
+		const venue = ['publicationTitle', 'proceedingsTitle', 'bookTitle']
+			.map((n) => F[n]).filter((id) => id != null);
+		const venueExpr = venue.length
+			? `MAX(CASE WHEN d.fieldID IN (${venue.join(',')}) THEN v.value END)`
+			: 'NULL';
 		const rows = this.db.prepare(`
 			SELECT i.itemID, i.key, it.typeName AS itemType,
 				MAX(CASE WHEN d.fieldID=${F.title} THEN v.value END) AS title,
 				MAX(CASE WHEN d.fieldID=${F.DOI}   THEN v.value END) AS doi,
 				MAX(CASE WHEN d.fieldID=${F.date}  THEN v.value END) AS date,
 				MAX(CASE WHEN d.fieldID=${F.extra} THEN v.value END) AS extra,
-				MAX(CASE WHEN d.fieldID=${F.url}   THEN v.value END) AS url
+				MAX(CASE WHEN d.fieldID=${F.url}   THEN v.value END) AS url,
+				${venueExpr} AS publication
 			FROM items i
 			JOIN itemTypes it USING (itemTypeID)
 			LEFT JOIN itemData d USING (itemID)
@@ -69,7 +79,7 @@ class LocalSqliteAdapter {
 			.filter((r) => r.title && !['attachment', 'note', 'annotation'].includes(r.itemType))
 			.map((r) => ({
 				key: r.key, itemType: r.itemType, title: r.title, doi: r.doi,
-				date: r.date, extra: r.extra, url: r.url,
+				date: r.date, extra: r.extra, url: r.url, publication: r.publication || null,
 				creators: byItem.get(r.itemID) || [],
 			}));
 	}
