@@ -553,6 +553,81 @@ check('toWireExternal keeps local and global counts as separate fields', () => {
 	if (named.citedBy !== 3 || named.citedByGlobal !== 900) throw new Error(JSON.stringify(named));
 });
 
+// --- node sizing (content/nodeScale.js) -------------------------------------
+
+/** Evaluate the content-page script the same way the browser does. */
+function loadScale() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/nodeScale.js'), 'utf8');
+	// Deliberately empty: nodeScale.js falls back to globalThis when `window` is
+	// absent, and inside a vm context that IS the context object. Defining a
+	// `globalThis` key here would shadow it and swallow the export.
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'nodeScale.js' });
+	if (!ctx.ZGScale) throw new Error('nodeScale.js did not publish ZGScale');
+	return ctx.ZGScale;
+}
+
+check('the citation scale separates magnitudes instead of flattening them', () => {
+	const S = loadScale();
+	// A heavy-tailed spread with one landmark, which is the realistic shape.
+	const counts = [0, 3, 8, 17, 25, 40, 55, 80, 100, 140, 190, 260, 350, 470,
+		640, 900, 1200, 1600, 2200, 4000, 41000];
+	const ref = S.referenceCount(counts);
+	const r = (g) => S.globalRadius(g, ref);
+
+	// The regression this exists for: the log scale it replaced drew these at
+	// 8.5 and 10.8 -- a 1.27x radius for a 40x difference in citations.
+	const ratio = r(4000) / r(100);
+	if (ratio < 2.5) throw new Error('4000 vs 100 citations is only ' + ratio.toFixed(2) + 'x radius');
+
+	// Strictly increasing across the whole domain: no plateau anywhere.
+	for (let i = 1; i < counts.length; i++) {
+		if (counts[i] === counts[i - 1]) continue;
+		if (!(r(counts[i]) > r(counts[i - 1]))) {
+			throw new Error(`not monotone at ${counts[i - 1]} -> ${counts[i]}`);
+		}
+	}
+	// Including above the reference, where a hard clamp used to tie the
+	// 41,000-citation landmark with the 4,000-citation one.
+	if (!(r(41000) > r(4000))) throw new Error('outliers above the reference are tied');
+	if (r(41000) > S.R_HARD) throw new Error('blew through the ceiling');
+});
+
+check('one landmark paper cannot flatten the rest of the graph', () => {
+	const S = loadScale();
+	// Same distribution, once with and once without an extreme outlier. The
+	// outlier must not change how the bulk of the graph is drawn -- which is
+	// exactly what normalising on the maximum would do.
+	const bulk = [];
+	for (let i = 0; i < 40; i++) bulk.push(10 * i);
+	const withOutlier = bulk.concat([500000]);
+	const a = S.referenceCount(bulk);
+	const b = S.referenceCount(withOutlier);
+	const shift = Math.abs(S.globalRadius(100, a) - S.globalRadius(100, b));
+	if (shift > 1.5) throw new Error('outlier moved a typical node by ' + shift.toFixed(1) + ' units');
+});
+
+check('unknown counts stay distinguishable from zero counts', () => {
+	const S = loadScale();
+	// "not looked up" must not read as "never cited".
+	const unknown = S.globalRadius(null, 100);
+	const zero = S.globalRadius(0, 100);
+	if (!(unknown < zero)) throw new Error(`unknown ${unknown} should be smaller than zero ${zero}`);
+	if (unknown <= 0) throw new Error('unknown nodes would be invisible');
+});
+
+check('areaFor round-trips through force-graph own sqrt', () => {
+	const S = loadScale();
+	// force-graph draws radius = sqrt(val) * nodeRelSize. If this identity ever
+	// breaks, every radius above is silently wrong -- which is the bug class
+	// that produced the original flattened scale.
+	for (const r of [2, 3, 7.5, 20, 28]) {
+		const back = Math.sqrt(S.areaFor(r)) * S.NODE_REL_SIZE;
+		if (Math.abs(back - r) > 1e-9) throw new Error(`radius ${r} came back as ${back}`);
+	}
+});
+
 // --- chrome-side modules ---------------------------------------------------
 
 check('lib/ modules load through the shim', () => {

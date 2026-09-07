@@ -1,4 +1,4 @@
-/* global ForceGraph */
+/* global ForceGraph, ZGScale */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -25,15 +25,18 @@
 	// nothing else.
 	const GHOST_COLOR = '#8e8e93';
 
+	// Published by nodeScale.js, which graph.html loads first.
+	const Scale = ZGScale;
+
 	let fg = null;
 	let raw = null;
 	let nodeCache = new Map(); // id -> node object, so x/y survive a re-render
 	let disabledVia = new Set();
 	let yearRange = null;
-	// Largest global citation count among the nodes actually on screen, which is
-	// what nodeVal normalises against. Recomputed every render because filtering
-	// out the one landmark paper should rescale everything else.
-	let globalMax = 0;
+	// The citation count that maps to the largest node: the 95th percentile of
+	// what is on screen, not the maximum. Recomputed every render, because
+	// filtering the graph should rescale it.
+	let globalRef = 1;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -350,10 +353,9 @@
 
 		// After both populations are in: the scale spans held items and ghosts
 		// alike, so the two are directly comparable at a glance.
-		globalMax = 0;
-		for (let n of nodes) {
-			if (n.citedByGlobal != null && n.citedByGlobal > globalMax) globalMax = n.citedByGlobal;
-		}
+		let counts = [];
+		for (let n of nodes) if (n.citedByGlobal != null) counts.push(n.citedByGlobal);
+		globalRef = Scale.referenceCount(counts);
 
 		if (!fg) {
 			fg = ForceGraph()(elGraph);
@@ -407,7 +409,7 @@
 	 * circle and still owns hit-testing. Dividing by globalScale keeps the text
 	 * a constant size on screen at any zoom.
 	 */
-	const NODE_REL_SIZE = 4;
+	const NODE_REL_SIZE = Scale.NODE_REL_SIZE;
 
 	/**
 	 * Node area. Two metrics, chosen in the toolbar, and both apply to outside
@@ -416,25 +418,16 @@
 	 *  cited here      in-degree: how many papers in THIS collection cite it.
 	 *                  The default, and the reason the graph is directed at all.
 	 *  global citations how often the whole literature cites it. Needs "look up
-	 *                  names" on, and is log-scaled: raw counts span 0 to ~10^5,
-	 *                  so a linear map would leave everything but a handful of
-	 *                  landmark papers as indistinguishable dots.
+	 *                  names" on. Area is proportional to the count up to the
+	 *                  95th percentile of what is on screen, then logarithmic
+	 *                  above it, so one landmark paper cannot flatten the rest.
 	 *
-	 * Anything with no known global count sizes as UNKNOWN_VAL rather than as
-	 * zero, so "not looked up" stays visually distinct from "never cited".
+	 * The curve itself lives in nodeScale.js, which is pure and unit-tested --
+	 * the first version of this drew a 4,000-citation paper the same size as a
+	 * 100-citation one, and nothing but an eye caught it.
 	 */
-	const UNKNOWN_VAL = 0.6;
-
 	function nodeVal(n) {
-		if (elSizeBy.value === 'global') {
-			if (n.citedByGlobal == null) return UNKNOWN_VAL;
-			// Normalised against the largest count on screen so the full size
-			// range is used whatever the field: a maths collection topping out
-			// at 300 citations should not render smaller than a genomics one.
-			let top = Math.log10(1 + (globalMax || 1));
-			let frac = top > 0 ? Math.log10(1 + n.citedByGlobal) / top : 0;
-			return 1 + 8 * frac;
-		}
+		if (elSizeBy.value === 'global') return Scale.globalVal(n.citedByGlobal, globalRef);
 		return 1 + n.inDeg * 2;
 	}
 
