@@ -1,0 +1,11 @@
+{
+  "name": "zotero-graph-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Force-directed citation graph for a Zotero collection",
+  "scripts": {
+    "test": "node tools/test-cjs-shim.js",
+    "strategies": "node tools/cli.js --list",
+    "install-dev": "powershell -ExecutionPolicy Bypass -File tools/install-dev.ps1"
+  }
+}

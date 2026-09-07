@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Citation Graph</title>
+	<link rel="stylesheet" href="graph.css"/>
+</head>
+<body>
+	<div id="toolbar">
+		<span id="collection-name"></span>
+		<label id="conf-label">
+			min confidence
+			<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
+			<span id="conf-value">0.00</span>
+		</label>
+		<span id="stats"></span>
+		<button id="rebuild" type="button">Rebuild</button>
+	</div>
+	<div id="graph"></div>
+	<div id="status">Loading…</div>
+
+	<!-- Both scripts are same-origin resource:// URLs, so no inline script is
+	     needed and every CSP configuration in Zotero 7-11 allows them. -->
+	<script src="lib/force-graph.min.js"></script>
+	<script src="graph.js"></script>
+</body>
+</html>
