@@ -180,13 +180,17 @@ body {
 	color: var(--muted);
 }
 
-#min-conf {
+/* Both sliders give the track whatever the label and the readout leave: a
+   range input's default width would otherwise push the panel wider. */
+#min-conf,
+#link-pull {
 	flex: 1 1 60px;
 	width: auto;
 	min-width: 40px;
 }
 
-#conf-value {
+#conf-value,
+#pull-value {
 	font-variant-numeric: tabular-nums;
 	min-width: 3.2ch;
 }

@@ -39,6 +39,10 @@
 
 	// Same, for the legend.
 	const LEGEND_KEY = 'zg.legend.collapsed';
+	/** Layout comfort, not a view of the data: how hard the user likes their
+	 *  edges to pull. Worth remembering across windows for the same reason the
+	 *  collapsed panel is -- it is a setting about this screen, not this graph. */
+	const PULL_KEY = 'zg.link.pull';
 
 	// Published by nodeScale.js, nodeLinks.js and nodeFilters.js, which
 	// graph.html loads first.
@@ -77,6 +81,8 @@
 	let elEnrich = el('enrich');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
+	let elLinkPull = el('link-pull');
+	let elPullValue = el('pull-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
@@ -917,6 +923,10 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('collide', collide());
+			// force-graph registers 'link' itself, so this reaches in and
+			// reprices it rather than replacing it -- the arrows, curvature and
+			// endpoint resolution all belong to that force.
+			fg.d3Force('link').strength(linkStrength);
 		}
 
 		fg.width(elGraph.clientWidth)
@@ -1104,6 +1114,49 @@
 			cell = 2 * maxR + COLLIDE_PAD;
 		};
 		return force;
+	}
+
+	/**
+	 * Edge attraction, as a multiplier over d3's own per-link strength.
+	 *
+	 * d3 gives a link 1 / min(deg a, deg b), so a hub is not torn apart by the
+	 * many edges hanging off it. That default is tuned for sparse graphs: a
+	 * densely cited collection packs into tight balls, because every edge pulls
+	 * at full strength while charge repulsion falls off with distance. Scaling
+	 * the whole set trades cohesion for room -- at 0 the links hold nothing and
+	 * the layout is left to repulsion and the centre pull, which is what an
+	 * over-packed graph needs before it can be read.
+	 *
+	 * Degrees are counted from the link array d3 hands in, not from n.deg:
+	 * n.deg describes the item, and would misprice a node whose edges the
+	 * filters have mostly taken away.
+	 */
+	let pullLinks = null;         // link array the degrees below were counted from
+	let pullDeg = new Map();      // node object -> its degree within that array
+
+	function linkStrength(link, i, links) {
+		if (links !== pullLinks) {
+			pullLinks = links;
+			pullDeg = new Map();
+			for (let l of links) {
+				pullDeg.set(l.source, (pullDeg.get(l.source) || 0) + 1);
+				pullDeg.set(l.target, (pullDeg.get(l.target) || 0) + 1);
+			}
+		}
+		let deg = Math.min(pullDeg.get(link.source) || 1, pullDeg.get(link.target) || 1);
+		return Number(elLinkPull.value) / deg;
+	}
+
+	/**
+	 * Reinstalling the function is what makes the new value take: d3 evaluates
+	 * link strengths once, when the force is initialised, and caches them.
+	 */
+	function applyLinkPull() {
+		elPullValue.textContent = Number(elLinkPull.value).toFixed(2);
+		if (!fg) return;
+		let link = fg.d3Force('link');
+		if (link) link.strength(linkStrength);
+		fg.d3ReheatSimulation();
 	}
 
 	/**
@@ -1499,6 +1552,14 @@
 	el('rebuild').addEventListener('click', requestRebuild);
 
 	elMinConf.addEventListener('input', render);
+	// Pure layout: no node or edge changes, so this reheats rather than renders.
+	elLinkPull.addEventListener('input', () => {
+		applyLinkPull();
+		try {
+			window.localStorage.setItem(PULL_KEY, elLinkPull.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
 	elMinCites.addEventListener('input', render);
 	elColorBy.addEventListener('change', render);
 	// Size changes node radii, which the collision force sizes its grid from --
@@ -1563,6 +1624,15 @@
 		hideAction();
 		hideSuggest();
 	});
+
+	try {
+		let saved = window.localStorage.getItem(PULL_KEY);
+		// A stored value from a future build could be anything; the range input
+		// silently drops one outside its own min/max, so read back what stuck.
+		if (saved !== null) elLinkPull.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyLinkPull();
 
 	syncEnabled();
 }());
