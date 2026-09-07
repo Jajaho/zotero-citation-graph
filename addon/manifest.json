@@ -10,8 +10,8 @@
 	"applications": {
 		"zotero": {
 			"id": "zotero-graph@jajaho.dev",
-			"strict_min_version": "7.0",
-			"strict_max_version": "11.*"
+			"strict_min_version": "8.0.1",
+			"strict_max_version": "10.*"
 		}
 	}
 }
