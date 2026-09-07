@@ -1,32 +1,43 @@
-// Paste into Zotero: Tools -> Developer -> Run JavaScript  (tick "async")
-// Reports exactly what the AddonManager thinks of the plugin.
-var ID = "zotero-graph@jajaho.dev";
+// Zotero -> Tools -> Developer -> Run JavaScript, tick "async", paste, Run.
+//
+// getInstallForFile() collapses every manifest problem into ERROR_CORRUPT_FILE.
+// This runs the same parser directly so the actual schema errors are visible.
+// It checks the unpacked directory too, which isolates the manifest from the
+// packaging entirely.
+
+var { ExtensionData } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
+
+async function probe(label, uriStr) {
+	let r = { label, uri: uriStr };
+	try {
+		let ed = new ExtensionData(Services.io.newURI(uriStr));
+		try {
+			await ed.loadManifest();
+		}
+		catch (e) {
+			r.threw = String(e);
+		}
+		r.errors = ed.errors && ed.errors.length ? ed.errors : null;
+		r.warnings = ed.warnings && ed.warnings.length ? ed.warnings : null;
+		r.id = ed.id;
+		r.type = ed.type;
+		r.manifestVersion = ed.manifest && ed.manifest.manifest_version;
+		r.applications = ed.manifest && ed.manifest.applications;
+	}
+	catch (e) {
+		r.constructThrew = String(e);
+	}
+	return r;
+}
+
 var out = [];
+out.push(await probe(
+	"unpacked directory",
+	"file:///C:/Users/you/Repositories/zotero-graph-plugin/addon/"
+));
+out.push(await probe(
+	"packed xpi",
+	"jar:file:///C:/Users/you/Repositories/zotero-graph-plugin/dist/zotero-graph-0.1.0.xpi!/"
+));
 
-var a = await AddonManager.getAddonByID(ID);
-out.push("getAddonByID: " + (a ? "FOUND" : "NOT FOUND"));
-if (a) {
-  out.push("  name=" + a.name + " version=" + a.version);
-  out.push("  active=" + a.isActive + " enabled=" + !a.userDisabled);
-  out.push("  appDisabled=" + a.appDisabled + " (true => version range excludes this Zotero)");
-  out.push("  isCompatible=" + a.isCompatible);
-  out.push("  scope=" + a.scope + " type=" + a.type);
-}
-
-var all = await AddonManager.getAllAddons();
-out.push("all addons: " + all.map(x => x.id + (x.isActive ? "*" : "")).join(", "));
-
-out.push("app version: " + Services.appinfo.version);
-out.push("autoDisableScopes: " + Services.prefs.getIntPref("extensions.autoDisableScopes", -1));
-out.push("signatures.required: " + Services.prefs.getBoolPref("xpinstall.signatures.required", true));
-
-// Can Zotero even see the files?
-var f = Services.dirsvc.get("ProfD", Ci.nsIFile);
-f.append("extensions"); f.append(ID);
-out.push("extensions entry exists=" + f.exists() + " isDir=" + (f.exists() && f.isDirectory()));
-if (f.exists() && f.isDirectory()) {
-  var m = f.clone(); m.append("manifest.json");
-  out.push("  manifest.json exists=" + m.exists());
-}
-
-return out.join("\n");
+return JSON.stringify(out, null, 1);

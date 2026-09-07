@@ -18,6 +18,34 @@ $manifest = Get-Content (Join-Path $addon "manifest.json") -Raw | ConvertFrom-Js
 $version = $manifest.version
 $id = $manifest.applications.zotero.id
 
+# --- manifest validation -------------------------------------------------
+# Zotero's schema rejects a manifest missing any of these, and the failure
+# surfaces as ERROR_CORRUPT_FILE / "may be incompatible with this version of
+# Zotero" -- which points nowhere near the real cause. Fail loudly here instead.
+#
+# update_url is the non-obvious one: Zotero REQUIRES it even for a plugin that
+# will never auto-update. Omitting it cost hours once; don't repeat it.
+$manifestPath = Join-Path $addon "manifest.json"
+$mBytes = [System.IO.File]::ReadAllBytes($manifestPath)
+if ($mBytes.Length -ge 3 -and $mBytes[0] -eq 0xEF -and $mBytes[1] -eq 0xBB -and $mBytes[2] -eq 0xBF) {
+    throw "manifest.json starts with a UTF-8 BOM. Zotero's parser rejects it. (Windows PowerShell 5.1's 'Set-Content -Encoding utf8' adds one -- use [IO.File]::WriteAllText with UTF8Encoding(`$false) instead.)"
+}
+
+$z = $manifest.applications.zotero
+$missing = @()
+foreach ($f in 'id', 'update_url', 'strict_min_version') {
+    if (-not $z.$f) { $missing += "applications.zotero.$f" }
+}
+foreach ($f in 'manifest_version', 'name', 'version') {
+    if (-not $manifest.$f) { $missing += $f }
+}
+if ($z.strict_min_version -and $z.strict_min_version.Contains('*')) {
+    $missing += "applications.zotero.strict_min_version must not contain '*'"
+}
+if ($missing.Count) {
+    throw "manifest.json is invalid for Zotero:`n  - " + ($missing -join "`n  - ")
+}
+
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 $xpi = Join-Path (Resolve-Path $OutDir) "zotero-graph-$version.xpi"
 if (Test-Path $xpi) { Remove-Item $xpi -Force }
