@@ -31,6 +31,9 @@
 	const DIM_NODE_ALPHA = 0.1;
 	const DIM_LINK_FACTOR = 0.15;
 
+	// Whether the control panel was left collapsed, remembered across openings.
+	const COLLAPSE_KEY = 'zg.panel.collapsed';
+
 	// Published by nodeScale.js and nodeLinks.js, which graph.html loads first.
 	const Scale = ZGScale;
 	const Links = ZGLinks;
@@ -69,6 +72,8 @@
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
+	let elPanel = el('panel');
+	let elPanelToggle = el('panel-toggle');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -459,7 +464,7 @@
 	const NODE_REL_SIZE = Scale.NODE_REL_SIZE;
 
 	/**
-	 * Node area. Two metrics, chosen in the toolbar, and both apply to outside
+	 * Node area. Two metrics, chosen in the panel, and both apply to outside
 	 * references as well as held items.
 	 *
 	 *  cited here      in-degree: how many papers in THIS collection cite it.
@@ -724,7 +729,7 @@
 	}
 
 	/**
-	 * Isolation is otherwise invisible in the toolbar, and a user who does not
+	 * Isolation is otherwise invisible in the panel, and a user who does not
 	 * know that clicking the background clears it would have no way back to the
 	 * whole graph.
 	 */
@@ -979,6 +984,29 @@
 		elHideIsolated.dataset.touched = '1';
 		render();
 	});
+
+	// The panel floats over the canvas, so collapsing it does not resize the
+	// graph -- it just gives the nodes underneath back.
+	function setCollapsed(on) {
+		elPanel.classList.toggle('collapsed', on);
+		elPanelToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
+		elPanelToggle.title = on ? 'Show controls' : 'Collapse controls';
+		// Storage is a nicety, not a requirement: a resource:// page can be
+		// denied it, and the panel still works when the write throws.
+		try {
+			window.localStorage.setItem(COLLAPSE_KEY, on ? '1' : '0');
+		}
+		catch (e) { /* no persistence, no problem */ }
+	}
+
+	elPanelToggle.addEventListener('click', () => {
+		setCollapsed(!elPanel.classList.contains('collapsed'));
+	});
+
+	try {
+		if (window.localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
+	}
+	catch (e) { /* see setCollapsed */ }
 
 	window.addEventListener('resize', () => {
 		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
