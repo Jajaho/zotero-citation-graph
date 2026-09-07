@@ -17,10 +17,23 @@ let cg = require('../citation-graph/index.js');
 let { ZoteroAdapter } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 
-// Ordered fastest-first. Everything here is offline; `openalex` is registered
-// but never selected, so no build can reach the network by accident.
+// Ordered fastest-first. Every EDGE strategy here is offline; `openalex` is
+// registered but never selected, so no edge build reaches the network. The
+// separate enrichment phase does, but only when the user has switched it on.
 const TEXT_STRATEGIES = ['text-doi', 'title-match'];
 const PDF_STRATEGIES = ['pdf-links'];
+
+// Ghosts to name, most-locally-cited first. The payload cap below is 4,000, and
+// enriching all of them would be 80 sequential OpenAlex calls for a tail that
+// the default "cited by >= 2" filter hides anyway. Ghosts past this point keep
+// their DOI label, which is exactly what they had before enrichment existed.
+const MAX_ENRICH = 500;
+
+// Ordered: core/enrich.js merges fill-first, so this list IS the ranking. A
+// second enricher added here is only ever asked about what the first could not
+// resolve. See docs/external-references.md part 3. Overridable by the
+// zoteroGraph.enrichers pref; see enricherList().
+const ENRICHERS = ['openalex'];
 
 // External nodes are unbounded in principle -- 4,564 distinct DOIs across 127
 // PDFs on the sample library, nearly all cited exactly once. The renderer's
@@ -31,7 +44,10 @@ const MAX_EXTERNAL_NODES = 4000;
 
 // Rebuild-triggering options. Everything else the toolbar offers is a filter
 // over an already-built graph and never comes back to chrome.
-const DEFAULT_OPTIONS = { recursive: false, includeExternal: true };
+//
+// `enrich` defaults to off: until this feature the plugin could not reach the
+// network at all, and that is not a property to drop silently.
+const DEFAULT_OPTIONS = { recursive: false, includeExternal: true, enrich: false };
 
 let open_ = new Map(); // tabID -> { win, browser, collection, generation, options }
 
@@ -140,6 +156,10 @@ async function runBuild(tabID) {
 	let adapter = new ZoteroAdapter(collection, { cache, recursive: options.recursive });
 	let items = [];
 	let inCollection = new Set();
+	// key -> Metadata, filled by the enrichment phase and folded into every
+	// later push. Held here rather than in the payload so a re-push before
+	// enrichment finishes simply carries no names, instead of dropping them.
+	let metadata = Object.create(null);
 
 	let push = (edges, meta) => {
 		if (!alive()) return;
@@ -149,7 +169,7 @@ async function runBuild(tabID) {
 		let external = options.includeExternal
 			? cg.collectExternalNodes(edges, k => inCollection.has(k))
 				.slice(0, MAX_EXTERNAL_NODES)
-				.map(toWireExternal)
+				.map(x => toWireExternal(x, metadata[x.key]))
 			: [];
 		send(entry, 'zgSetData', {
 			collection: { key: collection.key, name: collection.name },
@@ -207,15 +227,70 @@ async function runBuild(tabID) {
 	if (!alive()) return;
 
 	let edges = mergeEdges(textResult.edges, pdfResult.edges);
-	push(edges, {
-		phase: 'done',
+	let baseMeta = {
 		items: items.length,
 		perProvider: { ...textResult.meta.perProvider, ...pdfResult.meta.perProvider },
 		errors: [...textResult.meta.errors, ...pdfResult.meta.errors],
 		adapter: adapter.stats,
-	});
+	};
+	let external = options.includeExternal
+		? cg.collectExternalNodes(edges, k => inCollection.has(k))
+		: [];
+	push(edges, { phase: options.enrich && external.length ? 'edges' : 'done', ...baseMeta });
 	logMeta('pdf-links', pdfResult);
+
+	// --- phase 4: name the ghosts ---------------------------------------
+	// Last on purpose: it is the only network phase, it is optional, and a
+	// failure here must cost names and nothing else -- the graph is already
+	// on screen and correct by this point.
+	if (!options.enrich || !external.length) {
+		status('');
+		return;
+	}
+	let toName = external.slice(0, MAX_ENRICH).map(x => x.key);
+	status(`Looking up ${toName.length} outside works…`);
+	let enriched = await cg.enrich(toName, {
+		enable: enricherList(),
+		providers: { openalex: { apiKey: pref('openalex.apiKey') || null } },
+		onProgress: throttle(p => status(
+			`Looking up outside works… ${p.done}/${p.total} (${p.provider})`)),
+	});
+	if (!alive()) return;
+	metadata = enriched.metadata;
+	push(edges, { phase: 'done', ...baseMeta, enrich: enriched.meta });
+	Zotero.debug(`[zotero-graph] enrich -> ${enriched.meta.resolved}/${enriched.meta.requested}`
+		+ ` named in ${enriched.meta.ms}ms`);
+	for (let err of enriched.meta.errors) {
+		Zotero.logError(new Error(`[zotero-graph] enrich ${err.provider}: ${err.message}`));
+	}
 	status('');
+}
+
+/** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */
+function pref(name) {
+	try {
+		return Zotero.Prefs.get('zoteroGraph.' + name);
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+/**
+ * The enricher chain, from the pref, ordered. Unknown ids are dropped rather
+ * than passed through: enrichRegistry.get() throws on one, and a typo in a pref
+ * must not be able to take down a build that has already produced its graph.
+ */
+function enricherList() {
+	let known = new Set(cg.enrichRegistry.all().map(e => e.id));
+	let configured = String(pref('enrichers') || '')
+		.split(',').map(s => s.trim()).filter(Boolean);
+	let chosen = configured.filter((id) => {
+		if (known.has(id)) return true;
+		Zotero.debug(`[zotero-graph] ignoring unknown enricher '${id}' from prefs`);
+		return false;
+	});
+	return chosen.length ? chosen : ENRICHERS;
 }
 
 /**
@@ -252,9 +327,23 @@ function toWireEdge(e) {
 	};
 }
 
-/** citedByKeys is only needed for the count, which is already computed. */
-function toWireExternal(x) {
-	return { key: x.key, ns: x.ns, id: x.id, citedBy: x.citedBy, via: x.via };
+/**
+ * citedByKeys is only needed for the count, which is already computed.
+ *
+ * `citedBy` (citers inside this collection) and `citedByGlobal` (citations in
+ * the whole literature) are two different numbers and stay two different fields
+ * all the way to the renderer. See docs/external-references.md part 4.
+ */
+function toWireExternal(x, m) {
+	let out = { key: x.key, ns: x.ns, id: x.id, citedBy: x.citedBy, via: x.via };
+	if (m) {
+		out.title = m.title || null;
+		out.creators = m.creators || [];
+		out.year = m.year != null ? m.year : null;
+		out.citedByGlobal = m.citedByGlobal != null ? m.citedByGlobal : null;
+		out.source = m.source || [];
+	}
+	return out;
 }
 
 function send(entry, fn, value) {
@@ -308,4 +397,4 @@ function closeAll() {
 	open_.clear();
 }
 
-module.exports = { open, closeAll, closeAllInWindow, mergeEdges };
+module.exports = { open, closeAll, closeAllInWindow, mergeEdges, toWireExternal };

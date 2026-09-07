@@ -43,6 +43,7 @@
 	let elRecursive = el('recursive');
 	let elIncludeExternal = el('include-external');
 	let elMinCites = el('min-cites');
+	let elEnrich = el('enrich');
 	let elColorBy = el('color-by');
 
 	function emit(msg) {
@@ -69,6 +70,7 @@
 		if (raw.options) {
 			elRecursive.checked = !!raw.options.recursive;
 			elIncludeExternal.checked = !!raw.options.includeExternal;
+			elEnrich.checked = !!raw.options.enrich;
 		}
 		yearRange = null;
 		renderStrategyToggles();
@@ -110,13 +112,45 @@
 		return author + (y || '');
 	}
 
-	/** Ghost nodes have only a DOI. Show its suffix -- the registrant prefix is
-	 *  the same for every paper from one publisher and carries no information. */
+	/**
+	 * Ghost labels. With "look up names" on, an enriched ghost gets the same
+	 * Surname+Year citekey as a real node, so the two read alike and the graph
+	 * becomes legible without opening a tooltip.
+	 *
+	 * Unenriched -- which is the default, and also every ghost past the lookup
+	 * cap -- falls back to the DOI suffix. The registrant prefix is the same for
+	 * every paper from one publisher and carries no information.
+	 */
 	function ghostLabel(x) {
+		if (x.title || (x.creators && x.creators.length)) {
+			return shortLabel({ creators: x.creators, title: x.title }, x.year);
+		}
 		let s = String(x.id || '');
 		let slash = s.indexOf('/');
 		let tail = slash >= 0 ? s.slice(slash + 1) : s;
 		return tail.length > 20 ? tail.slice(0, 19) + '…' : tail;
+	}
+
+	/**
+	 * Tooltip for a ghost. Both counts appear, and both are named: `citedBy` is
+	 * citers inside this collection, `citedByGlobal` is the whole literature.
+	 * Conflating them would undo the reason ghosts are computed at all -- see
+	 * docs/external-references.md part 4.
+	 */
+	function ghostTooltip(n) {
+		let x = n.meta || {};
+		let head = x.title ? escapeHtml(x.title) : escapeHtml(n.name);
+		let bits = [];
+		if (x.creators && x.creators.length) {
+			bits.push(escapeHtml(x.creators.slice(0, 3).join(', ')
+				+ (x.creators.length > 3 ? ' et al.' : '')));
+		}
+		if (x.year) bits.push(x.year);
+		bits.push('cited by ' + n.inDeg + ' here');
+		if (x.citedByGlobal != null) {
+			bits.push(x.citedByGlobal.toLocaleString() + ' citations total');
+		}
+		return 'Not in collection — ' + head + '<br/>' + bits.join(' · ');
 	}
 
 	// --- colour -----------------------------------------------------------
@@ -284,6 +318,9 @@
 			n.itemID = null;
 			n.deg = cites;
 			n.inDeg = cites;
+			// Node size stays on local in-degree; citedByGlobal is tooltip-only.
+			// A famous paper you do not hold is not a gap in your library.
+			n.meta = x;
 			n.label = ghostLabel(x);
 			nodes.push(n);
 		}
@@ -305,7 +342,7 @@
 			.graphData({ nodes, links })
 			.nodeId('id')
 			.nodeLabel(n => (n.ghost
-				? 'Not in collection — ' + escapeHtml(n.name) + ' · cited by ' + n.inDeg + ' here'
+				? ghostTooltip(n)
 				: escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
 					+ (n.inDeg ? ' — cited by ' + n.inDeg + ' here' : '')))
 			.nodeRelSize(NODE_REL_SIZE)
@@ -326,8 +363,11 @@
 
 		let phase = raw.meta && raw.meta.phase;
 		let ghostCount = visibleGhosts.size;
+		let named = 0;
+		for (let [, { x }] of visibleGhosts) if (x.title) named++;
 		elStats.textContent = (nodes.length - ghostCount) + ' / ' + raw.items.length + ' items'
-			+ (ghostCount ? ' · ' + ghostCount + ' outside' : '')
+			+ (ghostCount ? ' · ' + ghostCount + ' outside'
+				+ (named ? ' (' + named + ' named)' : '') : '')
 			+ ' · ' + links.length + ' edges'
 			+ (phase && phase !== 'done' ? ' · building…' : '');
 	}
@@ -525,7 +565,9 @@
 	function syncEnabled() {
 		let on = elIncludeExternal.checked;
 		elMinCites.disabled = !on;
+		elEnrich.disabled = !on;
 		el('min-cites-label').classList.toggle('disabled', !on);
+		el('enrich-label').classList.toggle('disabled', !on);
 	}
 
 	/** Scope changes cannot be filtered into existence -- they need a new build. */
@@ -537,12 +579,15 @@
 			options: {
 				recursive: elRecursive.checked,
 				includeExternal: elIncludeExternal.checked,
+				enrich: elEnrich.checked,
 			},
 		});
 	}
 
 	elRecursive.addEventListener('change', requestRebuild);
 	elIncludeExternal.addEventListener('change', requestRebuild);
+	// Scope, not a filter: names have to be fetched, so this costs a rebuild.
+	elEnrich.addEventListener('change', requestRebuild);
 	el('rebuild').addEventListener('click', requestRebuild);
 
 	elMinConf.addEventListener('input', render);

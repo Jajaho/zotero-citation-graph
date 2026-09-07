@@ -24,6 +24,11 @@
 				cited by ≥
 				<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
 			</label>
+			<!-- The only control that reaches the network. Off by default. -->
+			<label id="enrich-label" title="Look up titles, authors and citation counts for outside works (uses the OpenAlex API)">
+				<input id="enrich" type="checkbox"/>
+				look up names
+			</label>
 		</span>
 
 		<span class="group">

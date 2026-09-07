@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Provider registry.
+ * Edge-provider registry.
  *
  * An edge provider is one strategy for deriving "A cites B" edges. Providers
  * are registered by id and selected at build time, so adding a strategy is a
@@ -17,65 +17,23 @@
  *   derive(ctx)    {AsyncGenerator<Edge>|Promise<Edge[]>}
  *
  * `ctx` is { adapter, items, index, options, signal, onProgress }.
+ *
+ * The register/get/all/select machinery lives in providerRegistry.js, shared
+ * with the metadata enrichers in enrichRegistry.js so that `offline` and the
+ * enable/disable lists cannot come to mean two different things.
  */
 
-const _providers = new Map();
+const { createRegistry } = require('./providerRegistry');
 
-function register(provider) {
-	for (const f of ['id', 'label', 'derive']) {
-		if (!provider[f]) throw new Error(`provider is missing required field '${f}'`);
-	}
-	if (_providers.has(provider.id)) {
-		throw new Error(`provider '${provider.id}' is already registered`);
-	}
-	_providers.set(provider.id, {
+const registry = createRegistry({
+	kind: 'provider',
+	required: ['id', 'label', 'derive'],
+	defaults: {
 		requiresNetwork: false,
 		defaultEnabled: true,
 		defaultConfidence: 0.5,
 		options: {},
-		...provider,
-	});
-	return provider.id;
-}
+	},
+});
 
-function get(id) {
-	const p = _providers.get(id);
-	if (!p) throw new Error(`unknown provider '${id}' (registered: ${[..._providers.keys()].join(', ') || 'none'})`);
-	return p;
-}
-
-function all() {
-	return [..._providers.values()];
-}
-
-/**
- * Resolve a user config into the ordered list of providers to run.
- *
- * @param {Object} [config]
- * @param {string[]} [config.enable]   explicit allow-list; overrides defaults
- * @param {string[]} [config.disable]  subtracted after `enable`
- * @param {boolean}  [config.offline]  drop every provider needing the network
- * @param {Object}   [config.providers] per-provider option overrides, keyed by id
- */
-function select(config = {}) {
-	const { enable, disable = [], offline = false, providers: opts = {} } = config;
-	let chosen = enable && enable.length
-		? enable.map(get)
-		: all().filter((p) => p.defaultEnabled);
-
-	chosen = chosen.filter((p) => !disable.includes(p.id));
-
-	const skipped = [];
-	if (offline) {
-		chosen = chosen.filter((p) => {
-			if (p.requiresNetwork) { skipped.push(p.id); return false; }
-			return true;
-		});
-	}
-	return {
-		providers: chosen.map((p) => ({ ...p, options: { ...p.options, ...(opts[p.id] || {}) } })),
-		skippedForOffline: skipped,
-	};
-}
-
-module.exports = { register, get, all, select, _providers };
+module.exports = registry;

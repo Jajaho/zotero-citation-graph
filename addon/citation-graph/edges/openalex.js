@@ -13,9 +13,14 @@ const { normDoi } = require('../core/normalize');
  * so the union beat either alone by 32%. That complementarity is the reason to
  * keep it switchable rather than pick a winner.
  *
- * Cost: one list call per 50 items (1 credit each). A 500-item collection is
- * ~10 calls. OpenAlex has required an API key since Feb 2026; anonymous access
- * still works at a tenth of the free daily allowance.
+ * Cost: one list call per 50 items (10 credits each, post-Feb-2026 pricing). A
+ * 500-item collection is ~10 calls. OpenAlex has required an API key since
+ * 13 Feb 2026; anonymous access still works at a tenth of the free daily
+ * allowance, which is why this runs without configuration.
+ *
+ * The `mailto` polite-pool parameter was removed on the same date and is now
+ * ignored by the server, so it is not sent. The key goes in an Authorization
+ * header rather than the query string to keep it out of URLs and error text.
  */
 module.exports.id = register({
 	id: 'openalex',
@@ -25,9 +30,9 @@ module.exports.id = register({
 	defaultConfidence: 0.98,
 	options: {
 		apiKey: null,
-		mailto: null,            // polite-pool identification
 		batchSize: 50,
 		endpoint: 'https://api.openalex.org/works',
+		fetchImpl: null,         // see enrich/openalex.js for why this is injectable
 	},
 
 	async derive({ items, index, options, onProgress }) {
@@ -39,6 +44,11 @@ module.exports.id = register({
 		}
 		if (!dois.length) return [];
 
+		const fetch_ = options.fetchImpl || globalThis.fetch;
+		if (typeof fetch_ !== 'function') throw new Error('no fetch implementation available');
+		const headers = { Accept: 'application/json' };
+		if (options.apiKey) headers.Authorization = 'Bearer ' + options.apiKey;
+
 		const works = [];
 		for (let i = 0; i < dois.length; i += options.batchSize) {
 			const batch = dois.slice(i, i + options.batchSize);
@@ -46,10 +56,8 @@ module.exports.id = register({
 			url.searchParams.set('per-page', String(options.batchSize));
 			url.searchParams.set('select', 'id,doi,referenced_works');
 			url.searchParams.set('filter', 'doi:' + batch.join('|'));
-			if (options.mailto) url.searchParams.set('mailto', options.mailto);
-			if (options.apiKey) url.searchParams.set('api_key', options.apiKey);
 
-			const res = await fetch(url, { headers: { Accept: 'application/json' } });
+			const res = await fetch_(url.toString(), { headers });
 			if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
 			const json = await res.json();
 			if (json.results) works.push(...json.results);

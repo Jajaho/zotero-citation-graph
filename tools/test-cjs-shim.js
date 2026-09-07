@@ -262,6 +262,230 @@ check('collectExternalNodes merges across separate builds without double-countin
 	if (out[0].via.length !== 2) throw new Error('lost provenance: ' + JSON.stringify(out[0].via));
 });
 
+// --- metadata enrichment ----------------------------------------------------
+
+/** A canned OpenAlex /works response, in the shape the real API returns. */
+function fakeOpenAlex(results) {
+	return async (url) => ({
+		ok: true,
+		status: 200,
+		_url: url,
+		json: async () => ({ results }),
+	});
+}
+
+check('the enrich registry is separate from the edge registry', () => {
+	const cg = require_('./citation-graph/index.js');
+	// Same id, two populations. If these ever shared a registry, registering the
+	// enricher would have thrown on the duplicate 'openalex'.
+	if (cg.registry === cg.enrichRegistry) throw new Error('one registry, not two');
+	const ids = cg.listEnrichers().map(e => e.id).filter(id => !id.startsWith('test-'));
+	if (JSON.stringify(ids) !== JSON.stringify(['openalex'])) {
+		throw new Error('enrichers: ' + JSON.stringify(ids));
+	}
+	const oa = cg.listEnrichers().find(e => e.id === 'openalex');
+	// Off by default: the plugin must not start using the network silently.
+	if (oa.defaultEnabled) throw new Error('openalex enricher is on by default');
+	if (!oa.requiresNetwork) throw new Error('openalex enricher not marked network');
+});
+
+check('both registries share one select() so offline means one thing', () => {
+	const cg = require_('./citation-graph/index.js');
+	const a = cg.registry.select({ enable: ['openalex'], offline: true });
+	const b = cg.enrichRegistry.select({ enable: ['openalex'], offline: true });
+	if (a.providers.length || b.providers.length) throw new Error('offline let a network provider through');
+	if (JSON.stringify(a.skippedForOffline) !== JSON.stringify(b.skippedForOffline)) {
+		throw new Error('registries disagree about what offline skipped');
+	}
+});
+
+check('openalex enricher builds one filtered call and maps the response back', () => {
+	const cg = require_('./citation-graph/index.js');
+	const seen = [];
+	const fetchImpl = async (url) => {
+		seen.push(url);
+		return fakeOpenAlex([
+			{
+				id: 'https://openalex.org/W2049772957',
+				// The API returns DOIs as resolver URLs and in whatever case it
+				// stored them; normDoi has to close that loop for the key to match.
+				doi: 'https://doi.org/10.1038/NATURE12373',
+				display_name: 'Nanometre-scale thermometry in a living cell',
+				publication_year: 2013,
+				authorships: [{ author: { display_name: 'Georg Kucsko' } },
+					{ author: { display_name: 'Peter C. Maurer' } }],
+				cited_by_count: 1234,
+				type: 'article',
+			},
+		])(url);
+	};
+	return cg.enrich(['doi:10.1038/nature12373', 'doi:10.5555/missing'], {
+		enable: ['openalex'],
+		providers: { openalex: { fetchImpl } },
+	}).then((r) => {
+		const m = r.metadata['doi:10.1038/nature12373'];
+		if (!m) throw new Error('did not resolve; got ' + JSON.stringify(Object.keys(r.metadata)));
+		if (m.title !== 'Nanometre-scale thermometry in a living cell') throw new Error('title ' + m.title);
+		if (m.year !== 2013) throw new Error('year ' + m.year);
+		// Surnames only, to match how every other node in the graph is labelled.
+		if (JSON.stringify(m.creators) !== JSON.stringify(['Kucsko', 'Maurer'])) {
+			throw new Error('creators ' + JSON.stringify(m.creators));
+		}
+		if (m.citedByGlobal !== 1234) throw new Error('citedByGlobal ' + m.citedByGlobal);
+		// The name that must never be `citedBy` -- that one means "citers in this
+		// collection" and is computed locally.
+		if ('citedBy' in m) throw new Error('enricher leaked a citedBy field');
+		// A DOI the API did not return simply has no metadata; it must not appear.
+		if (r.metadata['doi:10.5555/missing']) throw new Error('invented metadata');
+		// Both DOIs in one request, not two.
+		if (seen.length !== 1) throw new Error(seen.length + ' requests, expected 1');
+		if (!/filter=doi%3A10\.1038%2Fnature12373%7C10\.5555%2Fmissing/.test(seen[0])) {
+			throw new Error('unexpected filter: ' + seen[0]);
+		}
+		if (r.meta.resolved !== 1 || r.meta.requested !== 2) throw new Error(JSON.stringify(r.meta));
+	});
+});
+
+check('the API key travels in a header, never in the URL', () => {
+	const cg = require_('./citation-graph/index.js');
+	let seenUrl = null;
+	let seenHeaders = null;
+	const fetchImpl = async (url, opts) => {
+		seenUrl = url;
+		seenHeaders = opts && opts.headers;
+		return { ok: true, json: async () => ({ results: [] }) };
+	};
+	// A real-shaped DOI: normDoi requires 4-9 digits in the registrant code, so
+	// '10.1/x' would be rejected before any request was built.
+	return cg.enrich(['doi:10.1000/x'], {
+		enable: ['openalex'],
+		providers: { openalex: { fetchImpl, apiKey: 'SECRET' } },
+	}).then(() => {
+		if (seenUrl.includes('SECRET')) throw new Error('key leaked into the URL: ' + seenUrl);
+		if (seenHeaders.Authorization !== 'Bearer SECRET') {
+			throw new Error('no bearer header: ' + JSON.stringify(seenHeaders));
+		}
+		// mailto was removed by OpenAlex in Feb 2026 and must not be sent.
+		if (seenUrl.includes('mailto')) throw new Error('still sending mailto');
+	});
+});
+
+check('enrichers chain fill-first and are only asked about what is missing', () => {
+	const cg = require_('./citation-graph/index.js');
+	const enrichRegistry = require_('./citation-graph/core/enrichRegistry');
+	const asked = { first: null, second: null };
+	if (!enrichRegistry._providers.has('test-first')) {
+		enrichRegistry.register({
+			id: 'test-first',
+			label: 'first',
+			requiresNetwork: false,
+			supports: ['doi'],
+			// Knows a title for A, and a count for neither.
+			resolve: ({ refs }) => {
+				asked.first = refs.map(r => r.key).sort();
+				return [{ key: 'doi:10.1/a', title: 'A title', citedByGlobal: 7 },
+					{ key: 'doi:10.1/b', title: 'B title' }];
+			},
+		});
+		enrichRegistry.register({
+			id: 'test-second',
+			label: 'second',
+			requiresNetwork: false,
+			supports: ['doi'],
+			resolve: ({ refs }) => {
+				asked.second = refs.map(r => r.key).sort();
+				// Would overwrite A's title if the merge were last-wins.
+				return [{ key: 'doi:10.1/a', title: 'WRONG', citedByGlobal: 999 },
+					{ key: 'doi:10.1/b', citedByGlobal: 42 }];
+			},
+		});
+	}
+	return cg.enrich(['doi:10.1/a', 'doi:10.1/b'], {
+		enable: ['test-first', 'test-second'],
+	}).then((r) => {
+		// A was complete after the first enricher, so the second never saw it.
+		if (JSON.stringify(asked.second) !== JSON.stringify(['doi:10.1/b'])) {
+			throw new Error('second enricher was asked about ' + JSON.stringify(asked.second));
+		}
+		if (r.metadata['doi:10.1/a'].title !== 'A title') throw new Error('later enricher overwrote a title');
+		if (r.metadata['doi:10.1/a'].citedByGlobal !== 7) throw new Error('later enricher overwrote a count');
+		// B was filled across the two, and provenance records both.
+		if (r.metadata['doi:10.1/b'].title !== 'B title') throw new Error('lost B title');
+		if (r.metadata['doi:10.1/b'].citedByGlobal !== 42) throw new Error('did not fill B count');
+		if (JSON.stringify(r.metadata['doi:10.1/b'].source) !== JSON.stringify(['test-first', 'test-second'])) {
+			throw new Error('provenance ' + JSON.stringify(r.metadata['doi:10.1/b'].source));
+		}
+	});
+});
+
+check('an enricher is never handed a namespace it does not support', () => {
+	const cg = require_('./citation-graph/index.js');
+	const enrichRegistry = require_('./citation-graph/core/enrichRegistry');
+	let got = null;
+	if (!enrichRegistry._providers.has('test-doionly')) {
+		enrichRegistry.register({
+			id: 'test-doionly',
+			label: 'doi only',
+			requiresNetwork: false,
+			supports: ['doi'],
+			resolve: ({ refs }) => { got = refs.map(r => r.ns); return []; },
+		});
+	}
+	return cg.enrich(['doi:10.1/a', 'arxiv:2101.00001', 'not-a-key'], {
+		enable: ['test-doionly'],
+	}).then((r) => {
+		if (JSON.stringify(got) !== JSON.stringify(['doi'])) throw new Error('got ' + JSON.stringify(got));
+		// A bare string that is not a namespaced key is dropped, not guessed at.
+		if (r.meta.requested !== 2) throw new Error('requested ' + r.meta.requested);
+	});
+});
+
+check('a failing enricher costs names, not the run', () => {
+	const cg = require_('./citation-graph/index.js');
+	const enrichRegistry = require_('./citation-graph/core/enrichRegistry');
+	if (!enrichRegistry._providers.has('test-boom')) {
+		enrichRegistry.register({
+			id: 'test-boom',
+			label: 'boom',
+			requiresNetwork: false,
+			supports: ['doi'],
+			resolve: () => { throw new Error('429 Too Many Requests'); },
+		});
+	}
+	return cg.enrich(['doi:10.1/a'], { enable: ['test-boom', 'test-first'] }).then((r) => {
+		if (r.meta.errors.length !== 1) throw new Error('swallowed or duplicated the error');
+		// The enricher after the failure still ran.
+		if (!r.metadata['doi:10.1/a']) throw new Error('one failure lost the whole chain');
+	});
+});
+
+check('enrichment honours the global offline switch', () => {
+	const cg = require_('./citation-graph/index.js');
+	return cg.enrich(['doi:10.1038/nature12373'], {
+		enable: ['openalex'],
+		offline: true,
+		// Would throw if it were ever called -- the harness has no network.
+		providers: { openalex: { fetchImpl: () => { throw new Error('network reached'); } } },
+	}).then((r) => {
+		if (JSON.stringify(r.meta.skippedForOffline) !== JSON.stringify(['openalex'])) {
+			throw new Error('skipped ' + JSON.stringify(r.meta.skippedForOffline));
+		}
+		if (Object.keys(r.metadata).length) throw new Error('resolved something while offline');
+	});
+});
+
+check('toWireExternal keeps local and global counts as separate fields', () => {
+	const { toWireExternal } = require_('./lib/graphTab.js');
+	const x = { key: 'doi:10.1/a', ns: 'doi', id: '10.1/a', citedBy: 3, via: ['pdf-links'] };
+	const bare = toWireExternal(x, null);
+	if (bare.citedBy !== 3) throw new Error('lost the local count');
+	if ('citedByGlobal' in bare) throw new Error('invented a global count with no metadata');
+	const named = toWireExternal(x, { key: x.key, title: 'T', creators: ['Kucsko'], year: 2013, citedByGlobal: 900 });
+	// The distinction the whole ghost feature rests on: 3 papers HERE cite a work
+	// the literature cites 900 times. Collapsing these would be a silent bug.
+	if (named.citedBy !== 3 || named.citedByGlobal !== 900) throw new Error(JSON.stringify(named));
+});
+
 // --- chrome-side modules ---------------------------------------------------
 
 check('lib/ modules load through the shim', () => {

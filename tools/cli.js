@@ -6,9 +6,14 @@
  *
  *   node citation-graph/cli.js --data-dir "C:/Users/me/Zotero" --db ./z.sqlite
  *   node citation-graph/cli.js --enable pdf-links,title-match
- *   node citation-graph/cli.js --enable openalex --mailto me@example.com
+ *   node citation-graph/cli.js --enable openalex --api-key KEY
  *   node citation-graph/cli.js --compare pdf-links,text-doi,title-match,openalex
  *   node citation-graph/cli.js --include-external      also count works NOT held
+ *   node citation-graph/cli.js --include-external --enrich   ...and name them
+ *
+ * --enrich resolves the outside works' DOIs to titles, authors and global
+ * citation counts (OpenAlex). It is the only part of the CLI that touches the
+ * network besides --enable openalex, and it implies --include-external.
  *
  * --compare runs each named strategy on its own, then reports overlap. That is
  * how the precision question gets settled: an edge found only by title-match
@@ -21,7 +26,7 @@ const { LocalSqliteAdapter } = require('../addon/citation-graph/adapters/localSq
 const cg = require('../addon/citation-graph/index');
 
 function parseArgs(argv) {
-	const a = { dataDir: null, db: null, enable: null, disable: [], offline: false, compare: null, json: null, mailto: null, apiKey: null, includeExternal: false };
+	const a = { dataDir: null, db: null, enable: null, disable: [], offline: false, compare: null, json: null, apiKey: null, includeExternal: false, enrich: false, maxEnrich: 500 };
 	for (let i = 2; i < argv.length; i++) {
 		const k = argv[i];
 		const next = () => argv[++i];
@@ -33,8 +38,16 @@ function parseArgs(argv) {
 		else if (k === '--offline') a.offline = true;
 		else if (k === '--include-external') a.includeExternal = true;
 		else if (k === '--json') a.json = next();
-		else if (k === '--mailto') a.mailto = next();
+		else if (k === '--enrich') { a.enrich = true; a.includeExternal = true; }
+		else if (k === '--max-enrich') a.maxEnrich = Number(next());
 		else if (k === '--api-key') a.apiKey = next();
+		// Accepted and ignored: OpenAlex dropped the polite pool on 13 Feb 2026
+		// and the server ignores the parameter. Kept so an old command line
+		// fails loudly on the flag rather than silently swallowing its value.
+		else if (k === '--mailto') {
+			console.error('warning: --mailto is dead (OpenAlex removed the polite pool, Feb 2026); use --api-key');
+			next();
+		}
 		else if (k === '--list') a.list = true;
 		else if (k === '--help' || k === '-h') a.help = true;
 	}
@@ -52,10 +65,15 @@ function rpad(s, n) { return String(s).padStart(n); }
 		return;
 	}
 	if (args.list) {
-		console.log('Registered strategies:\n');
+		console.log('Registered edge strategies:\n');
 		for (const s of cg.listStrategies()) {
 			console.log(' ', pad(s.id, 14), pad(s.requiresNetwork ? 'network' : 'offline', 9),
 				pad(s.defaultEnabled ? 'on' : 'off', 4), 'conf=' + s.defaultConfidence, ' ', s.label);
+		}
+		console.log('\nRegistered enrichers (--enrich):\n');
+		for (const s of cg.listEnrichers()) {
+			console.log(' ', pad(s.id, 14), pad(s.requiresNetwork ? 'network' : 'offline', 9),
+				pad(s.defaultEnabled ? 'on' : 'off', 4), 'ns=' + s.supports.join('|'), ' ', s.label);
 		}
 		return;
 	}
@@ -70,7 +88,7 @@ function rpad(s, n) { return String(s).padStart(n); }
 	});
 
 	const providerOpts = {};
-	if (args.mailto || args.apiKey) providerOpts.openalex = { mailto: args.mailto, apiKey: args.apiKey };
+	if (args.apiKey) providerOpts.openalex = { apiKey: args.apiKey };
 
 	// ---- comparison mode: one run per strategy, then overlap ----
 	if (args.compare) {
@@ -142,6 +160,7 @@ function rpad(s, n) { return String(s).padStart(n); }
 	for (const e of r.edges) { const n = e.via.length; byN[n] = (byN[n] || 0) + 1; }
 	console.log('edges by number of corroborating strategies:', JSON.stringify(byN));
 
+	let metadata = Object.create(null);
 	if (args.includeExternal) {
 		// Nearly all of these are cited exactly once, which is why the plugin
 		// filters on the count rather than showing them all.
@@ -151,9 +170,30 @@ function rpad(s, n) { return String(s).padStart(n); }
 			hist[b] = (hist[b] || 0) + 1;
 		}
 		console.log('\noutside works cited:', r.externalNodes.length, 'by citedBy:', JSON.stringify(hist));
-		console.log('most cited:');
+
+		if (args.enrich) {
+			const toName = r.externalNodes.slice(0, args.maxEnrich).map((x) => x.key);
+			process.stderr.write(`resolving ${toName.length} identifiers…\r`);
+			const e = await cg.enrich(toName, {
+				providers: { openalex: { apiKey: args.apiKey || null } },
+			});
+			process.stderr.write(''.padEnd(40) + '\r');
+			metadata = e.metadata;
+			console.log('enriched  :', e.meta.resolved, 'of', e.meta.requested,
+				'via', e.meta.ran.join(', ') || '(none)', 'in', (e.meta.ms / 1000).toFixed(1) + 's');
+			if (e.meta.errors.length) console.log('errors    :', JSON.stringify(e.meta.errors));
+		}
+
+		// "cited by N here" is the signal the ghost feature exists to surface;
+		// the global count is context and is printed second, never sorted on.
+		console.log('most cited (here):');
 		for (const x of r.externalNodes.slice(0, 10)) {
-			console.log(' ', rpad(x.citedBy, 4), pad(x.key, 44), x.via.join(','));
+			const m = metadata[x.key];
+			const name = m && m.title
+				? (m.creators || []).slice(0, 1).join('') + (m.year || '') + ' — ' + m.title.slice(0, 52)
+				: '';
+			console.log(' ', rpad(x.citedBy, 4), pad(x.key, 44),
+				pad(m && m.citedByGlobal != null ? m.citedByGlobal + ' cites' : '', 12), name || x.via.join(','));
 		}
 	}
 
@@ -163,9 +203,21 @@ function rpad(s, n) { return String(s).padStart(n); }
 
 	if (args.json) {
 		fs.writeFileSync(args.json, JSON.stringify({
+			// nodeKeys includes out-of-collection targets under --include-external,
+			// and those are not in the index -- fall back to whatever the
+			// enrichment phase learned, or to the bare identifier.
 			nodes: r.nodeKeys.map((k) => {
 				const it = r.index.byKey.get(k);
-				return { key: k, title: it.title, date: it.date, itemType: it.itemType };
+				if (it) return { key: k, title: it.title, date: it.date, itemType: it.itemType };
+				const m = metadata[k];
+				return {
+					key: k,
+					external: true,
+					title: (m && m.title) || null,
+					date: m && m.year != null ? String(m.year) : null,
+					itemType: (m && m.itemType) || null,
+					citedByGlobal: (m && m.citedByGlobal) != null ? m.citedByGlobal : null,
+				};
 			}),
 			links: r.edges.map((e) => ({ source: e.from, target: e.to, confidence: e.confidence, via: e.via })),
 		}, null, 1));
