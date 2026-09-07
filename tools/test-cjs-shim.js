@@ -725,6 +725,100 @@ check('mergeEdges keeps max confidence and the union of provenance', () => {
 	if (one.length !== 2) throw new Error('direction collapsed');
 });
 
+// --- node links (content/nodeLinks.js) --------------------------------------
+
+/** Same trick as loadScale(): evaluate the content-page script as a browser would. */
+function loadLinks() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/nodeLinks.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'nodeLinks.js' });
+	if (!ctx.ZGLinks) throw new Error('nodeLinks.js did not publish ZGLinks');
+	return ctx.ZGLinks;
+}
+
+check('the content page and core agree on what a DOI is', () => {
+	// nodeLinks.js copies normDoi() because the content page has no module
+	// loader and cannot require the core one. This is the test that keeps the
+	// copy honest -- without it the two would drift silently, and the graph
+	// would offer to open a DOI the builder never made a node for.
+	const L = loadLinks();
+	const { normDoi } = require_('./citation-graph/core/normalize.js');
+	const cases = [
+		'10.1038/nature12373',
+		'  10.1038/NATURE12373  ',
+		'https://doi.org/10.1038/nature12373',
+		'http://dx.doi.org/10.1038/nature12373',
+		'doi: 10.1038/nature12373',
+		'10.1038/nature12373.',
+		'10.1038/nature12373)',
+		'10.1/x',           // registrant too short
+		'nature12373',      // not a DOI at all
+		'', null, undefined,
+	];
+	for (const raw of cases) {
+		if (L.normDoi(raw) !== normDoi(raw)) {
+			throw new Error(JSON.stringify(raw) + ': ' + L.normDoi(raw) + ' vs ' + normDoi(raw));
+		}
+	}
+});
+
+check('a DOI URL survives the characters that would truncate it', () => {
+	const L = loadLinks();
+	// encodeURI leaves '#' and '?' alone, and both occur inside real DOIs --
+	// unescaped, the first turns the rest of the DOI into a fragment and the
+	// second into a query string, and doi.org resolves neither.
+	if (L.doiUrl('10.1002/(sici)1099-1097#x') !== 'https://doi.org/10.1002/(sici)1099-1097%23x') {
+		throw new Error(L.doiUrl('10.1002/(sici)1099-1097#x'));
+	}
+	if (L.doiUrl('10.1234/ab?cd') !== 'https://doi.org/10.1234/ab%3Fcd') {
+		throw new Error(L.doiUrl('10.1234/ab?cd'));
+	}
+	// The slash separating prefix from suffix is structure, not a character to
+	// escape: %2F would not resolve.
+	if (L.doiUrl('10.1038/nature12373') !== 'https://doi.org/10.1038/nature12373') {
+		throw new Error(L.doiUrl('10.1038/nature12373'));
+	}
+	if (L.doiUrl('not a doi') !== null) throw new Error('accepted a non-DOI');
+});
+
+check('only a web URL is ever handed to the browser launcher', () => {
+	const L = loadLinks();
+	// The url field is free text. A local path or a zotero:// link in it must
+	// fall through to the DOI rather than reach Zotero.launchURL().
+	if (L.itemUrl({ url: 'https://example.org/a', doi: '10.1038/nature12373' })
+		!== 'https://example.org/a') {
+		throw new Error('the url field should win when it is a web URL');
+	}
+	if (L.itemUrl({ url: 'file:///C:/papers/a.pdf', doi: '10.1038/nature12373' })
+		!== 'https://doi.org/10.1038/nature12373') {
+		throw new Error('a file: url was not rejected');
+	}
+	if (L.itemUrl({ url: 'javascript:alert(1)', doi: null }) !== null) {
+		throw new Error('a javascript: url survived');
+	}
+	if (L.itemUrl({}) !== null) throw new Error('an item with neither should offer nothing');
+});
+
+check('an outside reference resolves through whichever namespace keyed it', () => {
+	const L = loadLinks();
+	const { EXTERNAL_NS } = require_('./citation-graph/core/types.js');
+	if (L.externalUrl('doi', '10.1038/nature12373') !== 'https://doi.org/10.1038/nature12373') {
+		throw new Error('doi');
+	}
+	if (L.externalUrl('arxiv', '1303.3629') !== 'https://arxiv.org/abs/1303.3629') {
+		throw new Error('arxiv');
+	}
+	// Every namespace the builder can key an external node with must resolve to
+	// something, or the menu would offer a dead entry for nodes that do exist.
+	const sample = { doi: '10.1038/nature12373', arxiv: '1303.3629', openalex: 'W123' };
+	for (const ns of EXTERNAL_NS) {
+		if (!sample[ns]) throw new Error('new namespace ' + ns + ' has no sample id here');
+		if (!L.externalUrl(ns, sample[ns])) throw new Error('no URL for namespace ' + ns);
+	}
+	if (L.externalUrl('pmid', '12345') !== null) throw new Error('invented a URL for an unknown ns');
+});
+
 Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);

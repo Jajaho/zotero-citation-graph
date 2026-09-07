@@ -75,6 +75,11 @@ body {
 	font: inherit;
 }
 
+#isolate-clear {
+	font: inherit;
+	padding: 1px 8px;
+}
+
 #collection-name {
 	font-weight: 600;
 	overflow: hidden;
@@ -154,6 +159,48 @@ body {
 }
 
 
+
+/* The node context menu. A sibling of #graph, like #status and #action,
+   because force-graph's init() empties its container. */
+#menu {
+	position: absolute;
+	z-index: 11;
+	display: flex;
+	flex-direction: column;
+	min-width: 150px;
+	padding: 4px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* display:flex above is an author rule and would otherwise beat the UA
+   stylesheet's [hidden] { display: none }. */
+#menu[hidden] {
+	display: none;
+}
+
+.menu-item {
+	font: inherit;
+	text-align: left;
+	white-space: nowrap;
+	padding: 4px 10px;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--fg);
+	cursor: pointer;
+}
+
+.menu-item:hover:not([disabled]) {
+	background: var(--toolbar-bg);
+}
+
+.menu-item[disabled] {
+	opacity: 0.4;
+	cursor: default;
+}
 
 /* Action popover for outside references. A sibling of #graph, like #status,
    because force-graph's init() empties its container. */

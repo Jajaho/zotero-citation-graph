@@ -132,6 +132,15 @@ async function handleMessage(win, tabID, collection, msg) {
 		case 'add-item':
 			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi);
 			break;
+		// The graph page runs with a content principal and cannot open a browser
+		// itself. Only http(s) is passed on: a held item's URL comes from the
+		// Zotero `url` field, which is free text and routinely holds a local
+		// path -- and this ends up at the OS handler.
+		case 'open-url':
+			if (typeof msg.url === 'string' && /^https?:\/\//i.test(msg.url)) {
+				Zotero.launchURL(msg.url);
+			}
+			break;
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}

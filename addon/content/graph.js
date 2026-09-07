@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale */
+/* global ForceGraph, ZGScale, ZGLinks */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -25,8 +25,15 @@
 	// nothing else.
 	const GHOST_COLOR = '#8e8e93';
 
-	// Published by nodeScale.js, which graph.html loads first.
+	// How far the graph outside the isolated node's neighbourhood is faded.
+	// Faded and not hidden: the whole point of isolating is to read one node's
+	// citations against the shape of the graph they sit in.
+	const DIM_NODE_ALPHA = 0.1;
+	const DIM_LINK_FACTOR = 0.15;
+
+	// Published by nodeScale.js and nodeLinks.js, which graph.html loads first.
 	const Scale = ZGScale;
+	const Links = ZGLinks;
 
 	let fg = null;
 	let raw = null;
@@ -37,6 +44,12 @@
 	// what is on screen, not the maximum. Recomputed every render, because
 	// filtering the graph should rescale it.
 	let globalRef = 1;
+
+	// View state for isolation. None of this filters the graph or reaches
+	// chrome -- see setIsolated() for why it must not.
+	let isolated = null;          // focused node id, or null
+	let adjacency = new Map();    // node id -> Set of ids one edge away
+	let hoverNode = null;         // whatever force-graph's hit test is over
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -54,6 +67,8 @@
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
 	let elAction = el('action');
+	let elMenu = el('menu');
+	let elIsolate = el('isolate-clear');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -85,6 +100,8 @@
 		// The ghost the popover describes may not exist in this payload -- after
 		// an add it is a real item, and after a rebuild it may be filtered out.
 		hideAction();
+		hideMenu();
+		hoverNode = null;
 		renderStrategyToggles();
 		// Only auto-hide unconnected nodes the first time edges show up; after
 		// that the checkbox belongs to the user.
@@ -162,7 +179,7 @@
 		if (x.citedByGlobal != null) {
 			bits.push(x.citedByGlobal.toLocaleString() + ' citations total');
 		}
-		bits.push('click to add to Zotero');
+		bits.push('double-click for details · right-click for actions');
 		return 'Not in collection — ' + head + '<br/>' + bits.join(' · ');
 	}
 
@@ -173,8 +190,9 @@
 		if (n.citedByGlobal != null) {
 			bits.push(n.citedByGlobal.toLocaleString() + ' citations total');
 		}
+		bits.push('double-click to select in Zotero · right-click for actions');
 		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
-			+ (bits.length ? '<br/>' + bits.join(' · ') : '');
+			+ '<br/>' + bits.join(' · ');
 	}
 
 	// --- colour -----------------------------------------------------------
@@ -189,6 +207,11 @@
 	}
 
 	function nodeColor(n) {
+		let c = baseColor(n);
+		return dimmed(n) ? fade(c, DIM_NODE_ALPHA) : c;
+	}
+
+	function baseColor(n) {
 		if (n.ghost) return GHOST_COLOR;
 		let key = colorKey(n);
 		if (key === null) return '#9aa0a6'; // no date, when colouring by year
@@ -299,11 +322,13 @@
 		let inDegree = Object.create(null);
 		let outDegree = Object.create(null);
 		let links = [];
+		adjacency = new Map();
 		for (let { e, via } of candidates) {
 			if (!inCollection.has(e.to) && !visibleGhosts.has(e.to)) continue;
 			links.push({ source: e.from, target: e.to, confidence: e.confidence, via, doi: e.doi });
 			inDegree[e.to] = (inDegree[e.to] || 0) + 1;
 			outDegree[e.from] = (outDegree[e.from] || 0) + 1;
+			relate(e.from, e.to);
 		}
 
 		// 4. Nodes. Reuse the objects so force-graph keeps the simulated
@@ -326,6 +351,8 @@
 			n.name = it.title;
 			n.itemID = it.itemID;
 			n.itemType = it.itemType;
+			n.doi = it.doi || null;
+			n.url = it.url || null;
 			n.creators = it.creators || [];
 			n.collections = it.collections || [];
 			n.year = year(it);
@@ -357,14 +384,33 @@
 		for (let n of nodes) if (n.citedByGlobal != null) counts.push(n.citedByGlobal);
 		globalRef = Scale.referenceCount(counts);
 
+		// A filter change or a rebuild can take the focused node off screen, and
+		// a focus on a node that is not drawn would dim the whole graph with
+		// nothing left lit.
+		if (isolated !== null && !nodes.some(n => n.id === isolated)) isolated = null;
+		syncIsolateNote();
+
 		if (!fg) {
 			fg = ForceGraph()(elGraph);
-			fg.onNodeClick((n, event) => {
-				if (n.ghost) showAction(n, event);
-				else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
+			// One click isolates; opening the item is the double click, because
+			// isolating is the cheap, reversible, in-place gesture and selecting
+			// an item throws the user into a different tab.
+			fg.onNodeClick(n => toggleIsolate(n.id));
+			fg.onNodeRightClick(showMenu);
+			fg.onNodeHover((n) => {
+				hoverNode = n;
 			});
-			// Clicking empty canvas dismisses, the way a popover should.
-			fg.onBackgroundClick(hideAction);
+			// Clicking empty canvas dismisses, the way a popover should, and
+			// gives the whole graph back.
+			fg.onBackgroundClick(() => {
+				hideAction();
+				hideMenu();
+				setIsolated(null);
+			});
+			fg.onBackgroundRightClick(() => {
+				hideAction();
+				hideMenu();
+			});
 			// d3 re-initialises every registered force whenever the node array
 			// is replaced, so these pick up new nodes and new radii on their
 			// own and only ever need registering once.
@@ -389,7 +435,8 @@
 			// Colour by the strongest strategy backing the edge, so a publisher's
 			// own DOI link reads differently from an inferred title match.
 			.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
-				l.confidence >= ASSERTED ? 0.85 : 0.45))
+				(l.confidence >= ASSERTED ? 0.85 : 0.45)
+				* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
 			.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
 			.d3VelocityDecay(0.3);
 
@@ -558,6 +605,10 @@
 
 	function drawLabel(node, ctx, globalScale) {
 		if (!node.label) return;
+		// Dimmed nodes lose their label entirely rather than fading it. A halo
+		// stroke is what makes a label readable over dense edges, and a faded
+		// halo over a faded label is just a smudge.
+		if (dimmed(node)) return;
 		let theme = themeColors();
 		ctx.font = (10 / globalScale) + 'px sans-serif';
 		ctx.textAlign = 'center';
@@ -599,19 +650,230 @@
 		return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
 	}
 
+	/** Lower a colour's alpha, in either form the palette produces: a hex
+	 *  literal, or the hsl() string the year ramp and the hash hues build. */
+	function fade(color, a) {
+		if (color.charAt(0) === '#') return withAlpha(color, a);
+		return color.replace('hsl(', 'hsla(').replace(')', ', ' + a + ')');
+	}
+
 	// force-graph renders labels as HTML in its tooltip.
 	function escapeHtml(s) {
 		return String(s == null ? '' : s).replace(/[&<>"]/g,
 			c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 	}
 
+	// --- isolation --------------------------------------------------------
+
+	/**
+	 * Focus one node: it and everything one edge away keep their colour, and the
+	 * rest of the graph fades to a wash.
+	 *
+	 * Dimming, not filtering, and the difference is load-bearing. Filtering
+	 * would drop the other nodes from the simulation, the layout would resettle,
+	 * and the neighbourhood you were trying to look at would end up somewhere
+	 * else on screen -- destroying exactly the spatial memory you were reading
+	 * the graph with. Nothing here touches graphData; only the colour accessors
+	 * change, so every node stays exactly where it was.
+	 */
+	function setIsolated(id) {
+		if (isolated === id) return;
+		isolated = id;
+		syncIsolateNote();
+		// Re-setting a visual accessor is what marks the canvas dirty.
+		// force-graph pauses its redraw loop once the simulation has cooled, so
+		// without this the fade would not appear until something else moved.
+		if (fg) fg.nodeColor(nodeColor);
+	}
+
+	function toggleIsolate(id) {
+		hideAction();
+		hideMenu();
+		setIsolated(isolated === id ? null : id);
+	}
+
+	/**
+	 * Adjacency is undirected on purpose. Isolating a paper should show what it
+	 * cites AND what cites it -- the neighbourhood is the interesting object,
+	 * and half of it would be a strange thing to show.
+	 */
+	function relate(a, b) {
+		let sa = adjacency.get(a);
+		if (!sa) adjacency.set(a, sa = new Set());
+		sa.add(b);
+		let sb = adjacency.get(b);
+		if (!sb) adjacency.set(b, sb = new Set());
+		sb.add(a);
+	}
+
+	function dimmed(n) {
+		if (isolated === null || n.id === isolated) return false;
+		let near = adjacency.get(isolated);
+		return !(near && near.has(n.id));
+	}
+
+	/** force-graph rewrites a link's endpoints into node references once the
+	 *  data is loaded, so the same field is a plain id before the first tick. */
+	function endId(x) {
+		return x && typeof x === 'object' ? x.id : x;
+	}
+
+	function dimmedLink(l) {
+		if (isolated === null) return false;
+		return endId(l.source) !== isolated && endId(l.target) !== isolated;
+	}
+
+	/**
+	 * Isolation is otherwise invisible in the toolbar, and a user who does not
+	 * know that clicking the background clears it would have no way back to the
+	 * whole graph.
+	 */
+	function syncIsolateNote() {
+		let n = isolated === null ? null : nodeCache.get(isolated);
+		elIsolate.hidden = !n;
+		if (n) elIsolate.textContent = 'isolated: ' + (n.label || n.name) + ' ✕';
+	}
+
+	elIsolate.addEventListener('click', () => setIsolated(null));
+
+	window.addEventListener('pointerdown', (e) => {
+		if (!elMenu.hidden && !elMenu.contains(e.target)) hideMenu();
+	}, true);
+
+	/**
+	 * force-graph has no double-click event, but it does unbind d3-zoom's
+	 * dblclick-to-zoom, which leaves the DOM one free for us. The node is
+	 * whatever the pointer is over -- force-graph's own hit test already knows,
+	 * and asking it is more reliable than timing two clicks ourselves.
+	 *
+	 * The pair of clicks underneath still runs toggleIsolate twice, which
+	 * cancels out: a double click leaves the isolation state exactly as it found
+	 * it and does nothing but open the node.
+	 */
+	elGraph.addEventListener('dblclick', (event) => {
+		if (hoverNode) activate(hoverNode, event);
+	});
+
+	/**
+	 * What "open this" means for the two node populations. A held item is
+	 * selected in the library pane; an outside reference has no item to select,
+	 * so it gets the card describing what adding it would add.
+	 */
+	function activate(n, event) {
+		hideMenu();
+		if (n.ghost) showAction(n, event);
+		else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
+	}
+
+	// --- the node context menu --------------------------------------------
+
+	/**
+	 * Built fresh per node rather than shown and hidden, because what it offers
+	 * differs between the two populations: a held item can be selected in the
+	 * library and opened at its own URL, an outside reference can only be
+	 * resolved through its identifier or added.
+	 */
+	function showMenu(n, event) {
+		hideAction();
+		elMenu.textContent = '';
+		for (let entry of (n.ghost ? ghostMenu(n) : itemMenu(n))) {
+			elMenu.appendChild(menuItem(entry));
+		}
+		elMenu.hidden = false;
+		positionAt(elMenu, event);
+	}
+
+	function hideMenu() {
+		elMenu.hidden = true;
+	}
+
+	function menuItem({ label, hint, disabled, run }) {
+		let b = document.createElement('button');
+		b.type = 'button';
+		b.className = 'menu-item';
+		b.textContent = label;
+		if (hint) b.title = hint;
+		if (disabled) {
+			b.disabled = true;
+		}
+		else {
+			b.addEventListener('click', () => {
+				hideMenu();
+				run();
+			});
+		}
+		return b;
+	}
+
+	function ghostMenu(n) {
+		let x = n.meta || {};
+		let url = Links.externalUrl(x.ns, x.id || n.name);
+		return [
+			{
+				label: 'Open in browser',
+				hint: url || 'no resolvable identifier',
+				disabled: !url,
+				run: () => emit({ type: 'open-url', url }),
+			},
+			{
+				// Straight to the add, where the card on double click asks
+				// first. A menu entry cannot be hit by a stray click while
+				// panning, and that is the only thing the confirmation was ever
+				// there to prevent.
+				label: 'Add to Zotero',
+				hint: n.name,
+				disabled: x.ns !== 'doi',
+				run: () => emit({ type: 'add-item', doi: n.name }),
+			},
+		];
+	}
+
+	function itemMenu(n) {
+		let url = Links.itemUrl(n);
+		return [
+			{
+				label: 'Select in Zotero',
+				disabled: !n.itemID,
+				run: () => emit({ type: 'open-item', itemID: n.itemID }),
+			},
+			{
+				label: isolated === n.id ? 'Show whole graph' : 'Isolate',
+				run: () => setIsolated(isolated === n.id ? null : n.id),
+			},
+			{
+				label: 'Open in browser',
+				hint: url || 'this item has neither a URL nor a DOI',
+				disabled: !url,
+				run: () => emit({ type: 'open-url', url }),
+			},
+		];
+	}
+
+	/**
+	 * Open at the pointer, clamped so a floating panel cannot land off-screen at
+	 * the right or bottom edge -- which is exactly where a dense graph pushes
+	 * you to click.
+	 */
+	function positionAt(node, event) {
+		let w = node.offsetWidth;
+		let h = node.offsetHeight;
+		let px = event ? event.clientX : window.innerWidth / 2;
+		let py = event ? event.clientY : window.innerHeight / 2;
+		node.style.left = Math.max(4, Math.min(px + 12, window.innerWidth - w - 8)) + 'px';
+		node.style.top = Math.max(4, Math.min(py + 12, window.innerHeight - h - 8)) + 'px';
+	}
+
 	// --- the outside-reference action popover -----------------------------
 
 	/**
-	 * Adding an item WRITES to the library, so it sits behind an explicit
-	 * button. Doing it on the node click itself would mean a stray click while
-	 * panning silently files a paper -- cheap to undo, but not something to do
-	 * without being asked.
+	 * A ghost's detail card, opened by double click -- the outside reference's
+	 * answer to "select this in Zotero", since there is no item to select yet.
+	 *
+	 * Adding WRITES to the library, so from here it sits behind an explicit
+	 * button: a double click is one stray gesture away while panning, and
+	 * silently filing a paper is cheap to undo but not something to do unasked.
+	 * The context menu skips the confirmation because a right-click menu entry
+	 * cannot be hit by accident.
 	 */
 	let actionNode = null;
 
@@ -634,15 +896,8 @@
 		add.disabled = false;
 		add.textContent = 'Add to Zotero';
 
-		// Position at the pointer, clamped so the popover cannot open off-screen
-		// at the right or bottom edge where the graph is usually densest.
 		elAction.hidden = false;
-		let w = elAction.offsetWidth;
-		let h = elAction.offsetHeight;
-		let px = event ? event.clientX : window.innerWidth / 2;
-		let py = event ? event.clientY : window.innerHeight / 2;
-		elAction.style.left = Math.max(4, Math.min(px + 12, window.innerWidth - w - 8)) + 'px';
-		elAction.style.top = Math.max(4, Math.min(py + 12, window.innerHeight - h - 8)) + 'px';
+		positionAt(elAction, event);
 	}
 
 	function hideAction() {
@@ -662,8 +917,13 @@
 		emit({ type: 'add-item', doi: actionNode.name });
 		hideAction();
 	});
+	// One layer per press, outermost first, so Escape never throws away more
+	// state than the user was looking at.
 	window.addEventListener('keydown', (e) => {
-		if (e.key === 'Escape') hideAction();
+		if (e.key !== 'Escape') return;
+		if (!elMenu.hidden) hideMenu();
+		else if (!elAction.hidden) hideAction();
+		else setIsolated(null);
 	});
 
 	// --- controls ---------------------------------------------------------
@@ -722,6 +982,9 @@
 
 	window.addEventListener('resize', () => {
 		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
+		// Both were positioned against the viewport they opened in.
+		hideMenu();
+		hideAction();
 	});
 
 	syncEnabled();

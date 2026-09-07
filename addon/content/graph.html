@@ -64,6 +64,10 @@
 				<input id="hide-isolated" type="checkbox"/>
 				hide unconnected
 			</label>
+			<!-- Only present while a node is isolated. Isolation is otherwise
+			     invisible up here, and there would be nothing to tell a user how
+			     to get the rest of the graph back. -->
+			<button id="isolate-clear" type="button" hidden="hidden"></button>
 		</span>
 
 		<span id="stats"></span>
@@ -76,9 +80,11 @@
 	     Same reason the action popover is a sibling and not a child. -->
 	<div id="status">Loading…</div>
 
-	<!-- Shown when an outside reference is clicked. Adding to Zotero is a write
-	     to the library, so it is behind an explicit button rather than the
-	     click itself -- a stray click while panning must not add an item. -->
+	<!-- An outside reference's detail card, opened by double-clicking it.
+	     Adding to Zotero is a write to the library, so from here it is behind an
+	     explicit button -- a stray double click while panning must not file a
+	     paper. The right-click menu adds without asking, because a menu entry
+	     cannot be hit by accident. -->
 	<div id="action" hidden="hidden">
 		<div id="action-title"></div>
 		<div id="action-sub"></div>
@@ -88,10 +94,15 @@
 		</div>
 	</div>
 
-	<!-- Both scripts are same-origin resource:// URLs, so no inline script is
+	<!-- The node context menu, built per node in graph.js. A sibling for the
+	     same reason as the two above. -->
+	<div id="menu" hidden="hidden"></div>
+
+	<!-- Every script is a same-origin resource:// URL, so no inline script is
 	     needed and every CSP configuration in Zotero 7-11 allows them. -->
 	<script src="lib/force-graph.min.js"></script>
 	<script src="nodeScale.js"></script>
+	<script src="nodeLinks.js"></script>
 	<script src="graph.js"></script>
 </body>
 </html>
