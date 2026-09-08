@@ -43,6 +43,7 @@ zotero-graph-scope-enrich-hint = Look up citation counts, and titles and authors
 zotero-graph-color-by = colour
 zotero-graph-color-by-year = year
 zotero-graph-color-by-collection = collection
+zotero-graph-color-by-cluster = subfield
 zotero-graph-color-by-author = first author
 zotero-graph-color-by-publication = publication
 zotero-graph-color-by-type = item type
@@ -98,9 +99,15 @@ zotero-graph-legend-outside = outside refs
 zotero-graph-legend-no-date = no date
 zotero-graph-legend-more = +{ $count } more
 zotero-graph-legend-row-hint = { $label } — { $count -> [one] { $count } node *[other] { $count } nodes }
+# How trustworthy the subfield split is: modularity below about 0.3 means the
+# clusters are more the algorithm than the library.
+zotero-graph-legend-cluster-quality = { $count -> [one] { $count } subfield *[other] { $count } subfields }, modularity { $q }
 
 # Colour keys for held items missing the facet being coloured by.
 zotero-graph-color-no-collection = (no collection)
+zotero-graph-color-no-cluster = (no subfield)
+# A subfield whose members share no word worth naming it after.
+zotero-graph-color-cluster-n = subfield { $n }
 zotero-graph-color-no-author = (no author)
 zotero-graph-color-no-publication = (no publication)
 zotero-graph-color-unknown-type = (unknown type)
@@ -125,6 +132,7 @@ zotero-graph-field-tag = tag
 zotero-graph-field-type = item type
 zotero-graph-field-publication = publication
 zotero-graph-field-collection = collection
+zotero-graph-field-cluster = subfield
 zotero-graph-field-title = title
 # The chip's own short label for a mask that is not scoped to one field.
 zotero-graph-field-any-short = any

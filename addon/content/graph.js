@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGL10n */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGL10n */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -49,11 +49,12 @@
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
 
-	// Published by nodeScale.js, nodeLinks.js and nodeFilters.js, which
-	// graph.html loads first.
+	// Published by nodeScale.js, nodeLinks.js, nodeFilters.js and
+	// graphCluster.js, which graph.html loads first.
 	const Scale = ZGScale;
 	const Links = ZGLinks;
 	const Filters = ZGFilters;
+	const Cluster = ZGCluster;
 
 	/**
 	 * One string, from the .ftl chrome hands the page. Until that lands t()
@@ -273,6 +274,10 @@
 	function colorKey(n) {
 		switch (elColorBy.value) {
 			case 'collection': return (n.collections || [])[0] || t('color-no-collection');
+			// A paper sharing no reference with any other cannot be placed in a
+			// subfield, and inventing one for it would be the one thing this
+			// mode must not do.
+			case 'cluster': return clusters().of.get(n.id) || t('color-no-cluster');
 			case 'author': return (n.creators || [])[0] || t('color-no-author');
 			case 'publication': return n.publication || t('color-no-publication');
 			case 'type': return n.itemType || t('color-unknown-type');
@@ -346,7 +351,17 @@
 		let title = t('legend-title', { mode: colorModeName(mode) });
 		elLegendTitle.textContent = title;
 		// One narrow line, and it ellipsises; the tooltip carries the rest.
-		elLegendTitle.title = title;
+		// For the subfields it carries something else as well: how good the
+		// split actually is. Modularity under about 0.3 means the partition is
+		// mostly the algorithm's invention rather than the library's structure,
+		// and a reader colouring by it deserves to be able to find that out.
+		let quality = mode === 'cluster' && clusters().count
+			? t('legend-cluster-quality', {
+				count: clusters().count,
+				q: clusters().modularity.toFixed(2),
+			})
+			: null;
+		elLegendTitle.title = quality ? title + ' -- ' + quality : title;
 		elLegendBody.textContent = '';
 
 		let held = [];
@@ -488,6 +503,46 @@
 		return via[0];
 	}
 
+	// --- subfields --------------------------------------------------------
+
+	/**
+	 * Which subfield each held item belongs to, by bibliographic coupling.
+	 *
+	 * Two decisions worth stating, because both would be defensible the other
+	 * way round and neither is visible in the output:
+	 *
+	 * It is computed over the WHOLE collection, not over what the masks have
+	 * left on screen. A subfield is a property of a paper's place in the
+	 * library, so filtering down to one author must not re-partition and
+	 * recolour what survives -- and "cluster:" is itself a mask, which would
+	 * otherwise be asking the partition to describe the partition.
+	 *
+	 * It does honour the confidence slider and the strategy toggles, because
+	 * those change which edges are believed at all, and a partition drawn from
+	 * edges the user has switched off would describe a graph nobody is looking
+	 * at.
+	 *
+	 * Memoised on exactly those inputs: itemFacets() runs this per item per
+	 * keystroke in the filter box, and Louvain over a few hundred nodes is not
+	 * something to redo between two characters.
+	 */
+	let clusterMemo = { raw: null, sig: null, result: null };
+	const NO_CLUSTERS = { of: new Map(), sizes: new Map(), count: 0, unassigned: 0, modularity: 0 };
+
+	function clusters() {
+		if (!raw) return NO_CLUSTERS;
+		let sig = elMinConf.value + '|' + [...disabledVia].sort().join(',');
+		if (clusterMemo.raw === raw && clusterMemo.sig === sig) return clusterMemo.result;
+		let minConf = Number(elMinConf.value);
+		let edges = raw.edges.filter(e => e.confidence >= minConf
+			&& e.via.some(v => !disabledVia.has(v)));
+		let result = Cluster.cluster(edges, raw.items, {
+			fallbackLabel: i => t('color-cluster-n', { n: i + 1 }),
+		});
+		clusterMemo = { raw, sig, result };
+		return result;
+	}
+
 	// --- filter masks -----------------------------------------------------
 
 	/** A raw item in the shape nodeFilters.js matches against. */
@@ -495,6 +550,7 @@
 		return Filters.facets({
 			creators: it.creators,
 			tags: it.tags,
+			cluster: clusters().of.get(it.key),
 			year: year(it),
 			itemType: it.itemType,
 			publication: it.publication,

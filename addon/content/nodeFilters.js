@@ -40,6 +40,7 @@
 		{ name: 'type', label: 'item type' },
 		{ name: 'publication', label: 'publication' },
 		{ name: 'collection', label: 'collection' },
+		{ name: 'cluster', label: 'subfield' },
 		{ name: 'title', label: 'title' },
 	];
 
@@ -88,6 +89,10 @@
 			type: item.itemType ? [item.itemType] : [],
 			publication: item.publication ? [item.publication] : [],
 			collection: item.collections || [],
+			// One value or none: an item belongs to the single subfield the
+			// partition put it in, and to none at all when it shares no
+			// reference with anything else in the collection.
+			cluster: item.cluster ? [item.cluster] : [],
 			title: item.title ? [item.title] : [],
 		};
 	}

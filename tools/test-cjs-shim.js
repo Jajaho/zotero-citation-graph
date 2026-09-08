@@ -1477,6 +1477,175 @@ check('picking a value extends the mask being built rather than replacing it', (
 	}
 });
 
+// --- coupling and communities (content/graphCluster.js) ---------------------
+
+/** Same trick as loadScale(): evaluate the content-page script as a browser would. */
+function loadCluster() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/graphCluster.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'graphCluster.js' });
+	if (!ctx.ZGCluster) throw new Error('graphCluster.js did not publish ZGCluster');
+	return ctx.ZGCluster;
+}
+
+/**
+ * Two subfields that never cite each other, one paper bridging them by a single
+ * citation, and one that shares nothing with anybody.
+ *
+ * The shape is the whole argument for coupling: within each group the only
+ * evidence of kinship is agreement about works the library does NOT hold, which
+ * is exactly what the citation graph cannot show and what an offline build
+ * produces most of.
+ */
+function couplingLibrary() {
+	const items = [
+		{ key: 'AAAA0001', title: 'Nanoscale magnetometry with nitrogen vacancy centres' },
+		{ key: 'AAAA0002', title: 'Nitrogen vacancy magnetometry in diamond' },
+		{ key: 'AAAA0003', title: 'Diamond magnetometry at the nanoscale' },
+		{ key: 'BBBB0001', title: 'Surface code quantum error correction' },
+		{ key: 'BBBB0002', title: 'Quantum error correction with the surface code' },
+		{ key: 'BBBB0003', title: 'Fault tolerant error correction thresholds' },
+		{ key: 'CCCC0001', title: 'An unrelated treatise on beekeeping' },
+	];
+	const e = (from, to) => ({ from, to });
+	const edges = [
+		e('AAAA0001', 'doi:nv1'), e('AAAA0001', 'doi:nv2'),
+		e('AAAA0002', 'doi:nv1'), e('AAAA0002', 'doi:nv2'),
+		e('AAAA0003', 'doi:nv1'), e('AAAA0003', 'doi:nv3'),
+		e('BBBB0001', 'doi:qec1'), e('BBBB0001', 'doi:qec2'),
+		e('BBBB0002', 'doi:qec1'), e('BBBB0002', 'doi:qec2'),
+		e('BBBB0003', 'doi:qec2'), e('BBBB0003', 'doi:qec3'),
+		e('BBBB0003', 'BBBB0001'),
+		e('CCCC0001', 'doi:bees'),
+	];
+	return { items, edges };
+}
+
+check('coupling reads the agreement the citation graph cannot show', () => {
+	const C = loadCluster();
+	const { items, edges } = couplingLibrary();
+	const { pairs } = C.coupling(edges, items.map(i => i.key));
+	const w = (a, b) => {
+		const p = pairs.find(x => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+		return p ? p.w : 0;
+	};
+	// Not one citation edge runs between these two, and they are still the
+	// strongest pair in the library: same two references, nothing else.
+	if (!(w('AAAA0001', 'AAAA0002') > 0.99)) throw new Error('identical bibliographies: ' + w('AAAA0001', 'AAAA0002'));
+	if (!(w('AAAA0001', 'AAAA0003') > 0)) throw new Error('one shared reference missed');
+	// And nothing couples across the two subfields.
+	if (w('AAAA0001', 'BBBB0001')) throw new Error('coupled two papers sharing no reference');
+	// A ghost is a first-class coupling target, so a pair can exist entirely on
+	// works the collection does not hold.
+	if (!pairs.length) throw new Error('no pairs at all');
+});
+
+check('a long bibliography does not couple a paper to everything', () => {
+	const C = loadCluster();
+	const edges = [];
+	for (let i = 0; i < 40; i++) edges.push({ from: 'LONG0001', to: 'doi:r' + i });
+	for (const key of ['SHRT0001', 'SHRT0002']) {
+		edges.push({ from: key, to: 'doi:r0' });
+		edges.push({ from: key, to: 'doi:r1' });
+	}
+	const { pairs } = C.coupling(edges, ['LONG0001', 'SHRT0001', 'SHRT0002']);
+	const w = (a, b) => pairs.find(x => x.a === a && x.b === b).w;
+	// Both short papers share their whole bibliography with each other and the
+	// same two entries with the long one. Un-normalised, the long paper would
+	// look equally close to both -- which is how one review ends up the centre
+	// of every cluster it appears in.
+	if (!(w('SHRT0001', 'SHRT0002') > 3 * w('LONG0001', 'SHRT0001'))) {
+		throw new Error('cosine did not discount the long bibliography');
+	}
+});
+
+check('a reference everybody cites couples nobody', () => {
+	const C = loadCluster();
+	const held = [];
+	const edges = [];
+	for (let i = 0; i < 8; i++) {
+		const key = 'HELD000' + i;
+		held.push(key);
+		edges.push({ from: key, to: 'doi:everyone' });
+	}
+	edges.push({ from: 'HELD0000', to: 'doi:rare' });
+	edges.push({ from: 'HELD0001', to: 'doi:rare' });
+	const { pairs } = C.coupling(edges, held);
+	// The field's universal citation says only that these are all papers in the
+	// field. Left in, it would pair all 28 combinations into one blob and bury
+	// the one agreement that means something.
+	if (pairs.length !== 1) throw new Error('background reference coupled ' + pairs.length + ' pairs');
+	if (pairs[0].a !== 'HELD0000' || pairs[0].b !== 'HELD0001') throw new Error('wrong pair survived');
+});
+
+check('the partition recovers subfields that never cite each other', () => {
+	const C = loadCluster();
+	const { items, edges } = couplingLibrary();
+	const r = C.cluster(edges, items);
+	const of = r.of;
+	if (r.count !== 2) throw new Error('expected two subfields, got ' + r.count);
+	if (of.get('AAAA0001') !== of.get('AAAA0003')) throw new Error('split a subfield');
+	if (of.get('BBBB0001') !== of.get('BBBB0003')) throw new Error('split a subfield');
+	if (of.get('AAAA0001') === of.get('BBBB0001')) throw new Error('merged both subfields');
+	// A paper sharing no reference with anything has no subfield. Assigning it
+	// one would be the graph inventing a claim about it.
+	if (of.has('CCCC0001')) throw new Error('placed an uncoupled paper');
+	if (r.unassigned !== 1) throw new Error('unassigned: ' + r.unassigned);
+	// Below ~0.3 a partition is mostly the algorithm's own doing; this one is
+	// two genuinely separate groups and has to score well clear of that.
+	if (!(r.modularity > 0.3)) throw new Error('modularity ' + r.modularity.toFixed(3));
+});
+
+check('the same library partitions the same way however it arrives', () => {
+	const C = loadCluster();
+	const { items, edges } = couplingLibrary();
+	const a = C.cluster(edges, items);
+	// Louvain is order-sensitive by nature. Here that would show as a graph
+	// repainting itself in different colours on a rebuild that changed nothing,
+	// so the module sorts its way out of it -- and this is what says so.
+	const b = C.cluster(edges.slice().reverse(), items.slice().reverse());
+	for (const [key, label] of a.of) {
+		if (b.of.get(key) !== label) throw new Error(key + ': ' + label + ' vs ' + b.of.get(key));
+	}
+	if (a.of.size !== b.of.size) throw new Error('different populations placed');
+});
+
+check('a cluster is named after what its members share', () => {
+	const C = loadCluster();
+	const { items, edges } = couplingLibrary();
+	const of = C.cluster(edges, items).of;
+	const nv = of.get('AAAA0001');
+	const qec = of.get('BBBB0001');
+	// The name has to come from the terms the cluster agrees on, not from any
+	// one title -- and a phrase beats its own words when both say the same
+	// thing, because "error correction" names a field and "correction" does not.
+	if (!/magnetometry/.test(nv)) throw new Error('NV cluster named ' + nv);
+	if (!/error correction/.test(qec)) throw new Error('QEC cluster named ' + qec);
+	if (nv === qec) throw new Error('both clusters got one name');
+});
+
+check('two clusters never end up under one name', () => {
+	const C = loadCluster();
+	// Same title word for word in both groups, coupled to different literatures.
+	const items = [];
+	const edges = [];
+	for (const [group, ref] of [['DDDD', 'doi:d'], ['EEEE', 'doi:e']]) {
+		for (let i = 0; i < 3; i++) {
+			const key = group + '000' + i;
+			items.push({ key, title: 'Quantum sensing protocols' });
+			edges.push({ from: key, to: ref + '1' });
+			edges.push({ from: key, to: ref + '2' });
+		}
+	}
+	const r = C.cluster(edges, items);
+	if (r.count !== 2) throw new Error('expected two clusters, got ' + r.count);
+	// One name for two clusters would be one colour and one legend row: the
+	// screen would say they are the same group, and the filter mask naming that
+	// value would select both.
+	if (r.sizes.size !== 2) throw new Error('two clusters share a name: ' + [...r.sizes.keys()]);
+});
+
 /**
  * A popover shown and hidden through the `hidden` attribute is defeated by its
  * own `display:` rule: an author rule beats the UA stylesheet's
@@ -1720,10 +1889,10 @@ function referencedIds() {
 	for (const m of html.matchAll(/data-zg-(?:str|title|placeholder|aria-label)="([^"]+)"/g)) {
 		ids.add(m[1]);
 	}
-	for (const mode of ['year', 'collection', 'author', 'publication', 'type']) {
+	for (const mode of ['year', 'collection', 'cluster', 'author', 'publication', 'type']) {
 		ids.add('color-by-' + mode);
 	}
-	for (const f of ['author', 'year', 'tag', 'type', 'publication', 'collection', 'title']) {
+	for (const f of ['author', 'year', 'tag', 'type', 'publication', 'collection', 'cluster', 'title']) {
 		ids.add('field-' + f);
 	}
 	return ids;

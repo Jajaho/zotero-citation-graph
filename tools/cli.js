@@ -10,6 +10,12 @@
  *   node citation-graph/cli.js --compare pdf-links,text-doi,title-match,openalex
  *   node citation-graph/cli.js --include-external      also count works NOT held
  *   node citation-graph/cli.js --include-external --enrich   ...and name them
+ *   node citation-graph/cli.js --include-external --clusters  the subfield map
+ *
+ * --clusters runs the bibliographic coupling and community detection the graph
+ * colours by, and prints the partition with each cluster's name. Pair it with
+ * --include-external: most of the coupling evidence is agreement about works
+ * the library does not hold.
  *
  * --enrich resolves the outside works' DOIs to titles, authors and global
  * citation counts (OpenAlex). It is the only part of the CLI that touches the
@@ -49,6 +55,7 @@ function parseArgs(argv) {
 			console.error('warning: --mailto is dead (OpenAlex removed the polite pool, Feb 2026); use --api-key');
 			next();
 		}
+		else if (k === '--clusters') a.clusters = true;
 		else if (k === '--list') a.list = true;
 		else if (k === '--help' || k === '-h') a.help = true;
 	}
@@ -57,6 +64,43 @@ function parseArgs(argv) {
 
 function pad(s, n) { return String(s).padEnd(n); }
 function rpad(s, n) { return String(s).padStart(n); }
+
+/**
+ * The subfields bibliographic coupling finds, as the graph's colour-by-subfield
+ * mode would draw them.
+ *
+ * Loaded the way the content page loads it -- the file publishes onto `window`
+ * or, with no window, onto globalThis -- so the CLI and the plugin are running
+ * the same code rather than two implementations that agree until they do not.
+ *
+ * Best read with --include-external: coupling is largely built out of agreement
+ * about works the library does not hold, and without those targets the pairs it
+ * can see are only the ones the citation graph already showed.
+ */
+function printClusters(r) {
+	require('../addon/content/graphCluster.js');
+	const ZGCluster = globalThis.ZGCluster;
+	const items = r.items.map((it) => ({ key: it.key, title: it.title }));
+	const c = ZGCluster.cluster(r.edges, items);
+	console.log('\nsubfields:', c.count, '· modularity', c.modularity.toFixed(3),
+		'·', c.unassigned, 'of', r.items.length, 'items share no reference with anything');
+	if (c.modularity < 0.3) {
+		console.log('  (under 0.3 -- the split is more the algorithm than the library)');
+	}
+	const byName = new Map();
+	for (const [key, name] of c.of) {
+		if (!byName.has(name)) byName.set(name, []);
+		byName.get(name).push(key);
+	}
+	for (const [name, keys] of [...byName.entries()].sort((a, b) => b[1].length - a[1].length)) {
+		console.log(' ', rpad(keys.length, 4), pad(name, 40));
+		for (const key of keys.slice(0, 3)) {
+			const it = r.index.byKey.get(key);
+			console.log('       ', String((it && it.title) || key).slice(0, 76));
+		}
+		if (keys.length > 3) console.log('        ...');
+	}
+}
 
 (async () => {
 	const args = parseArgs(process.argv);
@@ -222,6 +266,8 @@ function rpad(s, n) { return String(s).padStart(n); }
 				pad(m && m.citedByGlobal != null ? m.citedByGlobal + ' cites' : '', 12), name || x.via.join(','));
 		}
 	}
+
+	if (args.clusters) printClusters(r);
 
 	for (const t of [0.9, 0.7, 0.5]) {
 		console.log(`  confidence >= ${t}:`, cg.filterEdges(r.edges, { minConfidence: t }).length, 'edges');
