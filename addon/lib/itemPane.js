@@ -37,7 +37,8 @@
  * It shares one panel with the reader (splitPane.js) and holds it alone: both
  * describe the paper you are looking at, and giving each its own strip would
  * leave the graph a column between two panes. Hiding is the divider's chevron,
- * not anything here.
+ * not anything here -- and a click never undoes it: see the guard at the top of
+ * show().
  */
 
 let l10n = require('./l10n.js');
@@ -76,6 +77,14 @@ const PANE_CSS = `
  */
 async function show(entry, itemID, { status = () => {} } = {}) {
 	if (!entry || !entry.split) return;
+
+	// Someone who put the panel away with the chevron is not asking for it back
+	// every time they click a node. The pane behind it is still kept current --
+	// bringing it back should land on the paper last chosen, not on whatever was
+	// there before it was hidden -- but a panel the reader is holding is left
+	// entirely alone: silently swapping a PDF for an item pane out of sight
+	// would make the way back a surprise.
+	if (splitPane.collapsed(entry) && !splitPane.has(entry, 'item')) return;
 
 	let item = await Zotero.Items.getAsync(itemID);
 	if (!item) return;
@@ -146,10 +155,10 @@ function forget(entry) {
 // --- the pane ----------------------------------------------------------
 
 function ensurePane(entry) {
-	// Through claim() every time, before the early return below: claiming shows
-	// the panel if the chevron had hidden it, and a click on a node is a request
-	// to see the paper, not to update something out of sight.
-	let box = splitPane.claim(entry, 'item', () => forget(entry));
+	// show: false -- a click keeps the pane current but never overrides the
+	// chevron. The guard in show() is what stops this from taking the panel off
+	// a reader while nobody can see it happen.
+	let box = splitPane.claim(entry, 'item', () => forget(entry), { show: false });
 	if (entry.itemPane) return entry.itemPane;
 
 	let doc = entry.win.document;

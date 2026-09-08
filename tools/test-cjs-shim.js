@@ -794,7 +794,12 @@ check('hiding the panel keeps what is in it, and asking again brings it back', (
 	if (box.children.length !== 1) throw new Error('hiding emptied the panel');
 	if (toggle.textContent !== '«') throw new Error('the chevron points the wrong way: ' + toggle.textContent);
 
-	// "Open PDF beside the graph" on a hidden panel has to show it again.
+	// A claim that is not a request to SEE something leaves the chevron's
+	// decision alone -- that is what stops a node click reopening the panel.
+	splitPane.claim(entry, 'reader', () => dropped++, { show: false });
+	if (box.getAttribute('hidden') !== 'true') throw new Error('a quiet claim reopened the panel');
+
+	// "Open PDF beside the graph" is one, so it shows it again.
 	if (splitPane.claim(entry, 'reader', () => dropped++) !== box) throw new Error('the panel was rebuilt');
 	if (box.getAttribute('hidden')) throw new Error('claiming left the panel hidden');
 	if (toggle.textContent !== '»') throw new Error('the chevron did not flip back');
@@ -825,13 +830,17 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (details.item.id !== 11) throw new Error('the item never arrived');
 	if (details.editable !== true) throw new Error('an editable library came out read-only');
 
-	// Hidden from the divider, then clicked again: the click has to bring the
-	// panel back, not update a pane nobody can see.
-	made.find(el => el.className === 'zg-pane-toggle').fire('click');
+	// Hidden from the divider, then clicked again. The click must NOT put the
+	// panel back -- hiding it was a decision -- but the pane behind the chevron
+	// stays current, so bringing it back lands on the paper last chosen.
+	const toggle = made.find(el => el.className === 'zg-pane-toggle');
+	toggle.fire('click');
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
 	await itemPane.show(entry, 12);
-	if (entry.pane.box.getAttribute('hidden')) throw new Error('a click left the panel hidden');
-	if (details.item.id !== 12) throw new Error('the pane did not follow the click');
+	if (!entry.pane.box.getAttribute('hidden')) throw new Error('a click reopened a hidden panel');
+	if (details.item.id !== 12) throw new Error('the hidden pane did not follow the click');
+	toggle.fire('click');
+	if (entry.pane.box.getAttribute('hidden')) throw new Error('the chevron did not bring it back');
 
 	require_('./lib/splitPane.js').close(entry);
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');

@@ -18,9 +18,13 @@
  * eye is already at. Whatever is in the panel, that is how it goes away, and
  * clicking it again brings back exactly what was there -- collapsing hides the
  * panel rather than tearing its occupant down, so a reader keeps its page and
- * an item pane its scroll position. Asking for either of them again (clicking
- * a node, opening a PDF) opens the panel if it was hidden: a request to see
- * something is a request to see it.
+ * an item pane its scroll position.
+ *
+ * A hidden panel stays hidden. Someone who put it away is not asking for it
+ * back every time they click a node, so claim() only shows the panel when the
+ * caller says the request was a request to SEE something -- opening a PDF is,
+ * clicking a node is not (itemPane.js keeps its pane up to date behind the
+ * chevron instead, so the way back lands on the paper you last chose).
  *
  * Sizing is the part that needs care, and the reason this module exists rather
  * than a rule saying "close the other one first".
@@ -49,27 +53,37 @@ const PANE_CSS = `
 		width: 4px;
 		border: none;
 		background: var(--material-panedivider);
+		/* The chevron is positioned against this. */
+		position: relative;
 	}
-	/* The other half of the divider: a strip that stays when the panel is
-	   hidden, because it carries the only way back. */
-	.zg-pane-handle {
-		flex: none;
-		width: 16px;
-		justify-content: center;
-		align-items: center;
-		background: var(--material-sidepane);
-		border-inline-start: 1px solid var(--material-panedivider);
+	/* The divider stays put when the panel is hidden -- it carries the only way
+	   back -- but it has nothing to resize, so only its button answers. */
+	.zg-pane-splitter[data-zg-collapsed] {
+		pointer-events: none;
 	}
+	/*
+	 * ON the divider, not beside it: absolutely positioned, so the button takes
+	 * no horizontal space of its own and the panel is exactly as wide as the
+	 * panel. It overhangs the 4px splitter on both sides, which is what makes
+	 * it big enough to hit.
+	 */
 	.zg-pane-toggle {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 1;
+		pointer-events: auto;
 		appearance: none;
-		border: none;
-		border-radius: 4px;
-		background: transparent;
+		width: 18px;
+		height: 56px;
+		padding: 0;
+		border: 1px solid var(--material-panedivider);
+		border-radius: 5px;
+		background: var(--material-sidepane);
 		color: var(--fill-secondary);
-		font-size: 11px;
+		font-size: 12px;
 		line-height: 1;
-		padding: 8px 0;
-		width: 14px;
 	}
 	.zg-pane-toggle:hover {
 		background: var(--fill-quinary);
@@ -92,12 +106,12 @@ const PANE_CSS = `
  * @param {Object}   entry     the graphTab record for this tab
  * @param {String}   kind      'reader' | 'item'
  * @param {Function} teardown  called when this occupant loses the panel
+ * @param {Boolean}  [show]    whether this request should un-hide the panel
  * @returns {Element} the box to build into -- empty, unless it was already ours
  */
-function claim(entry, kind, teardown) {
+function claim(entry, kind, teardown, { show = true } = {}) {
 	let pane = entry.pane || create(entry);
-	// Asking for the panel is asking to see it.
-	expand(pane);
+	if (show) expand(pane);
 	if (pane.kind !== kind) {
 		release(pane);
 		pane.kind = kind;
@@ -106,9 +120,14 @@ function claim(entry, kind, teardown) {
 	return pane.box;
 }
 
-/** Whether `kind` is what the panel is currently showing. */
+/** Whether `kind` is what the panel is currently holding. */
 function has(entry, kind) {
 	return !!(entry && entry.pane && entry.pane.kind === kind);
+}
+
+/** Whether the chevron has put the panel away. */
+function collapsed(entry) {
+	return !!(entry && entry.pane && entry.pane.collapsed);
 }
 
 /** Close the panel altogether: the width is remembered, the occupant told. */
@@ -120,7 +139,6 @@ function close(entry) {
 	release(pane);
 	if (pane.observer) pane.observer.disconnect();
 	pane.splitter.remove();
-	pane.handle.remove();
 	pane.box.remove();
 	pane.style.remove();
 }
@@ -158,7 +176,9 @@ function collapse(pane) {
 	saveWidth(pane);
 	pane.collapsed = true;
 	pane.box.setAttribute('hidden', 'true');
-	pane.splitter.setAttribute('hidden', 'true');
+	// The divider itself stays: it is where the button lives, and the button is
+	// the way back. It just has nothing left to drag.
+	pane.splitter.setAttribute('data-zg-collapsed', 'true');
 	syncToggle(pane);
 }
 
@@ -166,7 +186,7 @@ function expand(pane) {
 	if (!pane.collapsed) return;
 	pane.collapsed = false;
 	pane.box.removeAttribute('hidden');
-	pane.splitter.removeAttribute('hidden');
+	pane.splitter.removeAttribute('data-zg-collapsed');
 	syncToggle(pane);
 }
 
@@ -193,14 +213,18 @@ function create(entry) {
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
 
-	// The chevron sits beside the splitter rather than inside it: a XUL
-	// splitter turns a mousedown anywhere on itself into a drag, and a button
-	// you cannot press without resizing the panel is not a button.
-	let handle = doc.createXULElement('vbox');
-	handle.className = 'zg-pane-handle';
+	// The chevron rides ON the divider: absolutely positioned inside it, so it
+	// costs the layout nothing and the panel is exactly as wide as the panel.
+	// A mousedown that reaches the splitter starts a drag, so the button stops
+	// its own -- a press that resized the pane it was meant to hide would be
+	// the worst of both.
 	let toggle = doc.createElement('button');
 	toggle.className = 'zg-pane-toggle';
-	handle.appendChild(toggle);
+	toggle.addEventListener('mousedown', (event) => {
+		event.stopPropagation();
+		event.preventDefault();
+	});
+	splitter.appendChild(toggle);
 
 	// A column: the reader stacks a header over its browser, and the item pane
 	// puts its own row inside. Either way the panel is one box.
@@ -209,11 +233,10 @@ function create(entry) {
 
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
-	entry.split.appendChild(handle);
 	entry.split.appendChild(box);
 
 	let pane = {
-		box, splitter, handle, toggle, style,
+		box, splitter, toggle, style,
 		kind: null,
 		teardown: null,
 		observer: null,
@@ -281,4 +304,4 @@ function pref(name) {
 	}
 }
 
-module.exports = { claim, has, close, MIN_WIDTH };
+module.exports = { claim, has, collapsed, close, MIN_WIDTH };
