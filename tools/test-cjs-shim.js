@@ -967,6 +967,30 @@ check('a filter matches every author, not just the one on the label', () => {
 	if (hits(F, lib, 'collection:Sensing').join() !== '1') throw new Error('second collection missed');
 });
 
+check('a tag is a facet like any other, and every tag on an item counts', () => {
+	const F = loadFilters();
+	// Its own fixture rather than library(): tags would change what the bare-term
+	// and completion-ranking checks are looking at, and those are about something
+	// else.
+	const lib = [
+		{ creators: ['Kucsko'], year: 2013, tags: ['magnetometry', 'to read'], title: 'A' },
+		{ creators: ['Maurer'], year: 2012, tags: ['to read'], title: 'B' },
+		{ creators: ['Socrates'], year: 1999, tags: [], title: 'C' },
+	].map(F.facets);
+	// An item's tags are a list, so a mask has to find the one whose SECOND tag
+	// it is -- the same shape that makes author:Kucsko work on a second author.
+	if (hits(F, lib, 'tag:"to read"').join() !== '0,1') throw new Error('second tag missed');
+	if (hits(F, lib, 'tag:magnetometry').join() !== '0') throw new Error('scoped tag');
+	// And a bare term reaches tags, which is what makes a tag findable by someone
+	// who does not know it is a tag rather than a collection.
+	if (hits(F, lib, 'magnetometry').join() !== '0') throw new Error('bare term missed tags');
+	// An untagged item is simply not matched, not an error.
+	if (hits(F, lib, 'tag:anything').length) throw new Error('untagged item matched');
+	// Offered as completions, commonest first, like every other facet's values.
+	const offered = F.suggest('tag:', lib, 12).filter(s => s.kind === 'value').map(s => s.label);
+	if (offered.join() !== 'to read,magnetometry') throw new Error('tag completions: ' + offered);
+});
+
 check('stacking filters can only narrow, never widen', () => {
 	const F = loadFilters();
 	const lib = library(F);
@@ -1345,7 +1369,7 @@ function referencedIds() {
 	for (const mode of ['year', 'collection', 'author', 'publication', 'type']) {
 		ids.add('color-by-' + mode);
 	}
-	for (const f of ['author', 'year', 'type', 'publication', 'collection', 'title']) {
+	for (const f of ['author', 'year', 'tag', 'type', 'publication', 'collection', 'title']) {
 		ids.add('field-' + f);
 	}
 	return ids;

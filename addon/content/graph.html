@@ -82,6 +82,15 @@
 					<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
 					<span id="pull-value">1.00</span>
 				</label>
+				<!-- The other half of the same trade. This is the pull that stops a
+				     paper nothing cites from drifting off the canvas forever, so at 0
+				     the unconnected ones do exactly that; turned up, the whole graph
+				     gathers into a tighter disc. -->
+				<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
+					<span data-zg-str="center-pull">centre pull</span>
+					<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
+					<span id="center-value">1.00</span>
+				</label>
 			</div>
 
 			<!-- Filters. Each one is a mask over the held items, and they stack:
@@ -188,6 +197,15 @@
 			title="Type a term, or field:value. Filters stack: each one narrows what this anchor pulls."
 			role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
 		<div id="group-sub"></div>
+		<!-- This anchor's own strength, not the panel's: how hard THIS flag pulls
+		     is part of what the group says. At 0 it names its papers and lets the
+		     layout keep them, which is how you ask what a group would have been
+		     without moving anything. -->
+		<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard this anchor pulls the papers it names. At 0 it names them without moving them.">
+			<span data-zg-str="group-pull">pull</span>
+			<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
+			<span id="group-pull-value">0.40</span>
+		</label>
 		<div id="group-buttons">
 			<button id="group-remove" type="button" data-zg-str="group-remove">Remove</button>
 			<button id="group-close" type="button" data-zg-str="group-done">Done</button>

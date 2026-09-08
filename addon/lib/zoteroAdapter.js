@@ -75,6 +75,11 @@ class ZoteroAdapter {
 				// the library.
 				publication: field(item, 'publicationTitle', { baseMapped: true }) || null,
 				creators: item.getCreators().map(c => c.lastName).filter(Boolean),
+				// Both kinds of tag, the ones typed by hand and the ones a translator
+				// attached. Which of the two a tag is describes where it came from,
+				// not what it says -- and someone grouping by "quantum sensing" does
+				// not care that the importer wrote it rather than they did.
+				tags: item.getTags().map(t => t.tag).filter(Boolean),
 				// Which of the in-scope collections hold this item. Only
 				// interesting once subcollections are included -- without them
 				// every item shares one name.

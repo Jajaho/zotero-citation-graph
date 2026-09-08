@@ -36,6 +36,7 @@
 	var FIELDS = [
 		{ name: 'author', label: 'author' },
 		{ name: 'year', label: 'year' },
+		{ name: 'tag', label: 'tag' },
 		{ name: 'type', label: 'item type' },
 		{ name: 'publication', label: 'publication' },
 		{ name: 'collection', label: 'collection' },
@@ -74,15 +75,16 @@
 
 	/**
 	 * An item flattened to the values each facet can match on. Every facet is a
-	 * list, because two of them genuinely are: an item has several authors and
-	 * can sit in several collections, and matching only the first would make
-	 * "author:Kucsko" miss every paper he is second on.
+	 * list, because three of them genuinely are: an item has several authors, can
+	 * sit in several collections and carries any number of tags, and matching
+	 * only the first would make "author:Kucsko" miss every paper he is second on.
 	 */
 	function facets(item) {
 		item = item || {};
 		return {
 			author: item.creators || [],
 			year: item.year == null ? [] : [String(item.year)],
+			tag: item.tags || [],
 			type: item.itemType ? [item.itemType] : [],
 			publication: item.publication ? [item.publication] : [],
 			collection: item.collections || [],

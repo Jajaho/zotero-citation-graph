@@ -43,6 +43,9 @@ zotero-graph-size-by-global = Zitationen weltweit
 zotero-graph-link-pull = Kantenzug
 zotero-graph-link-pull-hint = Wie stark eine Kante ihre beiden Knoten zusammenzieht. Niedriger zieht einen dichten Graphen auseinander.
 
+zotero-graph-center-pull = Mittelzug
+zotero-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Aufsätze davon; höher packt den Graphen enger zusammen.
+
 zotero-graph-filter-placeholder = Filter — author:, year:, …
 zotero-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
 
@@ -101,6 +104,7 @@ zotero-graph-tooltip-item-actions = Doppelklick zum Auswählen in Zotero · Rech
 
 zotero-graph-field-author = Autor
 zotero-graph-field-year = Jahr
+zotero-graph-field-tag = Schlagwort
 zotero-graph-field-type = Eintragsart
 zotero-graph-field-publication = Publikation
 zotero-graph-field-collection = Sammlung
@@ -130,10 +134,14 @@ zotero-graph-group-existing = Gruppe
 zotero-graph-group-drag-hint = Ziehen, um diese Karte zu verschieben
 zotero-graph-group-placeholder = was hierher gehört — author:, year:, …
 zotero-graph-group-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt ein, was dieser Anker anzieht.
+zotero-graph-group-pull = Zug
+zotero-graph-group-pull-hint = Wie stark dieser Anker die Aufsätze anzieht, die er benennt. Bei 0 benennt er sie, ohne sie zu bewegen.
 zotero-graph-group-remove = Entfernen
 zotero-graph-group-done = Fertig
 zotero-graph-group-empty = sagen, was hierher gehört
 zotero-graph-group-pulls = zieht { $count -> [one] { $count } Aufsatz hierher *[other] { $count } Aufsätze hierher }
+# Derselbe Anker, dessen Zug ganz heruntergedreht ist.
+zotero-graph-group-names = benennt { $count -> [one] { $count } Aufsatz und bewegt ihn nicht *[other] { $count } Aufsätze und bewegt sie nicht }
 zotero-graph-group-flag-empty = noch nichts
 
 

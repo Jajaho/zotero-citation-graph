@@ -54,6 +54,9 @@ zotero-graph-size-by-global = global citations
 zotero-graph-link-pull = edge pull
 zotero-graph-link-pull-hint = How hard a link pulls its two nodes together. Lower spreads a crowded graph out.
 
+zotero-graph-center-pull = centre pull
+zotero-graph-center-pull-hint = How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.
+
 zotero-graph-filter-placeholder = filter — author:, year:, …
 zotero-graph-filter-hint = Type a term, or field:value. Filters stack: each one narrows what is left.
 
@@ -114,6 +117,7 @@ zotero-graph-tooltip-item-actions = double-click to select in Zotero · right-cl
 
 zotero-graph-field-author = author
 zotero-graph-field-year = year
+zotero-graph-field-tag = tag
 zotero-graph-field-type = item type
 zotero-graph-field-publication = publication
 zotero-graph-field-collection = collection
@@ -146,10 +150,14 @@ zotero-graph-group-existing = Group
 zotero-graph-group-drag-hint = Drag to move this card
 zotero-graph-group-placeholder = what belongs here — author:, year:, …
 zotero-graph-group-hint = Type a term, or field:value. Filters stack: each one narrows what this anchor pulls.
+zotero-graph-group-pull = pull
+zotero-graph-group-pull-hint = How hard this anchor pulls the papers it names. At 0 it names them without moving them.
 zotero-graph-group-remove = Remove
 zotero-graph-group-done = Done
 zotero-graph-group-empty = say what belongs here
 zotero-graph-group-pulls = pulls { $count -> [one] { $count } paper here *[other] { $count } papers here }
+# The same anchor with its pull turned all the way down.
+zotero-graph-group-names = names { $count -> [one] { $count } paper, and moves it nowhere *[other] { $count } papers, and moves them nowhere }
 # What a flag says before anything has been said about it.
 zotero-graph-group-flag-empty = nothing yet
 

@@ -43,6 +43,8 @@
 	 *  edges to pull. Worth remembering across windows for the same reason the
 	 *  collapsed panel is -- it is a setting about this screen, not this graph. */
 	const PULL_KEY = 'zg.link.pull';
+	/** And for how hard the middle of the canvas holds on. */
+	const CENTER_KEY = 'zg.center.pull';
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
@@ -111,6 +113,8 @@
 	let elSizeBy = el('size-by');
 	let elLinkPull = el('link-pull');
 	let elPullValue = el('pull-value');
+	let elCenterPull = el('center-pull');
+	let elCenterValue = el('center-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
@@ -130,6 +134,8 @@
 	let elGroupChips = el('group-chips');
 	let elGroupSub = el('group-sub');
 	let elGroupTitle = el('group-title');
+	let elGroupPull = el('group-pull');
+	let elGroupPullValue = el('group-pull-value');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -488,6 +494,7 @@
 	function itemFacets(it) {
 		return Filters.facets({
 			creators: it.creators,
+			tags: it.tags,
 			year: year(it),
 			itemType: it.itemType,
 			publication: it.publication,
@@ -1252,21 +1259,34 @@
 	 * Connected nodes get a light pull (their links already hold them, and a
 	 * hard pull would crush the layout into a disc); unconnected ones get a
 	 * firm one, which parks them in a ring at the edge of the graph instead of
-	 * off screen.
+	 * off screen. The panel scales both together, so the ratio between them --
+	 * which is what keeps orphans in a ring rather than in the middle -- is not
+	 * something the slider can get wrong.
 	 */
 	const PULL = 0.02;
 	const PULL_ORPHAN = 0.15;
 
+	/** The panel's multiplier over both. Read live rather than cached: unlike a
+	 *  link strength, nothing downstream holds a copy of this. */
+	function centerScale() {
+		let v = Number(elCenterPull.value);
+		return Number.isFinite(v) ? v : 1;
+	}
+
 	function centerPull() {
 		let nodes = [];
 		function force(alpha) {
+			// Once per tick, not once per node: it cannot change mid-tick, and at
+			// zero there is nothing for the loop to add.
+			let scale = centerScale();
+			if (!scale) return;
 			for (let n of nodes) {
 				// A node with an anchor has somewhere to be, and the centre is
 				// not it. Left in, the two pulls would fight and park it short
 				// of the flag -- a group planted out at the rim would gather a
 				// cluster that visibly sags towards the middle.
 				if (groupOf.has(n.id)) continue;
-				let k = (n.deg ? PULL : PULL_ORPHAN) * alpha;
+				let k = (n.deg ? PULL : PULL_ORPHAN) * scale * alpha;
 				n.vx -= n.x * k;
 				n.vy -= n.y * k;
 			}
@@ -1280,17 +1300,32 @@
 	/**
 	 * Pull every grouped node to the point its group was planted at.
 	 *
-	 * Firm, an order of magnitude past the centre pull, because this is not a
-	 * tendency but an instruction: the user said these papers belong here. It
-	 * still competes with the links, which is the whole interest of it -- a
-	 * group that drags a paper away from its citations stretches the edges
-	 * between them, and how far they stretch is the picture being asked for.
+	 * Firm by default, an order of magnitude past the centre pull, because this
+	 * is not a tendency but an instruction: the user said these papers belong
+	 * here. It still competes with the links, which is the whole interest of it
+	 * -- a group that drags a paper away from its citations stretches the edges
+	 * between them, and how far they stretch is the picture being asked for. How
+	 * hard it pulls is the group's own, set on its card, because that trade is
+	 * the thing being looked at and where it should sit differs per anchor: a
+	 * firm one states where these papers go, a slack one asks how far they are
+	 * willing to travel and lets their citations answer.
 	 *
 	 * Pinned nodes are unaffected, since d3 stops integrating a node with fixed
 	 * coordinates at all. That is the right precedence: a pin is a position the
 	 * user placed by hand, and a mask should not overrule it.
 	 */
 	const GROUP_PULL = 0.4;
+
+	/**
+	 * The ceiling on the pull one node can feel from every anchor holding it.
+	 *
+	 * A node moves by k * (1 - velocityDecay) of the way to its target each
+	 * tick, and the engine runs at a decay of 0.3 -- so past about 1.4 the step
+	 * overshoots by more than the damping takes back and the node rings around
+	 * the flag forever instead of arriving. Capped on the sum rather than on
+	 * each slider, because it is the sum a node actually feels.
+	 */
+	const GROUP_PULL_MAX = 1;
 
 	function groupPull() {
 		let nodes = [];
@@ -1299,8 +1334,8 @@
 			for (let n of nodes) {
 				let at = groupOf.get(n.id);
 				if (!at) continue;
-				n.vx += (at.x - n.x) * GROUP_PULL * alpha;
-				n.vy += (at.y - n.y) * GROUP_PULL * alpha;
+				n.vx += (at.x - n.x) * at.k * alpha;
+				n.vy += (at.y - n.y) * at.k * alpha;
 			}
 		}
 		force.initialize = ns => {
@@ -1437,6 +1472,17 @@
 		if (!fg) return;
 		let link = fg.d3Force('link');
 		if (link) link.strength(linkStrength);
+		fg.d3ReheatSimulation();
+	}
+
+	/**
+	 * The centre pull needs no such reinstalling -- the force reads the slider
+	 * on every tick. All a change needs is for the layout to be moving when it
+	 * does, which a cooled graph is not.
+	 */
+	function applyCenterPull() {
+		elCenterValue.textContent = centerScale().toFixed(2);
+		if (!fg) return;
 		fg.d3ReheatSimulation();
 	}
 
@@ -2007,9 +2053,9 @@
 	 * no author or year to be grouped by, and it follows the papers that cite
 	 * it in any case.
 	 */
-	let groups = [];             // { id, x, y, filters }; x/y in GRAPH coords
+	let groups = [];             // { id, x, y, filters, pull }; x/y in GRAPH coords
 	let groupSeq = 0;
-	let groupOf = new Map();     // node id -> the point its groups pull it to
+	let groupOf = new Map();     // node id -> { x, y, k }: where it is pulled, how hard
 	let facetCache = new Map();  // node id -> facets, for the nodes on screen
 
 	/**
@@ -2018,30 +2064,38 @@
 	 * string comparison per facet per filter, and the force runs sixty times a
 	 * second over every node in the graph.
 	 *
-	 * A node caught by two groups is pulled to the midpoint between them, which
-	 * is both what the arithmetic falls out as and the honest picture: it
-	 * belongs to both, so it sits between them rather than picking a side.
+	 * A node caught by two groups is pulled to the point between them their two
+	 * strengths put it at -- the midpoint when they pull equally, nearer the
+	 * firmer one when they do not. That is both what the arithmetic falls out as
+	 * (two springs on one body are one spring at their weighted centre, pulling
+	 * as hard as the two together) and the honest picture: it belongs to both, so
+	 * it sits between them rather than picking a side.
+	 *
+	 * An anchor turned down to nothing is skipped outright rather than recorded
+	 * with a strength of zero, so its papers go back to feeling the centre pull
+	 * -- which centerPull() withholds from anything an anchor is holding. A
+	 * group that pulls nothing must leave nothing behind, or its papers would be
+	 * held by neither force and drift.
 	 */
 	function assignGroups() {
 		let next = new Map();
 		for (let g of groups) {
-			if (!g.filters.length) continue;
+			if (!g.filters.length || !g.pull) continue;
 			for (let [id, f] of facetCache) {
 				if (!Filters.matchesAll(g.filters, f)) continue;
 				let at = next.get(id);
 				if (at) {
-					at.x += g.x;
-					at.y += g.y;
-					at.n++;
+					at.x += g.x * g.pull;
+					at.y += g.y * g.pull;
+					at.k += g.pull;
 				}
-				else next.set(id, { x: g.x, y: g.y, n: 1 });
+				else next.set(id, { x: g.x * g.pull, y: g.y * g.pull, k: g.pull });
 			}
 		}
 		for (let at of next.values()) {
-			if (at.n > 1) {
-				at.x /= at.n;
-				at.y /= at.n;
-			}
+			at.x /= at.k;
+			at.y /= at.k;
+			if (at.k > GROUP_PULL_MAX) at.k = GROUP_PULL_MAX;
 		}
 		groupOf = next;
 	}
@@ -2083,7 +2137,7 @@
 		if (a.size !== b.size) return false;
 		for (let [id, at] of a) {
 			let bt = b.get(id);
-			if (!bt || bt.x !== at.x || bt.y !== at.y) return false;
+			if (!bt || bt.x !== at.x || bt.y !== at.y || bt.k !== at.k) return false;
 		}
 		return true;
 	}
@@ -2195,7 +2249,7 @@
 		if (!fg) return;
 		let r = elGraph.getBoundingClientRect();
 		let at = fg.screen2GraphCoords(event.clientX - r.left, event.clientY - r.top);
-		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [] };
+		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [], pull: GROUP_PULL };
 		groups.push(g);
 		openGroup(g, event);
 		repaint();
@@ -2208,6 +2262,10 @@
 		// up the card is about the group, not about the click that opened it.
 		elGroupTitle.textContent = t(g.filters.length ? 'group-existing' : 'group-here');
 		groupBox.load(g.filters);
+		// The slider belongs to the anchor, not to the card: opening a second
+		// flag must show that flag's strength, not the last one's.
+		elGroupPull.value = String(g.pull);
+		syncGroupPull();
 		syncGroupNote();
 		elGroup.hidden = false;
 		positionAt(elGroup, event);
@@ -2237,12 +2295,39 @@
 		groupsChanged();
 	}
 
+	/**
+	 * The readout beside the slider, and -- while a card is open -- the anchor's
+	 * own strength.
+	 *
+	 * Committed as it is dragged, the way the masks are committed as they are
+	 * picked: what a group pulls at is something you find by watching the graph
+	 * answer, and a value that only took effect on release would make that a
+	 * guessing game.
+	 */
+	function syncGroupPull() {
+		elGroupPullValue.textContent = Number(elGroupPull.value).toFixed(2);
+	}
+
+	function applyGroupPull() {
+		syncGroupPull();
+		if (!editingGroup) return;
+		editingGroup.pull = Number(elGroupPull.value);
+		groupsChanged();
+		// The note says what the anchor is doing, and at zero that is no longer
+		// pulling -- so the slider has to retitle it.
+		syncGroupNote();
+	}
+
+	elGroupPull.addEventListener('input', applyGroupPull);
+
 	function syncGroupNote() {
 		if (!editingGroup) return;
 		let n = groupSize(editingGroup);
-		elGroupSub.textContent = editingGroup.filters.length
-			? t('group-pulls', { count: n })
-			: t('group-empty');
+		// Three things it can be saying: nothing has been named yet, these papers
+		// are being gathered, or these papers are named and left where they are.
+		elGroupSub.textContent = !editingGroup.filters.length
+			? t('group-empty')
+			: t(editingGroup.pull ? 'group-pulls' : 'group-names', { count: n });
 	}
 
 	/**
@@ -2679,6 +2764,14 @@
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
+	// Same again for the middle of the canvas: layout, not data.
+	elCenterPull.addEventListener('input', () => {
+		applyCenterPull();
+		try {
+			window.localStorage.setItem(CENTER_KEY, elCenterPull.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
 	elMinCites.addEventListener('input', render);
 	// Paint, not data: the colour accessors read elColorBy live, so the graph
 	// only has to be redrawn and its legend retitled. Going through render()
@@ -2848,6 +2941,13 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyLinkPull();
+
+	try {
+		let saved = window.localStorage.getItem(CENTER_KEY);
+		if (saved !== null) elCenterPull.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyCenterPull();
 
 	try {
 		let saved = window.localStorage.getItem(DEPTH_KEY);

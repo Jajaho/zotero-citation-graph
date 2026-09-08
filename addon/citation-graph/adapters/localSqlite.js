@@ -75,12 +75,26 @@ class LocalSqliteAdapter {
 			byItem.get(c.itemID).push(c.lastName);
 		}
 
+		// Manual and automatic tags alike, matching what the Zotero-runtime
+		// adapter reports -- the two hosts have to agree on what an item's tags
+		// are, or a mask written against one would mean something else in the
+		// other. Sorted by name, since itemTags carries no order of its own.
+		const tagRows = this.db.prepare(`
+			SELECT it.itemID, t.name FROM itemTags it
+			JOIN tags t USING (tagID) ORDER BY it.itemID, t.name`).all();
+		const tagsByItem = new Map();
+		for (const t of tagRows) {
+			if (!tagsByItem.has(t.itemID)) tagsByItem.set(t.itemID, []);
+			tagsByItem.get(t.itemID).push(t.name);
+		}
+
 		return rows
 			.filter((r) => r.title && !['attachment', 'note', 'annotation'].includes(r.itemType))
 			.map((r) => ({
 				key: r.key, itemType: r.itemType, title: r.title, doi: r.doi,
 				date: r.date, extra: r.extra, url: r.url, publication: r.publication || null,
 				creators: byItem.get(r.itemID) || [],
+				tags: tagsByItem.get(r.itemID) || [],
 			}));
 	}
 
