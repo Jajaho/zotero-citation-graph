@@ -1349,6 +1349,36 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
 	}
 });
 
+/**
+ * A flag has to take its press before the two layers underneath it do: d3-zoom
+ * reads a left drag on the canvas as a pan, and force-graph raises a background
+ * click on the way up that gives the whole graph back. Registered in the bubble
+ * phase, or swallowing with anything short of stopImmediatePropagation -- which
+ * is what it takes, force-graph's own listeners being on the container itself
+ * and registered later -- the gesture is lost to the layer beneath and a flag
+ * simply cannot be picked up. Nothing about that is visible in the source.
+ */
+check('a flag takes the press before the canvas does', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const after = (needle, n) => {
+		const i = js.indexOf(needle);
+		return i < 0 ? '' : js.slice(i, i + n);
+	};
+	for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+		if (!after("elGraph.addEventListener('" + type + "', ", 60).includes(', true)')) {
+			throw new Error(type + ' is not taken on the container in the capture phase');
+		}
+	}
+	// The compatibility mouse events are the same press arriving twice, and
+	// d3-zoom listens for the second of them rather than the first.
+	if (!after("['mousedown', 'mousemove', 'mouseup']", 140).includes('addEventListener(type, flagGuard, true)')) {
+		throw new Error('the mouse events are not guarded while a flag is being dragged');
+	}
+	if (!after('function swallow(e) {', 140).includes('stopImmediatePropagation()')) {
+		throw new Error('a swallowed press still reaches the listeners beside it');
+	}
+});
+
 // --- localisation -----------------------------------------------------------
 
 const Ftl = require(path.join(addonDir, 'content/ftl.js'));

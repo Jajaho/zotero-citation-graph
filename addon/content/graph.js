@@ -2303,6 +2303,140 @@
 		return best;
 	}
 
+	/** Where an event points, in graph coordinates. */
+	function graphAt(event) {
+		let r = elGraph.getBoundingClientRect();
+		return fg.screen2GraphCoords(event.clientX - r.left, event.clientY - r.top);
+	}
+
+	/**
+	 * Picking a flag up, and clicking one.
+	 *
+	 * An anchor is a position, so moving it should be the gesture that moves
+	 * anything: pick it up, put it down. And a flag was the one thing on the
+	 * canvas the left button had nothing to say about -- the click that lands
+	 * on the empty canvas beside it gives the whole graph back, which is the
+	 * opposite of what someone aiming at a flag meant. So the press decides
+	 * between the two on the way up: it travelled, and it was a drag; it did
+	 * not, and it was a click asking the flag what can be done with it.
+	 *
+	 * Both are intercepted on the container in the capture phase, because the
+	 * two layers underneath both want this press: d3-zoom reads a left drag on
+	 * the canvas as a pan, and force-graph's own pointer bookkeeping would
+	 * raise a background click on the way up and clear the isolation. The
+	 * canvas is a child of the container, so capture reaches it first -- but
+	 * force-graph's listeners are on the container ITSELF, registered when the
+	 * graph is built and therefore after these, which is why swallowing has to
+	 * be immediate rather than merely stopping the propagation.
+	 *
+	 * The mouse events are a second door onto the same press. Preventing a
+	 * pointerdown's default is supposed to suppress them and d3-zoom listens
+	 * for mousedown rather than pointerdown, so a browser that disagreed would
+	 * pan the canvas out from under the flag being dragged. Swallowing them
+	 * while a drag is live costs one comparison and closes the question.
+	 */
+	const FLAG_DRAG_PX = 4;   // screen px of travel before a press is a drag
+	let flagDrag = null;      // { g, id, dx, dy, x, y, moved }
+
+	function flagDown(e) {
+		if (flagDrag || e.button !== 0 || !fg) return;
+		let g = groupAt(e);
+		if (!g) return;
+		let at = graphAt(e);
+		// Carried by the offset it was grabbed at, so a flag taken by its
+		// pennant is not snatched down to the pointer: the hit box stands a
+		// mast's height above the anchor, and what is being moved is the
+		// graphic the user is looking at.
+		flagDrag = {
+			g, id: e.pointerId,
+			dx: g.x - at.x, dy: g.y - at.y,
+			x: e.clientX, y: e.clientY,
+			moved: false,
+		};
+		// So the drag survives the pointer leaving the pane -- and so the moves
+		// and the release come back to this element, ahead of force-graph's
+		// listeners on it.
+		elGraph.setPointerCapture(e.pointerId);
+		swallow(e);
+	}
+
+	function flagMove(e) {
+		if (!flagDrag || e.pointerId !== flagDrag.id) return;
+		swallow(e);
+		// A press that has not travelled is still a click: the threshold is
+		// what keeps a hand that shifts on the button from nudging the anchor a
+		// pixel sideways instead of opening the menu.
+		if (!flagDrag.moved
+			&& Math.abs(e.clientX - flagDrag.x) < FLAG_DRAG_PX
+			&& Math.abs(e.clientY - flagDrag.y) < FLAG_DRAG_PX) return;
+		flagDrag.moved = true;
+		let at = graphAt(e);
+		flagDrag.g.x = at.x + flagDrag.dx;
+		flagDrag.g.y = at.y + flagDrag.dy;
+		// The flag follows the pointer and the papers wait for the drop.
+		// Dragging them along would mean reheating the layout on every frame of
+		// the gesture, and what is being aimed at is where the flag ends up,
+		// not the cloud chasing it there.
+		repaint();
+	}
+
+	function flagUp(e) {
+		if (!flagDrag || e.pointerId !== flagDrag.id) return;
+		let { g, moved } = flagDrag;
+		flagDrag = null;
+		swallow(e);
+		// Somewhere new is a rearrangement, and groupsChanged() is what asks
+		// the layout for one. Nowhere new is a click, answered with the flag's
+		// own menu -- the entries the right button already offers over it,
+		// which is everything there is to do to an anchor.
+		if (moved) groupsChanged();
+		else openMenu(groupEntries(g, e), e);
+	}
+
+	// A capture lost mid-gesture -- a pen leaving the tablet, the pane going
+	// away underneath the pointer -- never sends the release. The flag keeps
+	// wherever it had got to, because that is where the user last saw it.
+	function flagCancel(e) {
+		if (!flagDrag || e.pointerId !== flagDrag.id) return;
+		let moved = flagDrag.moved;
+		flagDrag = null;
+		if (moved) groupsChanged();
+	}
+
+	function flagGuard(e) {
+		if (flagDrag) swallow(e);
+	}
+
+	function swallow(e) {
+		e.preventDefault();
+		e.stopImmediatePropagation();
+	}
+
+	elGraph.addEventListener('pointerdown', flagDown, true);
+	elGraph.addEventListener('pointermove', flagMove, true);
+	elGraph.addEventListener('pointerup', flagUp, true);
+	elGraph.addEventListener('pointercancel', flagCancel, true);
+	for (let type of ['mousedown', 'mousemove', 'mouseup']) {
+		elGraph.addEventListener(type, flagGuard, true);
+	}
+
+	/**
+	 * A flag's own two entries: what it names, and whether it stays. Offered
+	 * both by a left click on the flag and by the canvas menu when the right
+	 * click landed on one, because they are the same question asked twice.
+	 */
+	function groupEntries(g, event) {
+		return [{
+			label: t('menu-edit-group'),
+			hint: t('menu-edit-group-hint'),
+			run: () => openGroup(g, event),
+		}, {
+			label: t('menu-remove-group'),
+			hint: t('menu-remove-group-hint'),
+			run: () => removeGroup(g),
+		}];
+	}
+
 	// --- a group's card ---------------------------------------------------
 
 	/**
@@ -2316,8 +2450,7 @@
 
 	function addGroup(event) {
 		if (!fg) return;
-		let r = elGraph.getBoundingClientRect();
-		let at = fg.screen2GraphCoords(event.clientX - r.left, event.clientY - r.top);
+		let at = graphAt(event);
 		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [], pull: GROUP_PULL };
 		groups.push(g);
 		openGroup(g, event);
@@ -2526,16 +2659,7 @@
 		}];
 		let g = groupAt(event);
 		if (g) {
-			entries.push({
-				label: t('menu-edit-group'),
-				hint: t('menu-edit-group-hint'),
-				run: () => openGroup(g, event),
-			});
-			entries.push({
-				label: t('menu-remove-group'),
-				hint: t('menu-remove-group-hint'),
-				run: () => removeGroup(g),
-			});
+			for (let entry of groupEntries(g, event)) entries.push(entry);
 		}
 		else {
 			entries.push({
