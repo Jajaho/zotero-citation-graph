@@ -262,3 +262,19 @@ zotero-graph-reader-prev = Previous page
 zotero-graph-reader-next = Next page
 zotero-graph-reader-open = Open ↗
 zotero-graph-reader-open-hint = Open in a full reader window
+
+## The gap list: works the collection cites and does not hold.
+
+zotero-graph-menu-gaps = What is missing
+zotero-graph-menu-gaps-hide = Hide what is missing
+zotero-graph-menu-gaps-hint = works your papers cite that this library does not hold
+zotero-graph-gaps-title = Missing works
+zotero-graph-gaps-close = Close
+zotero-graph-gaps-empty = Nothing is cited by two of your papers and missing.
+zotero-graph-gaps-building = Still reading the collection…
+zotero-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light them
+zotero-graph-gaps-add = Add to Zotero
+zotero-graph-gaps-add-no-doi = No DOI to add this by
+zotero-graph-gaps-mixed = across { $count } subfields
+zotero-graph-gaps-more = +{ $count } more below the cut
+zotero-graph-gaps-lookup-hint = With "look up names" on, these are ranked by how specific each one is to your library rather than by count alone.

@@ -242,3 +242,19 @@ zotero-graph-reader-prev = Vorherige Seite
 zotero-graph-reader-next = Nächste Seite
 zotero-graph-reader-open = Öffnen ↗
 zotero-graph-reader-open-hint = In einem vollen Reader-Fenster öffnen
+
+## Fehlende Werke: was die Sammlung zitiert und nicht besitzt.
+
+zotero-graph-menu-gaps = Was fehlt
+zotero-graph-menu-gaps-hide = Fehlendes ausblenden
+zotero-graph-menu-gaps-hint = Werke, die deine Aufsätze zitieren und die diese Bibliothek nicht hat
+zotero-graph-gaps-title = Fehlende Werke
+zotero-graph-gaps-close = Schließen
+zotero-graph-gaps-empty = Nichts wird von zwei deiner Aufsätze zitiert und fehlt.
+zotero-graph-gaps-building = Die Sammlung wird noch gelesen…
+zotero-graph-gaps-row-hint = { $count -> [one] { $count } deiner Aufsätze zitiert das *[other] { $count } deiner Aufsätze zitieren das } — zum Hervorheben klicken
+zotero-graph-gaps-add = Zu Zotero hinzufügen
+zotero-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe
+zotero-graph-gaps-mixed = über { $count } Teilgebiete verteilt
+zotero-graph-gaps-more = +{ $count } weitere unterhalb der Grenze
+zotero-graph-gaps-lookup-hint = Mit „Namen nachschlagen“ werden diese danach sortiert, wie spezifisch sie für deine Bibliothek sind, statt nur nach Anzahl.

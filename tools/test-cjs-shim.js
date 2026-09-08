@@ -1646,6 +1646,131 @@ check('two clusters never end up under one name', () => {
 	if (r.sizes.size !== 2) throw new Error('two clusters share a name: ' + [...r.sizes.keys()]);
 });
 
+// --- the gap list (content/graphGaps.js) ------------------------------------
+
+/** Same trick as loadScale(): evaluate the content-page script as a browser would. */
+function loadGaps() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/graphGaps.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'graphGaps.js' });
+	if (!ctx.ZGGaps) throw new Error('graphGaps.js did not publish ZGGaps');
+	return ctx.ZGGaps;
+}
+
+check('a gap is ranked by how hard the library leans on it, not by fame', () => {
+	const G = loadGaps();
+	// The landmark everybody cites against the obscure thing four of your own
+	// papers quietly depend on. Ranked on the local count alone the landmark
+	// wins, and that is the one answer nobody needs: you know about it, and not
+	// holding a famous paper is a decision rather than an oversight.
+	const edges = [];
+	for (let i = 0; i < 5; i++) edges.push({ from: 'HELD000' + i, to: 'doi:famous' });
+	for (let i = 0; i < 4; i++) edges.push({ from: 'HELD000' + i, to: 'doi:obscure' });
+	const externals = [
+		{ key: 'doi:famous', ns: 'doi', id: '10.1/famous', citedByGlobal: 41000 },
+		{ key: 'doi:obscure', ns: 'doi', id: '10.1/obscure', citedByGlobal: 90 },
+	];
+	const { rows } = G.rank(edges, externals);
+	if (rows[0].key !== 'doi:obscure') throw new Error('fame won: ' + rows.map(r => r.key).join());
+	// Discounted, never cancelled: enough local citers still beats any fame.
+	for (let i = 5; i < 12; i++) edges.push({ from: 'HELD00' + i, to: 'doi:famous' });
+	if (G.rank(edges, externals).rows[0].key !== 'doi:famous') {
+		throw new Error('twelve citers should outrank four whatever the fame');
+	}
+});
+
+check('with nothing looked up the ranking is plainly the local count', () => {
+	const G = loadGaps();
+	// No enrichment means no count to discount by, and the honest answer to the
+	// question asked without one is "most cited here" -- not a silent reordering
+	// by a number that is not there.
+	const edges = [];
+	for (let i = 0; i < 4; i++) edges.push({ from: 'HELD000' + i, to: 'doi:a' });
+	for (let i = 0; i < 2; i++) edges.push({ from: 'HELD000' + i, to: 'doi:b' });
+	const rows = G.rank(edges, [
+		{ key: 'doi:b', ns: 'doi', id: '10.1/b' },
+		{ key: 'doi:a', ns: 'doi', id: '10.1/a' },
+	]).rows;
+	if (rows.map(r => r.key).join() !== 'doi:a,doi:b') throw new Error(rows.map(r => r.key).join());
+	// An unresolved count and a resolved zero are the same score by
+	// construction; neither is allowed to read as the other's opposite.
+	if (G.score(4, null) !== G.score(4, 0)) throw new Error('unresolved and zero diverged');
+});
+
+check('the citer count comes from the edges handed in, not the build total', () => {
+	const G = loadGaps();
+	// The build counted this over every strategy at full confidence. By the time
+	// the list is drawn the user may have switched one off, and a row claiming
+	// nine citers over a graph that now shows two is a row nobody can check.
+	const edges = [
+		{ from: 'HELD0001', to: 'doi:x' },
+		{ from: 'HELD0002', to: 'doi:x' },
+		// A duplicate pair must not count as a second citer.
+		{ from: 'HELD0002', to: 'doi:x' },
+	];
+	const { rows } = G.rank(edges, [{ key: 'doi:x', ns: 'doi', id: '10.1/x', citedBy: 9 }]);
+	if (rows[0].citedBy !== 2) throw new Error('citedBy ' + rows[0].citedBy);
+	if (rows[0].citers.join() !== 'HELD0001,HELD0002') throw new Error(rows[0].citers.join());
+});
+
+check('single-citation noise stays out of the list', () => {
+	const G = loadGaps();
+	// 3,172 works are cited exactly once on the sample library, and a lone
+	// harvested DOI is as likely to be a licence URL as a reference.
+	const edges = [{ from: 'HELD0001', to: 'doi:once' }, { from: 'HELD0001', to: 'doi:twice' },
+		{ from: 'HELD0002', to: 'doi:twice' }];
+	const externals = [{ key: 'doi:once', ns: 'doi', id: '10.1/once' },
+		{ key: 'doi:twice', ns: 'doi', id: '10.1/twice' }];
+	const { rows, total } = G.rank(edges, externals);
+	if (rows.length !== 1 || rows[0].key !== 'doi:twice') throw new Error('floor let noise through');
+	if (total !== 1) throw new Error('total counts what the floor kept: ' + total);
+	// And the floor is a choice, not a law -- the CLI and a future control can
+	// ask for the tail.
+	if (G.rank(edges, externals, { minCitedBy: 1 }).rows.length !== 2) throw new Error('floor not adjustable');
+});
+
+check('a gap says which subfield is leaning on it, or that several are', () => {
+	const G = loadGaps();
+	const clusterOf = new Map([
+		['HELD0001', 'error correction'], ['HELD0002', 'error correction'],
+		['HELD0003', 'magnetometry'],
+	]);
+	const edges = [
+		{ from: 'HELD0001', to: 'doi:qec' }, { from: 'HELD0002', to: 'doi:qec' },
+		{ from: 'HELD0001', to: 'doi:both' }, { from: 'HELD0003', to: 'doi:both' },
+	];
+	const externals = [{ key: 'doi:qec', ns: 'doi', id: '10.1/qec' },
+		{ key: 'doi:both', ns: 'doi', id: '10.1/both' }];
+	const by = new Map(G.rank(edges, externals, { clusterOf }).rows.map(r => [r.key, r.subfields]));
+	// One subfield owning a gap is a hole in that subfield and can be named.
+	if (by.get('doi:qec').top !== 'error correction') throw new Error(JSON.stringify(by.get('doi:qec')));
+	// An even split is the collection's common ground, and claiming either half
+	// owned it would be picking one at random.
+	if (by.get('doi:both').top !== null) throw new Error('named an owner for a split gap');
+	if (by.get('doi:both').spread !== 2) throw new Error('spread ' + by.get('doi:both').spread);
+});
+
+check('the list is capped but says what it is not showing', () => {
+	const G = loadGaps();
+	const edges = [];
+	const externals = [];
+	for (let i = 0; i < 40; i++) {
+		const key = 'doi:g' + i;
+		externals.push({ key, ns: 'doi', id: '10.1/g' + i });
+		edges.push({ from: 'HELD0001', to: key }, { from: 'HELD0002', to: key });
+	}
+	const r = G.rank(edges, externals, { limit: 5 });
+	if (r.rows.length !== 5) throw new Error('cap ignored');
+	if (r.total !== 40) throw new Error('total should count every gap over the floor: ' + r.total);
+	// Equal scores throughout, so only a stable tie-break keeps the same five at
+	// the top between two renders of an unchanged library.
+	const again = G.rank(edges.slice().reverse(), externals.slice().reverse(), { limit: 5 });
+	if (r.rows.map(x => x.key).join() !== again.rows.map(x => x.key).join()) {
+		throw new Error('order moved on reshuffled input');
+	}
+});
+
 /**
  * A popover shown and hidden through the `hidden` attribute is defeated by its
  * own `display:` rule: an author rule beats the UA stylesheet's

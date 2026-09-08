@@ -146,12 +146,33 @@
 	     changing it. Built per render in graph.js, and hidden until there is
 	     something to explain. Sibling of #graph for the same reason as the
 	     panel: force-graph empties its container. -->
-	<div id="legend" hidden="hidden">
-		<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
-			<span id="legend-chevron">▾</span>
-			<span id="legend-title"></span>
-		</button>
-		<div id="legend-body"></div>
+	<!-- Both right-hand cards share one column, so neither has to know how tall
+	     the other is. The rail itself is transparent to the pointer; only the
+	     cards inside it take clicks, or the gaps between them would eat drags
+	     meant for the canvas. -->
+	<div id="rail">
+		<div id="legend" hidden="hidden">
+			<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
+				<span id="legend-chevron">▾</span>
+				<span id="legend-title"></span>
+			</button>
+			<div id="legend-body"></div>
+		</div>
+
+		<!-- The works the collection keeps citing and does not hold, ranked.
+		     The graph draws these as ghosts already; what it cannot do is put
+		     the interesting ones in one place, because on the canvas they sit
+		     in a cloud of several thousand. Opened from the canvas menu, and
+		     it works with outside refs switched off -- what is missing is a
+		     fact about the library, not about what is currently drawn. -->
+		<div id="gaps" hidden="hidden">
+			<div id="gaps-head">
+				<span id="gaps-title" data-zg-str="gaps-title">Missing works</span>
+				<button id="gaps-close" type="button" data-zg-title="gaps-close" title="Close">✕</button>
+			</div>
+			<div id="gaps-body"></div>
+			<div id="gaps-foot" hidden="hidden"></div>
+		</div>
 	</div>
 
 	<!-- Bottom left, the corner nothing else claims: after dragging a node off
@@ -232,6 +253,7 @@
 	<script src="nodeLinks.js"></script>
 	<script src="nodeFilters.js"></script>
 	<script src="graphCluster.js"></script>
+	<script src="graphGaps.js"></script>
 	<script src="graph.js"></script>
 </body>
 </html>

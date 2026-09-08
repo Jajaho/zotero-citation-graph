@@ -11,6 +11,7 @@
  *   node citation-graph/cli.js --include-external      also count works NOT held
  *   node citation-graph/cli.js --include-external --enrich   ...and name them
  *   node citation-graph/cli.js --include-external --clusters  the subfield map
+ *   node citation-graph/cli.js --enrich --gaps         what the library is missing
  *
  * --clusters runs the bibliographic coupling and community detection the graph
  * colours by, and prints the partition with each cluster's name. Pair it with
@@ -56,6 +57,7 @@ function parseArgs(argv) {
 			next();
 		}
 		else if (k === '--clusters') a.clusters = true;
+		else if (k === '--gaps') { a.gaps = true; a.includeExternal = true; }
 		else if (k === '--list') a.list = true;
 		else if (k === '--help' || k === '-h') a.help = true;
 	}
@@ -99,6 +101,35 @@ function printClusters(r) {
 			console.log('       ', String((it && it.title) || key).slice(0, 76));
 		}
 		if (keys.length > 3) console.log('        ...');
+	}
+}
+
+/**
+ * The gap list the graph draws in its own card: what the collection cites and
+ * does not hold, ranked by how hard it leans on each rather than by fame.
+ *
+ * Implies --include-external, since there is nothing to rank without it, and it
+ * is worth far more with --enrich: without the global counts the ranking is
+ * plainly the local one, which the "most cited (here)" list above already
+ * prints. The reordering IS the feature.
+ */
+function printGaps(r, metadata) {
+	require('../addon/content/graphCluster.js');
+	require('../addon/content/graphGaps.js');
+	const items = r.items.map((it) => ({ key: it.key, title: it.title }));
+	const clusterOf = globalThis.ZGCluster.cluster(r.edges, items).of;
+	const externals = r.externalNodes.map((x) => {
+		const m = metadata[x.key];
+		return m ? { ...x, title: m.title, creators: m.creators, year: m.year, citedByGlobal: m.citedByGlobal } : x;
+	});
+	const { rows, total } = globalThis.ZGGaps.rank(r.edges, externals, { clusterOf });
+	console.log('\nmissing works,', total, 'over the floor, best first:');
+	for (const g of rows) {
+		const name = g.title || g.id;
+		const where = g.subfields.top || (g.subfields.spread > 1 ? g.subfields.spread + ' subfields' : '');
+		console.log(' ', rpad(g.citedBy, 4), rpad(g.score.toFixed(2), 6),
+			pad(String(name).slice(0, 52), 54),
+			pad(g.citedByGlobal != null ? g.citedByGlobal + ' cites' : '', 12), where);
 	}
 }
 
@@ -268,6 +299,7 @@ function printClusters(r) {
 	}
 
 	if (args.clusters) printClusters(r);
+	if (args.gaps) printGaps(r, metadata);
 
 	for (const t of [0.9, 0.7, 0.5]) {
 		console.log(`  confidence >= ${t}:`, cg.filterEdges(r.edges, { minConfidence: t }).length, 'edges');

@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGL10n */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGGaps, ZGL10n */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -49,12 +49,13 @@
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
 
-	// Published by nodeScale.js, nodeLinks.js, nodeFilters.js and
-	// graphCluster.js, which graph.html loads first.
+	// Published by nodeScale.js, nodeLinks.js, nodeFilters.js, graphCluster.js
+	// and graphGaps.js, which graph.html loads first.
 	const Scale = ZGScale;
 	const Links = ZGLinks;
 	const Filters = ZGFilters;
 	const Cluster = ZGCluster;
+	const Gaps = ZGGaps;
 
 	/**
 	 * One string, from the .ftl chrome hands the page. Until that lands t()
@@ -127,6 +128,10 @@
 	let elLegendToggle = el('legend-toggle');
 	let elLegendTitle = el('legend-title');
 	let elLegendBody = el('legend-body');
+	let elGaps = el('gaps');
+	let elGapsTitle = el('gaps-title');
+	let elGapsBody = el('gaps-body');
+	let elGapsFoot = el('gaps-foot');
 	let elFilterChips = el('filter-chips');
 	let elFilterInput = el('filter-input');
 	let elSuggest = el('filter-suggest');
@@ -453,6 +458,172 @@
 		return row;
 	}
 
+	// --- the gap list -----------------------------------------------------
+
+	/**
+	 * The works the collection keeps citing and does not hold, ranked.
+	 *
+	 * The graph draws these already, as ghosts sized by how many of your papers
+	 * cite them. What it cannot do is answer the question in one look: on the
+	 * canvas the interesting ones sit somewhere in a cloud of several thousand,
+	 * and filtering the cloud down far enough to read leaves you reading a
+	 * graph where a list is what the question wants. So the same data, ranked,
+	 * beside the graph rather than in it.
+	 *
+	 * The ranking is not the raw count -- see graphGaps.js for why fame is
+	 * divided out of it -- and the subfield attribution comes from the same
+	 * partition the graph colours by, which is what lets a row say that seven
+	 * papers of one subfield lean on something the library does not have.
+	 */
+	function openGaps() {
+		elGaps.hidden = false;
+		// The list is built from the outside references, and the build only
+		// derives those when they are asked for. Opening the list IS that
+		// request -- the same bargain "size by global citations" strikes with
+		// the lookup -- so it switches them on and rebuilds, rather than
+		// opening an empty card next to a checkbox the user is left to find.
+		if (!elIncludeExternal.checked) {
+			elIncludeExternal.checked = true;
+			requestRebuild();
+		}
+		renderGaps();
+	}
+
+	function closeGaps() {
+		elGaps.hidden = true;
+	}
+
+	function renderGaps() {
+		if (elGaps.hidden) return;
+		elGapsBody.textContent = '';
+		elGapsFoot.textContent = '';
+		elGapsFoot.hidden = true;
+
+		let ranked = raw
+			? Gaps.rank(believedEdges(), raw.external, { clusterOf: clusters().of })
+			: { rows: [], total: 0 };
+
+		if (!ranked.rows.length) {
+			let note = document.createElement('div');
+			note.className = 'gaps-empty';
+			// A build still running has not read most of the PDFs yet, and
+			// "nothing is missing" would be a lie until it has.
+			let building = !raw || (raw.meta && raw.meta.phase && raw.meta.phase !== 'done');
+			note.textContent = t(building ? 'gaps-building' : 'gaps-empty');
+			elGapsBody.appendChild(note);
+			return;
+		}
+
+		for (let g of ranked.rows) elGapsBody.appendChild(gapRow(g));
+
+		let foot = [];
+		if (ranked.total > ranked.rows.length) {
+			foot.push(t('gaps-more', { count: ranked.total - ranked.rows.length }));
+		}
+		// Without the counts every gap is ranked at face value, which is the
+		// plain "most cited here" order. Worth saying, since the ranking is the
+		// reason to read this list rather than the graph.
+		if (!elEnrich.checked) foot.push(t('gaps-lookup-hint'));
+		for (let line of foot) {
+			let div = document.createElement('div');
+			div.textContent = line;
+			elGapsFoot.appendChild(div);
+		}
+		elGapsFoot.hidden = !foot.length;
+	}
+
+	function gapRow(g) {
+		let row = document.createElement('div');
+		row.className = 'gap-row';
+		row.setAttribute('role', 'button');
+		row.tabIndex = 0;
+		row.title = t('gaps-row-hint', { count: g.citedBy });
+
+		let count = document.createElement('span');
+		count.className = 'gap-count';
+		count.textContent = g.citedBy;
+
+		let main = document.createElement('div');
+		main.className = 'gap-main';
+		let name = document.createElement('div');
+		// Offline a ghost is a DOI and nothing else, and a bare identifier
+		// should look like one rather than sit where a title would.
+		name.className = g.title ? 'gap-name' : 'gap-name bare';
+		name.textContent = g.title || g.id;
+		let sub = document.createElement('div');
+		sub.className = 'gap-sub';
+		sub.textContent = gapSub(g);
+		main.appendChild(name);
+		if (sub.textContent) main.appendChild(sub);
+
+		let add = document.createElement('button');
+		add.type = 'button';
+		add.className = 'gap-add';
+		add.textContent = '+';
+		// Only a DOI can be added: that is what Zotero's add-by-identifier
+		// takes, and it is the same gate the ghost's own context menu applies.
+		add.disabled = g.ns !== 'doi';
+		add.title = t(add.disabled ? 'gaps-add-no-doi' : 'gaps-add');
+		add.addEventListener('click', (e) => {
+			// The row underneath means "show me who cites this", which is not
+			// what someone reaching for the button asked for.
+			e.stopPropagation();
+			add.disabled = true;
+			add.textContent = '…';
+			// Chrome answers by rebuilding, after which this work is held and
+			// drops off the list by itself.
+			emit({ type: 'add-item', doi: g.id });
+		});
+
+		row.addEventListener('click', () => showGapCiters(g));
+		row.addEventListener('keydown', (e) => {
+			if (e.key !== 'Enter' && e.key !== ' ') return;
+			e.preventDefault();
+			showGapCiters(g);
+		});
+
+		row.appendChild(count);
+		row.appendChild(main);
+		row.appendChild(add);
+		return row;
+	}
+
+	/** Authors, fame and which subfield is doing the citing -- the three things
+	 *  that decide whether a gap is worth filling, on one line. */
+	function gapSub(g) {
+		let bits = [];
+		if (g.creators && g.creators.length) bits.push(creatorList(g.creators));
+		if (g.year) bits.push(g.year);
+		if (g.citedByGlobal != null) {
+			bits.push(t('tooltip-citations-total', { count: g.citedByGlobal.toLocaleString() }));
+		}
+		// One subfield leaning on it is a hole in that subfield and can be
+		// named as one; several leaning on it is common ground, which is a
+		// different kind of missing and is said differently.
+		if (g.subfields.top) bits.push(g.subfields.top);
+		else if (g.subfields.spread > 1) bits.push(t('gaps-mixed', { count: g.subfields.spread }));
+		return bits.join(' · ');
+	}
+
+	/**
+	 * Light the papers that cite this gap.
+	 *
+	 * The gap itself joins them when it is drawn, so the star reads as a star;
+	 * with outside refs hidden it cannot, and what is left -- your own papers,
+	 * lit together -- is still the answer to "who leans on this". Anything the
+	 * filters have taken off screen is not isolated, because isolating a node
+	 * nobody can see would dim the graph around nothing.
+	 */
+	function showGapCiters(g) {
+		let onScreen = new Set((drawnNodes || []).map(n => n.id));
+		let ids = new Set();
+		for (let key of g.citers) if (onScreen.has(key)) ids.add(key);
+		if (onScreen.has(g.key)) ids.add(g.key);
+		if (ids.size) setIsolated(ids);
+	}
+
+	el('gaps-close').addEventListener('click', closeGaps);
+
 	// --- strategy toggles -------------------------------------------------
 
 	let renderedVias = '';
@@ -531,16 +702,39 @@
 
 	function clusters() {
 		if (!raw) return NO_CLUSTERS;
-		let sig = elMinConf.value + '|' + [...disabledVia].sort().join(',');
+		let sig = believedSig();
 		if (clusterMemo.raw === raw && clusterMemo.sig === sig) return clusterMemo.result;
-		let minConf = Number(elMinConf.value);
-		let edges = raw.edges.filter(e => e.confidence >= minConf
-			&& e.via.some(v => !disabledVia.has(v)));
-		let result = Cluster.cluster(edges, raw.items, {
+		let result = Cluster.cluster(believedEdges(), raw.items, {
 			fallbackLabel: i => t('color-cluster-n', { n: i + 1 }),
 		});
 		clusterMemo = { raw, sig, result };
 		return result;
+	}
+
+	/**
+	 * The edges the user currently believes: everything the build derived, less
+	 * what the confidence slider and the strategy toggles disown.
+	 *
+	 * Shared by the two analyses that read the whole collection rather than
+	 * what the masks left on screen -- the subfields above and the gap list
+	 * below -- and memoised on the same signature they are, because both are
+	 * asked for it repeatedly per render.
+	 */
+	let believedMemo = { raw: null, sig: null, edges: null };
+
+	function believedSig() {
+		return elMinConf.value + '|' + [...disabledVia].sort().join(',');
+	}
+
+	function believedEdges() {
+		if (!raw) return [];
+		let sig = believedSig();
+		if (believedMemo.raw === raw && believedMemo.sig === sig) return believedMemo.edges;
+		let minConf = Number(elMinConf.value);
+		let edges = raw.edges.filter(e => e.confidence >= minConf
+			&& e.via.some(v => !disabledVia.has(v)));
+		believedMemo = { raw, sig, edges };
+		return edges;
 	}
 
 	// --- filter masks -----------------------------------------------------
@@ -1181,6 +1375,10 @@
 
 		updateGraph(nodes, links);
 		renderLegend(nodes);
+		// Rebuilt with the graph rather than only when opened: a build phase
+		// landing, a strategy switched off or a paper added all change what is
+		// missing, and a stale list would be a list of the wrong papers.
+		renderGaps();
 
 		let phase = raw.meta && raw.meta.phase;
 		let ghostCount = visibleGhosts.size;
@@ -2707,6 +2905,13 @@
 			label: t('menu-zoom-to-fit'),
 			hint: t('menu-zoom-to-fit-hint'),
 			run: reframe,
+		}, {
+			// Not a node gesture: what is missing is a question about the
+			// collection, so it is asked of the canvas rather than of any one
+			// paper on it.
+			label: t(elGaps.hidden ? 'menu-gaps' : 'menu-gaps-hide'),
+			hint: t('menu-gaps-hint'),
+			run: () => (elGaps.hidden ? openGaps() : closeGaps()),
 		}];
 		let g = groupAt(event);
 		if (g) {
@@ -2944,7 +3149,11 @@
 		if (!elMenu.hidden) hideMenu();
 		else if (!elGroup.hidden) closeGroup();
 		else if (!elAction.hidden) hideAction();
-		else clearIsolated();
+		// The isolation before the card that caused it: a row lights a
+		// neighbourhood, and the press that undoes that must not instead take
+		// away the list you were reading down.
+		else if (isolated.size) clearIsolated();
+		else if (!elGaps.hidden) closeGaps();
 	});
 
 	// --- controls ---------------------------------------------------------
