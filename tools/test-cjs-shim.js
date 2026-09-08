@@ -657,9 +657,14 @@ check('lib/ modules load through the shim', () => {
 	if (typeof i.show !== 'function') throw new Error('itemPane must expose show()');
 	// Closing is the panel's, not either occupant's: one divider puts both away.
 	const s = require_('./lib/splitPane.js');
-	for (const fn of ['claim', 'has', 'close']) {
+	// The whole surface, not a sample: the module's stylesheet is a template
+	// literal, and one stray backtick in a CSS comment ends the string, turns the
+	// rest of the file into whatever it happens to parse as, and leaves exports
+	// silently missing rather than throwing.
+	for (const fn of ['claim', 'has', 'collapsed', 'close']) {
 		if (typeof s[fn] !== 'function') throw new Error('splitPane must expose ' + fn + '()');
 	}
+	if (s.MIN_WIDTH !== 357) throw new Error('splitPane.MIN_WIDTH: ' + s.MIN_WIDTH);
 });
 
 /**

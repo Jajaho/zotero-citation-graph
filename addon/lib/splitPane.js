@@ -107,6 +107,17 @@ const PANE_CSS = `
 	 * divider: a XUL <splitter> is a LEAF frame in current Gecko and lays out no
 	 * children at all, which is why core's own <grippy> elements inside splitters
 	 * render nothing.
+	 *
+	 * Two rules keep the join clean, and both matter only once there is a hover
+	 * colour to make a seam visible:
+	 *
+	 *   box-sizing   this is an HTML <button>, so it is content-box by default
+	 *                and the border would put 2px of it back OVER the panel --
+	 *                the left offset above is a border-box number.
+	 *   no right border, no right radius
+	 *                the edge it meets is the panel's own. A line there would be
+	 *                a doubled one, and a rounded corner would leave a notch of
+	 *                panel showing through the tab hanging off it.
 	 */
 	.zg-pane-toggle {
 		position: absolute;
@@ -115,10 +126,12 @@ const PANE_CSS = `
 		transform: translateY(-50%);
 		z-index: 2;
 		appearance: none;
+		box-sizing: border-box;
 		width: ${TOGGLE_WIDTH}px;
 		height: 56px;
 		padding: 0;
 		border: 1px solid var(--material-panedivider);
+		border-right: none;
 		border-radius: 5px 0 0 5px;
 		background: var(--material-sidepane);
 		color: var(--fill-secondary);
