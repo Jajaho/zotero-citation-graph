@@ -986,6 +986,9 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('collide', collide());
+			// Last on purpose: it reads what every force before it has decided.
+			// See settle().
+			fg.d3Force('glide', glide());
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
 			// endpoint resolution all belong to that force.
@@ -1646,35 +1649,47 @@
 	 * the whole graph re-anneals around the one node the user let go of.
 	 *
 	 * So the graph is held still and the released node is not. Every other node
-	 * is fixed where it stands, the simulation is reheated, and the free node
-	 * settles into the place its edges and its neighbours' radii want it. d3
-	 * discards the velocity of a fixed node on every tick, so nothing else can
-	 * move however hard the forces push at it, and the layout the user arranged
-	 * comes out of this identical apart from the one node that was asked to
-	 * rejoin it.
+	 * is fixed where it stands, and the free node makes its way to the place its
+	 * edges and its neighbours' radii want it. d3 discards the velocity of a
+	 * fixed node on every tick, so nothing else can move however hard the forces
+	 * push at it, and the layout the user arranged comes out of this identical
+	 * apart from the one node that was asked to rejoin it.
 	 *
-	 * The freeze is lifted by the engine stopping, which is what SETTLE_TICKS is
-	 * for: force-graph runs exactly that many ticks and then stops of its own
-	 * accord, leaving the graph cold rather than mid-anneal with every node
-	 * suddenly free again.
+	 * WHY THIS IS NOT SIMPLY A RELEASE INTO THE SIMULATION, which is what a
+	 * dropped node gets. The two look nothing alike, and the difference is not
+	 * energy but distance. Dragging a node runs the simulation the whole time it
+	 * is held: every tick, the neighbourhood moves a little further towards
+	 * accommodating wherever the pointer has put it. By the time the button
+	 * comes up the layout has already agreed with the node's position, the net
+	 * force on it is close to nothing, and it barely moves -- which is exactly
+	 * why a drop looks calm. A pinned node is the opposite case by definition:
+	 * it is pinned BECAUSE the forces disagree with where it is, and the
+	 * disagreement has been standing for as long as the pin has. Handing all of
+	 * it to the node as acceleration, with d3's light damping carrying 70% of
+	 * the velocity into the next tick, is a slingshot -- at the default link
+	 * pull it overshoots by a tenth to a quarter of the distance it travelled,
+	 * and then swings back.
 	 *
-	 * Energy is the other half of moving like a dropped node, and the reason a
-	 * released node used to travel visibly faster than the same node dragged and
-	 * let go from the same spot. force-graph drags at an alpha TARGET of 0.3, so
-	 * a drop is released into an alpha of about 0.3 and falling. The only way
-	 * into the engine from out here is d3ReheatSimulation(), which sets alpha to
-	 * 1 -- and alpha scales the link, charge and centre-pull forces, so the node
-	 * was being thrown home with three times a drop's push.
+	 * So the node is never given momentum. It stays fixed and is WALKED home:
+	 * glide() runs last in the force chain, reads the push the other forces have
+	 * accumulated on it this tick -- link, charge, centre pull and collision,
+	 * all of them -- and steps fx/fy along it. Nothing is carried into the next
+	 * tick, so the step shrinks as the disagreement does; the node decelerates
+	 * into its place instead of sailing past it, and cannot overshoot at any
+	 * stiffness. The pin comes off at the end, on a node already at rest where
+	 * the forces stopped pushing.
 	 *
-	 * There is no alpha setter on force-graph's public API, so the settle sheds
-	 * the difference instead of setting it: the released node stays fixed with
-	 * everything else for the first few ticks, alphaDecay is turned right up so
-	 * those ticks cost alpha and nothing else, and the node is let go once alpha
-	 * has fallen to what a drop would have left it. Nothing is on the move while
-	 * that happens -- the whole graph is fixed, including the node itself -- so
-	 * the only thing visible is the gentler fall it then makes.
+	 * Alpha still sets the pace, because the push is scaled by it, and
+	 * d3ReheatSimulation() -- the only way into the engine from out here -- sets
+	 * it to 1. At 1 a well-connected node covers half its distance in a single
+	 * tick, which reads as a jump rather than a move. So the settle sheds alpha
+	 * down to a drop's before it starts walking: the graph, including the node,
+	 * stays fixed for the first couple of ticks while alphaDecay is turned right
+	 * up, so those ticks cost alpha and nothing else. Decay is then set to zero
+	 * for the rest of the walk -- with only one node free to move there is
+	 * nothing for a cooling schedule to protect, and a steady alpha is what
+	 * makes the approach an even glide rather than a lunge that stalls.
 	 */
-	const SETTLE_TICKS = 120;
 
 	// force-graph's own d3AlphaTarget while a node is being dragged, and so the
 	// alpha a dropped node is released into.
@@ -1686,12 +1701,23 @@
 	const SHED_DECAY = 0.5;
 	const SHED_TICKS = Math.ceil(Math.log(DROP_ALPHA) / Math.log(1 - SHED_DECAY));
 
+	// A step smaller than this is a node that has arrived. In graph units, where
+	// the smallest node on screen has a radius of NODE_REL_SIZE: a fortieth of
+	// that, per tick.
+	const GLIDE_EPSILON = 0.1;
+
+	// The walk is capped in case a node never reaches that -- one held between
+	// several disagreeing neighbours can creep indefinitely -- because the whole
+	// graph is frozen until it ends. Two seconds at 60fps.
+	const SETTLE_TICKS = 120;
+
 	// Held still for a settle, and not by the user. isPinned() has to see
 	// through this, or the whole graph would wear pin rings for a second.
 	let frozen = new Set();
 
-	// The node the shed above is being run for, and what the graph's own alpha
-	// decay was before the shed borrowed it.
+	// The node being walked home, how much of the alpha shed is left before the
+	// walk starts, and the alpha decay the graph runs at when nothing is being
+	// settled.
 	let settling = null;
 	let shedLeft = 0;
 	let settleDecay = null;
@@ -1699,16 +1725,16 @@
 	function settle(n) {
 		if (!fg) return;
 		thaw();
-		// n included: it is let go by shed(), not here, and until then it has to
-		// stay as still as the graph around it.
+		// n is frozen along with the rest: it is walked by glide(), not released,
+		// and until the shed is done it has to stand as still as they do.
 		for (let other of drawnNodes) {
 			if (other.fx != null || other.fy != null) continue;
 			other.fx = other.x;
 			other.fy = other.y;
 			frozen.add(other);
 		}
-		// Not a node on screen, so there is nothing to settle -- and nothing
-		// that would ever lift the freeze just laid down.
+		// Not a node on screen, so there is nothing to settle -- and nothing that
+		// would ever lift the freeze just laid down.
 		if (!frozen.has(n)) {
 			thaw();
 			return;
@@ -1720,18 +1746,51 @@
 	}
 
 	/**
-	 * One tick of the shed. Alpha cannot be read back from out here, so the
-	 * ticks are counted rather than the value watched -- which comes to the same
-	 * thing, because the decay is fixed and the starting alpha is always 1.
+	 * The walk, as a force, so that it runs inside the tick with the push the
+	 * other forces have just worked out still on the node. Registered last: what
+	 * it reads out of vx/vy is every other force's say, added up.
+	 *
+	 * d3 zeroes a fixed node's velocity in the position pass -- after all the
+	 * forces have run -- so vx/vy is this tick's push and nothing carried over
+	 * from the last one. That is the whole trick: stepping fx along it is a move
+	 * with no momentum behind it.
 	 */
-	function shed() {
-		if (!settling || --shedLeft > 0) return;
-		let n = settling;
+	function glide() {
+		function force() {
+			let n = settling;
+			// Nothing walks during the shed; those ticks are for alpha alone.
+			if (!n || shedLeft > 0) return;
+			n.fx += n.vx;
+			n.fy += n.vy;
+			if (n.vx * n.vx + n.vy * n.vy < GLIDE_EPSILON * GLIDE_EPSILON) arrived(n);
+		}
+		force.initialize = () => {};
+		return force;
+	}
+
+	/**
+	 * The node is where the forces stopped pushing, so the pin can come off: it
+	 * is at rest in its own equilibrium and will not drift. Ending the countdown
+	 * hands the rest of the graph back through thaw(), which is the engine's own
+	 * stop handler.
+	 */
+	function arrived(n) {
 		settling = null;
 		frozen.delete(n);
 		delete n.fx;
 		delete n.fy;
-		fg.d3AlphaDecay(settleDecay);
+		fg.cooldownTicks(0);
+	}
+
+	/**
+	 * One tick of the shed, counted rather than watched, because alpha cannot be
+	 * read back from out here -- which comes to the same thing, since the decay
+	 * is fixed and the starting alpha is always 1. When it runs out the walk
+	 * begins, at a steady alpha.
+	 */
+	function shed() {
+		if (!settling || shedLeft === 0 || --shedLeft > 0) return;
+		fg.d3AlphaDecay(0);
 	}
 
 	/** Give the graph its freedom back. Idempotent, and the engine's own stop
@@ -1742,10 +1801,11 @@
 			if (settleDecay !== null) fg.d3AlphaDecay(settleDecay);
 		}
 		settling = null;
+		shedLeft = 0;
 		settleDecay = null;
 		if (!frozen.size) return;
-		// A node still waiting to be let go is in here too, so this frees it
-		// along with the rest.
+		// A node still on its way is in here too, so this frees it along with the
+		// rest -- wherever it had got to, which is where it stays.
 		for (let other of frozen) {
 			delete other.fx;
 			delete other.fy;
