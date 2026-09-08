@@ -1442,6 +1442,42 @@ check('a flag takes the press before the canvas does', () => {
 	}
 });
 
+/**
+ * Right-clicking a node mid-drag ends the drag and opens the menu, but the left
+ * button is still down: the press that began the drag outlives the gesture it
+ * started. force-graph raises its clicks from its own pointerup handler, gated
+ * on a drag flag it dropped the moment the right button ended the gesture -- so
+ * that release arrives as an ordinary click on whatever is under the pointer,
+ * which dismisses the menu, isolates the node, and drops the hold keeping it
+ * where the user put it. Moving onto the menu first was the only thing that
+ * avoided it, by taking the release off the canvas, and no user should have to
+ * know that.
+ *
+ * Nothing about the sequence is visible in the source, so what is asserted here
+ * is that both clicks ask first, and that the flag they read has two ways out.
+ */
+check('the release that ends a right-clicked drag is not a click', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const after = (needle, n) => {
+		const i = js.indexOf(needle);
+		return i < 0 ? '' : js.slice(i, i + n);
+	};
+	for (const handler of ['fg.onNodeClick(', 'fg.onBackgroundClick(']) {
+		if (!after(handler, 120).includes('if (spentPress()) return;')) {
+			throw new Error(handler + ') acts on the click that ends a right-clicked drag');
+		}
+	}
+	// Marked where the menu opens, and only while the left button is still down.
+	if (!after('menuPress = ', 40).includes('event.buttons & 1')) {
+		throw new Error('the press is marked without checking that it is still held');
+	}
+	// A release that lands on the menu raises no click at all, so the flag needs
+	// a second way out or it eats the next real one.
+	if (!/pointerdown', \(\) => \{\s*menuPress = false;/.test(js)) {
+		throw new Error('a spent press with no click of its own is never cleared');
+	}
+});
+
 // --- localisation -----------------------------------------------------------
 
 const Ftl = require(path.join(addonDir, 'content/ftl.js'));

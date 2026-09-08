@@ -1068,7 +1068,10 @@
 			// One click isolates; opening the item is the double click, because
 			// isolating is the cheap, reversible, in-place gesture and selecting
 			// an item throws the user into a different tab.
-			fg.onNodeClick(n => toggleIsolate(n.id));
+			fg.onNodeClick((n) => {
+				if (spentPress()) return;
+				toggleIsolate(n.id);
+			});
 			fg.onNodeRightClick(showMenu);
 			fg.onNodeHover((n) => {
 				hoverNode = n;
@@ -1092,10 +1095,14 @@
 				// inside the mouseup -- so the node cannot move between them.
 				showMenu(n, event);
 				if (!isPinned(n)) hold(n);
+				// The left button is still down -- the press that began the
+				// drag outlives the gesture it started. See spentPress().
+				menuPress = !!(event.buttons & 1);
 			});
 			// Clicking empty canvas dismisses, the way a popover should, and
 			// gives the whole graph back.
 			fg.onBackgroundClick(() => {
+				if (spentPress()) return;
 				hideAction();
 				hideMenu();
 				clearIsolated();
@@ -1914,6 +1921,36 @@
 	 */
 	let dragNode = null;      // node the pointer is carrying, or null
 	let menuOnDrop = null;    // the right-click that asked for a menu, if any
+	let menuPress = false;    // left button still down from the drag it ended
+
+	/**
+	 * Spend the tail of the press the menu was opened from.
+	 *
+	 * The right button ends the drag, but the left one is still held: the press
+	 * that began the drag outlives the gesture. force-graph stopped counting
+	 * that gesture as a drag the moment the right button ended it, so it reads
+	 * the left button coming up as an ordinary click on whatever is under the
+	 * pointer -- which dismisses the menu it just opened, isolates the node
+	 * underneath, and hands the held node back to the layout. Unless the
+	 * pointer is moved onto the menu first, so that the release lands on the
+	 * menu rather than the canvas; that is what made the gesture feel like it
+	 * demanded a steady hand.
+	 *
+	 * Ignored here rather than swallowed on the way in. force-graph raises its
+	 * clicks from its own pointerup handler, which is also where it forgets
+	 * that a button was down -- stop that event and the flag sticks on, and the
+	 * next real click is eaten instead. So the click is allowed to happen and
+	 * comes to nothing.
+	 *
+	 * The flag is dropped by whichever comes first: the click it is waiting
+	 * for, or the next press, for a release that lands on the menu and so
+	 * raises no click at all.
+	 */
+	function spentPress() {
+		if (!menuPress) return false;
+		menuPress = false;
+		return true;
+	}
 
 	function guardDrag(e) {
 		// Button 0 is the drag's own, and has to get through: it is what ends
@@ -1945,6 +1982,11 @@
 		dragNode = null;
 		menuOnDrop = null;
 	}
+
+	// A new press means the last one is spent, whatever became of its release.
+	window.addEventListener('pointerdown', () => {
+		menuPress = false;
+	}, true);
 
 	window.addEventListener('mouseup', (e) => {
 		if (e.button === 0) endDrag();
