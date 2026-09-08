@@ -72,6 +72,13 @@ const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: fals
 // says whether a build owns the tab, since a lookup must not push over one.
 let open_ = new Map();
 
+// Session entries already turned into a real tab, by whichever of the two
+// restore paths reached them first -- core's hook, or restoreMissing() below.
+// A WeakSet keyed on the entry rather than a flag written onto it: those
+// objects are Zotero.Session's own, and a marker of ours has no business being
+// serialised back into session.json.
+let claimed_ = new WeakSet();
+
 // Restored from the last session but never selected, so there is a tab in the
 // strip with no page behind it yet. Kept apart from open_ rather than entered
 // there as a half-record, so nothing that walks live tabs -- a build, a lookup,
@@ -208,8 +215,18 @@ async function restore(win, tab, tabIndex) {
 	// it costs every tab after it. Dropping one graph tab is the worst outcome
 	// this function is allowed to have.
 	try {
+		// Already ours: the other path got here first. Answering without adding
+		// is what makes the two safe to run in either order, or both.
+		if (claimed_.has(tab)) return { itemID: null };
+		// Claimed in the same breath as the check, before the first await:
+		// tested after one, two passes racing on the same entry would both get
+		// past the check and both add a tab. An entry claimed and then found
+		// unrestorable stays claimed, which is right -- the second pass would
+		// only fail at it again.
+		claimed_.add(tab);
+
 		let collection = await tabCollection(tab.data);
-		trace.log(`restoreState.graph fired  index=${tabIndex}`
+		trace.log(`restore  index=${tabIndex}`
 			+ `  key=${(tab.data && tab.data.collectionKey) || '-'}`
 			+ `  -> ${collection ? 'restoring' : 'dropped (no such collection)'}`);
 		if (!collection) return { itemID: null };
@@ -234,6 +251,68 @@ async function restore(win, tab, tabIndex) {
 		Zotero.logError(e);
 	}
 	return { itemID: null };
+}
+
+/**
+ * Restore the graph tabs that session restore never asked us about.
+ *
+ * The restoreState hook only works if it is registered before Zotero restores,
+ * and a plugin cannot arrange that. Zotero.Plugins.init() is awaited at the end
+ * of Zotero.init(), while ZoteroPane.init() -- and _loadPane(), which restores
+ * once the item and collection trees are up -- is gated only on
+ * initializationPromise, which resolves before it. Measured on a real profile,
+ * restore had finished before this plugin was loaded at all: at
+ * onMainWindowLoad the strip already held the session's reader tabs, and the
+ * hook had never been called. It is not a race that is usually won; it is one
+ * that is usually lost.
+ *
+ * So the hook is the fast path and this is the truth. Zotero.Session.state is
+ * the parsed session.json and is not cleared by restoring from it, so the
+ * entries are still there to be read afterwards -- including the graph tab that
+ * restore dropped. Anything not already claimed gets a tab now.
+ *
+ * Safe in either order, and safe run twice: claimed_ is keyed on the session
+ * entry, and both paths are handed the very same objects.
+ *
+ * What this cannot repair: with no hook registered, tabs.js:611 destructures
+ * the missing hook's undefined and throws, and zoteroPane.js catches it around
+ * the whole loop -- so any tab AFTER a graph tab in the session is lost with
+ * it, and those are not ours to restore. A graph tab last in the strip, which
+ * is where a newly opened one goes, costs nothing.
+ */
+function restoreMissing(win) {
+	// Serialised behind one chain rather than run concurrently: two passes over
+	// the same session would each claim entries the other was still adding, and
+	// a caller awaiting the second would return before the first had finished.
+	// Chaining also means a second pass simply finds everything claimed.
+	restoring_ = restoring_.then(() => restorePass(win)).catch(e => Zotero.logError(e));
+	return restoring_;
+}
+
+let restoring_ = Promise.resolve();
+
+/** Whatever restore passes are in flight. Exported so a check can wait for the
+ *  one onMainWindowLoad starts without starting another of its own. */
+function restoreSettled() {
+	return restoring_;
+}
+
+async function restorePass(win) {
+	let entries;
+	try {
+		let pane = (Zotero.Session.state.windows || []).find(w => w.type === 'pane');
+		entries = (pane && pane.tabs) || [];
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return;
+	}
+	for (let i = 0; i < entries.length; i++) {
+		let entry = entries[i];
+		if (!entry || entry.type !== 'graph' || claimed_.has(entry)) continue;
+		trace.log(`late restore  index=${i}  (session restore ran before this plugin loaded)`);
+		await restore(win, entry, i);
+	}
 }
 
 /**
@@ -1185,7 +1264,8 @@ function forgetAll() {
 }
 
 module.exports = {
-	open, restore, load, closeAll, closeAllInWindow, forgetWindow, forgetAll, stripSummary,
+	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
+	forgetWindow, forgetAll, stripSummary,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.

@@ -124,6 +124,10 @@ module.exports = {
 		// the time this plugin got here? Those two answers together say whether
 		// a lost tab was lost on the way out or on the way back in.
 		trace.log(`window load  session=[${sessionSummary()}]  strip=[${graphTab.stripSummary(win)}]`);
+		// Restore usually finishes before this plugin is loaded, so the hook
+		// above is the fast path and this is the one that actually runs. See
+		// graphTab.restoreMissing().
+		graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
 	},
 
 	onMainWindowUnload(win) {

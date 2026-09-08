@@ -1574,8 +1574,61 @@ const t3 = check('a restored graph tab comes back unloaded, in place, and builds
 	}
 });
 
-check('a tab whose collection is gone drops without costing the tabs after it', async () => {
+const t4 = check('a restore that ran before the plugin loaded is picked up at window load', async () => {
 	await t3;
+	const main = require_('./lib/main.js');
+	const graphTab = require_('./lib/graphTab.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+
+	// Zotero.Session's own objects, and the very ones restoreState() is handed:
+	// that shared identity is what lets the hook and the late pass agree about
+	// which entries are already spoken for.
+	const entries = [
+		{ type: 'library', title: 'My Library', data: {} },
+		{ type: 'reader', title: 'A paper', data: { itemID: 5 } },
+		{ type: 'graph', title: 'Reading list — Citation Graph',
+			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-graph' } },
+	];
+	Zotero.Session = { state: { windows: [{ type: 'pane', tabs: entries }] } };
+	win.Zotero_Tabs.tabHooks.restoreState.reader = async () => ({ itemID: null });
+
+	// What the lifecycle log actually recorded: Zotero restores before the
+	// plugin is loaded, so there is no graph hook, tabs.js:611 destructures the
+	// default hook's undefined, and zoteroPane.js catches it around the loop.
+	let threw = false;
+	try {
+		await win.Zotero_Tabs.restoreState(entries);
+	}
+	catch (e) {
+		threw = true;
+	}
+	if (!threw) throw new Error('a missing hook is supposed to throw -- that is the bug');
+	if (win.Zotero_Tabs._tabs.some(t => /^graph/.test(t.type))) {
+		throw new Error('a graph tab appeared with no hook registered');
+	}
+
+	// Then the plugin loads. Only onMainWindowLoad is called -- waiting on the
+	// pass IT started, rather than starting one here, is what makes this a check
+	// of the wiring and not just of restoreMissing().
+	main.onMainWindowLoad(win);
+	await graphTab.restoreSettled();
+
+	const back = win.Zotero_Tabs._tabs.filter(t => /^graph/.test(t.type));
+	if (back.length !== 1) throw new Error('restored ' + back.length + ' graph tabs');
+	if (back[0].data.collectionKey !== 'ABCD1234') throw new Error('restored the wrong collection');
+
+	// And the hook firing late for an entry already claimed must not add a second.
+	win.Zotero_Tabs.tabHooks.restoreState.graph = (tab, i) => graphTab.restore(win, tab, i);
+	await win.Zotero_Tabs.restoreState(entries);
+	if (win.Zotero_Tabs._tabs.filter(t => /^graph/.test(t.type)).length !== 1) {
+		throw new Error('the two restore paths each added a tab');
+	}
+});
+
+check('a tab whose collection is gone drops without costing the tabs after it', async () => {
+	await t4;
 	const main = require_('./lib/main.js');
 	const { win } = fakeMainWindow();
 	// No collection answers to that key any more.
