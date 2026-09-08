@@ -3,7 +3,7 @@
 'use strict';
 
 /**
- * Zotero's own item pane, beside the graph, following the pointer.
+ * Zotero's own item pane, beside the graph, describing the node you clicked.
  *
  * This is the same element the library pane builds for the item you click:
  * `<item-details>` (elements/itemDetails.js) with an `<item-pane-sidenav>`
@@ -30,14 +30,14 @@
  *              pref) take their non-library branch and never reach for a
  *              collection tree this tab does not have.
  *
- * The pane is opened by hovering a node, and hovering is cheap and constant, so
- * the dwell timer that decides when a hover means something lives on the graph
- * page (see HOVER_ITEM_MS in content/graph.js). By the time a message gets here
- * the user has meant it.
+ * The pane opens on a left click, alongside the isolation that click already
+ * does: one gesture asks "what is this paper", and both halves of the answer
+ * -- what it is connected to, and what it is -- arrive together.
  *
  * It shares one panel with the reader (splitPane.js) and holds it alone: both
  * describe the paper you are looking at, and giving each its own strip would
- * leave the graph a column between two panes.
+ * leave the graph a column between two panes. Hiding is the divider's chevron,
+ * not anything here.
  */
 
 let l10n = require('./l10n.js');
@@ -63,19 +63,18 @@ const PANE_CSS = `
 `;
 
 /**
- * Describe `itemID` in the pane, creating the pane if this is the first hover.
+ * Describe `itemID` in the pane, creating the pane if this is the first time.
  *
  * Renders are serialised rather than fired per message: a render walks every
- * section of the pane and awaits the slow ones, and the pointer can cross three
- * nodes while one is in flight. Only the latest item is ever drawn -- the ones
- * passed over in between are dropped, which is what they deserve.
+ * section of the pane and awaits the slow ones, and a run of clicks across a
+ * cluster can land three before the first is drawn. Only the latest item is
+ * ever drawn -- the ones passed over in between are dropped.
  *
  * @param {Object}   entry      the graphTab record for this tab
  * @param {Number}   itemID     a regular item, or one of its children
  * @param {Function} [status]   text back to the graph page
- * @param {Function} [onLost]   the panel has gone to something else, or closed
  */
-async function show(entry, itemID, { status = () => {}, onLost = () => {} } = {}) {
+async function show(entry, itemID, { status = () => {} } = {}) {
 	if (!entry || !entry.split) return;
 
 	let item = await Zotero.Items.getAsync(itemID);
@@ -87,10 +86,10 @@ async function show(entry, itemID, { status = () => {}, onLost = () => {} } = {}
 
 	// Everything below the first line of this is core's element, on core's
 	// terms. If a Zotero this plugin has not seen builds it differently, say so
-	// once on the status line rather than throwing on every hover.
+	// once on the status line rather than throwing on every click.
 	let pane;
 	try {
-		pane = ensurePane(entry, onLost);
+		pane = ensurePane(entry);
 	}
 	catch (e) {
 		Zotero.logError(e);
@@ -102,7 +101,7 @@ async function show(entry, itemID, { status = () => {}, onLost = () => {} } = {}
 
 	pane.rendering = true;
 	try {
-		// Re-read `wanted` each pass: a hover that landed during the await is
+		// Re-read `wanted` each pass: a click that landed during the await is
 		// the one to draw next, and the ones before it are already stale.
 		while (entry.itemPane === pane && pane.wanted !== pane.shown) {
 			let next = pane.wanted;
@@ -134,11 +133,6 @@ function editable(item) {
 	}
 }
 
-/** Close the panel, if the item pane is what is in it. */
-function close(entry) {
-	if (splitPane.has(entry, 'item')) splitPane.close(entry);
-}
-
 /**
  * The panel has been taken by the reader, or closed. There is nothing to flush:
  * ItemDetails and the sidenav both unregister their observers from
@@ -151,17 +145,14 @@ function forget(entry) {
 
 // --- the pane ----------------------------------------------------------
 
-function ensurePane(entry, onLost) {
+function ensurePane(entry) {
+	// Through claim() every time, before the early return below: claiming shows
+	// the panel if the chevron had hidden it, and a click on a node is a request
+	// to see the paper, not to update something out of sight.
+	let box = splitPane.claim(entry, 'item', () => forget(entry));
 	if (entry.itemPane) return entry.itemPane;
 
 	let doc = entry.win.document;
-	// Losing the panel is not something the graph page can see, and while it
-	// believes it is following the pointer it would take the panel straight
-	// back off whatever displaced it. So it is told.
-	let box = splitPane.claim(entry, 'item', () => {
-		forget(entry);
-		onLost();
-	});
 
 	let style = doc.createElement('style');
 	style.textContent = PANE_CSS;
@@ -201,10 +192,10 @@ function ensurePane(entry, onLost) {
 		details,
 		sidenav,
 		shown: null,       // the item drawn
-		wanted: null,      // the item most recently hovered
+		wanted: null,      // the item most recently clicked
 		rendering: false,
 	};
 	return entry.itemPane;
 }
 
-module.exports = { show, close };
+module.exports = { show };

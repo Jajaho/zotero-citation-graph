@@ -650,12 +650,15 @@ check('lib/ modules load through the shim', () => {
 	const t = require_('./lib/graphTab.js');
 	if (typeof t.open !== 'function') throw new Error('no open()');
 	const r = require_('./lib/readerPane.js');
-	if (typeof r.open !== 'function' || typeof r.close !== 'function') {
-		throw new Error('readerPane must expose open()/close()');
+	if (typeof r.open !== 'function' || typeof r.readable !== 'function') {
+		throw new Error('readerPane must expose open()/readable()');
 	}
 	const i = require_('./lib/itemPane.js');
-	if (typeof i.show !== 'function' || typeof i.close !== 'function') {
-		throw new Error('itemPane must expose show()/close()');
+	if (typeof i.show !== 'function') throw new Error('itemPane must expose show()');
+	// Closing is the panel's, not either occupant's: one divider puts both away.
+	const s = require_('./lib/splitPane.js');
+	for (const fn of ['claim', 'has', 'close']) {
+		if (typeof s[fn] !== 'function') throw new Error('splitPane must expose ' + fn + '()');
 	}
 });
 
@@ -673,6 +676,7 @@ class FakeElement {
 		this.style = {};
 		this.parent = null;
 		this.removed = false;
+		this.listeners = {};
 		if (localName === 'item-details') this.render = () => onRender(this);
 		made.push(this);
 	}
@@ -689,6 +693,10 @@ class FakeElement {
 		return k in this.attrs ? this.attrs[k] : null;
 	}
 
+	removeAttribute(k) {
+		delete this.attrs[k];
+	}
+
 	appendChild(c) {
 		if (c.parent) c.remove();
 		c.parent = this;
@@ -702,10 +710,19 @@ class FakeElement {
 		this.removed = true;
 	}
 
-	addEventListener() {}
+	addEventListener(type, fn) {
+		(this.listeners[type] = this.listeners[type] || []).push(fn);
+	}
+
+	/** Press the chevron, or whatever else the panel wired up. */
+	fire(type) {
+		for (const fn of this.listeners[type] || []) fn();
+	}
 
 	getBoundingClientRect() {
-		return { width: 400 };
+		// Zero once hidden, the way a display:none box measures -- which is what
+		// stops a collapse from being remembered as a width.
+		return { width: this.getAttribute('hidden') ? 0 : 400 };
 	}
 }
 
@@ -757,6 +774,33 @@ check('the side panel holds one thing at a time', async () => {
 	if (!second.removed) throw new Error('close() left the panel in the DOM');
 });
 
+check('hiding the panel keeps what is in it, and asking again brings it back', () => {
+	const splitPane = require_('./lib/splitPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-10');
+	Zotero.Prefs = { get: () => 480, set: () => {} };
+
+	let dropped = 0;
+	let box = splitPane.claim(entry, 'reader', () => dropped++);
+	box.appendChild(element('browser'));
+	const toggle = made.find(el => el.className === 'zg-pane-toggle');
+	if (!toggle) throw new Error('the divider has no chevron');
+
+	toggle.fire('click');
+	if (box.getAttribute('hidden') !== 'true') throw new Error('the chevron did not hide the panel');
+	// Hidden, not emptied: a reader keeps its page and an item pane its scroll
+	// position, so the way back is instant and lands where you left.
+	if (dropped) throw new Error('hiding tore the occupant down');
+	if (box.children.length !== 1) throw new Error('hiding emptied the panel');
+	if (toggle.textContent !== '«') throw new Error('the chevron points the wrong way: ' + toggle.textContent);
+
+	// "Open PDF beside the graph" on a hidden panel has to show it again.
+	if (splitPane.claim(entry, 'reader', () => dropped++) !== box) throw new Error('the panel was rebuilt');
+	if (box.getAttribute('hidden')) throw new Error('claiming left the panel hidden');
+	if (toggle.textContent !== '»') throw new Error('the chevron did not flip back');
+	if (dropped) throw new Error('showing it again tore the occupant down');
+});
+
 check('the item pane is handed what <item-details> needs, and nothing more', async () => {
 	const itemPane = require_('./lib/itemPane.js');
 	const { made, win, element } = fakeWindow();
@@ -781,7 +825,15 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (details.item.id !== 11) throw new Error('the item never arrived');
 	if (details.editable !== true) throw new Error('an editable library came out read-only');
 
-	itemPane.close(entry);
+	// Hidden from the divider, then clicked again: the click has to bring the
+	// panel back, not update a pane nobody can see.
+	made.find(el => el.className === 'zg-pane-toggle').fire('click');
+	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	await itemPane.show(entry, 12);
+	if (entry.pane.box.getAttribute('hidden')) throw new Error('a click left the panel hidden');
+	if (details.item.id !== 12) throw new Error('the pane did not follow the click');
+
+	require_('./lib/splitPane.js').close(entry);
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');
 	if (entry.pane) throw new Error('close() left the panel on the tab');
 	// The row is what the panel holds, and taking it out is what disconnects

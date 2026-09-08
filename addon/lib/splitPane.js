@@ -3,7 +3,8 @@
 'use strict';
 
 /**
- * The one pane beside the graph, and whoever currently has it.
+ * The one pane beside the graph: who has it, how wide it is, and whether it is
+ * showing at all.
  *
  * Both things this plugin can put next to the graph -- a reader
  * (readerPane.js) and Zotero's item pane (itemPane.js) -- describe the paper
@@ -12,6 +13,14 @@
  * it, and the occupant being displaced is told first, because a reader
  * instance has listeners and a docShell to flush and an item pane has
  * observers registered with Zotero.Notifier.
+ *
+ * Hiding it is one gesture too: a chevron on the divider, at the height your
+ * eye is already at. Whatever is in the panel, that is how it goes away, and
+ * clicking it again brings back exactly what was there -- collapsing hides the
+ * panel rather than tearing its occupant down, so a reader keeps its page and
+ * an item pane its scroll position. Asking for either of them again (clicking
+ * a node, opening a PDF) opens the panel if it was hidden: a request to see
+ * something is a request to see it.
  *
  * Sizing is the part that needs care, and the reason this module exists rather
  * than a rule saying "close the other one first".
@@ -25,8 +34,10 @@
  *
  *   contain: inline-size    the panel's width never depends on its contents
  *   attribute -> style      mirrored, so the width the splitter writes is the
- *                           width the panel actually gets
+ *                           width the panel gets
  */
+
+let l10n = require('./l10n.js');
 
 // An item pane's own 320px minimum plus its 37px sidenav -- the wider of the
 // two occupants, and the panel is one panel.
@@ -39,6 +50,31 @@ const PANE_CSS = `
 		border: none;
 		background: var(--material-panedivider);
 	}
+	/* The other half of the divider: a strip that stays when the panel is
+	   hidden, because it carries the only way back. */
+	.zg-pane-handle {
+		flex: none;
+		width: 16px;
+		justify-content: center;
+		align-items: center;
+		background: var(--material-sidepane);
+		border-inline-start: 1px solid var(--material-panedivider);
+	}
+	.zg-pane-toggle {
+		appearance: none;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		color: var(--fill-secondary);
+		font-size: 11px;
+		line-height: 1;
+		padding: 8px 0;
+		width: 14px;
+	}
+	.zg-pane-toggle:hover {
+		background: var(--fill-quinary);
+		color: var(--fill-primary);
+	}
 	.zg-pane {
 		min-width: ${MIN_WIDTH}px;
 		background: var(--material-sidepane);
@@ -50,8 +86,8 @@ const PANE_CSS = `
 `;
 
 /**
- * Take the panel for `kind`, building it if this is the first time and
- * emptying it if something else had it.
+ * Take the panel for `kind`, building it if this is the first time, showing it
+ * if it was hidden and emptying it if something else had it.
  *
  * @param {Object}   entry     the graphTab record for this tab
  * @param {String}   kind      'reader' | 'item'
@@ -60,6 +96,8 @@ const PANE_CSS = `
  */
 function claim(entry, kind, teardown) {
 	let pane = entry.pane || create(entry);
+	// Asking for the panel is asking to see it.
+	expand(pane);
 	if (pane.kind !== kind) {
 		release(pane);
 		pane.kind = kind;
@@ -82,6 +120,7 @@ function close(entry) {
 	release(pane);
 	if (pane.observer) pane.observer.disconnect();
 	pane.splitter.remove();
+	pane.handle.remove();
 	pane.box.remove();
 	pane.style.remove();
 }
@@ -106,6 +145,40 @@ function release(pane) {
 	while (pane.box.firstChild) pane.box.firstChild.remove();
 }
 
+// --- showing and hiding ------------------------------------------------
+
+/**
+ * Hidden, not emptied. The occupant stays exactly as it was -- a reader on its
+ * page, an item pane on its scroll position -- because the chevron is a way of
+ * looking at the graph for a moment, not of throwing away what you were
+ * reading.
+ */
+function collapse(pane) {
+	if (pane.collapsed) return;
+	saveWidth(pane);
+	pane.collapsed = true;
+	pane.box.setAttribute('hidden', 'true');
+	pane.splitter.setAttribute('hidden', 'true');
+	syncToggle(pane);
+}
+
+function expand(pane) {
+	if (!pane.collapsed) return;
+	pane.collapsed = false;
+	pane.box.removeAttribute('hidden');
+	pane.splitter.removeAttribute('hidden');
+	syncToggle(pane);
+}
+
+function syncToggle(pane) {
+	// Pointing the way the panel would go: right to push it off the edge, left
+	// to pull it back out.
+	pane.toggle.textContent = pane.collapsed ? '«' : '»';
+	pane.toggle.title = l10n.t(pane.collapsed ? 'pane-show' : 'pane-hide');
+}
+
+// --- the panel ---------------------------------------------------------
+
 function create(entry) {
 	let doc = entry.win.document;
 
@@ -120,6 +193,15 @@ function create(entry) {
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
 
+	// The chevron sits beside the splitter rather than inside it: a XUL
+	// splitter turns a mousedown anywhere on itself into a drag, and a button
+	// you cannot press without resizing the panel is not a button.
+	let handle = doc.createXULElement('vbox');
+	handle.className = 'zg-pane-handle';
+	let toggle = doc.createElement('button');
+	toggle.className = 'zg-pane-toggle';
+	handle.appendChild(toggle);
+
 	// A column: the reader stacks a header over its browser, and the item pane
 	// puts its own row inside. Either way the panel is one box.
 	let box = doc.createXULElement('vbox');
@@ -127,10 +209,22 @@ function create(entry) {
 
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
+	entry.split.appendChild(handle);
 	entry.split.appendChild(box);
 
-	let pane = { box, splitter, style, kind: null, teardown: null, observer: null };
+	let pane = {
+		box, splitter, handle, toggle, style,
+		kind: null,
+		teardown: null,
+		observer: null,
+		collapsed: false,
+	};
 	setWidth(pane, storedWidth());
+	syncToggle(pane);
+	toggle.addEventListener('click', () => {
+		if (pane.collapsed) expand(pane);
+		else collapse(pane);
+	});
 
 	// The splitter writes the attribute as the drag goes; this is what makes
 	// that visible whether or not the attribute is honoured by itself.
@@ -165,6 +259,7 @@ function storedWidth() {
 	return Number.isFinite(w) && w >= MIN_WIDTH ? Math.round(w) : DEFAULT_WIDTH;
 }
 
+/** A hidden box measures zero, so a collapse can never record itself. */
 function saveWidth(pane) {
 	let w = Math.round(pane.box.getBoundingClientRect().width);
 	if (w < MIN_WIDTH) return;

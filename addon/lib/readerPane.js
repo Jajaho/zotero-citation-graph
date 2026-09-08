@@ -19,10 +19,11 @@
  * makes it safe to drive from a plugin -- we hand core a browser and it owns
  * everything inside it.
  *
- * The panel is shared with itemPane.js and holds one of them at a time. Opening
- * a PDF here therefore takes the panel off the item pane, and graphTab.js
- * unticks the graph page's hover checkbox when it does -- otherwise the next
- * hover would take the panel straight back off the paper being read.
+ * The panel is shared with itemPane.js and holds one of them at a time, so
+ * opening a PDF here takes it off the item pane -- and opens the panel again if
+ * the chevron on its divider had hidden it. Clicking another node takes it back
+ * the other way. There is no close button in the header for the same reason:
+ * the divider hides either pane, and one gesture beats two.
  *
  * What (3) costs, and why the header still offers (2): a ReaderPreview is
  * `_isReadOnly()` and `_isTransient()`, and it injects CSS that hides `#reader-ui`.
@@ -193,11 +194,6 @@ async function readable(itemID, status) {
 	return { item, att };
 }
 
-/** Close the panel, if the reader is what is in it. */
-function close(entry) {
-	if (splitPane.has(entry, 'reader')) splitPane.close(entry);
-}
-
 /**
  * The panel has been taken by the item pane, or closed. The reader instance is
  * flushed here, while its browser is still in the document; the elements
@@ -213,12 +209,15 @@ function forget(entry) {
 // --- the pane ----------------------------------------------------------
 
 function ensurePane(entry) {
+	// Through claim() every time, before the early return below: claiming shows
+	// the panel if the chevron had hidden it, so "Open PDF beside the graph"
+	// brings the reader back rather than loading a paper out of sight.
+	let box = splitPane.claim(entry, 'reader', () => forget(entry));
 	if (entry.reader) return entry.reader;
 
 	let doc = entry.win.document;
 	// The window is XHTML, so createElement() gives HTML elements and
 	// createXULElement() gives XUL ones -- both are laid out by the same box.
-	let box = splitPane.claim(entry, 'reader', () => forget(entry));
 	// Inside the box, so it leaves when the panel changes hands.
 	let style = doc.createElement('style');
 	style.textContent = PANE_CSS;
@@ -236,7 +235,6 @@ function ensurePane(entry) {
 		reader: null,
 		note: null,
 		attachmentID: null,
-		entry,
 	};
 
 	pane.prevBtn = button(doc, head, '‹', l10n.t('reader-prev'), () => goto(pane, 'prev'));
@@ -249,7 +247,9 @@ function ensurePane(entry) {
 		Zotero.Reader.open(pane.attachmentID, null, { openInWindow: true })
 			.catch(e => Zotero.logError(e));
 	});
-	button(doc, head, '✕', l10n.t('reader-close'), () => close(pane.entry));
+	// No close button: the panel is hidden from the chevron on its divider,
+	// which is the one gesture that puts either pane away. A ✕ here would have
+	// been a second way to do it, and only for this one of the two.
 
 	box.appendChild(head);
 	box.appendChild(style);
@@ -478,4 +478,4 @@ function refreshPaging(pane) {
 	pane.nextBtn.disabled = can('next') === false;
 }
 
-module.exports = { open, close, readable };
+module.exports = { open, readable };

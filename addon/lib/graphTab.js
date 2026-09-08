@@ -219,8 +219,8 @@ async function handleMessage(win, tabID, collection, msg) {
 			let entry = open_.get(tabID);
 			if (entry && msg.itemID) {
 				// Asking to read a paper is asking for the panel, and there is
-				// one panel: this takes it off the item pane, which unticks the
-				// page's hover box on its way out (see 'item-pane-show').
+				// one panel: this takes it off the item pane, and opens it
+				// again if the divider's chevron had hidden it.
 				await readerPane.open(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
 				});
@@ -244,27 +244,17 @@ async function handleMessage(win, tabID, collection, msg) {
 			status('');
 			break;
 		}
-		// Zotero's own item pane, beside the graph, describing whatever the
-		// pointer is resting on. Chrome's to open for the same reason as the
-		// reader pane: <item-details> is a XUL custom element in the main
-		// window, and the graph page is content. See itemPane.js.
+		// Zotero's own item pane, beside the graph, describing the node just
+		// clicked. Chrome's to open for the same reason as the reader pane:
+		// <item-details> is a XUL custom element in the main window, and the
+		// graph page is content. See itemPane.js.
 		case 'item-pane-show': {
 			let entry = open_.get(tabID);
 			if (entry && msg.itemID) {
 				await itemPane.show(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
-					// Whatever takes the panel next -- a PDF opened beside the
-					// graph, or the panel closing -- the page has to stop
-					// following the pointer, or the next hover would take the
-					// panel straight back.
-					onLost: () => send(entry, 'zgSetItemPane', false),
 				});
 			}
-			break;
-		}
-		case 'item-pane-close': {
-			let entry = open_.get(tabID);
-			if (entry) itemPane.close(entry);
 			break;
 		}
 		default:
