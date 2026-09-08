@@ -10,10 +10,12 @@ let l10n = require('./l10n.js');
 
 const MENU_ID = 'zotero-graph-collection';
 
-// plugins.js REASONS.APP_SHUTDOWN, the reason Zotero passes when it is quitting
-// rather than when the plugin alone is going away. The two want opposite
-// teardowns, and the difference is the whole of whether a graph tab comes back.
+// plugins.js REASONS. Which of these a shutdown carries decides what happens
+// to the open graph tabs, and they want three different answers -- see
+// shutdown() below.
 const REASON_APP_SHUTDOWN = 2;
+const REASON_ADDON_UPGRADE = 7;
+const REASON_ADDON_DOWNGRADE = 8;
 const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
 
 /**
@@ -43,6 +45,16 @@ let _config = null;
 module.exports = {
 	async startup(config) {
 		_config = config;
+		// Tab hooks before the await, not after it. Zotero restores its tabs on
+		// a schedule of its own -- _loadPane() gets there once the item and
+		// collection trees have loaded -- and a graph tab whose restoreState
+		// hook is not in place yet is a graph tab that silently vanishes.
+		// Nothing in either hook needs a string that has not loaded: tabTitle()
+		// falls back to the collection's own name. onMainWindowLoad registers
+		// them again for every window, and doing it twice costs nothing.
+		for (let win of Zotero.getMainWindows()) {
+			if (win.ZoteroPane) addTabHooks(win);
+		}
 		// Before anything that can produce a string. Every t() call after this
 		// point is synchronous, and a tab cannot open until startup returns.
 		await l10n.load(config.rootURI);
@@ -60,24 +72,36 @@ module.exports = {
 			Zotero.logError(e);
 		}
 
-		// Zotero.Session.save() snapshots the tab strip synchronously, from the
-		// quit-application-granted observer -- which fires before the
-		// quit-application that starts this teardown. So at app shutdown the
-		// tabs are already recorded, the windows are going regardless, and
-		// closing the tabs here would do nothing but take work off the restore.
-		//
-		// Every other reason -- disable, uninstall, upgrade -- leaves Zotero
-		// running while resource://zotero-graph/ stops resolving underneath a
-		// live graph page. Those tabs have to go, and they have to go out of
-		// session.json with it: a 'graph' entry restored by a Zotero with no
-		// restoreState.graph hook is the throw at tabs.js:611 that aborts
-		// restore for every tab after it.
-		if (reason === REASON_APP_SHUTDOWN) graphTab.forgetAll();
-		else graphTab.closeAll();
-
+		// The hooks first: nothing below should be able to call a load hook
+		// belonging to the version being torn down.
 		for (let win of Zotero.getMainWindows()) {
 			if (win.ZoteroPane) removeWindowIntegration(win);
 		}
+
+		// Three reasons, three answers.
+		//
+		// Zotero quitting: Zotero.Session.save() has already snapshotted the tab
+		// strip, synchronously, from the quit-application-granted observer that
+		// fires before the quit-application starting this teardown. The tabs are
+		// recorded and the windows are going regardless, so closing them here
+		// would do nothing but take work off the restore.
+		//
+		// Being replaced by another version of ourselves: the pages cannot
+		// survive it, because resource://zotero-graph/ is about to be
+		// re-registered against a new rootURI -- but the tabs can, and an
+		// upgrade is much the most common reason this runs at all. They are
+		// unloaded rather than closed, so the version coming in inherits them.
+		//
+		// Being disabled or uninstalled: nothing is coming back, and a 'graph'
+		// entry left in session.json meets a Zotero with no restoreState.graph
+		// hook -- which is the tabs.js:611 destructure that aborts restore for
+		// every tab after it. Those tabs have to go, out of the strip and so
+		// out of the session with it.
+		if (reason === REASON_APP_SHUTDOWN) graphTab.forgetAll();
+		else if (reason === REASON_ADDON_UPGRADE || reason === REASON_ADDON_DOWNGRADE) {
+			graphTab.unloadAll();
+		}
+		else graphTab.closeAll();
 	},
 
 	onMainWindowLoad(win) {

@@ -741,14 +741,20 @@ class FakeElement {
 		return this.localName;
 	}
 
-	/** Enough of a selector engine for the one shape addDialog.js asks for:
-	 *  [value="..."], which is how it finds the collection the menu ticked. */
+	/** Enough of a selector engine for the two shapes asked of it: [value="..."],
+	 *  which is how addDialog.js finds the collection the menu ticked, and a
+	 *  bare .class, which is how graphTab.load() asks whether a container it is
+	 *  about to mount into already holds a graph. */
 	querySelector(sel) {
-		const m = /^\[value="(.*)"\]$/.exec(sel);
-		if (!m) throw new Error('unsupported selector: ' + sel);
+		let match;
+		const attr = /^\[value="(.*)"\]$/.exec(sel);
+		const cls = /^\.([\w-]+)$/.exec(sel);
+		if (attr) match = c => c.getAttribute('value') === attr[1];
+		else if (cls) match = c => String(c.className).split(/\s+/).includes(cls[1]);
+		else throw new Error('unsupported selector: ' + sel);
 		const walk = (el) => {
 			for (const c of el.children) {
-				if (c.getAttribute('value') === m[1]) return c;
+				if (match(c)) return c;
 				const found = walk(c);
 				if (found) return found;
 			}
@@ -1349,6 +1355,284 @@ check('an empty collection reports why, and offers the switch only when it helps
 	if (emptyReason(throws, { recursive: false }).subcollections !== 0) {
 		throw new Error('a throwing collection did not fall back to zero');
 	}
+});
+
+/* --- the quit/restore round trip -----------------------------------------
+ *
+ * The whole of tab persistence is a handshake with core: a tab has to still be
+ * in the strip when Zotero.Session reads it, getState() has to carry enough to
+ * rebuild it, and restoreState has to put it back. These drive that handshake
+ * against a Zotero_Tabs faithful to the parts of tabs.js it touches.
+ */
+
+/** Enough of Zotero_Tabs for open/restore/load: the tab list, the hooks table,
+ *  getState()'s serialisation, and add()'s inline select. */
+function fakeTabs(element) {
+	let self = {
+		_tabs: [{ id: 'zotero-pane', type: 'library', title: 'My Library', data: { icon: 'collection' } }],
+		_selectedID: 'zotero-pane',
+		_ids: 1,
+		// tabs.js ships hooks for its own types; the library one is what keeps
+		// the destructure below from throwing on the first tab of every session.
+		tabHooks: { restoreState: { library: async () => ({ itemID: null }) } },
+		containers: new Map(),
+		closed: [],
+
+		add({ id, type, data, title, index, select, onClose }) {
+			// tabs.js throws on an index below 1; the library tab owns index 0.
+			if (index !== undefined && (!Number.isInteger(index) || index < 1)) {
+				throw new Error('bad index ' + index);
+			}
+			id = id || 'tab-' + (++self._ids);
+			let container = element('tab-content');
+			container.id = id;
+			self.containers.set(id, container);
+			self._tabs.splice(index === undefined ? self._tabs.length : index, 0,
+				{ id, type, title, data, onClose });
+			// add() runs select() inline, which for an unloaded tab calls the
+			// load hook before add() has returned.
+			if (select) self.select(id);
+			return { id, container };
+		},
+
+		select(id) {
+			let tab = self._tabs.find(t => t.id === id);
+			self._selectedID = id;
+			let [contentType, state] = tab.type.split('-');
+			if (state === 'unloaded') {
+				tab.type = contentType + '-loading';
+				let hook = self.tabHooks.load && self.tabHooks.load[contentType];
+				if (hook) {
+					self.loading = Promise.resolve(hook(tab, self._tabs.indexOf(tab), {}))
+						.then(() => { tab.type = contentType; });
+				}
+			}
+		},
+
+		close(id) {
+			let tab = self._tabs.find(t => t.id === id);
+			if (!tab) return;
+			self.closed.push(id);
+			self._tabs = self._tabs.filter(t => t !== tab);
+			// The container is destroyed with the tab; a re-add builds a new one.
+			self.containers.delete(id);
+			if (tab.onClose) tab.onClose();
+		},
+
+		// Private in tabs.js, and what unload() reads to re-add a tab where it
+		// was. Modelled because the plugin transcribes that method.
+		_getTab(id) {
+			let tabIndex = self._tabs.findIndex(t => t.id === id);
+			return { tab: self._tabs[tabIndex] || null, tabIndex };
+		},
+
+		getTabContent: id => self.containers.get(id) || null,
+
+		setTabData(id, data) {
+			let tab = self._tabs.find(t => t.id === id);
+			Object.assign(tab.data, data);
+		},
+
+		// tabs.js getState(): what actually reaches session.json.
+		getState() {
+			return self._tabs.map((tab) => {
+				let type = tab.type.replace(/-unloaded$/, '');
+				let o = { type, title: tab.title, timeUnselected: tab.timeUnselected };
+				if (tab.data) o.data = tab.data;
+				if (tab.id === self._selectedID) o.selected = true;
+				return o;
+			});
+		},
+
+		// tabs.js restoreState(): a plain loop, and the destructure that makes a
+		// throwing hook cost every LATER tab rather than its own.
+		async restoreState(tabs) {
+			for (let i = 0; i < tabs.length; i++) {
+				let contentType = tabs[i].type === 'zotero-pane'
+					? 'library' : tabs[i].type.split('-')[0];
+				let hook = (self.tabHooks.restoreState && self.tabHooks.restoreState[contentType])
+					|| (async () => {});
+				let { itemID } = await hook(tabs[i], i);
+				void itemID;
+			}
+		},
+	};
+	return self;
+}
+
+/** A main window with a tab strip, and the collection the graph is of. */
+function fakeMainWindow() {
+	const { made, win, element } = fakeWindow();
+	win.Zotero_Tabs = fakeTabs(element);
+	win.MozXULElement = { insertFTLIfNeeded() {} };
+	return { made, win, element };
+}
+
+const CFG = { resRoot: 'zotero-graph', pluginID: 'zotero-graph@jajaho.dev', rootURI };
+const COLLECTION = { key: 'ABCD1234', libraryID: 1, id: 7, name: 'Reading list' };
+
+/** Zotero.Collections as restore() asks about it. */
+function stubCollections(found = COLLECTION) {
+	Zotero.Collections = {
+		getByLibraryAndKeyAsync: async (libraryID, key) => {
+			if (!libraryID) throw new Error('Library ID not provided');
+			return (found && found.libraryID === libraryID && found.key === key) ? found : false;
+		},
+	};
+}
+
+/**
+ * These four share one module-level tab registry (graphTab's open_/pending_)
+ * and one Zotero stub, so they are chained rather than left to interleave at
+ * their awaits: check() returns its run for exactly this.
+ */
+const restoreReady = (async () => {
+	await l10nReady;
+	Zotero.MenuManager = { registerMenu() {}, unregisterMenu() {} };
+	Zotero.getMainWindows = () => [];
+	await require_('./lib/main.js').startup(CFG);
+})();
+
+const t1 = check('a graph tab is still in the strip when Zotero.Session reads it', async () => {
+	await restoreReady;
+	const graphTab = require_('./lib/graphTab.js');
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+
+	await graphTab.open(win, COLLECTION, CFG);
+	if (!win.Zotero_Tabs._tabs.some(t => t.type === 'graph')) throw new Error('no graph tab was added');
+
+	// Quitting Zotero. Session.save() reads the strip synchronously from the
+	// quit-application-granted observer; the window unload runs around the same
+	// point and used to close the tabs, so they could never be serialised.
+	main.onMainWindowUnload(win);
+	await main.shutdown(2);
+
+	const saved = win.Zotero_Tabs.getState().find(t => t.type === 'graph');
+	if (!saved) throw new Error('the graph tab never reached session.json');
+	if (saved.data.collectionKey !== 'ABCD1234') throw new Error('no collection to restore from');
+	if (win.Zotero_Tabs.closed.length) throw new Error('shutdown closed the tab: ' + win.Zotero_Tabs.closed);
+});
+
+const t2 = check('installing a new build unloads the graph tabs rather than closing them', async () => {
+	await t1;
+	const graphTab = require_('./lib/graphTab.js');
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+	Zotero.getMainWindows = () => [win];
+
+	await graphTab.open(win, COLLECTION, CFG);
+	const before = win.Zotero_Tabs._tabs.find(t => t.type === 'graph');
+	const at = win.Zotero_Tabs._tabs.indexOf(before);
+
+	// ADDON_UPGRADE. plugins.js onInstalling() calls shutdown with this on the
+	// running plugin the moment a new XPI is installed over it -- which is what
+	// every test build does. Closing the tabs here took them out of the strip,
+	// so Zotero.Session never saw them and the restart had nothing to restore.
+	await main.shutdown(7);
+
+	const after = win.Zotero_Tabs._tabs.find(t => /^graph/.test(t.type));
+	if (!after) throw new Error('installing a new build closed the graph tab');
+	if (after.type !== 'graph-unloaded') throw new Error('left mounted as ' + after.type);
+	if (win.Zotero_Tabs._tabs.indexOf(after) !== at) throw new Error('the tab moved');
+	if (after.id !== before.id) throw new Error('the tab did not keep its id');
+	// Which is what session.json gets, so the next start restores it.
+	if (!win.Zotero_Tabs.getState().some(t => t.type === 'graph')) {
+		throw new Error('the unloaded tab did not reach session.json');
+	}
+	// And the page is gone: its resource:// is about to be re-registered.
+	const container = win.Zotero_Tabs.getTabContent(after.id);
+	if (container && container.querySelector('.zg-split')) {
+		throw new Error('the dying version left its page behind');
+	}
+});
+
+const t2b = check('being disabled does take the tabs out of the session', async () => {
+	await t2;
+	const graphTab = require_('./lib/graphTab.js');
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+	Zotero.getMainWindows = () => [win];
+
+	await graphTab.open(win, COLLECTION, CFG);
+	// ADDON_DISABLE. Nothing is coming back, and a 'graph' entry left in
+	// session.json meets a Zotero with no restoreState.graph hook -- the
+	// tabs.js:611 destructure that aborts restore for every tab after it.
+	await main.shutdown(4);
+	if (win.Zotero_Tabs.getState().some(t => /^graph/.test(t.type))) {
+		throw new Error('a graph tab survived the plugin being disabled');
+	}
+});
+
+const t3 = check('a restored graph tab comes back unloaded, in place, and builds on select', async () => {
+	await t2b;
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+
+	// Exactly what session.json holds, in the order tabs.js hands it over.
+	const session = [
+		{ type: 'library', title: 'My Library', data: { icon: 'collection' } },
+		{ type: 'graph', title: 'Reading list — Citation Graph', selected: true,
+			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-graph',
+				options: { recursive: true, includeExternal: true, enrich: false } } },
+	];
+
+	main.onMainWindowLoad(win);
+	const hooks = win.Zotero_Tabs.tabHooks;
+	if (!hooks.restoreState || !hooks.restoreState.graph) throw new Error('no restoreState hook');
+	if (!hooks.load || !hooks.load.graph) throw new Error('no load hook');
+
+	await win.Zotero_Tabs.restoreState(session);
+
+	const back = win.Zotero_Tabs._tabs.filter(t => /^graph/.test(t.type));
+	if (back.length !== 1) throw new Error('restored ' + back.length + ' graph tabs');
+	if (win.Zotero_Tabs._tabs.indexOf(back[0]) !== 1) throw new Error('restored out of place');
+	// Selected in the session, so add() ran select() inline and the load hook
+	// promoted it off 'unloaded'.
+	await win.Zotero_Tabs.loading;
+	if (back[0].type !== 'graph') throw new Error('a selected tab was left at ' + back[0].type);
+	// Named from the live collection, not from the saved title.
+	if (back[0].title !== 'Reading list — Citation Graph') throw new Error('title: ' + back[0].title);
+	// And it is a real tab, with the page mounted into its container.
+	const container = win.Zotero_Tabs.getTabContent(back[0].id);
+	if (!container.children.some(c => c.className === 'zg-split')) {
+		throw new Error('the load hook did not mount the graph');
+	}
+});
+
+check('a tab whose collection is gone drops without costing the tabs after it', async () => {
+	await t3;
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	// No collection answers to that key any more.
+	stubCollections(null);
+	Zotero.Prefs = { get: () => null, set: () => {} };
+
+	main.onMainWindowLoad(win);
+	let after = 0;
+	win.Zotero_Tabs.tabHooks.restoreState.reader = async () => { after++; return { itemID: null }; };
+
+	await win.Zotero_Tabs.restoreState([
+		{ type: 'library', title: 'My Library', data: {} },
+		{ type: 'graph', title: 'Graph: Gone', data: { collectionKey: 'DEAD0000', libraryID: 1 } },
+		// A libraryID of 0 makes getIDFromLibraryAndKey throw rather than miss.
+		{ type: 'graph', title: 'Graph: Broken', data: { collectionKey: 'ABCD1234', libraryID: 0 } },
+		{ type: 'reader', title: 'A paper', data: { itemID: 5 } },
+	]);
+
+	if (win.Zotero_Tabs._tabs.some(t => /^graph/.test(t.type))) {
+		throw new Error('a tab was restored for a collection that is gone');
+	}
+	// The whole point of not throwing: restoreState has no per-tab catch.
+	if (after !== 1) throw new Error('the tab after the dropped ones never restored');
 });
 
 /**
