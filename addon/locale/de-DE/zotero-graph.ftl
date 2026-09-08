@@ -51,7 +51,7 @@ zotero-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet 
 zotero-graph-pane-hide = Diesen Bereich ausblenden
 zotero-graph-pane-show = Diesen Bereich wieder einblenden
 
-zotero-graph-filter-placeholder = Filter — autor:, jahr:, …
+zotero-graph-filter-placeholder = Filter — Autor:, Jahr:, …
 zotero-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
 
 zotero-graph-min-confidence = Mindestkonfidenz
@@ -112,9 +112,10 @@ zotero-graph-tooltip-item-actions = Doppelklick zum Auswählen in Zotero · Rech
 
 # Zwei Namen je Facette: field-* ist die Aufschrift auf dem Chip, fieldkey-* das
 # Schlüsselwort, das das Filterfeld vor dem Doppelpunkt liest. Das Schlüsselwort
-# ist ein einziges Wort, klein geschrieben, ohne Leerzeichen und ohne
-# Doppelpunkt -- alles bis zum ersten Doppelpunkt ist der Feldname. Die
-# englischen Schlüsselwörter gelten weiterhin zusätzlich.
+# ist ein einziges Wort ohne Leerzeichen und ohne Doppelpunkt -- alles bis zum
+# ersten Doppelpunkt ist der Feldname. Substantive bleiben groß, wie sonst auch
+# in dieser Datei; eingetippt wird ohne Rücksicht auf Groß- und Kleinschreibung,
+# und die englischen Schlüsselwörter gelten weiterhin zusätzlich.
 zotero-graph-field-author = Autor
 zotero-graph-field-year = Jahr
 zotero-graph-field-tag = Schlagwort
@@ -124,14 +125,14 @@ zotero-graph-field-collection = Sammlung
 zotero-graph-field-cluster = Teilgebiet
 zotero-graph-field-title = Titel
 
-zotero-graph-fieldkey-author = autor
-zotero-graph-fieldkey-year = jahr
-zotero-graph-fieldkey-tag = schlagwort
-zotero-graph-fieldkey-type = art
-zotero-graph-fieldkey-publication = publikation
-zotero-graph-fieldkey-collection = sammlung
-zotero-graph-fieldkey-cluster = teilgebiet
-zotero-graph-fieldkey-title = titel
+zotero-graph-fieldkey-author = Autor
+zotero-graph-fieldkey-year = Jahr
+zotero-graph-fieldkey-tag = Schlagwort
+zotero-graph-fieldkey-type = Art
+zotero-graph-fieldkey-publication = Publikation
+zotero-graph-fieldkey-collection = Sammlung
+zotero-graph-fieldkey-cluster = Teilgebiet
+zotero-graph-fieldkey-title = Titel
 
 zotero-graph-field-any-short = alle
 zotero-graph-field-any = jedes Feld
@@ -156,7 +157,7 @@ zotero-graph-suggest-free = alles, was das enthält
 zotero-graph-group-here = Gruppe hier
 zotero-graph-group-existing = Gruppe
 zotero-graph-group-drag-hint = Ziehen, um diese Karte zu verschieben
-zotero-graph-group-placeholder = was hierher gehört — autor:, jahr:, …
+zotero-graph-group-placeholder = was hierher gehört — Autor:, Jahr:, …
 zotero-graph-group-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt ein, was dieser Anker anzieht.
 zotero-graph-group-pull = Zug
 zotero-graph-group-pull-hint = Wie stark dieser Anker die Aufsätze anzieht, die er benennt. Bei 0 benennt er sie, ohne sie zu bewegen.

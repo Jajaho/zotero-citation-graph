@@ -135,7 +135,9 @@ zotero-graph-tooltip-item-actions = double-click to select in Zotero · right-cl
 # One word, no space and no colon in it, because everything up to the first
 # colon is the field name and a space in the middle would make the mask
 # unreadable; nodeFilters.js falls back to the English keyword for anything that
-# breaks that rule. Lower case, like the rest of the panel. The English keywords
+# breaks that rule. Capitalise it however the language does -- English keeps the
+# panel's lower case, German capitalises its nouns and writes "Jahr" -- since
+# what is typed is matched case-insensitively either way. The English keywords
 # are always accepted as well as the translated ones, so a mask written in one
 # language still opens in another.
 zotero-graph-field-author = author

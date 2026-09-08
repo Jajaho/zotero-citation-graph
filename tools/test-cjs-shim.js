@@ -2251,14 +2251,17 @@ check('a keyword is one parseable word, and no two facets claim the same one', (
 			// Everything up to the first colon is the field name, so a keyword
 			// with a space or a colon in it authors a mask nothing can read back.
 			if (!/^[^\s:]+$/.test(key)) throw new Error(code + '/' + f + ': ' + JSON.stringify(key));
-			if (key !== key.toLowerCase()) throw new Error(code + '/' + f + ': ' + key + ' is not lower case');
-			if (seen.has(key)) {
-				throw new Error(code + ': ' + key + ' is both ' + seen.get(key) + ' and ' + f);
+			// Case is the locale's to choose -- German capitalises its nouns --
+			// so every comparison from here down folds it, exactly as the box
+			// does when it reads what was typed.
+			const fold = key.toLowerCase();
+			if (seen.has(fold)) {
+				throw new Error(code + ': ' + key + ' is both ' + seen.get(fold) + ' and ' + f);
 			}
-			seen.set(key, f);
+			seen.set(fold, f);
 			// A keyword that is some other facet's own name would be unreachable:
 			// the names stay accepted in every locale, and they are matched first.
-			if (key !== f && FACETS.includes(key)) {
+			if (fold !== f && FACETS.includes(fold)) {
 				throw new Error(code + '/' + f + ": " + key + " is another facet's own name");
 			}
 		}
@@ -2299,13 +2302,19 @@ check('a chip round-trips through the box in the language it is shown in', () =>
 		}
 	}
 	// An English mask is normalised to the keyword the panel shows, rather than
-	// being handed back in a vocabulary this panel does not use anywhere else.
-	if (F.toInput(F.parse('author: soc')) !== 'autor: soc') {
+	// being handed back in a vocabulary this panel does not use anywhere else --
+	// capitalised the way German capitalises a noun, which is the way the
+	// completion list offered it.
+	if (F.toInput(F.parse('author: soc')) !== 'Autor: soc') {
 		throw new Error(F.toInput(F.parse('author: soc')));
+	}
+	// And a keyword typed in any case at all still comes back the one way.
+	for (const typed of ['Autor: soc', 'autor: soc', 'AUTOR: soc']) {
+		if (F.toInput(F.parse(typed)) !== 'Autor: soc') throw new Error(typed + ' -> ' + F.toInput(F.parse(typed)));
 	}
 	// Picking a value writes the keyword too, and what it leaves in the box parses.
 	const box = F.spliceTerm('publikation:', 'publication', '"Nature"');
-	if (box !== 'publikation: "Nature", ') throw new Error(JSON.stringify(box));
+	if (box !== 'Publikation: "Nature", ') throw new Error(JSON.stringify(box));
 	if (F.parse(box).field !== 'publication') throw new Error('the spliced box does not parse back');
 });
 
@@ -2321,13 +2330,18 @@ check('the completion list offers the keyword it will insert', () => {
 		const after = F.parse(row.insert + 'x');
 		if (!after || after.field === null) throw new Error(row.label + ' does not scope the box');
 	}
-	if (!fields.some(r => r.label === 'autor:')) {
-		throw new Error('offered ' + fields.map(r => r.label).join(' ') + ', not autor:');
+	// Capitalised, because German capitalises its nouns and this row is the one
+	// place the keyword is ever shown.
+	if (!fields.some(r => r.label === 'Autor:')) {
+		throw new Error('offered ' + fields.map(r => r.label).join(' ') + ', not Autor:');
 	}
 	// Typing towards a row narrows to it: the text is matched against the
-	// keyword on the row, not against a facet name that is nowhere on screen.
-	const typed = F.suggest('jah', lib).filter(s => s.kind === 'field').map(r => r.label);
-	if (typed.join() !== 'jahr:') throw new Error('typing "jah" offered ' + JSON.stringify(typed));
+	// keyword on the row, not against a facet name that is nowhere on screen --
+	// and case-folded, since nobody reaches for shift to find a filter.
+	for (const typed of ['jah', 'Jah', 'JAH']) {
+		const got = F.suggest(typed, lib).filter(s => s.kind === 'field').map(r => r.label);
+		if (got.join() !== 'Jahr:') throw new Error('typing "' + typed + '" offered ' + JSON.stringify(got));
+	}
 	if (F.suggest('year', lib).some(s => s.kind === 'field' && s.label === 'jahr:')) {
 		throw new Error('an English name still narrows the German list');
 	}

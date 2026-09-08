@@ -86,6 +86,11 @@
 	 * with no space in it, because everything up to the first colon is the field
 	 * and a space in the middle would make "item type: book" unparseable. Where a
 	 * locale has nothing better to offer, its keyword is the field's own name.
+	 *
+	 * Its case is the locale's business and is left exactly as written: German
+	 * capitalises its nouns, so "Jahr:" is the only spelling a German panel can
+	 * offer without looking wrong. Nothing downstream depends on the case --
+	 * fieldFor() folds it -- so a keyword is matched however the user typed it.
 	 */
 	function fieldKey(name) {
 		for (var i = 0; i < FIELDS.length; i++) {
@@ -94,7 +99,7 @@
 				// A translation with a space or a colon in it would author masks
 				// that cannot be read back. Falling through to the name keeps a
 				// filter box that works over one that matches the .ftl.
-				return /^[^\s:]+$/.test(key) ? key.toLowerCase() : name;
+				return /^[^\s:]+$/.test(key) ? key : name;
 			}
 		}
 		return name;
@@ -108,12 +113,16 @@
 	 * language changed still spells its field the old way, and the two
 	 * vocabularies do not collide -- every localised keyword either equals a
 	 * field's own name or is a word in another language.
+	 *
+	 * Case-folded on both sides. The keyword is offered capitalised where the
+	 * language wants it that way, and nobody typing into a filter box holds the
+	 * shift key to get there.
 	 */
 	function fieldFor(word) {
 		var w = String(word).toLowerCase();
 		if (NAMES.indexOf(w) >= 0) return w;
 		for (var i = 0; i < FIELDS.length; i++) {
-			if (fieldKey(FIELDS[i].name) === w) return FIELDS[i].name;
+			if (fieldKey(FIELDS[i].name).toLowerCase() === w) return FIELDS[i].name;
 		}
 		return null;
 	}
@@ -440,8 +449,9 @@
 				var fkey = fieldKey(f.name);
 				// Matched against the keyword on the row, not against the field's
 				// own name: a row that does not narrow as you type towards it is
-				// a row you cannot find.
-				if (term && fkey.indexOf(term) !== 0) continue;
+				// a row you cannot find. Case-folded, because "Jahr:" is offered
+				// capitalised and "jah" is what gets typed at it.
+				if (term && fkey.toLowerCase().indexOf(term) !== 0) continue;
 				out.push({
 					kind: 'field',
 					label: fkey + ':',
