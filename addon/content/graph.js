@@ -1663,7 +1663,11 @@
 		let a = seen.get(endId(l.source));
 		let b = seen.get(endId(l.target));
 		if (a == null || b == null) return true;
-		return Math.min(a, b) >= isolateDepth;
+		// At depth 0 there is no step out to be the last one, and the rule
+		// would dim an edge with both ends in the focus -- a link wholly
+		// inside what you asked to see. Below one step, both ends lit is the
+		// whole test.
+		return Math.min(a, b) >= Math.max(1, isolateDepth);
 	}
 
 	/**
@@ -2424,8 +2428,10 @@
 			label: only ? 'Show whole graph' : 'Isolate',
 			hint: only
 				? 'undim everything'
-				: 'dim everything more than ' + isolateDepth
-					+ (isolateDepth === 1 ? ' edge' : ' edges') + ' away',
+				: isolateDepth === 0
+					? 'dim everything but this node'
+					: 'dim everything more than ' + isolateDepth
+						+ (isolateDepth === 1 ? ' edge' : ' edges') + ' away',
 			run: () => (only ? clearIsolated() : isolateOnly(n.id)),
 		}];
 		// Removing the last focused node is what the entry above already reads
@@ -2693,8 +2699,12 @@
 	function applyIsolateDepth() {
 		// A number box hands back whatever is in it -- a half-typed value, a
 		// blank, or a number restored from a future build -- so the clamp a
-		// range input did for us is ours to do here.
-		isolateDepth = Math.min(4, Math.max(1, Math.round(Number(elIsolateDepth.value)) || 1));
+		// range input did for us is ours to do here. 0 is a depth like any
+		// other now, so an empty box has to be told apart from a typed zero
+		// rather than folded into it by a falsy test: blank means the default.
+		let typed = String(elIsolateDepth.value).trim();
+		let n = typed === '' ? 1 : Math.round(Number(typed));
+		isolateDepth = Number.isFinite(n) ? Math.min(4, Math.max(0, n)) : 1;
 		litCache = null;
 		repaint();
 	}
