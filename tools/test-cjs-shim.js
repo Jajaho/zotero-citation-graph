@@ -639,6 +639,10 @@ check('lib/ modules load through the shim', () => {
 	if (typeof m.MetadataCache !== 'function') throw new Error('no MetadataCache');
 	const t = require_('./lib/graphTab.js');
 	if (typeof t.open !== 'function') throw new Error('no open()');
+	const r = require_('./lib/readerPane.js');
+	if (typeof r.open !== 'function' || typeof r.close !== 'function') {
+		throw new Error('readerPane must expose open()/close()');
+	}
 });
 
 check('ZoteroAdapter implements the whole adapter contract', () => {

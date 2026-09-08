@@ -1422,6 +1422,17 @@
 				run: () => emit({ type: 'open-item', itemID: n.itemID }),
 			},
 			{
+				// Chrome answers by opening a reader beside the graph, in this same
+				// tab. Whether the item HAS a readable attachment is not knowable
+				// here -- the payload carries items, not their files -- so this is
+				// always offered, and chrome says so on the status line when there
+				// is nothing to open.
+				label: 'Open PDF beside the graph',
+				hint: 'read it here, without leaving the graph',
+				disabled: !n.itemID,
+				run: () => emit({ type: 'open-pdf', itemID: n.itemID }),
+			},
+			{
 				label: isolated === n.id ? 'Show whole graph' : 'Isolate',
 				run: () => setIsolated(isolated === n.id ? null : n.id),
 			},

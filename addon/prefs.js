@@ -13,3 +13,7 @@ pref("extensions.zotero.zoteroGraph.enrichers", "openalex");
 // collection at a time, which is all this plugin ever asks for.
 // Free key: https://openalex.org/settings/api
 pref("extensions.zotero.zoteroGraph.openalex.apiKey", "");
+
+// Width of the in-tab reader pane, in pixels. Written back whenever the
+// splitter is dragged, so the pane opens at the size it was last left.
+pref("extensions.zotero.zoteroGraph.readerPaneWidth", 520);

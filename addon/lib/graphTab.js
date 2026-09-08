@@ -17,6 +17,7 @@ let cg = require('../citation-graph/index.js');
 let { ZoteroAdapter } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
+let readerPane = require('./readerPane.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
 
@@ -52,7 +53,10 @@ const MAX_EXTERNAL_NODES = 4000;
 // network at all, and that is not a property to drop silently.
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: true, enrich: false };
 
-let open_ = new Map(); // tabID -> { win, browser, collection, generation, options }
+// tabID -> { win, browser, split, pane, collection, generation, options }
+// `split` is the box holding the graph and, once opened, the reader pane;
+// `pane` is readerPane.js's record for that reader, or null.
+let open_ = new Map();
 
 async function open(win, collection, config) {
 	let title = 'Citation Graph — ' + collection.name;
@@ -65,9 +69,22 @@ async function open(win, collection, config) {
 		data: { collectionKey: collection.key, libraryID: collection.libraryID },
 		select: true,
 		onClose: () => {
+			let entry = open_.get(id);
+			// The container is about to be destroyed anyway, but the reader inside it
+			// still has listeners registered on the window and state to flush.
+			if (entry) readerPane.close(entry);
 			open_.delete(id);
 		},
 	});
+
+	// The graph goes inside a horizontal box rather than straight into the tab
+	// container, because readerPane.js appends a splitter and a reader beside it.
+	// Built up front and never rebuilt: reparenting a <browser> tears down its
+	// docShell and reloads the page, which would throw the graph away the first
+	// time a PDF was opened.
+	let split = win.document.createXULElement('hbox');
+	split.setAttribute('flex', '1');
+	split.className = 'zg-split';
 
 	let browser = win.document.createXULElement('browser');
 	browser.setAttribute('class', 'zotero-graph');
@@ -75,9 +92,18 @@ async function open(win, collection, config) {
 	browser.setAttribute('type', 'content');
 	browser.setAttribute('transparent', 'true');
 	browser.setAttribute('src', `resource://${config.resRoot}/content/graph.html`);
-	container.appendChild(browser);
+	// Lets the graph give width up to the reader pane instead of pushing it off
+	// the right edge.
+	browser.style.minWidth = '0';
+	split.appendChild(browser);
+	container.appendChild(split);
 
-	open_.set(id, { win, browser, collection, generation: 0, options: { ...DEFAULT_OPTIONS } });
+	open_.set(id, {
+		win, browser, split, collection,
+		pane: null,
+		generation: 0,
+		options: { ...DEFAULT_OPTIONS },
+	});
 
 	let onDOMContentLoaded = (event) => {
 		if (browser.contentWindow && browser.contentWindow.document === event.target) {
@@ -141,6 +167,18 @@ async function handleMessage(win, tabID, collection, msg) {
 				Zotero.launchURL(msg.url);
 			}
 			break;
+		// The item's own PDF, beside the graph rather than in place of it. Only
+		// chrome can do this: the pane is a <browser> in the tab container that
+		// core renders a reader into. See readerPane.js.
+		case 'open-pdf': {
+			let entry = open_.get(tabID);
+			if (entry && msg.itemID) {
+				await readerPane.open(entry, msg.itemID, {
+					status: t => send(entry, 'zgSetStatus', t),
+				});
+			}
+			break;
+		}
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
