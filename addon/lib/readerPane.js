@@ -357,24 +357,33 @@ const UNPREVIEW_CSS = {
  * (scrollMode 3), locks `#viewerContainer` to `overflow: hidden`, and re-applies
  * the first two on every resize. In a half-screen pane that is a slide deck you
  * cannot even page with the wheel, so all four are undone here: drop the resize
- * handlers, inject CSS that gives the scrollbar back, and ask the reader itself
- * for ordinary vertical scrolling (`scrollMode` on a PDF, `flowMode` on an EPUB
- * -- both are properties of core's own Reader class, reached through the
- * ReaderInstance proxy).
+ * handlers, inject CSS that gives the scrollbar back, and put the view into
+ * ordinary vertical scrolling.
+ *
+ * The mode switch goes to the VIEW's own method, not to core's Reader-level
+ * `scrollMode`/`flowMode` properties. Those look like the polite way in, but
+ * their getters read `_state.primaryViewStats`, which a preview instance does
+ * not reliably have -- so the assignment quietly lands nowhere and the viewer
+ * stays in page mode. That matters more than it sounds: in page mode pdf.js
+ * empties the viewer and appends only the current page (`#ensurePageViewVisible`
+ * does `viewer.textContent = ''`), so a scrollable container over an unswitched
+ * viewer scrolls a one-page document. Hence the check after the switch.
  *
  * Internals, and best-effort on purpose: each step is guarded on its own, so if
  * core moves one of them the rest still apply and the pane at worst goes back to
  * paging through the header buttons.
  */
 function loosen(reader) {
-	let win = viewWindow(reader);
+	let view = primaryView(reader);
+	let win = view && view._iframeWindow;
 	if (!win) {
 		Zotero.debug('[zotero-graph] reader pane: no primary view to loosen');
 		return;
 	}
 
 	// Registered by ReaderPreview on the view window; both re-pin what we are
-	// about to unpin, on the next resize.
+	// about to unpin, on the next resize -- including the resize you cause by
+	// dragging the splitter.
 	for (let handler of [reader.updatePDFAttr, reader.updateSnapshotAttr]) {
 		if (handler) tryTo('drop preview resize handler', () => win.removeEventListener('resize', handler));
 	}
@@ -389,26 +398,29 @@ function loosen(reader) {
 	}
 
 	if (reader.type === 'pdf') {
-		// 0 is pdf.js ScrollMode.VERTICAL; page-width because the pane is
-		// narrower than the window the reader would otherwise get.
-		tryTo('set vertical scrolling', () => {
-			reader.scrollMode = 0;
-		});
-		tryTo('fit page width', () => {
-			win.PDFViewerApplication.pdfViewer.currentScaleValue = 'page-width';
+		// 0 is pdf.js ScrollMode.VERTICAL, 3 is PAGE.
+		tryTo('switch to vertical scrolling', () => view.setScrollMode(0));
+		tryTo('confirm vertical scrolling', () => {
+			let viewer = win.PDFViewerApplication.pdfViewer;
+			// Straight at pdf.js, which is where the view's dispatch ends up
+			// anyway. Only reached if the dispatch did not take.
+			if (viewer.scrollMode !== 0) viewer.scrollMode = 0;
+			// After the page-height the preview asked for, on a pane narrower
+			// than the window a reader would otherwise get.
+			viewer.currentScaleValue = 'page-width';
 		});
 	}
 	else if (reader.type === 'epub') {
-		tryTo('set scrolled flow', () => {
-			reader.flowMode = 'scrolled';
-		});
+		// Paginated flow is a mode, not CSS: leaving it would keep the preview's
+		// `flow-mode-paginated` viewport caps whatever we injected.
+		tryTo('switch to scrolled flow', () => view.setFlowMode('scrolled'));
 	}
 }
 
-/** The document the view actually renders into, one iframe below reader.html. */
-function viewWindow(reader) {
+/** The view that renders the file, one iframe below reader.html. */
+function primaryView(reader) {
 	try {
-		return reader._internalReader._primaryView._iframeWindow || null;
+		return reader._internalReader._primaryView || null;
 	}
 	catch (e) {
 		return null;
@@ -437,17 +449,23 @@ function goto(pane, dir) {
 	setTimeout(() => refreshPaging(pane), 250);
 }
 
+/**
+ * Only a definite `false` disables a paging button. canGoto() reads view stats
+ * that a preview does not always carry, and returns undefined when they are
+ * missing -- greying out working buttons because the answer was "don't know" is
+ * worse than a button that occasionally does nothing.
+ */
 function refreshPaging(pane) {
 	let can = (dir) => {
 		try {
-			return !!pane.reader && !!pane.reader.canGoto(dir);
+			return pane.reader ? pane.reader.canGoto(dir) : false;
 		}
 		catch (e) {
-			return false;
+			return undefined;
 		}
 	};
-	pane.prevBtn.disabled = !can('prev');
-	pane.nextBtn.disabled = !can('next');
+	pane.prevBtn.disabled = can('prev') === false;
+	pane.nextBtn.disabled = can('next') === false;
 }
 
 // --- remembered width --------------------------------------------------
