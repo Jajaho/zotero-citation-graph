@@ -9,6 +9,29 @@ let graphTab = require('./graphTab.js');
 let l10n = require('./l10n.js');
 
 const MENU_ID = 'zotero-graph-collection';
+const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
+
+/**
+ * The graph tab's icon.
+ *
+ * Core renders every non-library tab's icon as <span class="icon icon-css
+ * icon-item-type" data-item-type="..."> and paints it entirely from CSS
+ * (components/icons.js CSSItemTypeIcon, tabBar.js) -- there is no hook for a
+ * plugin to hand it an image. So the tab carries data.icon = 'zotero-graph',
+ * a name no item type uses, and this rule paints that one name.
+ *
+ * One flat background rather than core's four theme layers: the file draws
+ * itself with context-fill, so `fill: currentColor` takes the tab's own text
+ * colour and it follows light and dark without a second file.
+ */
+const TAB_ICON_CSS = resRoot => `
+	.tab-icon.icon-item-type[data-item-type="zotero-graph"] {
+		background: url("resource://${resRoot}/content/icons/graph.svg")
+			no-repeat center/contain;
+		-moz-context-properties: fill;
+		fill: currentColor;
+	}
+`;
 
 let _config = null;
 
@@ -42,6 +65,8 @@ module.exports = {
 			console.log('insertFTLIfNeeded failed, falling back to a literal label: ' + e);
 		}
 
+		addTabIconStyle(win);
+
 		// restoreState is the ONE tab hook that must exist for a custom tab type.
 		// tabs.js:611 does `let { itemID } = await restoreStateHook(tab, i)` and the
 		// missing-hook default returns undefined, so destructuring would throw and
@@ -56,6 +81,9 @@ module.exports = {
 	},
 
 	onMainWindowUnload(win) {
+		let style = win.document.getElementById(TAB_ICON_STYLE_ID);
+		if (style) style.remove();
+
 		let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
 		if (hooks && hooks.restoreState) {
 			delete hooks.restoreState.graph;
@@ -104,3 +132,17 @@ module.exports = {
 		});
 	},
 };
+
+/**
+ * The tab-icon rule, in the main window's own document: the tab strip lives
+ * outside every tab's container, so this cannot ride along with the tab the
+ * way splitPane.js's stylesheet rides with its panel.
+ */
+function addTabIconStyle(win) {
+	let doc = win.document;
+	if (doc.getElementById(TAB_ICON_STYLE_ID)) return;
+	let style = doc.createElement('style');
+	style.id = TAB_ICON_STYLE_ID;
+	style.textContent = TAB_ICON_CSS(_config.resRoot);
+	doc.documentElement.appendChild(style);
+}

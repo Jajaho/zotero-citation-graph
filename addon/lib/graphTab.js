@@ -80,7 +80,16 @@ async function open(win, collection, config) {
 		// the content type from the '-unloaded' state suffix.
 		type: 'graph',
 		title,
-		data: { collectionKey: collection.key, libraryID: collection.libraryID },
+		// `icon` is read by tabs.js _update(): with one set, it does not go looking
+		// for an item to take a type icon from -- a graph tab has no item, and the
+		// lookup it would otherwise attempt leaves the tab with no icon at all.
+		// The name lands on the tab's <span> as data-item-type, which is what the
+		// stylesheet main.js injects paints. See TAB_ICON_CSS there.
+		data: {
+			collectionKey: collection.key,
+			libraryID: collection.libraryID,
+			icon: 'zotero-graph',
+		},
 		select: true,
 		onClose: () => {
 			let entry = open_.get(id);
