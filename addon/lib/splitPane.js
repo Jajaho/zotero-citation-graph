@@ -48,34 +48,43 @@ let l10n = require('./l10n.js');
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
 
+// Kept in step with the CSS below: placeToggle() needs the number.
+const TOGGLE_WIDTH = 18;
+
 const PANE_CSS = `
+	/* The chevron is positioned against the tab's own box; see placeToggle(). */
+	.zg-split {
+		position: relative;
+	}
 	.zg-pane-splitter {
 		width: 4px;
 		border: none;
 		background: var(--material-panedivider);
-		/* The chevron is positioned against this. */
-		position: relative;
 	}
-	/* The divider stays put when the panel is hidden -- it carries the only way
-	   back -- but it has nothing to resize, so only its button answers. */
+	/* The divider stays put when the panel is hidden -- it is what the way back
+	   sits on -- but it has nothing to resize. */
 	.zg-pane-splitter[data-zg-collapsed] {
 		pointer-events: none;
 	}
 	/*
-	 * ON the divider, not beside it: absolutely positioned, so the button takes
-	 * no horizontal space of its own and the panel is exactly as wide as the
-	 * panel. It overhangs the 4px splitter on both sides, which is what makes
-	 * it big enough to hit.
+	 * ON the divider, not beside it: absolutely positioned over the tab, so the
+	 * button takes no horizontal space of its own and the panel is exactly as
+	 * wide as the panel. It overhangs the 4px splitter on both sides, which is
+	 * what makes a target out of a strip too thin to aim at.
+	 *
+	 * A sibling of the splitter rather than a child of it, because a XUL
+	 * <splitter> is a LEAF frame in current Gecko: it lays out no children at
+	 * all, which is why core's own <grippy> elements inside splitters render
+	 * nothing. A button in there is simply invisible.
 	 */
 	.zg-pane-toggle {
 		position: absolute;
 		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		z-index: 1;
-		pointer-events: auto;
+		right: var(--zg-toggle-right, 0px);
+		transform: translateY(-50%);
+		z-index: 2;
 		appearance: none;
-		width: 18px;
+		width: ${TOGGLE_WIDTH}px;
 		height: 56px;
 		padding: 0;
 		border: 1px solid var(--material-panedivider);
@@ -138,7 +147,9 @@ function close(entry) {
 	entry.pane = null;
 	release(pane);
 	if (pane.observer) pane.observer.disconnect();
+	entry.win.removeEventListener('resize', pane.onResize);
 	pane.splitter.remove();
+	pane.toggle.remove();
 	pane.box.remove();
 	pane.style.remove();
 }
@@ -176,8 +187,8 @@ function collapse(pane) {
 	saveWidth(pane);
 	pane.collapsed = true;
 	pane.box.setAttribute('hidden', 'true');
-	// The divider itself stays: it is where the button lives, and the button is
-	// the way back. It just has nothing left to drag.
+	// The divider itself stays: it is what the way back sits on. It just has
+	// nothing left to drag.
 	pane.splitter.setAttribute('data-zg-collapsed', 'true');
 	syncToggle(pane);
 }
@@ -195,6 +206,26 @@ function syncToggle(pane) {
 	// to pull it back out.
 	pane.toggle.textContent = pane.collapsed ? '«' : '»';
 	pane.toggle.title = l10n.t(pane.collapsed ? 'pane-show' : 'pane-hide');
+	placeToggle(pane);
+}
+
+/**
+ * Park the button over the divider: half of it either side of the 4px
+ * splitter, which sits immediately left of the panel. Measured rather than
+ * assumed, because the panel can be narrower than its width says -- min-width
+ * and a shrunk window both have a vote -- and falling back to the attribute
+ * covers the one moment there is no layout yet.
+ *
+ * Flush with the edge when the panel is hidden: half a button off the side of
+ * the window would be half a button.
+ */
+function placeToggle(pane) {
+	let w = 0;
+	if (!pane.collapsed) {
+		w = pane.box.getBoundingClientRect().width || Number(pane.box.getAttribute('width')) || 0;
+	}
+	let right = Math.max(0, Math.round(w) - Math.round(TOGGLE_WIDTH / 2) + 2);
+	pane.split.style.setProperty('--zg-toggle-right', right + 'px');
 }
 
 // --- the panel ---------------------------------------------------------
@@ -213,18 +244,11 @@ function create(entry) {
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
 
-	// The chevron rides ON the divider: absolutely positioned inside it, so it
-	// costs the layout nothing and the panel is exactly as wide as the panel.
-	// A mousedown that reaches the splitter starts a drag, so the button stops
-	// its own -- a press that resized the pane it was meant to hide would be
-	// the worst of both.
+	// The chevron rides ON the divider without being in it: absolutely
+	// positioned over the tab, parked against the panel's edge by placeToggle().
+	// It costs the layout nothing, so the panel is exactly as wide as the panel.
 	let toggle = doc.createElement('button');
 	toggle.className = 'zg-pane-toggle';
-	toggle.addEventListener('mousedown', (event) => {
-		event.stopPropagation();
-		event.preventDefault();
-	});
-	splitter.appendChild(toggle);
 
 	// A column: the reader stacks a header over its browser, and the item pane
 	// puts its own row inside. Either way the panel is one box.
@@ -234,13 +258,16 @@ function create(entry) {
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
 	entry.split.appendChild(box);
+	entry.split.appendChild(toggle);
 
 	let pane = {
 		box, splitter, toggle, style,
+		split: entry.split,
 		kind: null,
 		teardown: null,
 		observer: null,
 		collapsed: false,
+		onResize: null,
 	};
 	setWidth(pane, storedWidth());
 	syncToggle(pane);
@@ -248,6 +275,11 @@ function create(entry) {
 		if (pane.collapsed) expand(pane);
 		else collapse(pane);
 	});
+
+	// A narrower window shrinks the panel without touching its width attribute,
+	// and the button has to follow the edge it is parked against.
+	pane.onResize = () => placeToggle(pane);
+	entry.win.addEventListener('resize', pane.onResize);
 
 	// The splitter writes the attribute as the drag goes; this is what makes
 	// that visible whether or not the attribute is honoured by itself.
@@ -267,11 +299,14 @@ function create(entry) {
 function setWidth(pane, px) {
 	pane.box.setAttribute('width', String(px));
 	pane.box.style.width = px + 'px';
+	placeToggle(pane);
 }
 
 function mirrorWidth(pane) {
 	let w = Number(pane.box.getAttribute('width'));
-	if (Number.isFinite(w) && w > 0) pane.box.style.width = w + 'px';
+	if (!Number.isFinite(w) || w <= 0) return;
+	pane.box.style.width = w + 'px';
+	placeToggle(pane);
 }
 
 function storedWidth() {

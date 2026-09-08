@@ -673,7 +673,9 @@ class FakeElement {
 		this.children = [];
 		this.attrs = {};
 		this.className = '';
-		this.style = {};
+		this.style = { props: {}, setProperty(k, v) {
+			this.props[k] = v;
+		} };
 		this.parent = null;
 		this.removed = false;
 		this.listeners = {};
@@ -736,6 +738,9 @@ function fakeWindow(onRender = async () => {}) {
 			observe() {}
 			disconnect() {}
 		},
+		// It also follows window resizes, to keep the chevron on the edge.
+		addEventListener() {},
+		removeEventListener() {},
 	};
 	return { made, win, element };
 }
@@ -772,6 +777,29 @@ check('the side panel holds one thing at a time', async () => {
 	if (dropped !== 2) throw new Error('close() did not tell the occupant');
 	if (entry.pane) throw new Error('close() left the panel on the tab');
 	if (!second.removed) throw new Error('close() left the panel in the DOM');
+});
+
+check('the chevron rides on the divider without being inside it', () => {
+	const splitPane = require_('./lib/splitPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-11');
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+
+	splitPane.claim(entry, 'item', () => {});
+	const toggle = made.find(el => el.className === 'zg-pane-toggle');
+	const splitter = made.find(el => el.className === 'zg-pane-splitter');
+	// A XUL <splitter> is a leaf frame in current Gecko -- it lays out no
+	// children, so a button inside one is invisible. That is not a thing a
+	// stylesheet can rescue, hence the check.
+	if (splitter.children.length) throw new Error('the divider has children, and they never paint');
+	if (toggle.parent !== entry.split) throw new Error('the chevron must be a sibling of the divider');
+
+	// Parked so its centre lands on the 4px divider left of a 400px panel, and
+	// flush with the edge once there is no panel to sit beside.
+	const right = () => entry.split.style.props['--zg-toggle-right'];
+	if (right() !== 400 - 18 / 2 + 2 + 'px') throw new Error('parked at ' + right());
+	toggle.fire('click');
+	if (right() !== '0px') throw new Error('hidden, but parked at ' + right());
 });
 
 check('hiding the panel keeps what is in it, and asking again brings it back', () => {
