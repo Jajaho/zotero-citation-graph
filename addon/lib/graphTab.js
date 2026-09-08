@@ -14,7 +14,7 @@
  */
 
 let cg = require('../citation-graph/index.js');
-let { ZoteroAdapter } = require('./zoteroAdapter.js');
+let { ZoteroAdapter, itemRecord } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let addDialog = require('./addDialog.js');
@@ -648,12 +648,108 @@ async function addByDoi(win, tabID, collection, doi, title) {
 		}
 	}
 
+	entry = open_.get(tabID);
+	let added = newItems[0].getDisplayTitle();
+	if (!entry) return;
+
 	// The ghost's key was 'doi:<doi>'; the work is now a real item with an
-	// 8-character key, and every edge pointing at it has to be re-derived.
-	// A rebuild is the only way to get that consistently, and it is cheap here:
-	// phase 3 comes off the warm pdfLinkCache and phase 4 off the metadata cache.
-	status(l10n.t('add-done', { title: newItems[0].getDisplayTitle() }));
+	// 8-character key, and every edge pointing at it has to follow.
+	let ghostKey = externalKey('doi', d);
+	let one = newItems.length === 1 && newItems[0].isRegularItem() ? newItems[0] : null;
+	let names = one ? scopeNames(entry, one) : null;
+
+	if (one && !names) {
+		// In the library, but not in this graph. Nothing on screen changed, and
+		// re-deriving would say exactly that at the price of the whole layout.
+		status(l10n.t('add-elsewhere', { title: added }));
+		settle();
+		return;
+	}
+	if (one && await adoptAdded(entry, ghostKey, one, names)) {
+		status(l10n.t('add-done', { title: added }));
+		return;
+	}
+	// Whatever the graph could not simply take in -- one DOI that resolved to
+	// several works, or a tab with no finished build behind it yet.
+	status(l10n.t('add-rebuilding', { title: added }));
 	await runBuild(tabID);
+}
+
+/**
+ * Fold a paper just added to the library into the graph already on screen.
+ *
+ * A rebuild used to do this, and it was the wrong instrument. Nothing about
+ * the derivation changed: the same papers cite the same work, and the work
+ * merely stopped being a ghost. What a rebuild does do is push an empty edge
+ * list through phase 1, which takes every edge off the layout and re-anneals
+ * it from nothing over the next two phases -- so the answer to "add this one
+ * paper" was the whole graph rearranging itself around it.
+ *
+ * So this re-keys instead. Every edge that pointed at 'doi:<doi>' points at
+ * the item's key, the item joins the collection's own list, and one payload
+ * goes out. pushData() recomputes the outside-reference roll-up from the
+ * edges on every push, so the ghost stops being one by construction -- and
+ * the payload carries the rename, which is what lets the page put the new
+ * node exactly where the ghost was. See zgSetData in content/graph.js.
+ *
+ * What it does NOT do is read the new paper's own PDF for what IT cites.
+ * That needs a build, and it is what the next one will find.
+ *
+ * @returns {Boolean} false if the graph cannot take it in as it stands
+ */
+async function adoptAdded(entry, ghostKey, item, names) {
+	if (!entry || !entry.built || !names) return false;
+	await Zotero.Items.loadDataTypes([item]);
+	// The very function the build describes its own items with, so a newcomer
+	// cannot be described differently from the papers already there.
+	let record = itemRecord(item, names);
+	if (!record) return false;
+
+	let state = entry.built.state;
+	state.items = [...state.items, record];
+	state.inCollection.add(record.key);
+	for (let e of state.edges) {
+		if (e.from === ghostKey) e.from = record.key;
+		if (e.to === ghostKey) e.to = record.key;
+	}
+	// The lookup addresses everything by DOI either way, so the work keeps the
+	// global count it was named with rather than losing it on promotion.
+	let m = state.metadata[ghostKey];
+	if (m && m.citedByGlobal != null) state.heldCounts[record.key] = m.citedByGlobal;
+	entry.built.heldByDoiKey.set(ghostKey, record.key);
+	entry.built.ghostKeys = entry.built.ghostKeys.filter(k => k !== ghostKey);
+
+	pushData(entry, state, {
+		...entry.built.baseMeta,
+		items: state.items.length,
+		phase: 'done',
+		adopted: { was: ghostKey, now: record.key },
+	});
+	return true;
+}
+
+/**
+ * The names of the in-scope collections holding `item`, or null when this
+ * graph does not hold it at all. A graph is one collection -- and its
+ * subcollections when `recursive` is on -- so a paper filed anywhere else is
+ * in the library without being in the graph.
+ */
+function scopeNames(entry, item) {
+	let scope = [entry.collection];
+	if (entry.options.recursive) {
+		try {
+			for (let d of entry.collection.getDescendents(false, 'collection')) {
+				let c = Zotero.Collections.get(d.id);
+				if (c) scope.push(c);
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+	let held = new Set(item.getCollections());
+	let names = scope.filter(c => held.has(c.id)).map(c => c.name);
+	return names.length ? names : null;
 }
 
 /** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */
@@ -799,7 +895,7 @@ function closeAll() {
 }
 
 module.exports = {
-	open, closeAll, closeAllInWindow, mergeEdges, toWireExternal,
+	open, closeAll, closeAllInWindow, mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the payload test: what a lookup pass may and may not change
 	// about the graph on screen is the whole reason it is not a rebuild.
 	pushData,

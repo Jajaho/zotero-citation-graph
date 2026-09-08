@@ -755,11 +755,11 @@ class FakeElement {
 	// A XUL popup announces both edges of its life, and addDialog.js hangs the
 	// focus on one and the answer on the other.
 	openPopup() {
-		this.fire('popupshown');
+		this.fire('popupshown', { target: this });
 	}
 
 	hidePopup() {
-		this.fire('popuphidden');
+		this.fire('popuphidden', { target: this });
 	}
 
 	addEventListener(type, fn) {
@@ -1100,6 +1100,27 @@ check('unticking the tag greys the field without forgetting what is in it', asyn
 	if (out.tag !== 'added by citation graph') throw new Error('tag: ' + out.tag);
 });
 
+check('the collection menu opening and closing is not the dialog closing', async () => {
+	await l10nReady;
+	const { asked, find, press, panel } = openAddDialog();
+	let answered = false;
+	asked.then(() => {
+		answered = true;
+	});
+	// Exactly what a pick out of the collection menu does. Popup events bubble,
+	// and this one is a popup inside the dialog's own -- which is what used to
+	// tear the dialog down and abort the add on every click in the menu.
+	const menupopup = find('menupopup');
+	panel.fire('popupshown', { target: menupopup });
+	panel.fire('popuphidden', { target: menupopup });
+	await Promise.resolve();
+	await Promise.resolve();
+	if (answered) throw new Error('the dialog took its own menu closing for a cancel');
+	if (panel.removed) throw new Error('the dialog was torn down by its own menu');
+	press('Add');
+	if (!await asked) throw new Error('the dialog stopped answering');
+});
+
 check('a cancelled dialog answers null once and leaves nothing behind', async () => {
 	await l10nReady;
 	const { asked, press, panel } = openAddDialog();
@@ -1108,6 +1129,97 @@ check('a cancelled dialog answers null once and leaves nothing behind', async ()
 	// One question, one answer, whichever of the two paths gets there first.
 	if (await asked !== null) throw new Error('cancel must answer null');
 	if (!panel.removed) throw new Error('the panel outlived the question');
+});
+
+/** A Zotero item with just the surface itemRecord() reads. */
+function fakeZoteroItem(over = {}) {
+	const fields = { title: 'The work they all cite', DOI: '10.5555/outside', date: '2019' };
+	return {
+		key: 'BBBBBBBB',
+		id: 42,
+		itemTypeID: 1,
+		isRegularItem: () => true,
+		getField: name => fields[name] || '',
+		getCreators: () => [{ lastName: 'Ada' }],
+		getTags: () => [{ tag: 'added by citation graph' }],
+		// The collection the graph is of, so the graph can take it in.
+		getCollections: () => [11],
+		...over,
+	};
+}
+
+/** One held paper citing one work the collection does not hold. */
+function fakeAddedTab() {
+	const sent = [];
+	const state = {
+		items: [{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Citing paper', doi: null }],
+		inCollection: new Set(['AAAAAAAA']),
+		edges: [{
+			from: 'AAAAAAAA', to: 'doi:10.5555/outside',
+			confidence: 0.95, via: ['pdf-links'], evidence: [],
+		}],
+		metadata: { 'doi:10.5555/outside': { title: 'The work they all cite', citedByGlobal: 90 } },
+		heldCounts: Object.create(null),
+	};
+	const entry = {
+		browser: { contentWindow: { wrappedJSObject: { zgSetData: j => sent.push(JSON.parse(j)) } } },
+		collection: { id: 11, key: 'C1', name: 'Reading list' },
+		options: { recursive: false, includeExternal: true, enrich: true },
+		built: {
+			state,
+			baseMeta: { items: 1, perProvider: {}, errors: [] },
+			ghostKeys: ['doi:10.5555/outside'],
+			heldByDoiKey: new Map(),
+		},
+	};
+	return { entry, state, sent };
+}
+
+check('an added paper is folded into the graph, not re-derived from it', async () => {
+	const { adoptAdded } = require_('./lib/graphTab.js');
+	const { entry, state, sent } = fakeAddedTab();
+	Zotero.Items = { loadDataTypes: async () => {} };
+	Zotero.ItemTypes = { getName: () => 'journalArticle' };
+
+	const took = await adoptAdded(entry, 'doi:10.5555/outside', fakeZoteroItem(), ['Reading list']);
+	if (!took) throw new Error('the graph refused a paper filed into its own collection');
+	// One payload, and no phase-1 empty edge list before it -- that push is the
+	// whole reason a rebuild re-anneals the layout.
+	if (sent.length !== 1) throw new Error('pushes: ' + sent.length);
+	const out = sent[0];
+	if (out.edges.length !== 1 || out.edges[0].to !== 'BBBBBBBB') {
+		throw new Error('the edge still points at the ghost: ' + JSON.stringify(out.edges));
+	}
+	if (out.external.length) throw new Error('the ghost outlived its promotion');
+	const added = out.items.find(i => i.key === 'BBBBBBBB');
+	if (!added) throw new Error('the paper is not in the collection it was filed into');
+	if (added.collections.join() !== 'Reading list') throw new Error('collections: ' + added.collections);
+	// The count it was looked up with, kept across the promotion: it is the same
+	// work, and losing it would flatten the node under 'size by global citations'.
+	if (added.citedByGlobal !== 90) throw new Error('citedByGlobal: ' + added.citedByGlobal);
+	// What lets the page put the new node exactly where the ghost stood.
+	if (!out.meta.adopted || out.meta.adopted.was !== 'doi:10.5555/outside'
+		|| out.meta.adopted.now !== 'BBBBBBBB') {
+		throw new Error('meta.adopted: ' + JSON.stringify(out.meta.adopted));
+	}
+	// A later lookup asks about it as a held item rather than as a ghost.
+	if (entry.built.ghostKeys.length) throw new Error('still a ghost to the lookup');
+	if (entry.built.heldByDoiKey.get('doi:10.5555/outside') !== 'BBBBBBBB') {
+		throw new Error('the lookup cannot address it by DOI any more');
+	}
+	if (!state.inCollection.has('BBBBBBBB')) throw new Error('not in the collection set');
+});
+
+check('a paper filed somewhere else is not folded into this graph', async () => {
+	const { adoptAdded } = require_('./lib/graphTab.js');
+	const { entry, sent } = fakeAddedTab();
+	Zotero.Items = { loadDataTypes: async () => {} };
+	Zotero.ItemTypes = { getName: () => 'journalArticle' };
+	// scopeNames() found nothing, which is what a collection outside this graph
+	// comes to. The ghost is still a ghost, and nothing on screen may move.
+	const took = await adoptAdded(entry, 'doi:10.5555/outside', fakeZoteroItem(), null);
+	if (took) throw new Error('the graph took in a paper it does not hold');
+	if (sent.length) throw new Error('it pushed anyway');
 });
 
 check('naming a graph changes no node and no edge', () => {

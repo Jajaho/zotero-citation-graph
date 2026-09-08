@@ -73,6 +73,9 @@
 	let fg = null;
 	let raw = null;
 	let nodeCache = new Map(); // id -> node object, so x/y survive a re-render
+	// The node an incoming payload wants placed without disturbing the rest.
+	// Consumed by render(); see anchorOne().
+	let anchorNext = null;
 	let disabledVia = new Set();
 	let yearRange = null;
 	// The citation count that maps to the largest node: the 95th percentile of
@@ -160,6 +163,24 @@
 			return;
 		}
 		let firstEdges = (!raw || !raw.edges.length) && next.edges.length;
+		// A paper just added IS the ghost that was there a moment ago, under a
+		// new key. Hand the coordinates over so the new node lands where the
+		// graph already showed it, rather than wherever the engine throws a
+		// node it has never seen.
+		let adopted = next.meta && next.meta.adopted;
+		if (adopted) {
+			let was = nodeCache.get(adopted.was);
+			if (was && !nodeCache.has(adopted.now)) {
+				let n = { id: adopted.now, x: was.x, y: was.y, vx: 0, vy: 0 };
+				// A pinned ghost becomes a pinned item: the pin was a statement
+				// about where that work belongs, not about its key.
+				if (was.fx != null) n.fx = was.fx;
+				if (was.fy != null) n.fy = was.fy;
+				nodeCache.set(adopted.now, n);
+			}
+			nodeCache.delete(adopted.was);
+			anchorNext = adopted.now;
+		}
 		raw = next;
 		raw.external = raw.external || [];
 		// Chrome owns the scope options; reflect what it actually used, which
@@ -1384,6 +1405,12 @@
 		fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
 
 		updateGraph(nodes, links);
+		// After updateGraph, which is what handed force-graph the changed node
+		// set and so what set the layout alight.
+		if (anchorNext) {
+			anchorOne(anchorNext);
+			anchorNext = null;
+		}
 		renderLegend(nodes);
 		// Rebuilt with the graph rather than only when opened: a build phase
 		// landing, a strategy switched off or a paper added all change what is
@@ -2308,6 +2335,31 @@
 	// is not shedding.
 	let shedLeft = 0;
 	let settleDecay = null;
+
+	/**
+	 * Hold the graph still and let one node find its place in it.
+	 *
+	 * Adding a paper turns a ghost into a held item, which is a different id --
+	 * so force-graph is handed a changed node set and re-anneals the layout from
+	 * full temperature. Nothing about the derivation changed, though: the same
+	 * papers cite the same work. So every node but the new one is fixed where it
+	 * stands, which leaves that run exactly one body to place.
+	 *
+	 * No reheat and no shed: graphData has already set alpha to 1, and this run
+	 * is the one that places the node. The graph is handed back by thaw() from
+	 * onEngineStop, by which time alpha is spent and letting go moves nothing.
+	 */
+	function anchorOne(id) {
+		if (!fg) return;
+		thaw();
+		for (let n of drawnNodes) {
+			if (n.id === id) continue;
+			if (n.fx != null || n.fy != null) continue;
+			n.fx = n.x;
+			n.fy = n.y;
+			frozen.add(n);
+		}
+	}
 
 	function settle() {
 		if (!fg) return;

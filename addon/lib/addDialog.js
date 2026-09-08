@@ -344,13 +344,21 @@ function open(win, opts) {
 				finish(null);
 			}
 		});
+		// Popup events BUBBLE, and the collection menu is a popup inside this
+		// one. Without the target check, opening the menu took the focus back
+		// and picking anything out of it cancelled the whole add.
+		function ownPopup(event) {
+			return !event || !event.target || event.target === panel;
+		}
 		// Whatever closed it -- the buttons above, or the window going away
 		// underneath it -- the promise is answered exactly once.
-		panel.addEventListener('popuphidden', () => {
+		panel.addEventListener('popuphidden', (event) => {
+			if (!ownPopup(event)) return;
 			finish(null);
 			panel.remove();
 		});
-		panel.addEventListener('popupshown', () => {
+		panel.addEventListener('popupshown', (event) => {
+			if (!ownPopup(event)) return;
 			try {
 				tagInput.focus();
 				tagInput.select();

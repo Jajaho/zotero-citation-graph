@@ -275,7 +275,9 @@ zotero-graph-add-bad-doi = Not a usable DOI: { $doi }
 zotero-graph-add-adding = Adding { $doi }…
 zotero-graph-add-failed = Could not add { $doi }: { $message }
 zotero-graph-add-no-metadata = No metadata found for { $doi }
-zotero-graph-add-done = Added "{ $title }" — rebuilding…
+zotero-graph-add-done = Added "{ $title }"
+zotero-graph-add-elsewhere = Added "{ $title }" to another collection — this graph is unchanged.
+zotero-graph-add-rebuilding = Added "{ $title }" — rebuilding…
 
 
 ## The tab, and the reader pane inside it.

@@ -52,39 +52,10 @@ class ZoteroAdapter {
 
 		let out = [];
 		for (let item of zItems) {
-			if (!item.isRegularItem()) continue;
-			let title = field(item, 'title', { baseMapped: true });
-			if (!title) continue;
+			let rec = itemRecord(item, collectionsByKey.get(item.key) || []);
+			if (!rec) continue;
 			this._itemByKey.set(item.key, item);
-			out.push({
-				key: item.key,
-				// Not part of the adapter contract, but the graph page needs it to
-				// ask the chrome side to select the item in the library pane.
-				itemID: item.id,
-				itemType: Zotero.ItemTypes.getName(item.itemTypeID),
-				title,
-				doi: field(item, 'DOI') || null,
-				// Unformatted: the raw multipart date, matching what the SQLite
-				// adapter reads straight out of itemDataValues.
-				date: field(item, 'date', { unformatted: true }) || null,
-				extra: field(item, 'extra') || null,
-				url: field(item, 'url') || null,
-				// The venue a work appeared in. baseMapped folds proceedingsTitle and
-				// bookTitle onto publicationTitle, so one facet covers every item type
-				// that has a venue at all instead of three that each cover a third of
-				// the library.
-				publication: field(item, 'publicationTitle', { baseMapped: true }) || null,
-				creators: item.getCreators().map(c => c.lastName).filter(Boolean),
-				// Both kinds of tag, the ones typed by hand and the ones a translator
-				// attached. Which of the two a tag is describes where it came from,
-				// not what it says -- and someone grouping by "quantum sensing" does
-				// not care that the importer wrote it rather than they did.
-				tags: item.getTags().map(t => t.tag).filter(Boolean),
-				// Which of the in-scope collections hold this item. Only
-				// interesting once subcollections are included -- without them
-				// every item shares one name.
-				collections: collectionsByKey.get(item.key) || [],
-			});
+			out.push(rec);
 		}
 		this._items = out;
 		return out;
@@ -305,4 +276,52 @@ function bytesToBinaryString(bytes) {
 	return parts.join('');
 }
 
-module.exports = { ZoteroAdapter, scanUriAnnotations, bytesToBinaryString };
+/**
+ * One item, in the shape the adapter's contract promises, or null for
+ * anything the build would have skipped -- a note, an attachment, a record
+ * with no title.
+ *
+ * Lifted out of listItems() because a paper added from the graph joins a
+ * collection that has already been listed (graphTab.js adoptAdded), and a
+ * newcomer described differently from the items already there is a whole
+ * class of bug that this makes impossible rather than unlikely.
+ *
+ * @param {Zotero.Item} item
+ * @param {String[]} [collections] names of the in-scope collections holding it
+ */
+function itemRecord(item, collections = []) {
+	if (!item.isRegularItem()) return null;
+	let title = field(item, 'title', { baseMapped: true });
+	if (!title) return null;
+	return {
+		key: item.key,
+		// Not part of the adapter contract, but the graph page needs it to
+		// ask the chrome side to select the item in the library pane.
+		itemID: item.id,
+		itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+		title,
+		doi: field(item, 'DOI') || null,
+		// Unformatted: the raw multipart date, matching what the SQLite
+		// adapter reads straight out of itemDataValues.
+		date: field(item, 'date', { unformatted: true }) || null,
+		extra: field(item, 'extra') || null,
+		url: field(item, 'url') || null,
+		// The venue a work appeared in. baseMapped folds proceedingsTitle and
+		// bookTitle onto publicationTitle, so one facet covers every item type
+		// that has a venue at all instead of three that each cover a third of
+		// the library.
+		publication: field(item, 'publicationTitle', { baseMapped: true }) || null,
+		creators: item.getCreators().map(c => c.lastName).filter(Boolean),
+		// Both kinds of tag, the ones typed by hand and the ones a translator
+		// attached. Which of the two a tag is describes where it came from,
+		// not what it says -- and someone grouping by "quantum sensing" does
+		// not care that the importer wrote it rather than they did.
+		tags: item.getTags().map(t => t.tag).filter(Boolean),
+		// Which of the in-scope collections hold this item. Only interesting
+		// once subcollections are included -- without them every item shares
+		// one name.
+		collections,
+	};
+}
+
+module.exports = { ZoteroAdapter, itemRecord, scanUriAnnotations, bytesToBinaryString };
