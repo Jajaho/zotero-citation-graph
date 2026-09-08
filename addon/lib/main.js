@@ -57,6 +57,18 @@ module.exports = {
 		// Before anything that can produce a string. Every t() call after this
 		// point is synchronous, and a tab cannot open until startup returns.
 		await l10n.load(config.rootURI);
+
+		// Restore before registering the menu, and before bootstrap gets as far
+		// as onMainWindowLoad: the tab is what the user is waiting to see, and
+		// nothing between here and there is needed to draw it. Everything in
+		// this loop is idempotent, so onMainWindowLoad repeating it costs
+		// nothing -- it is what covers a window opened later.
+		for (let win of Zotero.getMainWindows()) {
+			if (!win.ZoteroPane) continue;
+			addTabIconStyle(win);
+			graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
+		}
+
 		this.registerMenu();
 	},
 

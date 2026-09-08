@@ -225,7 +225,7 @@ async function restore(win, tab, tabIndex) {
 		// only fail at it again.
 		claimed_.add(tab);
 
-		let collection = await tabCollection(tab.data);
+		let collection = tabCollectionSync(tab.data) || await tabCollection(tab.data);
 		trace.log(`restore  index=${tabIndex}`
 			+ `  key=${(tab.data && tab.data.collectionKey) || '-'}`
 			+ `  -> ${collection ? 'restoring' : 'dropped (no such collection)'}`);
@@ -312,6 +312,7 @@ async function restorePass(win) {
 		if (!entry || entry.type !== 'graph' || claimed_.has(entry)) continue;
 		trace.log(`late restore  index=${i}  (session restore ran before this plugin loaded)`);
 		await restore(win, entry, i);
+		trace.log(`late restore done  index=${i}  strip=[${stripSummary(win)}]`);
 	}
 }
 
@@ -353,6 +354,21 @@ async function load(win, tab, config) {
 }
 
 /**
+ * The collection, if it can be had without awaiting. Split out so restore() can
+ * stay synchronous down to Zotero_Tabs.add() on the path that always applies,
+ * and only fall back to the promise for a library still to be loaded.
+ */
+function tabCollectionSync(data) {
+	if (!data || !data.libraryID || !data.collectionKey) return null;
+	try {
+		return Zotero.Collections.getByLibraryAndKey(data.libraryID, data.collectionKey) || null;
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+/**
  * The collection a tab's persisted data points at, or null when it cannot be
  * honoured -- data from before any of this was stored, or a collection deleted
  * while the tab was closed.
@@ -361,7 +377,11 @@ async function tabCollection(data) {
 	// getIDFromLibraryAndKey() throws on a falsy library id rather than missing.
 	if (!data || !data.libraryID || !data.collectionKey) return null;
 	try {
-		// Returns false, not null, when there is no such collection.
+		// The awaiting form only. tabCollectionSync() is tried first by every
+		// caller that cares about latency, and is deliberately NOT retried here:
+		// sharing one try block let a throwing sync call swallow the async
+		// fallback with it, which is exactly how a group library would have lost
+		// its tabs. Returns false, not null, when there is no such collection.
 		let c = await Zotero.Collections.getByLibraryAndKeyAsync(
 			data.libraryID, data.collectionKey);
 		return c || null;

@@ -1473,11 +1473,15 @@ const COLLECTION = { key: 'ABCD1234', libraryID: 1, id: 7, name: 'Reading list' 
 
 /** Zotero.Collections as restore() asks about it. */
 function stubCollections(found = COLLECTION) {
+	// Both forms, as Zotero.Collections has them: the sync one answers whenever
+	// the library is loaded, which is the path restore actually takes.
+	const lookup = (libraryID, key) => {
+		if (!libraryID) throw new Error('Library ID not provided');
+		return (found && found.libraryID === libraryID && found.key === key) ? found : false;
+	};
 	Zotero.Collections = {
-		getByLibraryAndKeyAsync: async (libraryID, key) => {
-			if (!libraryID) throw new Error('Library ID not provided');
-			return (found && found.libraryID === libraryID && found.key === key) ? found : false;
-		},
+		getByLibraryAndKey: lookup,
+		getByLibraryAndKeyAsync: async (...a) => lookup(...a),
 	};
 }
 

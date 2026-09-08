@@ -57,10 +57,19 @@ async function startup({ id, version, rootURI: uri }, reason) {
 		__pluginID: PLUGIN_ID,
 	});
 
+	// trace first, and on its own: it has no dependencies, so requiring it
+	// costs one file read, and starting its clock here is what makes the
+	// elapsed column measure this plugin's whole contribution to restore
+	// latency -- module loading included.
+	let trace = require('./lib/trace.js');
+	trace.start();
+	trace.log('--- startup v' + version + ' reason=' + startupReason);
+
 	CG = require('./lib/main.js');
 	Zotero.ZoteroGraph = CG;
-	require('./lib/trace.js').log('--- startup v' + version + ' reason=' + startupReason);
+	trace.log('modules loaded');
 	await CG.startup({ id, version, rootURI, pluginID: PLUGIN_ID, resRoot: RES_ROOT });
+	trace.log('startup returned');
 
 	// Windows already open when the plugin is enabled at runtime don't get
 	// onMainWindowLoad, so handle them here.

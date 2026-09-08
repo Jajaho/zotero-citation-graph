@@ -25,6 +25,14 @@ const MAX_LINES = 300;
 
 let queue_ = Promise.resolve();
 let path_ = null;
+let t0_ = null;
+
+/** Start the clock the elapsed column counts from. Called from bootstrap as
+ *  early as anything of this plugin's can run, so "+Nms" answers the only
+ *  question that matters about restore latency: how much of it is ours. */
+function start() {
+	t0_ = Date.now();
+}
 
 function path() {
 	if (!path_) {
@@ -38,7 +46,10 @@ function path() {
  * can wait for it -- see flush().
  */
 function log(line) {
-	let stamped = new Date().toISOString().replace('T', ' ').slice(0, 19) + '  ' + line;
+	let now = new Date();
+	let stamped = now.toISOString().replace('T', ' ').slice(0, 23)
+		+ (t0_ === null ? '        ' : ('  +' + String(now - t0_).padStart(5) + 'ms'))
+		+ '  ' + line;
 	Zotero.debug('[zotero-graph] ' + line);
 	// Serialised behind one chain: two lines written concurrently would each
 	// read the file before the other wrote it, and one would be lost.
@@ -67,4 +78,4 @@ function flush() {
 	return queue_.catch(() => {});
 }
 
-module.exports = { log, flush };
+module.exports = { log, flush, start };
