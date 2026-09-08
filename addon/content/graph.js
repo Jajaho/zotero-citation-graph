@@ -1864,10 +1864,23 @@
 		});
 	}
 
+	/**
+	 * The lookup is scope too -- names have to be fetched, and that is a network
+	 * pass -- but it is the one scope option that derives nothing: no item joins
+	 * or leaves the collection for it, and no edge is found or lost. So it does
+	 * not ask for a rebuild. Chrome runs it as one phase over the graph already
+	 * on screen, which is what lets the layout survive it: a rebuild would begin
+	 * by pushing an empty edge list, and the graph would re-anneal from nothing.
+	 */
+	function requestLookup() {
+		syncEnabled();
+		elStatus.textContent = elEnrich.checked ? 'Looking up names…' : 'Dropping looked-up names…';
+		emit({ type: 'lookup', on: elEnrich.checked });
+	}
+
 	elRecursive.addEventListener('change', requestRebuild);
 	elIncludeExternal.addEventListener('change', requestRebuild);
-	// Scope, not a filter: names have to be fetched, so this costs a rebuild.
-	elEnrich.addEventListener('change', requestRebuild);
+	elEnrich.addEventListener('change', requestLookup);
 	el('rebuild').addEventListener('click', requestRebuild);
 
 	elMinConf.addEventListener('input', render);
@@ -1897,7 +1910,7 @@
 		// which is what the status line is reporting on.
 		if (elSizeBy.value === 'global' && !elEnrich.checked) {
 			elEnrich.checked = true;
-			requestRebuild();
+			requestLookup();
 		}
 		// Sizing changes node radii, and the collision force caches the radii
 		// it was built with -- but render() compares the new ones against the

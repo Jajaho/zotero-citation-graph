@@ -645,6 +645,44 @@ check('lib/ modules load through the shim', () => {
 	}
 });
 
+check('naming a graph changes no node and no edge', () => {
+	const { pushData } = require_('./lib/graphTab.js');
+	const sent = [];
+	const entry = {
+		browser: { contentWindow: { wrappedJSObject: { zgSetData: j => sent.push(JSON.parse(j)) } } },
+		collection: { key: 'C1', name: 'Reading list' },
+		options: { recursive: false, includeExternal: true, enrich: true },
+	};
+	// One held item citing one work the collection does not hold.
+	const state = {
+		items: [{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Citing paper', doi: '10.1000/citing' }],
+		inCollection: new Set(['AAAAAAAA']),
+		edges: [{ from: 'AAAAAAAA', to: 'doi:10.5555/outside', confidence: 0.95, via: ['pdf-links'], evidence: [] }],
+		metadata: Object.create(null),
+		heldCounts: Object.create(null),
+	};
+
+	pushData(entry, state, { phase: 'edges' });
+	// Exactly what the lookup phase writes, and nothing else.
+	state.metadata['doi:10.5555/outside'] = { title: 'An outside work', creators: ['Kucsko'], year: 2013, citedByGlobal: 900 };
+	state.heldCounts.AAAAAAAA = 7;
+	pushData(entry, state, { phase: 'done' });
+
+	const [before, after] = sent;
+	// The renderer holds its layout only as long as the node set and the edges
+	// come back unchanged; a lookup that altered either would re-anneal it.
+	if (JSON.stringify(before.edges) !== JSON.stringify(after.edges)) {
+		throw new Error('the lookup changed an edge');
+	}
+	const nodeKeys = p => p.items.map(i => i.key).concat(p.external.map(x => x.key)).join(',');
+	if (nodeKeys(before) !== nodeKeys(after)) throw new Error('the lookup changed the node set');
+	// And it does have to deliver what it went to the network for.
+	if (before.external[0].title) throw new Error('a ghost was named before the lookup ran');
+	if (after.external[0].title !== 'An outside work') throw new Error('the ghost was not named');
+	if (after.external[0].citedBy !== 1) throw new Error('the local count was lost');
+	if (after.items[0].citedByGlobal !== 7) throw new Error('the held count did not arrive');
+});
+
 check('ZoteroAdapter implements the whole adapter contract', () => {
 	const { ZoteroAdapter } = require_('./lib/zoteroAdapter.js');
 	// The four methods every strategy is allowed to call. If one is renamed here

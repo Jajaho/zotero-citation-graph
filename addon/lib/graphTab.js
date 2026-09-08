@@ -58,9 +58,12 @@ const MAX_EXTERNAL_NODES = 4000;
 // turn on for someone silently.
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
-// tabID -> { win, browser, split, pane, collection, generation, options }
+// tabID -> { win, browser, split, pane, collection, generation, options,
+//             built, building }
 // `split` is the box holding the graph and, once opened, the reader pane;
-// `pane` is readerPane.js's record for that reader, or null.
+// `pane` is readerPane.js's record for that reader, or null. `built` is the
+// last completed derivation, which runLookup() names in place; `building`
+// says whether a build owns the tab, since a lookup must not push over one.
 let open_ = new Map();
 
 async function open(win, collection, config) {
@@ -110,6 +113,8 @@ async function open(win, collection, config) {
 		pane: null,
 		generation: 0,
 		options: { ...DEFAULT_OPTIONS },
+		built: null,
+		building: false,
 	});
 
 	let onDOMContentLoaded = (event) => {
@@ -162,6 +167,21 @@ async function handleMessage(win, tabID, collection, msg) {
 			await runBuild(tabID);
 			break;
 		}
+		// The lookup derives no node and no edge -- it puts names and counts on
+		// a graph that is already built. Running it as a phase over the last
+		// build, rather than as a rebuild, is what lets the layout the user is
+		// reading survive it: a rebuild starts by pushing an empty edge list,
+		// which takes every edge off the graph and re-anneals it from nothing.
+		case 'lookup': {
+			let entry = open_.get(tabID);
+			if (!entry) break;
+			entry.options.enrich = !!msg.on;
+			// Nothing settled to add to: no build has finished, or one is still
+			// running and will pick the option up itself.
+			if (!entry.built || entry.building) await runBuild(tabID);
+			else await runLookup(tabID);
+			break;
+		}
 		case 'add-item':
 			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi);
 			break;
@@ -211,42 +231,38 @@ async function runBuild(tabID) {
 	let generation = ++entry.generation;
 	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
 
+	entry.building = true;
+	try {
+		await buildPhases(entry, alive);
+	}
+	finally {
+		// A build that has already been superseded must not clear the flag the
+		// build that superseded it set.
+		if (alive()) entry.building = false;
+	}
+}
+
+async function buildPhases(entry, alive) {
 	let { collection, options } = entry;
 	let cache = await PdfLinkCache.forProfile().load();
 	let adapter = new ZoteroAdapter(collection, { cache, recursive: options.recursive });
-	let items = [];
-	let inCollection = new Set();
-	// key -> Metadata, filled by the enrichment phase and folded into every
-	// later push. Held here rather than in the payload so a re-push before
-	// enrichment finishes simply carries no names, instead of dropping them.
-	let metadata = Object.create(null);
-	// Zotero item key -> global citation count, for the held items. Separate
-	// from `metadata` because these nodes already have a name from the library;
-	// the only thing enrichment adds is the count.
-	let heldCounts = Object.create(null);
+	// Everything a payload is assembled from, in one object so that a later
+	// pass -- see runLookup() -- can be handed the build this one produced.
+	// `metadata` and `heldCounts` live here rather than in the payload so a
+	// re-push before enrichment finishes simply carries no names, instead of
+	// dropping the ones it had.
+	let state = {
+		items: [],
+		inCollection: new Set(),
+		edges: [],
+		metadata: Object.create(null),
+		heldCounts: Object.create(null),
+	};
 
 	let push = (edges, meta) => {
 		if (!alive()) return;
-		// External nodes are recomputed over the combined edge list rather than
-		// carried from each build: a work found by both text-doi and pdf-links is
-		// one node cited once, not two.
-		let external = options.includeExternal
-			? cg.collectExternalNodes(edges, k => inCollection.has(k))
-				.slice(0, MAX_EXTERNAL_NODES)
-				.map(x => toWireExternal(x, metadata[x.key]))
-			: [];
-		send(entry, 'zgSetData', {
-			collection: { key: collection.key, name: collection.name },
-			options,
-			// citedByGlobal is folded in rather than carried on the item objects
-			// themselves, so the adapter's output stays exactly what the CLI sees.
-			items: items.map(it => (heldCounts[it.key] != null
-				? { ...it, citedByGlobal: heldCounts[it.key] }
-				: it)),
-			external,
-			edges: edges.map(toWireEdge),
-			meta,
-		});
+		state.edges = edges;
+		pushData(entry, state, meta);
 	};
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
@@ -254,9 +270,10 @@ async function runBuild(tabID) {
 
 	// --- phase 1: nodes -------------------------------------------------
 	status(options.recursive ? 'Loading collection and subcollections…' : 'Loading collection…');
-	items = await adapter.listItems();
-	inCollection = new Set(items.map(i => i.key));
+	let items = await adapter.listItems();
 	if (!alive()) return;
+	state.items = items;
+	state.inCollection = new Set(items.map(i => i.key));
 	push([], { phase: 'items', items: items.length });
 	if (!items.length) {
 		status('This collection has no regular items.');
@@ -302,11 +319,11 @@ async function runBuild(tabID) {
 		adapter: adapter.stats,
 	};
 	let external = options.includeExternal
-		? cg.collectExternalNodes(edges, k => inCollection.has(k))
+		? cg.collectExternalNodes(edges, k => state.inCollection.has(k))
 		: [];
-	// What phase 4 will ask for, worked out before the push so the payload can
-	// say truthfully whether a lookup is still to come. Ghosts need a name;
-	// held items already have one and need only the global count, which is what
+	// What a lookup would ask for, worked out before the push so the payload can
+	// say truthfully whether one is still to come. Ghosts need a name; held
+	// items already have one and need only the global count, which is what
 	// makes "size by global citations" meaningful for the whole graph rather
 	// than half of it. Both are DOIs, so they go in one batched pass -- doiKey
 	// is the shared address space, and with outside refs off the held items are
@@ -317,10 +334,12 @@ async function runBuild(tabID) {
 		let d = normDoi(it.doi);
 		if (d) heldByDoiKey.set(externalKey('doi', d), it.key);
 	}
-	let toLookUp = options.enrich
-		? [...new Set([...ghostKeys, ...heldByDoiKey.keys()])]
-		: [];
+	// The derived graph, kept so that switching the lookup on later costs one
+	// phase instead of a whole build. Recorded before phase 4 runs: what a
+	// lookup needs is exactly what is on screen by now.
+	entry.built = { state, baseMeta, ghostKeys, heldByDoiKey };
 
+	let toLookUp = options.enrich ? lookupKeys(entry.built) : [];
 	push(edges, { phase: toLookUp.length ? 'edges' : 'done', ...baseMeta });
 	logMeta('pdf-links', pdfResult);
 
@@ -332,6 +351,69 @@ async function runBuild(tabID) {
 		status('');
 		return;
 	}
+	await lookUpNames(entry, alive, entry.built);
+}
+
+/**
+ * Turn the lookup on or off over the graph that is already on screen.
+ *
+ * The lookup is the one option that derives nothing: no item enters or leaves
+ * the collection for it, and no edge is found or lost. Re-deriving the graph to
+ * apply it would push an empty edge list through phase 1, strip every edge off
+ * the layout the user is reading, and re-anneal it from nothing over the next
+ * two phases -- all to apply a change that only ever writes names and citation
+ * counts onto nodes that are already there.
+ */
+async function runLookup(tabID) {
+	let entry = open_.get(tabID);
+	if (!entry || !entry.built) return;
+
+	let generation = ++entry.generation;
+	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
+	let built = entry.built;
+
+	entry.building = true;
+	try {
+		if (!entry.options.enrich) {
+			// Switching it off takes the names back off and nothing else: same
+			// items, same edges, so the graph does not move.
+			built.state.metadata = Object.create(null);
+			built.state.heldCounts = Object.create(null);
+			pushData(entry, built.state, { phase: 'done', ...built.baseMeta });
+			send(entry, 'zgSetStatus', '');
+			return;
+		}
+		if (!lookupKeys(built).length) {
+			send(entry, 'zgSetStatus', 'Nothing to look up: no DOIs in this graph.');
+			return;
+		}
+		await lookUpNames(entry, alive, built);
+	}
+	finally {
+		if (alive()) entry.building = false;
+	}
+}
+
+/**
+ * What one lookup pass asks about: every ghost that needs a name, and every
+ * held item that needs only its global count. One batched pass, because doiKey
+ * is the address space both live in.
+ */
+function lookupKeys(built) {
+	return [...new Set([...built.ghostKeys, ...built.heldByDoiKey.keys()])];
+}
+
+/**
+ * The naming phase itself, over a build that already exists. Shared by the
+ * build that produced it and by a later switch-on, so the two cannot disagree
+ * about what a named graph looks like.
+ */
+async function lookUpNames(entry, alive, built) {
+	let { state, baseMeta, heldByDoiKey } = built;
+	let status = (text) => {
+		if (alive()) send(entry, 'zgSetStatus', text);
+	};
+	let toLookUp = lookupKeys(built);
 
 	let metaCache = await MetadataCache.forProfile().load();
 	status(`Looking up ${toLookUp.length} works…`);
@@ -345,20 +427,49 @@ async function runBuild(tabID) {
 	await metaCache.flush();
 	if (!alive()) return;
 
-	metadata = enriched.metadata;
-	heldCounts = Object.create(null);
+	state.metadata = enriched.metadata;
+	state.heldCounts = Object.create(null);
 	for (let [doiKey, itemKey] of heldByDoiKey) {
 		let m = enriched.metadata[doiKey];
-		if (m && m.citedByGlobal != null) heldCounts[itemKey] = m.citedByGlobal;
+		if (m && m.citedByGlobal != null) state.heldCounts[itemKey] = m.citedByGlobal;
 	}
 
-	push(edges, { phase: 'done', ...baseMeta, enrich: enriched.meta });
+	pushData(entry, state, { phase: 'done', ...baseMeta, enrich: enriched.meta });
 	Zotero.debug(`[zotero-graph] enrich -> ${enriched.meta.resolved}/${enriched.meta.requested}`
 		+ ` named (${enriched.meta.fromCache} cached) in ${enriched.meta.ms}ms`);
 	for (let err of enriched.meta.errors) {
 		Zotero.logError(new Error(`[zotero-graph] enrich ${err.provider}: ${err.message}`));
 	}
 	status('');
+}
+
+/**
+ * Assemble one payload and send it. Every push goes through here, so a pass
+ * that re-sends a graph it did not derive sends exactly what the build that
+ * derived it would have sent.
+ */
+function pushData(entry, state, meta) {
+	let { collection, options } = entry;
+	// External nodes are recomputed over the combined edge list rather than
+	// carried from each build: a work found by both text-doi and pdf-links is
+	// one node cited once, not two.
+	let external = options.includeExternal
+		? cg.collectExternalNodes(state.edges, k => state.inCollection.has(k))
+			.slice(0, MAX_EXTERNAL_NODES)
+			.map(x => toWireExternal(x, state.metadata[x.key]))
+		: [];
+	send(entry, 'zgSetData', {
+		collection: { key: collection.key, name: collection.name },
+		options,
+		// citedByGlobal is folded in rather than carried on the item objects
+		// themselves, so the adapter's output stays exactly what the CLI sees.
+		items: state.items.map(it => (state.heldCounts[it.key] != null
+			? { ...it, citedByGlobal: state.heldCounts[it.key] }
+			: it)),
+		external,
+		edges: state.edges.map(toWireEdge),
+		meta,
+	});
 }
 
 /**
@@ -546,4 +657,9 @@ function closeAll() {
 	open_.clear();
 }
 
-module.exports = { open, closeAll, closeAllInWindow, mergeEdges, toWireExternal };
+module.exports = {
+	open, closeAll, closeAllInWindow, mergeEdges, toWireExternal,
+	// Exported for the payload test: what a lookup pass may and may not change
+	// about the graph on screen is the whole reason it is not a rebuild.
+	pushData,
+};
