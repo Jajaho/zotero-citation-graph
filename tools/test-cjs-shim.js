@@ -691,6 +691,15 @@ class FakeElement {
 		this.removed = false;
 		this.listeners = {};
 		if (localName === 'item-details') this.render = () => onRender(this);
+		// Core's sidenav starts disabled and is told when something is being
+		// viewed; record the telling so a check can insist it happened.
+		if (localName === 'item-pane-sidenav') {
+			this.defaultStatus = true;
+			this.toggleDefaultStatus = (val) => {
+				this.defaultStatus = val;
+				this.toldWhileContainerWas = this.container;
+			};
+		}
 		made.push(this);
 	}
 
@@ -933,6 +942,16 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (details.tabID !== 'tab-7') throw new Error('tabID: ' + details.tabID);
 	if (details.tabType !== 'graph') throw new Error('tabType: ' + details.tabType);
 	if (details.sidenav !== sidenav) throw new Error('the sidenav was not attached');
+	// A sidenav starts with every button disabled -- 60% opacity and no pointer
+	// events -- until something says an item is being viewed. Nothing says it
+	// for a graph tab, so this has to.
+	if (sidenav.defaultStatus !== false) throw new Error('the sidenav was left greyed out');
+	// And said before the container was attached, which is the order
+	// contextPane.js uses: render() no-ops until there is a container, so the
+	// strip is drawn once and drawn already enabled.
+	if (sidenav.toldWhileContainerWas !== undefined) {
+		throw new Error('the sidenav was enabled after its container was set');
+	}
 	if (details.item.id !== 11) throw new Error('the item never arrived');
 	if (details.editable !== true) throw new Error('an editable library came out read-only');
 

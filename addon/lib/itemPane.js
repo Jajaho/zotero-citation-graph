@@ -193,6 +193,24 @@ function ensurePane(entry) {
 	// sections it has.
 	details.tabID = entry.tabID;
 	details.tabType = 'graph';
+	// A sidenav starts every one of its buttons disabled: init() ends with
+	// toggleDefaultStatus(true), and it waits to be told that something is
+	// actually being viewed. Core's <item-pane> tells its own from
+	// _handleViewTypeChange, and contextPane.js tells the reader's the same way
+	// this does -- but a graph tab has neither, so the strip sat there at 60%
+	// opacity with pointer-events: none, which is to say present and inert.
+	//
+	// Before the container is set, which is contextPane.js's order: render()
+	// returns early while there is no container, so the strip is drawn exactly
+	// once, by the assignment below, and drawn already enabled.
+	//
+	// Guarded because this call only decides whether the buttons are greyed. It
+	// is the one thing here that can be missing without the pane itself being
+	// wrong, and losing the whole item pane over a cosmetic state would be a
+	// poor trade.
+	if (typeof sidenav.toggleDefaultStatus === 'function') {
+		sidenav.toggleDefaultStatus(false);
+	}
 	details.sidenav = sidenav;
 
 	entry.itemPane = {
