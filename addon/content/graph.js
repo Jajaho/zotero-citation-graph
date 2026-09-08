@@ -954,6 +954,8 @@
 			// A settle sheds its alpha tick by tick and ends when the engine
 			// stops -- see settle().
 			fg.onEngineTick(shed);
+			// Nothing to do at the end of an ordinary cooldown; this is the
+			// safety net for a settle whose shed never finishes. See settle().
 			fg.onEngineStop(thaw);
 
 			// Every accessor below is a closure over live state and re-read on
@@ -986,9 +988,6 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('collide', collide());
-			// Last on purpose: it reads what every force before it has decided.
-			// See settle().
-			fg.d3Force('glide', glide());
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
 			// endpoint resolution all belong to that force.
@@ -1046,9 +1045,9 @@
 		drawnRadii = radii;
 		drawnNodes = nodes;
 
-		// A settle holds the layout as it stood; anything that reheats the graph
-		// outgrows that freeze and has to lift it first, or it would lay the
-		// graph out around a hundred nodes nailed to their old positions.
+		// A settle fixes the graph for a frame or two; a reheat landing inside
+		// that window has to lift the freeze first, or it would lay the graph
+		// out around a hundred nodes nailed to their old positions.
 		if (movedStructure || movedRadii) thaw();
 
 		if (movedStructure) {
@@ -1636,59 +1635,45 @@
 		delete n.fx;
 		delete n.fy;
 		repaint();
-		settle(n);
+		settle();
 	}
 
 	/**
-	 * Let one node fall back into the layout, and nothing else move.
+	 * Let go of a node the way a drag lets go of one.
 	 *
 	 * An unpinned node used to keep the coordinates it was pinned at until
 	 * something else stirred the simulation, so "Unpin node" looked like it had
-	 * done nothing at all -- the ring came off and the node stayed exactly where
-	 * it was. Reheating outright is the other extreme: alpha goes back to 1 and
-	 * the whole graph re-anneals around the one node the user let go of.
+	 * done nothing at all: the ring came off and the graph stood still.
 	 *
-	 * So the graph is held still and the released node is not. Every other node
-	 * is fixed where it stands, and the free node makes its way to the place its
-	 * edges and its neighbours' radii want it. d3 discards the velocity of a
-	 * fixed node on every tick, so nothing else can move however hard the forces
-	 * push at it, and the layout the user arranged comes out of this identical
-	 * apart from the one node that was asked to rejoin it.
+	 * What it should do instead is settled by what a pin IS. A pinned node was
+	 * dragged to where it sits, with the simulation running and the whole
+	 * neighbourhood moving to accommodate it, exactly as for any other drag --
+	 * the pin only keeps it there afterwards. So at the moment the pin comes off
+	 * the graph is in the same state a drop leaves behind, and there is nothing
+	 * to invent: unpinning IS the drop, and the right behaviour is the one the
+	 * user already knows from dropping a node.
 	 *
-	 * WHY THIS IS NOT SIMPLY A RELEASE INTO THE SIMULATION, which is what a
-	 * dropped node gets. The two look nothing alike, and the difference is not
-	 * energy but distance. Dragging a node runs the simulation the whole time it
-	 * is held: every tick, the neighbourhood moves a little further towards
-	 * accommodating wherever the pointer has put it. By the time the button
-	 * comes up the layout has already agreed with the node's position, the net
-	 * force on it is close to nothing, and it barely moves -- which is exactly
-	 * why a drop looks calm. A pinned node is the opposite case by definition:
-	 * it is pinned BECAUSE the forces disagree with where it is, and the
-	 * disagreement has been standing for as long as the pin has. Handing all of
-	 * it to the node as acceleration, with d3's light damping carrying 70% of
-	 * the velocity into the next tick, is a slingshot -- at the default link
-	 * pull it overshoots by a tenth to a quarter of the distance it travelled,
-	 * and then swings back.
+	 * That means the whole graph relaxes, not just the released node. It is
+	 * tempting to fix everything else in place first -- taking one pin out is a
+	 * small thing to reshuffle a layout for -- but a freeze is what makes the
+	 * two gestures look different rather than alike. A drop shares the strain:
+	 * the node moves part of the way and its neighbours move to meet it, which
+	 * is why a drop is a small settling motion rather than one node travelling.
+	 * Freeze them and the same force has one body to move instead of a dozen,
+	 * against anchors that never give ground -- so the node goes further, faster,
+	 * and the neighbours it displaced never answer at all.
 	 *
-	 * So the node is never given momentum. It stays fixed and is WALKED home:
-	 * glide() runs last in the force chain, reads the push the other forces have
-	 * accumulated on it this tick -- link, charge, centre pull and collision,
-	 * all of them -- and steps fx/fy along it. Nothing is carried into the next
-	 * tick, so the step shrinks as the disagreement does; the node decelerates
-	 * into its place instead of sailing past it, and cannot overshoot at any
-	 * stiffness. The pin comes off at the end, on a node already at rest where
-	 * the forces stopped pushing.
-	 *
-	 * Alpha still sets the pace, because the push is scaled by it, and
-	 * d3ReheatSimulation() -- the only way into the engine from out here -- sets
-	 * it to 1. At 1 a well-connected node covers half its distance in a single
-	 * tick, which reads as a jump rather than a move. So the settle sheds alpha
-	 * down to a drop's before it starts walking: the graph, including the node,
-	 * stays fixed for the first couple of ticks while alphaDecay is turned right
-	 * up, so those ticks cost alpha and nothing else. Decay is then set to zero
-	 * for the rest of the walk -- with only one node free to move there is
-	 * nothing for a cooling schedule to protect, and a steady alpha is what
-	 * makes the approach an even glide rather than a lunge that stalls.
+	 * All this needs, then, is a drop's energy. force-graph drags at an alpha
+	 * TARGET of 0.3, so a dropped node is released into an alpha of about that.
+	 * The only way into the engine from out here is d3ReheatSimulation(), which
+	 * sets alpha to 1 -- and alpha scales the link, charge and centre-pull
+	 * forces, so reheating outright throws the graph around with three times a
+	 * drop's push. There is no alpha setter on the public API, so the settle
+	 * sheds the difference instead: the graph is fixed where it stands for the
+	 * couple of ticks it takes alphaDecay, turned right up, to halve alpha down
+	 * to a drop's, and then let go all at once. Nothing moves during the shed --
+	 * every node is fixed, including the one being released -- so those two
+	 * frames are invisible, and what follows is an ordinary drop.
 	 */
 
 	// force-graph's own d3AlphaTarget while a node is being dragged, and so the
@@ -1696,119 +1681,57 @@
 	const DROP_ALPHA = 0.3;
 
 	// Alpha is multiplied by (1 - decay) per tick, so this sheds it in halves:
-	// two ticks take 1 down to 0.25, which is a drop's push and a frame or two
-	// of a frozen graph.
+	// two ticks take 1 down to 0.25.
 	const SHED_DECAY = 0.5;
 	const SHED_TICKS = Math.ceil(Math.log(DROP_ALPHA) / Math.log(1 - SHED_DECAY));
 
-	// A step smaller than this is a node that has arrived. In graph units, where
-	// the smallest node on screen has a radius of NODE_REL_SIZE: a fortieth of
-	// that, per tick.
-	const GLIDE_EPSILON = 0.1;
-
-	// The walk is capped in case a node never reaches that -- one held between
-	// several disagreeing neighbours can creep indefinitely -- because the whole
-	// graph is frozen until it ends. Two seconds at 60fps.
-	const SETTLE_TICKS = 120;
-
-	// Held still for a settle, and not by the user. isPinned() has to see
-	// through this, or the whole graph would wear pin rings for a second.
+	// Fixed for the length of the shed, and not by the user. isPinned() has to
+	// see through this, or every node would wear a pin ring for those two frames.
 	let frozen = new Set();
 
-	// The node being walked home, how much of the alpha shed is left before the
-	// walk starts, and the alpha decay the graph runs at when nothing is being
-	// settled.
-	let settling = null;
+	// Ticks of shed left to run, and the alpha decay the graph runs at when it
+	// is not shedding.
 	let shedLeft = 0;
 	let settleDecay = null;
 
-	function settle(n) {
+	function settle() {
 		if (!fg) return;
 		thaw();
-		// n is frozen along with the rest: it is walked by glide(), not released,
-		// and until the shed is done it has to stand as still as they do.
-		for (let other of drawnNodes) {
-			if (other.fx != null || other.fy != null) continue;
-			other.fx = other.x;
-			other.fy = other.y;
-			frozen.add(other);
+		for (let n of drawnNodes) {
+			if (n.fx != null || n.fy != null) continue;
+			n.fx = n.x;
+			n.fy = n.y;
+			frozen.add(n);
 		}
-		// Not a node on screen, so there is nothing to settle -- and nothing that
-		// would ever lift the freeze just laid down.
-		if (!frozen.has(n)) {
-			thaw();
-			return;
-		}
-		settling = n;
+		if (!frozen.size) return;
 		shedLeft = SHED_TICKS;
 		settleDecay = fg.d3AlphaDecay();
-		fg.d3AlphaDecay(SHED_DECAY).cooldownTicks(SETTLE_TICKS).d3ReheatSimulation();
-	}
-
-	/**
-	 * The walk, as a force, so that it runs inside the tick with the push the
-	 * other forces have just worked out still on the node. Registered last: what
-	 * it reads out of vx/vy is every other force's say, added up.
-	 *
-	 * d3 zeroes a fixed node's velocity in the position pass -- after all the
-	 * forces have run -- so vx/vy is this tick's push and nothing carried over
-	 * from the last one. That is the whole trick: stepping fx along it is a move
-	 * with no momentum behind it.
-	 */
-	function glide() {
-		function force() {
-			let n = settling;
-			// Nothing walks during the shed; those ticks are for alpha alone.
-			if (!n || shedLeft > 0) return;
-			n.fx += n.vx;
-			n.fy += n.vy;
-			if (n.vx * n.vx + n.vy * n.vy < GLIDE_EPSILON * GLIDE_EPSILON) arrived(n);
-		}
-		force.initialize = () => {};
-		return force;
-	}
-
-	/**
-	 * The node is where the forces stopped pushing, so the pin can come off: it
-	 * is at rest in its own equilibrium and will not drift. Ending the countdown
-	 * hands the rest of the graph back through thaw(), which is the engine's own
-	 * stop handler.
-	 */
-	function arrived(n) {
-		settling = null;
-		frozen.delete(n);
-		delete n.fx;
-		delete n.fy;
-		fg.cooldownTicks(0);
+		fg.d3AlphaDecay(SHED_DECAY).d3ReheatSimulation();
 	}
 
 	/**
 	 * One tick of the shed, counted rather than watched, because alpha cannot be
 	 * read back from out here -- which comes to the same thing, since the decay
-	 * is fixed and the starting alpha is always 1. When it runs out the walk
-	 * begins, at a steady alpha.
+	 * is fixed and the starting alpha is always 1. When the count runs out the
+	 * graph is handed back, and from there this is a drop: alpha decaying from
+	 * 0.3-ish to nothing over the engine's ordinary cooldown, every node free.
 	 */
 	function shed() {
-		if (!settling || shedLeft === 0 || --shedLeft > 0) return;
-		fg.d3AlphaDecay(0);
+		if (!shedLeft || --shedLeft > 0) return;
+		thaw();
 	}
 
-	/** Give the graph its freedom back. Idempotent, and the engine's own stop
-	 *  handler, so an ordinary cooldown ending simply finds nothing to do. */
+	/** Give the graph its freedom back, and its cooling schedule. Idempotent,
+	 *  and the engine's stop handler too, so a settle cannot outlive the run it
+	 *  was started for. */
 	function thaw() {
-		if (fg) {
-			fg.cooldownTicks(Infinity);
-			if (settleDecay !== null) fg.d3AlphaDecay(settleDecay);
-		}
-		settling = null;
+		if (fg && settleDecay !== null) fg.d3AlphaDecay(settleDecay);
 		shedLeft = 0;
 		settleDecay = null;
 		if (!frozen.size) return;
-		// A node still on its way is in here too, so this frees it along with the
-		// rest -- wherever it had got to, which is where it stays.
-		for (let other of frozen) {
-			delete other.fx;
-			delete other.fy;
+		for (let n of frozen) {
+			delete n.fx;
+			delete n.fy;
 		}
 		frozen.clear();
 	}
