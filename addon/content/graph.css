@@ -149,7 +149,8 @@ body {
 	margin-left: auto;
 }
 
-#min-cites {
+#min-cites,
+#isolate-depth {
 	width: 4em;
 }
 
@@ -175,8 +176,7 @@ body {
 	white-space: nowrap;
 }
 
-#conf-label,
-#depth-label {
+#conf-label {
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -186,16 +186,14 @@ body {
 /* Every slider gives the track whatever the label and the readout leave: a
    range input's default width would otherwise push the panel wider. */
 #min-conf,
-#link-pull,
-#isolate-depth {
+#link-pull {
 	flex: 1 1 60px;
 	width: auto;
 	min-width: 40px;
 }
 
 #conf-value,
-#pull-value,
-#isolate-depth-value {
+#pull-value {
 	font-variant-numeric: tabular-nums;
 	min-width: 3.2ch;
 }

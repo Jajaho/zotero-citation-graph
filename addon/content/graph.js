@@ -103,7 +103,6 @@
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
 	let elIsolateDepth = el('isolate-depth');
-	let elDepthValue = el('isolate-depth-value');
 	let elReframe = el('reframe');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
@@ -2692,8 +2691,10 @@
 	 * node moves while you widen or narrow what is lit.
 	 */
 	function applyIsolateDepth() {
-		isolateDepth = Math.max(1, Number(elIsolateDepth.value) || 1);
-		elDepthValue.textContent = String(isolateDepth);
+		// A number box hands back whatever is in it -- a half-typed value, a
+		// blank, or a number restored from a future build -- so the clamp a
+		// range input did for us is ours to do here.
+		isolateDepth = Math.min(4, Math.max(1, Math.round(Number(elIsolateDepth.value)) || 1));
 		litCache = null;
 		repaint();
 	}
@@ -2701,9 +2702,18 @@
 	elIsolateDepth.addEventListener('input', () => {
 		applyIsolateDepth();
 		try {
-			window.localStorage.setItem(DEPTH_KEY, elIsolateDepth.value);
+			// The clamped depth, not the box: what gets stored is what was acted
+			// on, so a reopened graph never shows a number it is not using.
+			window.localStorage.setItem(DEPTH_KEY, String(isolateDepth));
 		}
 		catch (e) { /* no persistence, no problem */ }
+	});
+
+	// Typing is left alone until it is finished -- rewriting the box on every
+	// keystroke would stop you clearing it to type another number -- and then
+	// the box is put back in step with the depth in force.
+	elIsolateDepth.addEventListener('change', () => {
+		if (elIsolateDepth.value !== String(isolateDepth)) elIsolateDepth.value = String(isolateDepth);
 	});
 
 	/**
@@ -2797,6 +2807,9 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyIsolateDepth();
+	// A number box keeps a stored value its own min/max would reject, so the
+	// clamp above has to be written back before it is ever read as the truth.
+	elIsolateDepth.value = String(isolateDepth);
 
 	syncEnabled();
 }());
