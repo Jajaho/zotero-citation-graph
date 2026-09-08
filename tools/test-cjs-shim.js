@@ -1697,6 +1697,31 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
 });
 
 /**
+ * Zotero's --material-* border variables hold a whole shorthand -- panedivider
+ * is "1px solid var(--color-panedivider)", not a colour -- so wrapping one in
+ * another shorthand produces "1px solid 1px solid #dadada", which the parser
+ * throws away. The rule then does nothing, silently, and a missing hairline is
+ * exactly the kind of thing you stop seeing after the third look at a
+ * screenshot. Both mistakes below shipped.
+ */
+check('a Zotero border variable is used as the shorthand it is', () => {
+	for (const name of ['splitPane.js', 'readerPane.js', 'itemPane.js']) {
+		const src = fs.readFileSync(path.join(addonDir, 'lib', name), 'utf8')
+			// Comments talk about the wrong version on purpose.
+			.replace(/\/\*[\s\S]*?\*\//g, '');
+		for (const m of src.matchAll(/([\w-]+)\s*:\s*([^;\n]*var\(--material-(?:panedivider|border-[\w-]+)\)[^;\n]*)/g)) {
+			const [, prop, value] = m;
+			if (/\d|solid|dashed|none/.test(value.replace(/var\([^)]*\)/g, ''))) {
+				throw new Error(name + ': ' + prop + ' nests a border shorthand -- ' + value.trim());
+			}
+			if (!/^border(-(top|right|bottom|left))?$/.test(prop)) {
+				throw new Error(name + ': ' + prop + ' is not a border, and the variable is one');
+			}
+		}
+	}
+});
+
+/**
  * A flag has to take its press before the two layers underneath it do: d3-zoom
  * reads a left drag on the canvas as a pan, and force-graph raises a background
  * click on the way up that gives the whole graph back. Registered in the bubble

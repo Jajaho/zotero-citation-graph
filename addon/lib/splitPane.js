@@ -62,13 +62,19 @@ const DEFAULT_WIDTH = 520;
 const TOGGLE_WIDTH = 18;
 
 const PANE_CSS = `
-	.zg-pane-splitter {
-		width: 4px;
-		border: none;
-		background: var(--material-panedivider);
-	}
-	/* The divider stays put when the panel is hidden -- it is what the way back
-	   sits beside -- but it has nothing to resize. */
+	/*
+	 * No styling of its own. Core already gives every <splitter> its line and its
+	 * grab width -- --draggable-size, a border-left of
+	 * var(--material-border-quarternary), and the negative margins that let that
+	 * line sit between its neighbours -- and matching Zotero's other dividers is
+	 * the whole point. What was here before did nothing anyway: both
+	 * --material-panedivider and --material-border-quarternary are border
+	 * SHORTHANDS, not colours, so a background of var(--material-panedivider)
+	 * resolved to "1px solid #dadada" and was dropped as invalid.
+	 *
+	 * The divider stays put when the panel is hidden -- it is what the way back
+	 * sits beside -- but it has nothing left to resize.
+	 */
 	.zg-pane-splitter[data-zg-collapsed] {
 		pointer-events: none;
 	}
@@ -108,29 +114,40 @@ const PANE_CSS = `
 	 * children at all, which is why core's own <grippy> elements inside splitters
 	 * render nothing.
 	 *
-	 * Two rules keep the join clean, and both matter only once there is a hover
-	 * colour to make a seam visible:
+	 * A right offset of 100% rather than a negative left one: it says "my right
+	 * edge is the panel's left edge" without depending on the button's own width,
+	 * its border or its box-sizing, all of which have been wrong here at least
+	 * once.
 	 *
-	 *   box-sizing   this is an HTML <button>, so it is content-box by default
-	 *                and the border would put 2px of it back OVER the panel --
-	 *                the left offset above is a border-box number.
-	 *   no right border, no right radius
-	 *                the edge it meets is the panel's own. A line there would be
-	 *                a doubled one, and a rounded corner would leave a notch of
-	 *                panel showing through the tab hanging off it.
+	 * The background must be OPAQUE, in both states. It is 18px of window with
+	 * three different things behind it -- the graph, the divider, the panel edge
+	 * -- and the hover fill used to be var(--fill-quinary) on its own, which is
+	 * rgba(0,0,0,.05): every seam behind the button showed through it as a grey
+	 * block glued to the button's side. Layering the same fill over the panel's
+	 * own colour gives the identical shade with nothing showing through.
+	 *
+	 * No right border and no right radius: the edge it meets is the panel's own.
+	 * A line there would be a doubled one, and a rounded corner would leave a
+	 * notch of panel showing through the tab hanging off it.
 	 */
 	.zg-pane-toggle {
 		position: absolute;
 		top: 50%;
-		left: -${TOGGLE_WIDTH}px;
+		right: 100%;
 		transform: translateY(-50%);
 		z-index: 2;
 		appearance: none;
+		/* An HTML <button> is content-box by default, and the offset above is a
+		   border-box promise. */
 		box-sizing: border-box;
 		width: ${TOGGLE_WIDTH}px;
 		height: 56px;
 		padding: 0;
-		border: 1px solid var(--material-panedivider);
+		/* The variable IS the shorthand -- it expands to 1px solid
+		   var(--color-panedivider). Writing "1px solid var(--material-panedivider)"
+		   nests one shorthand in another, which is invalid, and an invalid border
+		   declaration is no border at all. */
+		border: var(--material-panedivider);
 		border-right: none;
 		border-radius: 5px 0 0 5px;
 		background: var(--material-sidepane);
@@ -139,7 +156,8 @@ const PANE_CSS = `
 		line-height: 1;
 	}
 	.zg-pane-toggle:hover {
-		background: var(--fill-quinary);
+		background: linear-gradient(var(--fill-quinary), var(--fill-quinary))
+			var(--material-sidepane);
 		color: var(--fill-primary);
 	}
 `;

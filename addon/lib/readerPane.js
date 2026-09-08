@@ -48,7 +48,10 @@ const PANE_CSS = `
 		align-items: flex-start;
 		gap: 2px;
 		padding: 3px 4px 3px 8px;
-		border-bottom: 1px solid var(--material-panedivider);
+		/* The variable is the whole shorthand, width and style included. Wrapping
+		   it in another one is invalid, and the header spent a while with no rule
+		   under it because of that. */
+		border-bottom: var(--material-panedivider);
 		background: var(--material-toolbar);
 		font-size: 11px;
 	}
