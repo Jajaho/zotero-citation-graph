@@ -45,8 +45,13 @@ body {
 	z-index: 9;
 	width: 220px;
 	max-width: calc(100% - 20px);
-	/* Never taller than the window, however many strategies turn up. */
-	max-height: calc(100% - 20px);
+	/* Never taller than the window, however many strategies turn up -- and it
+	   stops short of the bottom strip, which belongs to the reframe button and
+	   the status line. The panel outranks both in z-order, so a panel tall
+	   enough to reach the corner would swallow the one control that gets a lost
+	   viewport back. #panel-body scrolls, so this costs nothing but a scrollbar
+	   36px earlier. */
+	max-height: calc(100% - 46px);
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--border);
@@ -468,13 +473,40 @@ body {
 	inset: 0;
 }
 
-/* Bottom-left rather than centred: it reports build progress while a partial
-   graph is already on screen, so it must not sit on top of the nodes. */
-#status {
+/* Bottom left, under the panel and opposite the legend. Square and icon-only:
+   it is one action, it is pressed while reading the graph rather than while
+   configuring it, and a word here would be a word of chrome over the nodes. */
+#reframe {
 	position: absolute;
 	left: 10px;
 	bottom: 8px;
-	max-width: calc(100% - 20px);
+	z-index: 8;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+	color: var(--fg);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+#reframe:hover {
+	background: var(--bg);
+}
+
+/* Bottom-left rather than centred: it reports build progress while a partial
+   graph is already on screen, so it must not sit on top of the nodes. Beside
+   the reframe button, not over it -- the button is there the whole time and
+   this line only while a build runs. */
+#status {
+	position: absolute;
+	left: 42px;
+	bottom: 8px;
+	max-width: calc(100% - 52px);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

@@ -28,15 +28,18 @@
 					subcollections
 				</label>
 				<label title="Show cited works that are not in the collection">
-					<input id="include-external" type="checkbox" checked="checked"/>
+					<input id="include-external" type="checkbox"/>
 					outside refs
 				</label>
 				<label id="min-cites-label" title="Hide outside works cited by fewer than this many of your papers">
 					cited by ≥
 					<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
 				</label>
-				<!-- The only control that reaches the network. Off by default. -->
-				<label id="enrich-label" title="Look up titles, authors and citation counts for outside works (uses the OpenAlex API)">
+				<!-- The only control that reaches the network. Off by default,
+				     and independent of "outside refs": with ghosts off it still
+				     has the held items' own DOIs to look up, which is where the
+				     global citation counts come from. -->
+				<label id="enrich-label" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
 					<input id="enrich" type="checkbox"/>
 					look up names
 				</label>
@@ -54,7 +57,10 @@
 					</select>
 				</label>
 				<!-- Applies to outside refs as well as held items. "global citations"
-				     needs "look up names" on, or nothing has a count to size by. -->
+				     needs the counts "look up names" fetches, so picking it switches
+				     that on and rebuilds rather than sitting there greyed out: the
+				     user asked for the sizing, not for a lecture about a prerequisite.
+				     The lookup is still never entered on its own. -->
 				<label>
 					size
 					<select id="size-by">
@@ -124,6 +130,11 @@
 		</button>
 		<div id="legend-body"></div>
 	</div>
+
+	<!-- Bottom left, the corner nothing else claims: after dragging a node off
+	     screen, or a rebuild that lands a bigger graph than the viewport, there
+	     was no way back short of scrolling around hunting for the nodes. -->
+	<button id="reframe" type="button" title="Fit the whole graph in view" aria-label="Fit the whole graph in view">⤢</button>
 
 	<!-- Outside #graph deliberately: force-graph's init() does
 	     container.innerHTML = "", which would delete anything nested inside.

@@ -85,6 +85,7 @@
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
+	let elReframe = el('reframe');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
 	let elLegend = el('legend');
@@ -1002,10 +1003,12 @@
 	 *
 	 *  cited here      in-degree: how many papers in THIS collection cite it.
 	 *                  The default, and the reason the graph is directed at all.
-	 *  global citations how often the whole literature cites it. Needs "look up
-	 *                  names" on. Area is proportional to the count up to the
-	 *                  95th percentile of what is on screen, then logarithmic
-	 *                  above it, so one landmark paper cannot flatten the rest.
+	 *  global citations how often the whole literature cites it. Switches "look
+	 *                  up names" on when picked, because that is where the
+	 *                  counts come from. Area is proportional to the count up
+	 *                  to the 95th percentile of what is on screen, then
+	 *                  logarithmic above it, so one landmark paper cannot
+	 *                  flatten the rest.
 	 *
 	 * The curve itself lives in nodeScale.js, which is pure and unit-tested --
 	 * the first version of this drew a 4,000-citation paper the same size as a
@@ -1742,21 +1745,20 @@
 	// --- controls ---------------------------------------------------------
 
 	function syncEnabled() {
+		// "cited by ≥" is a filter over outside refs and has nothing to act on
+		// without them. "look up names" is NOT gated the same way: with ghosts
+		// off it still resolves the held items' own DOIs, and those counts are
+		// what "global citations" sizes the whole graph by.
 		let on = elIncludeExternal.checked;
 		elMinCites.disabled = !on;
-		elEnrich.disabled = !on;
 		el('min-cites-label').classList.toggle('disabled', !on);
-		el('enrich-label').classList.toggle('disabled', !on);
 
-		// Nothing has a global count until the lookup has run, so offering to
-		// size by one would just flatten every node to the same dot.
-		let haveCounts = !!(raw && raw.options && raw.options.enrich);
-		let globalOpt = elSizeBy.querySelector('option[value="global"]');
-		globalOpt.disabled = !haveCounts;
-		globalOpt.textContent = haveCounts
-			? 'global citations'
-			: 'global citations (needs look up names)';
-		if (!haveCounts && elSizeBy.value === 'global') elSizeBy.value = 'here';
+		// Nothing has a global count until the lookup has run, so sizing by one
+		// after switching the lookup back off would flatten every node to the
+		// same "unknown" dot. Keyed off the checkbox rather than the last
+		// payload: while a lookup rebuild is in flight the counts are on their
+		// way, and the mode the user just picked has to survive the wait.
+		if (!elEnrich.checked && elSizeBy.value === 'global') elSizeBy.value = 'here';
 	}
 
 	/** Scope changes cannot be filtered into existence -- they need a new build. */
@@ -1793,6 +1795,15 @@
 	// Size changes node radii, which the collision force sizes its grid from --
 	// re-registering it is what makes it pick the new radii up.
 	elSizeBy.addEventListener('change', () => {
+		// Picking "global citations" IS the request for the counts it needs, so
+		// it fetches them instead of refusing to be picked until someone finds
+		// the checkbox that would have allowed it. The graph rescales itself
+		// when the lookup lands; until then every node is the same unknown dot,
+		// which is what the status line is reporting on.
+		if (elSizeBy.value === 'global' && !elEnrich.checked) {
+			elEnrich.checked = true;
+			requestRebuild();
+		}
 		render();
 		if (fg) fg.d3Force('collide', collide()).d3ReheatSimulation();
 	});
@@ -1800,6 +1811,29 @@
 		elHideIsolated.dataset.touched = '1';
 		render();
 	});
+
+	/**
+	 * Put the whole graph back in view.
+	 *
+	 * Nothing else can do this: the layout wanders as later build phases add
+	 * edges, dragging a node pans nothing, and a graph built at one zoom can
+	 * land far outside the viewport of the next. force-graph's zoomToFit works
+	 * off the node bounding box, which accounts for node radii but not for the
+	 * labels we draw beside them, hence the margin.
+	 *
+	 * Proportional rather than fixed, because this runs in a Zotero pane as
+	 * well as a full tab, and 40px a side out of a 300px pane is a third of the
+	 * graph spent on nothing.
+	 */
+	const REFRAME_MS = 400;
+
+	function reframe() {
+		if (!fg) return;
+		let pad = Math.round(Math.min(40, Math.min(elGraph.clientWidth, elGraph.clientHeight) * 0.1));
+		fg.zoomToFit(REFRAME_MS, Math.max(8, pad));
+	}
+
+	elReframe.addEventListener('click', reframe);
 
 	// The panel floats over the canvas, so collapsing it does not resize the
 	// graph -- it just gives the nodes underneath back.

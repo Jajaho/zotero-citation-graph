@@ -49,9 +49,14 @@ const MAX_EXTERNAL_NODES = 4000;
 // Rebuild-triggering options. Everything else the toolbar offers is a filter
 // over an already-built graph and never comes back to chrome.
 //
-// `enrich` defaults to off: until this feature the plugin could not reach the
-// network at all, and that is not a property to drop silently.
-const DEFAULT_OPTIONS = { recursive: false, includeExternal: true, enrich: false };
+// All three default to off, and for the same reason in two different keys:
+// the cheapest, most literal reading of the collection is the one to open
+// with. `includeExternal` multiplies the node count by an order of magnitude
+// -- thousands of ghosts against a hundred held items -- so a first look at a
+// collection should be the papers you actually have. `enrich` is the only
+// thing here that touches the network at all, and that is not a property to
+// turn on for someone silently.
+const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
 // tabID -> { win, browser, split, pane, collection, generation, options }
 // `split` is the box holding the graph and, once opened, the reader pane;
@@ -299,29 +304,30 @@ async function runBuild(tabID) {
 	let external = options.includeExternal
 		? cg.collectExternalNodes(edges, k => inCollection.has(k))
 		: [];
-	push(edges, { phase: options.enrich && external.length ? 'edges' : 'done', ...baseMeta });
-	logMeta('pdf-links', pdfResult);
-
-	// --- phase 4: name the ghosts ---------------------------------------
-	// Last on purpose: it is the only network phase, it is optional, and a
-	// failure here must cost names and nothing else -- the graph is already
-	// on screen and correct by this point.
-	if (!options.enrich) {
-		status('');
-		return;
-	}
-
-	// Ghosts need a name; held items already have one and need only the global
-	// count, which is what makes "size by global citations" meaningful for the
-	// whole graph rather than half of it. Both are DOIs, so they go in one
-	// batched pass -- doiKey is the shared address space.
+	// What phase 4 will ask for, worked out before the push so the payload can
+	// say truthfully whether a lookup is still to come. Ghosts need a name;
+	// held items already have one and need only the global count, which is what
+	// makes "size by global citations" meaningful for the whole graph rather
+	// than half of it. Both are DOIs, so they go in one batched pass -- doiKey
+	// is the shared address space, and with outside refs off the held items are
+	// the whole of it.
 	let ghostKeys = external.slice(0, MAX_ENRICH).map(x => x.key);
 	let heldByDoiKey = new Map();
 	for (let it of items) {
 		let d = normDoi(it.doi);
 		if (d) heldByDoiKey.set(externalKey('doi', d), it.key);
 	}
-	let toLookUp = [...new Set([...ghostKeys, ...heldByDoiKey.keys()])];
+	let toLookUp = options.enrich
+		? [...new Set([...ghostKeys, ...heldByDoiKey.keys()])]
+		: [];
+
+	push(edges, { phase: toLookUp.length ? 'edges' : 'done', ...baseMeta });
+	logMeta('pdf-links', pdfResult);
+
+	// --- phase 4: name the ghosts ---------------------------------------
+	// Last on purpose: it is the only network phase, it is optional, and a
+	// failure here must cost names and nothing else -- the graph is already
+	// on screen and correct by this point.
 	if (!toLookUp.length) {
 		status('');
 		return;
