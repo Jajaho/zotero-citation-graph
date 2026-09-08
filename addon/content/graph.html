@@ -163,9 +163,27 @@
 		</div>
 	</div>
 
-	<!-- The node context menu, built per node in graph.js. A sibling for the
-	     same reason as the two above. -->
+	<!-- The node context menu, and the canvas one. Built per node in graph.js.
+	     A sibling for the same reason as the two above. -->
 	<div id="menu" hidden="hidden"></div>
+
+	<!-- A group's card: the anchor's own filter box, opened by "Group here" on
+	     the canvas menu and by "Edit group" on a flag. It authors masks exactly
+	     as the panel's box does -- same chips, same completion list -- but
+	     these masks say what the anchor PULLS, not what the graph shows. -->
+	<div id="group" hidden="hidden">
+		<div id="group-title">Group here</div>
+		<div id="group-chips" hidden="hidden"></div>
+		<input id="group-input" type="text" autocomplete="off" spellcheck="false"
+			placeholder="what belongs here — author:, year:, …"
+			title="Type a term, or field:value. Filters stack: each one narrows what this anchor pulls."
+			role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
+		<div id="group-sub"></div>
+		<div id="group-buttons">
+			<button id="group-remove" type="button">Remove</button>
+			<button id="group-close" type="button">Done</button>
+		</div>
+	</div>
 
 	<!-- The filter box's completion list. Out here rather than under the box it
 	     completes, because #panel and #panel-body both clip: a twelve-row list

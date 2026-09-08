@@ -114,6 +114,10 @@
 	let elFilterChips = el('filter-chips');
 	let elFilterInput = el('filter-input');
 	let elSuggest = el('filter-suggest');
+	let elGroup = el('group');
+	let elGroupInput = el('group-input');
+	let elGroupChips = el('group-chips');
+	let elGroupSub = el('group-sub');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -466,25 +470,6 @@
 
 	// --- filter masks -----------------------------------------------------
 
-	/**
-	 * The masks currently laid down, oldest first. AND commutes, so the order
-	 * carries no meaning -- it is kept only so a chip does not jump around the
-	 * panel when another one is removed.
-	 */
-	let filters = [];
-
-	/**
-	 * Which chip the box is currently authoring, or -1 for none.
-	 *
-	 * A mask holds several values that OR, so building one is not a single
-	 * gesture: pick "Nature", then "Science", then "APL". Rather than make the
-	 * user finish the list before seeing anything, the chip is committed on the
-	 * first pick and then rewritten in place on every one after -- the graph
-	 * widens under the pointer as the list grows. This index is what says
-	 * "rewrite" instead of "add a second chip".
-	 */
-	let editing = -1;
-
 	/** A raw item in the shape nodeFilters.js matches against. */
 	function itemFacets(it) {
 		return Filters.facets({
@@ -495,112 +480,6 @@
 			collections: it.collections,
 			title: it.title,
 		});
-	}
-
-	/**
-	 * The held items surviving every mask, with their facets alongside -- the
-	 * graph needs the items and the completion list needs the facets, and
-	 * deriving them separately would mean two rules for what is visible.
-	 *
-	 * `skip` leaves one mask out. The completion list passes the chip being
-	 * edited, because that chip is about to be widened: constraining the
-	 * candidates by a mask whose terms OR would hide exactly the values the
-	 * user is reaching for. The graph itself skips nothing.
-	 *
-	 * Outside references are deliberately NOT masked here. A ghost is a DOI
-	 * and, with lookup on, a title; masking it on author or publication would
-	 * delete every one of them the moment any filter existed. Instead it keeps
-	 * the treatment it already had -- a ghost is drawn when a held item that
-	 * survived still cites it -- which makes "author:Kucsko" read as "his
-	 * papers, and what they cite".
-	 */
-	function masked(skip) {
-		let items = [];
-		let facets = [];
-		for (let it of raw.items) {
-			let f = itemFacets(it);
-			let ok = true;
-			for (let i = 0; i < filters.length && ok; i++) {
-				if (i !== skip && !Filters.matches(filters[i], f)) ok = false;
-			}
-			if (!ok) continue;
-			items.push(it);
-			facets.push(f);
-		}
-		return { items, facets };
-	}
-
-	/**
-	 * Whatever is in the box becomes a mask: a new chip, or the one being
-	 * edited rewritten in place.
-	 */
-	function commit() {
-		let f = Filters.parse(elFilterInput.value);
-		if (!f) return;
-		if (editing >= 0) {
-			filters[editing] = f;
-		}
-		else {
-			let k = Filters.key(f);
-			// Laying down a mask that is already down would look like the box
-			// swallowed the input. Edit the one that exists instead.
-			let same = filters.findIndex(x => Filters.key(x) === k);
-			editing = same >= 0 ? same : filters.push(f) - 1;
-		}
-		renderChips();
-		render();
-	}
-
-	/** The box is done with whatever it was authoring. The chip keeps every
-	 *  term that was committed; a half-typed one was never part of it. */
-	function endEdit() {
-		editing = -1;
-		elFilterInput.value = '';
-	}
-
-	function removeFilter(i) {
-		filters.splice(i, 1);
-		if (editing === i) endEdit();
-		else if (editing > i) editing--;
-		renderChips();
-		render();
-	}
-
-	/**
-	 * Put a chip back in the box with a trailing comma, ready for more values.
-	 * This is the only way to reach a value that the chip's own width has
-	 * clipped, and the only way to drop one value out of several.
-	 */
-	function editChip(i) {
-		editing = i;
-		elFilterInput.value = Filters.toInput(filters[i]) + ', ';
-		elFilterInput.focus();
-		refreshSuggest();
-	}
-
-	function renderChips() {
-		elFilterChips.textContent = '';
-		filters.forEach((f, i) => {
-			let chip = document.createElement('span');
-			chip.className = 'chip';
-			if (i === editing) chip.classList.add('editing');
-			let text = document.createElement('button');
-			text.type = 'button';
-			text.className = 'chip-text';
-			text.title = chipHint(f);
-			text.textContent = Filters.describe(f);
-			text.addEventListener('click', () => editChip(i));
-			let x = document.createElement('button');
-			x.type = 'button';
-			x.className = 'chip-x';
-			x.textContent = '✕';
-			x.title = 'Lift this mask';
-			x.addEventListener('click', () => removeFilter(i));
-			chip.appendChild(text);
-			chip.appendChild(x);
-			elFilterChips.appendChild(chip);
-		});
-		elFilterChips.hidden = !filters.length;
 	}
 
 	/** The chip is clipped to the panel width, so the long form -- every value,
@@ -620,27 +499,222 @@
 		return what + ' ' + bits.join(', or ') + '\nClick to edit';
 	}
 
+	/**
+	 * A stack of masks: the box that authors them, the chips that show them,
+	 * and the completion list they share.
+	 *
+	 * Two of these exist, and they differ in one thing only -- what the masks
+	 * are FOR. The panel's stack decides what is DRAWN; a group's decides what
+	 * that group's anchor PULLS. Every gesture in between is the same in both
+	 * places: commit the box into a chip, widen that chip with the next pick,
+	 * click a chip to edit it back into the box, backspace to lift the last
+	 * one. Which is why this is a factory rather than a second copy of it.
+	 *
+	 * An owner supplies its two elements, what to do when the stack changes,
+	 * and `candidates(skip)` -- the facets completions are drawn from, with one
+	 * mask left out because that is the one about to be widened.
+	 */
+	function filterBox({ input, chips, candidates, onChange }) {
+		/**
+		 * The masks currently laid down, oldest first. AND commutes, so the
+		 * order carries no meaning -- it is kept only so a chip does not jump
+		 * around when another one is removed.
+		 */
+		let filters = [];
+
+		/**
+		 * Which chip the box is currently authoring, or -1 for none.
+		 *
+		 * A mask holds several values that OR, so building one is not a single
+		 * gesture: pick "Nature", then "Science", then "APL". Rather than make
+		 * the user finish the list before seeing anything, the chip is
+		 * committed on the first pick and then rewritten in place on every one
+		 * after -- what the masks control widens under the pointer as the list
+		 * grows. This index is what says "rewrite" instead of "add a second
+		 * chip".
+		 */
+		let editing = -1;
+
+		let box = {
+			input,
+			filters: () => filters,
+			candidates: () => candidates(editing),
+			commit,
+			/** Take a stack this box did not author -- reopening a group's. */
+			load(fs) {
+				filters = fs.slice();
+				endEdit();
+				renderChips();
+			},
+		};
+
+		/**
+		 * Whatever is in the box becomes a mask: a new chip, or the one being
+		 * edited rewritten in place.
+		 */
+		function commit() {
+			let f = Filters.parse(input.value);
+			if (!f) return;
+			if (editing >= 0) {
+				filters[editing] = f;
+			}
+			else {
+				let k = Filters.key(f);
+				// Laying down a mask that is already down would look like the box
+				// swallowed the input. Edit the one that exists instead.
+				let same = filters.findIndex(x => Filters.key(x) === k);
+				editing = same >= 0 ? same : filters.push(f) - 1;
+			}
+			renderChips();
+			onChange();
+		}
+
+		/** The box is done with whatever it was authoring. The chip keeps every
+		 *  term that was committed; a half-typed one was never part of it. */
+		function endEdit() {
+			editing = -1;
+			input.value = '';
+		}
+
+		function removeFilter(i) {
+			filters.splice(i, 1);
+			if (editing === i) endEdit();
+			else if (editing > i) editing--;
+			renderChips();
+			onChange();
+		}
+
+		/**
+		 * Put a chip back in the box with a trailing comma, ready for more
+		 * values. This is the only way to reach a value that the chip's own
+		 * width has clipped, and the only way to drop one value out of several.
+		 */
+		function editChip(i) {
+			editing = i;
+			input.value = Filters.toInput(filters[i]) + ', ';
+			input.focus();
+			refreshSuggest(box);
+		}
+
+		function renderChips() {
+			chips.textContent = '';
+			filters.forEach((f, i) => {
+				let chip = document.createElement('span');
+				chip.className = 'chip';
+				if (i === editing) chip.classList.add('editing');
+				let text = document.createElement('button');
+				text.type = 'button';
+				text.className = 'chip-text';
+				text.title = chipHint(f);
+				text.textContent = Filters.describe(f);
+				text.addEventListener('click', () => editChip(i));
+				let x = document.createElement('button');
+				x.type = 'button';
+				x.className = 'chip-x';
+				x.textContent = '✕';
+				x.title = 'Lift this mask';
+				x.addEventListener('click', () => removeFilter(i));
+				chip.appendChild(text);
+				chip.appendChild(x);
+				chips.appendChild(chip);
+			});
+			chips.hidden = !filters.length;
+		}
+
+		input.addEventListener('input', () => refreshSuggest(box));
+		// On focus too, and with an empty box: with nothing typed the list is the
+		// only thing that says which fields exist at all.
+		input.addEventListener('focus', () => refreshSuggest(box));
+		// After the row's own mousedown, which fires first and may have accepted.
+		// Leaving the box ends the edit: everything committed is on the chip
+		// already, so there is nothing in the text worth keeping.
+		input.addEventListener('blur', () => window.setTimeout(() => {
+			hideSuggest();
+			if (editing >= 0) {
+				endEdit();
+				renderChips();
+			}
+		}, 0));
+
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				e.preventDefault();
+				if (elSuggest.hidden) refreshSuggest(box);
+				moveSuggest(e.key === 'ArrowDown' ? 1 : -1);
+				return;
+			}
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				// On a highlighted row, take it and stay on this mask -- the next
+				// Enter can add another value. On typed text, commit and be done.
+				if (suggestIndex >= 0) {
+					accept(suggestIndex);
+					return;
+				}
+				commit();
+				endEdit();
+				hideSuggest();
+				renderChips();
+				return;
+			}
+			if (e.key === 'Escape') {
+				// Inside a box, Escape belongs to the list first and then to the
+				// box, and must not reach the window handler past either. Once
+				// there is nothing left in here for it to close it is let
+				// through, so a card holding one of these can still be shut
+				// with the key that shuts everything else.
+				if (!elSuggest.hidden) {
+					e.stopPropagation();
+					hideSuggest();
+				}
+				else if (editing >= 0) {
+					e.stopPropagation();
+					endEdit();
+					renderChips();
+				}
+				else if (input.value) {
+					e.stopPropagation();
+					input.value = '';
+				}
+				return;
+			}
+			// Backspace on an empty box lifts the last mask -- the gesture everyone
+			// already has from every other chips-in-front-of-an-input there is.
+			if (e.key === 'Backspace' && !input.value && filters.length) {
+				removeFilter(filters.length - 1);
+			}
+		});
+
+		renderChips();
+		return box;
+	}
+
 	// --- the completion list ----------------------------------------------
 
 	// A list taller than this is a wall, not a menu.
 	const SUGGEST_MAX_PX = 240;
 
+	// One list, shared by every box there is: only one of them can hold the
+	// focus, and the list belongs to whichever that is.
+	let suggestBox = null;
 	let suggestions = [];
 	// -1 means nothing is highlighted, which is a state in its own right:
 	// Enter then commits whatever was typed rather than a row.
 	let suggestIndex = -1;
 
 	/**
-	 * Rebuild the list under the box.
+	 * Rebuild the list under a box.
 	 *
-	 * The candidates come from the items that survive the other masks, never
-	 * from the whole collection. That is what makes the list narrow as chips
-	 * stack, and it means anything offered here is guaranteed to leave
-	 * something on screen rather than emptying the graph.
+	 * The candidates come from what that box's owner says is available, never
+	 * from the whole collection -- for the panel, the items that survive its
+	 * other masks. That is what makes the list narrow as chips stack, and it
+	 * means anything offered there is guaranteed to leave something on screen
+	 * rather than emptying the graph.
 	 */
-	function refreshSuggest() {
+	function refreshSuggest(box) {
 		if (!raw) return;
-		suggestions = Filters.suggest(elFilterInput.value, masked(editing).facets);
+		suggestBox = box;
+		suggestions = Filters.suggest(box.input.value, box.candidates());
 		suggestIndex = -1;
 		elSuggest.textContent = '';
 		for (let i = 0; i < suggestions.length; i++) {
@@ -648,7 +722,7 @@
 		}
 		let open = suggestions.length > 0;
 		elSuggest.hidden = !open;
-		elFilterInput.setAttribute('aria-expanded', open ? 'true' : 'false');
+		box.input.setAttribute('aria-expanded', open ? 'true' : 'false');
 		// Only once it is visible: placing it needs its height.
 		if (open) placeSuggest();
 	}
@@ -662,7 +736,7 @@
 	 * so it can never run off the window.
 	 */
 	function placeSuggest() {
-		let r = elFilterInput.getBoundingClientRect();
+		let r = suggestBox.input.getBoundingClientRect();
 		let below = window.innerHeight - r.bottom - 8;
 		let above = r.top - 8;
 		let down = below >= above;
@@ -675,7 +749,7 @@
 	function hideSuggest() {
 		elSuggest.hidden = true;
 		suggestIndex = -1;
-		elFilterInput.setAttribute('aria-expanded', 'false');
+		if (suggestBox) suggestBox.input.setAttribute('aria-expanded', 'false');
 	}
 
 	function suggestRow(s, i) {
@@ -713,23 +787,24 @@
 
 	/**
 	 * Take a completion. A value is spliced into the box and committed at once,
-	 * so the chip and the graph both move on the first pick -- and the box is
-	 * left with a trailing comma and the list still open, so the pick after it
-	 * widens the same mask instead of starting a new one.
+	 * so the chip and whatever it controls both move on the first pick -- and
+	 * the box is left with a trailing comma and the list still open, so the
+	 * pick after it widens the same mask instead of starting a new one.
 	 */
 	function accept(i) {
 		let s = suggestions[i];
-		if (!s) return;
+		if (!s || !suggestBox) return;
+		let box = suggestBox;
 		// A field name is only half a filter. Put it in the box and let the
 		// list come straight back with that field's values.
 		if (s.insert) {
-			elFilterInput.value = s.insert;
-			refreshSuggest();
+			box.input.value = s.insert;
+			refreshSuggest(box);
 			return;
 		}
-		elFilterInput.value = Filters.spliceTerm(elFilterInput.value, s.field, s.term);
-		commit();
-		refreshSuggest();
+		box.input.value = Filters.spliceTerm(box.input.value, s.field, s.term);
+		box.commit();
+		refreshSuggest(box);
 	}
 
 	function moveSuggest(d) {
@@ -748,63 +823,50 @@
 	// than chase: it is one keystroke away from coming back.
 	el('panel-body').addEventListener('scroll', hideSuggest);
 
-	elFilterInput.addEventListener('input', refreshSuggest);
-	// On focus too, and with an empty box: with nothing typed the list is the
-	// only thing that says which fields exist at all.
-	elFilterInput.addEventListener('focus', refreshSuggest);
-	// After the row's own mousedown, which fires first and may have accepted.
-	// Leaving the box ends the edit: everything committed is on the chip
-	// already, so there is nothing in the text worth keeping.
-	elFilterInput.addEventListener('blur', () => window.setTimeout(() => {
-		hideSuggest();
-		if (editing >= 0) {
-			endEdit();
-			renderChips();
-		}
-	}, 0));
+	// --- the panel's masks ------------------------------------------------
 
-	elFilterInput.addEventListener('keydown', (e) => {
-		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-			e.preventDefault();
-			if (elSuggest.hidden) refreshSuggest();
-			moveSuggest(e.key === 'ArrowDown' ? 1 : -1);
-			return;
-		}
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			// On a highlighted row, take it and stay on this mask -- the next
-			// Enter can add another value. On typed text, commit and be done.
-			if (suggestIndex >= 0) {
-				accept(suggestIndex);
-				return;
+	/**
+	 * The held items surviving every mask, with their facets alongside -- the
+	 * graph needs the items and the completion list needs the facets, and
+	 * deriving them separately would mean two rules for what is visible.
+	 *
+	 * `skip` leaves one mask out. The completion list passes the chip being
+	 * edited, because that chip is about to be widened: constraining the
+	 * candidates by a mask whose terms OR would hide exactly the values the
+	 * user is reaching for. The graph itself skips nothing.
+	 *
+	 * Outside references are deliberately NOT masked here. A ghost is a DOI
+	 * and, with lookup on, a title; masking it on author or publication would
+	 * delete every one of them the moment any filter existed. Instead it keeps
+	 * the treatment it already had -- a ghost is drawn when a held item that
+	 * survived still cites it -- which makes "author:Kucsko" read as "his
+	 * papers, and what they cite".
+	 */
+	function masked(skip) {
+		let items = [];
+		let facets = [];
+		let filters = panelBox.filters();
+		for (let it of raw.items) {
+			let f = itemFacets(it);
+			let ok = true;
+			for (let i = 0; i < filters.length && ok; i++) {
+				if (i !== skip && !Filters.matches(filters[i], f)) ok = false;
 			}
-			commit();
-			endEdit();
-			hideSuggest();
-			renderChips();
-			return;
+			if (!ok) continue;
+			items.push(it);
+			facets.push(f);
 		}
-		if (e.key === 'Escape') {
-			// The window handler further down would clear the isolation. Inside
-			// this box Escape belongs to the list first and then to the box, and
-			// must not reach past either.
-			e.stopPropagation();
-			if (!elSuggest.hidden) hideSuggest();
-			else if (editing >= 0) {
-				endEdit();
-				renderChips();
-			}
-			else elFilterInput.value = '';
-			return;
-		}
-		// Backspace on an empty box lifts the last mask -- the gesture everyone
-		// already has from every other chips-in-front-of-an-input there is.
-		if (e.key === 'Backspace' && !elFilterInput.value && filters.length) {
-			removeFilter(filters.length - 1);
-		}
+		return { items, facets };
+	}
+
+	let panelBox = filterBox({
+		input: elFilterInput,
+		chips: elFilterChips,
+		candidates: skip => masked(skip).facets,
+		// These masks decide what is on screen at all, so a change to them is a
+		// change to the graph itself.
+		onChange: render,
 	});
-
-	renderChips();
 
 	// --- rendering --------------------------------------------------------
 
@@ -819,7 +881,7 @@
 		// outside reference, and a masked-out paper must not turn into a ghost of
 		// itself. `shown` is the visibility half.
 		let inCollection = new Set(raw.items.map(i => i.key));
-		let held = masked(-1).items;
+		let { items: held, facets: heldFacets } = masked(-1);
 		let shown = new Set(held.map(i => i.key));
 
 		// 1. Edges surviving the confidence, strategy and mask filters. An edge
@@ -874,9 +936,16 @@
 		yearRange = years.length ? [Math.min(...years), Math.max(...years)] : null;
 
 		let nodes = [];
-		for (let it of held) {
+		// Facets for the nodes that end up drawn, kept for the groups: an
+		// anchor is re-matched whenever it moves or its masks change, which is
+		// far more often than the graph is rebuilt, and rebuilding a facet set
+		// per keystroke to answer it would be absurd.
+		facetCache = new Map();
+		for (let i = 0; i < held.length; i++) {
+			let it = held[i];
 			let deg = (inDegree[it.key] || 0) + (outDegree[it.key] || 0);
 			if (elHideIsolated.checked && !deg) continue;
+			facetCache.set(it.key, heldFacets[i]);
 			let n = nodeCache.get(it.key);
 			if (!n) nodeCache.set(it.key, n = { id: it.key });
 			n.ghost = false;
@@ -926,6 +995,9 @@
 		// The adjacency lit() walks has just been rebuilt out of these edges.
 		litCache = null;
 		syncIsolateNote();
+		// Which nodes each anchor pulls, against the set that is now on screen.
+		assignGroups();
+		syncGroupNote();
 
 		if (!fg) {
 			fg = ForceGraph()(elGraph);
@@ -963,10 +1035,7 @@
 				hideMenu();
 				clearIsolated();
 			});
-			fg.onBackgroundRightClick(() => {
-				hideAction();
-				hideMenu();
-			});
+			fg.onBackgroundRightClick(showCanvasMenu);
 			// A settle sheds its alpha tick by tick and ends when the engine
 			// stops -- see settle().
 			fg.onEngineTick(shed);
@@ -997,12 +1066,16 @@
 					(l.confidence >= ASSERTED ? 0.85 : 0.45)
 					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
 				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
+				// After the graph, so a flag is never buried under the cluster
+				// it gathered.
+				.onRenderFramePost(drawGroups)
 				.d3VelocityDecay(0.3);
 
 			// d3 re-initialises every registered force whenever the node array
 			// is replaced, so these pick up new nodes and new radii on their
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
+			fg.d3Force('groupPull', groupPull());
 			fg.d3Force('collide', collide());
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
@@ -1164,9 +1237,46 @@
 		let nodes = [];
 		function force(alpha) {
 			for (let n of nodes) {
+				// A node with an anchor has somewhere to be, and the centre is
+				// not it. Left in, the two pulls would fight and park it short
+				// of the flag -- a group planted out at the rim would gather a
+				// cluster that visibly sags towards the middle.
+				if (groupOf.has(n.id)) continue;
 				let k = (n.deg ? PULL : PULL_ORPHAN) * alpha;
 				n.vx -= n.x * k;
 				n.vy -= n.y * k;
+			}
+		}
+		force.initialize = ns => {
+			nodes = ns;
+		};
+		return force;
+	}
+
+	/**
+	 * Pull every grouped node to the point its group was planted at.
+	 *
+	 * Firm, an order of magnitude past the centre pull, because this is not a
+	 * tendency but an instruction: the user said these papers belong here. It
+	 * still competes with the links, which is the whole interest of it -- a
+	 * group that drags a paper away from its citations stretches the edges
+	 * between them, and how far they stretch is the picture being asked for.
+	 *
+	 * Pinned nodes are unaffected, since d3 stops integrating a node with fixed
+	 * coordinates at all. That is the right precedence: a pin is a position the
+	 * user placed by hand, and a mask should not overrule it.
+	 */
+	const GROUP_PULL = 0.4;
+
+	function groupPull() {
+		let nodes = [];
+		function force(alpha) {
+			if (!groupOf.size) return;
+			for (let n of nodes) {
+				let at = groupOf.get(n.id);
+				if (!at) continue;
+				n.vx += (at.x - n.x) * GROUP_PULL * alpha;
+				n.vy += (at.y - n.y) * GROUP_PULL * alpha;
 			}
 		}
 		force.initialize = ns => {
@@ -1845,6 +1955,313 @@
 		if (fg) fg.nodeCanvasObject(drawNode);
 	}
 
+	// --- groups -----------------------------------------------------------
+
+	/**
+	 * An anchor planted on the canvas that pulls in whatever a mask picks out.
+	 *
+	 * The layout arranges papers by citation, which is the point of it -- but
+	 * that leaves "where do this author's papers actually sit" answered by
+	 * scattering them across the picture. A group answers it instead: plant a
+	 * flag, say what belongs there, and they come.
+	 *
+	 * The masks are the panel's masks, down to the completion list -- but where
+	 * the panel's decide what is DRAWN, a group's decide only what is PULLED.
+	 * Nothing enters or leaves the graph for a group: the papers it names are
+	 * the same papers, standing somewhere else. So the two stacks compose the
+	 * way you would want -- a group naming something the panel has already
+	 * filtered away simply pulls nothing, because a node that is not there has
+	 * no position to change.
+	 *
+	 * Held items only, for the same reason the panel's masks are held-item
+	 * only: an outside reference is a DOI and, with lookup on, a title. It has
+	 * no author or year to be grouped by, and it follows the papers that cite
+	 * it in any case.
+	 */
+	let groups = [];             // { id, x, y, filters }; x/y in GRAPH coords
+	let groupSeq = 0;
+	let groupOf = new Map();     // node id -> the point its groups pull it to
+	let facetCache = new Map();  // node id -> facets, for the nodes on screen
+
+	/**
+	 * Which point each node is being pulled to. Recomputed whenever the anchors
+	 * or the nodes on screen change, and never per tick: a mask match is a
+	 * string comparison per facet per filter, and the force runs sixty times a
+	 * second over every node in the graph.
+	 *
+	 * A node caught by two groups is pulled to the midpoint between them, which
+	 * is both what the arithmetic falls out as and the honest picture: it
+	 * belongs to both, so it sits between them rather than picking a side.
+	 */
+	function assignGroups() {
+		let next = new Map();
+		for (let g of groups) {
+			if (!g.filters.length) continue;
+			for (let [id, f] of facetCache) {
+				if (!Filters.matchesAll(g.filters, f)) continue;
+				let at = next.get(id);
+				if (at) {
+					at.x += g.x;
+					at.y += g.y;
+					at.n++;
+				}
+				else next.set(id, { x: g.x, y: g.y, n: 1 });
+			}
+		}
+		for (let at of next.values()) {
+			if (at.n > 1) {
+				at.x /= at.n;
+				at.y /= at.n;
+			}
+		}
+		groupOf = next;
+	}
+
+	/** How many nodes on screen an anchor is actually pulling -- which is what
+	 *  its card reports, because a mask that matches nothing looks identical to
+	 *  one that has not been typed yet. */
+	function groupSize(g) {
+		if (!g.filters.length) return 0;
+		let n = 0;
+		for (let f of facetCache.values()) if (Filters.matchesAll(g.filters, f)) n++;
+		return n;
+	}
+
+	/**
+	 * Planting an anchor, moving one or changing what it names is a request to
+	 * REARRANGE: nodes have to travel, sometimes the width of the graph. So
+	 * this reheats outright rather than shedding down to a drop's alpha the way
+	 * unpinning does -- a drop asks the layout to absorb one node's new
+	 * position, and this asks it to answer a force that was not there before.
+	 */
+	function groupsChanged() {
+		let before = groupOf;
+		assignGroups();
+		if (!fg) return;
+		repaint();
+		// Nothing is being pulled anywhere new: an anchor planted and thrown
+		// away before it named anything, or one removed that never matched a
+		// paper. The flag has to be un-drawn, but shaking a settled layout to
+		// say so would be a strange thing to do.
+		if (sameTargets(before, groupOf)) return;
+		// A settle in flight has half the graph fixed in place; it would sit
+		// out exactly the rearrangement being asked for.
+		thaw();
+		fg.d3ReheatSimulation();
+	}
+
+	function sameTargets(a, b) {
+		if (a.size !== b.size) return false;
+		for (let [id, at] of a) {
+			let bt = b.get(id);
+			if (!bt || bt.x !== at.x || bt.y !== at.y) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * The flag itself: a mast planted at the anchor with a pennant at the top,
+	 * and what it pulls written beside it. Sized in screen pixels like the node
+	 * labels are, so it stays a flag at any zoom instead of swelling into a
+	 * banner. Drawn even while the graph is dimmed by an isolation -- it is
+	 * furniture rather than data, and a flag you cannot see is one you cannot
+	 * find your way back to.
+	 */
+	const FLAG_MAST = 16;      // screen px from the anchor to the top of the mast
+	const FLAG_FLY = 9;        // screen px along the pennant
+	const FLAG_DROP = 6;       // screen px the pennant hangs down the mast
+	const FLAG_DOT = 2.5;      // screen px, the anchor point itself
+	const FLAG_LABEL_PX = 11;
+
+	function drawGroups(ctx, globalScale) {
+		if (!groups.length) return;
+		let theme = themeColors();
+		// Screen pixels into graph units at this zoom -- the same trick the
+		// labels use, and the reason nothing here is in graph units to start.
+		let s = 1 / globalScale;
+		for (let g of groups) {
+			let top = g.y - FLAG_MAST * s;
+			ctx.beginPath();
+			ctx.arc(g.x, g.y, FLAG_DOT * s, 0, 2 * Math.PI);
+			ctx.fillStyle = theme.fg;
+			ctx.fill();
+			ctx.beginPath();
+			ctx.moveTo(g.x, g.y);
+			ctx.lineTo(g.x, top);
+			ctx.lineWidth = 1.5 * s;
+			ctx.strokeStyle = theme.fg;
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(g.x, top);
+			ctx.lineTo(g.x + FLAG_FLY * s, top + (FLAG_DROP / 2) * s);
+			ctx.lineTo(g.x, top + FLAG_DROP * s);
+			ctx.closePath();
+			ctx.fillStyle = theme.fg;
+			ctx.fill();
+
+			let label = groupLabel(g);
+			ctx.font = (FLAG_LABEL_PX * s) + 'px sans-serif';
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'middle';
+			let x = g.x + (FLAG_FLY + 4) * s;
+			let y = top + (FLAG_DROP / 2) * s;
+			// Halo first, for the same reason the node labels have one: this
+			// text lands over whatever the anchor gathered.
+			ctx.lineJoin = 'round';
+			ctx.lineWidth = (FLAG_LABEL_PX * 0.3) * s;
+			ctx.strokeStyle = theme.halo;
+			ctx.strokeText(label, x, y);
+			ctx.fillStyle = g.filters.length ? theme.fg : theme.muted;
+			ctx.fillText(label, x, y);
+		}
+	}
+
+	/** What the flag says: the masks it pulls by, or the invitation to say. */
+	function groupLabel(g) {
+		if (!g.filters.length) return 'nothing yet';
+		return g.filters.map(Filters.describe).join(' + ');
+	}
+
+	/**
+	 * The flag under the pointer, if any.
+	 *
+	 * Measured against the middle of the mast rather than the anchor: the
+	 * graphic stands above the point it marks, and aiming at a flag means
+	 * aiming at the flag. Generous, because it is small -- but not so generous
+	 * that a right-click meaning "group here" lands on a neighbour instead.
+	 */
+	const FLAG_HIT_PX = 18;
+
+	function groupAt(event) {
+		if (!fg || !groups.length) return null;
+		let r = elGraph.getBoundingClientRect();
+		let px = event.clientX - r.left;
+		let py = event.clientY - r.top;
+		let best = null;
+		let bestD = FLAG_HIT_PX * FLAG_HIT_PX;
+		for (let g of groups) {
+			let p = fg.graph2ScreenCoords(g.x, g.y);
+			let dx = p.x - px;
+			let dy = (p.y - FLAG_MAST / 2) - py;
+			let d = dx * dx + dy * dy;
+			if (d > bestD) continue;
+			bestD = d;
+			best = g;
+		}
+		return best;
+	}
+
+	// --- a group's card ---------------------------------------------------
+
+	/**
+	 * The anchor being edited, and the only thing the card below describes. A
+	 * group is planted and named in one gesture, so "Group here" opens this on
+	 * a flag that names nothing yet -- and closing it without naming anything
+	 * throws that flag away, because a half-made gesture should leave nothing
+	 * behind.
+	 */
+	let editingGroup = null;
+
+	function addGroup(event) {
+		if (!fg) return;
+		let r = elGraph.getBoundingClientRect();
+		let at = fg.screen2GraphCoords(event.clientX - r.left, event.clientY - r.top);
+		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [] };
+		groups.push(g);
+		openGroup(g, event);
+		repaint();
+	}
+
+	function openGroup(g, event) {
+		hideAction();
+		editingGroup = g;
+		// "here" is only true of the flag being planted; on one already stood
+		// up the card is about the group, not about the click that opened it.
+		el('group-title').textContent = g.filters.length ? 'Group' : 'Group here';
+		groupBox.load(g.filters);
+		syncGroupNote();
+		elGroup.hidden = false;
+		positionAt(elGroup, event);
+		elGroupInput.focus();
+	}
+
+	function closeGroup() {
+		if (!editingGroup) return;
+		let g = editingGroup;
+		editingGroup = null;
+		elGroup.hidden = true;
+		hideSuggest();
+		// A flag that names nothing pulls nothing and says nothing. It is the
+		// gesture half-made, not a group, so the card takes it with it.
+		if (!g.filters.length) removeGroup(g);
+	}
+
+	function removeGroup(g) {
+		let i = groups.indexOf(g);
+		if (i < 0) return;
+		groups.splice(i, 1);
+		if (editingGroup === g) {
+			editingGroup = null;
+			elGroup.hidden = true;
+			hideSuggest();
+		}
+		groupsChanged();
+	}
+
+	function syncGroupNote() {
+		if (!editingGroup) return;
+		let n = groupSize(editingGroup);
+		elGroupSub.textContent = editingGroup.filters.length
+			? 'pulls ' + n + (n === 1 ? ' paper here' : ' papers here')
+			: 'say what belongs here';
+	}
+
+	/**
+	 * A group's own mask stack. Its candidates come from what is on screen,
+	 * narrowed by this group's other masks: an anchor can only pull nodes that
+	 * exist, so a value the panel has already filtered away would be a
+	 * completion for a mask that pulls nothing.
+	 */
+	let groupBox = filterBox({
+		input: elGroupInput,
+		chips: elGroupChips,
+		candidates: groupCandidates,
+		onChange: () => {
+			if (!editingGroup) return;
+			editingGroup.filters = groupBox.filters().slice();
+			groupsChanged();
+			syncGroupNote();
+		},
+	});
+
+	function groupCandidates(skip) {
+		let filters = groupBox.filters();
+		let out = [];
+		for (let f of facetCache.values()) {
+			let ok = true;
+			for (let i = 0; i < filters.length && ok; i++) {
+				if (i !== skip && !Filters.matches(filters[i], f)) ok = false;
+			}
+			if (ok) out.push(f);
+		}
+		return out;
+	}
+
+	el('group-close').addEventListener('click', closeGroup);
+	el('group-remove').addEventListener('click', () => {
+		if (editingGroup) removeGroup(editingGroup);
+	});
+
+	// Clicking away is the other way out, and it means the same as Done: the
+	// masks are committed as they are picked, so there is nothing in the card
+	// left to save. The completion list is a sibling of the card rather than a
+	// child of it, so a click on a row has to be spared explicitly.
+	window.addEventListener('pointerdown', (e) => {
+		if (elGroup.hidden) return;
+		if (elGroup.contains(e.target) || elSuggest.contains(e.target)) return;
+		closeGroup();
+	}, true);
+
 	// --- the node context menu --------------------------------------------
 
 	/**
@@ -1854,11 +2271,6 @@
 	 * resolved through its identifier or added.
 	 */
 	function showMenu(n, event) {
-		hideAction();
-		// A menu replaced rather than dismissed still owes the previous node
-		// its freedom.
-		release();
-		elMenu.textContent = '';
 		let entries = n.ghost ? ghostMenu(n) : itemMenu(n);
 		// Last, and shared by both populations, because these are the entries
 		// about the picture rather than the paper: what a node is next to and
@@ -1866,6 +2278,54 @@
 		// has both as much as a held item does.
 		for (let entry of isolateEntries(n)) entries.push(entry);
 		entries.push(pinEntry(n));
+		openMenu(entries, event);
+	}
+
+	/**
+	 * The menu the canvas itself gets, where there is no node under the
+	 * pointer. Both of its entries are about the picture as a whole: how it is
+	 * framed, and where things belong in it.
+	 *
+	 * Over a flag it offers that flag's own two entries instead of a second
+	 * "Group here". Planting one anchor on top of another makes two flags that
+	 * cannot be told apart on screen, and the click that would do it is far
+	 * more likely to have meant the one already there.
+	 */
+	function showCanvasMenu(event) {
+		let entries = [{
+			label: 'Zoom to fit',
+			hint: 'put the whole graph back in view',
+			run: reframe,
+		}];
+		let g = groupAt(event);
+		if (g) {
+			entries.push({
+				label: 'Edit group',
+				hint: 'change what this anchor pulls',
+				run: () => openGroup(g, event),
+			});
+			entries.push({
+				label: 'Remove group',
+				hint: 'let these papers go back to the layout',
+				run: () => removeGroup(g),
+			});
+		}
+		else {
+			entries.push({
+				label: 'Group here',
+				hint: 'plant an anchor, and say what belongs at it',
+				run: () => addGroup(event),
+			});
+		}
+		openMenu(entries, event);
+	}
+
+	function openMenu(entries, event) {
+		hideAction();
+		// A menu replaced rather than dismissed still owes the previous node
+		// its freedom.
+		release();
+		elMenu.textContent = '';
 		for (let entry of entries) {
 			elMenu.appendChild(menuItem(entry));
 		}
@@ -2083,6 +2543,7 @@
 	window.addEventListener('keydown', (e) => {
 		if (e.key !== 'Escape') return;
 		if (!elMenu.hidden) hideMenu();
+		else if (!elGroup.hidden) closeGroup();
 		else if (!elAction.hidden) hideAction();
 		else clearIsolated();
 	});
@@ -2269,10 +2730,11 @@
 
 	window.addEventListener('resize', () => {
 		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
-		// All three were positioned against the viewport they opened in.
+		// All of these were positioned against the viewport they opened in.
 		hideMenu();
 		hideAction();
 		hideSuggest();
+		closeGroup();
 	});
 
 	try {

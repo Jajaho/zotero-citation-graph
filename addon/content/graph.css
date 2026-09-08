@@ -216,7 +216,8 @@ body {
 
 /* The chips laid down so far, above the box that adds the next one: they read
    top to bottom as a stack of masks, and the box is always the last line. */
-#filter-chips {
+#filter-chips,
+#group-chips {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px;
@@ -224,7 +225,8 @@ body {
 
 /* display:flex above is an author rule and would otherwise beat the UA
    stylesheet's [hidden] { display: none }. */
-#filter-chips[hidden] {
+#filter-chips[hidden],
+#group-chips[hidden] {
 	display: none;
 }
 
@@ -281,7 +283,8 @@ body {
 	color: var(--fg);
 }
 
-#filter-input {
+#filter-input,
+#group-input {
 	font: inherit;
 	width: 100%;
 	box-sizing: border-box;
@@ -623,4 +626,45 @@ body {
 
 #action button[disabled] {
 	opacity: 0.5;
+}
+
+/* A group's card. Same layer and same shape as the action popover -- both are
+   a small card opened at the pointer -- but it holds a live filter box, so it
+   is laid out as a column with room for chips that wrap. */
+#group {
+	position: absolute;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 240px;
+	max-width: calc(100% - 20px);
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+	font-size: 12px;
+	color: var(--fg);
+}
+
+#group-title {
+	font-weight: 600;
+}
+
+#group-sub {
+	color: var(--muted);
+}
+
+#group-buttons {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}
+
+/* The card's own two buttons only -- the chips inside it carry their own
+   shape, and this padding would burst them. */
+#group-buttons button {
+	font: inherit;
+	padding: 3px 10px;
 }
