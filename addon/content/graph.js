@@ -913,6 +913,16 @@
 			fg.onNodeHover((n) => {
 				hoverNode = n;
 			});
+			// Which node the pointer is carrying, for the guard below. Both
+			// fire on the same condition -- force-graph raises neither until
+			// the pointer has moved 5px -- so the flag cannot be left set by a
+			// drag that never really started.
+			fg.onNodeDrag((n) => {
+				dragNode = n;
+			});
+			fg.onNodeDragEnd(() => {
+				dragNode = null;
+			});
 			// Clicking empty canvas dismisses, the way a popover should, and
 			// gives the whole graph back.
 			fg.onBackgroundClick(() => {
@@ -1382,6 +1392,48 @@
 		if (n.ghost) showAction(n, event);
 		else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
 	}
+
+	// --- defending a drag in progress -------------------------------------
+
+	/**
+	 * d3-drag ends a gesture on ANY mouseup that reaches the window: its
+	 * handler is registered on the view, not the canvas, and never looks at
+	 * which button came up. So pressing the right button while the left is
+	 * carrying a node drops it, and the layout pulls it away from the spot the
+	 * user was aiming at -- the one thing a drag must never do, and doubly so
+	 * here, where aiming a node at a spot is exactly what pinning is for.
+	 *
+	 * While a node is being carried, the other buttons are therefore swallowed
+	 * outright: the gesture in progress outranks the one being started. No menu
+	 * opens either, deliberately -- a menu that appears mid-drag would have to
+	 * be reached with the button still down, which would drag the node across
+	 * the canvas on the way to it. Drop the node first; the menu is one click
+	 * away, and the node is where you left it.
+	 *
+	 * Capture on window, and registered at load, which is what puts these ahead
+	 * of d3's: d3 re-registers its window listeners on every mousedown, and a
+	 * later registration on the same target and phase runs later.
+	 */
+	let dragNode = null;
+
+	function guardDrag(e) {
+		// Button 0 is the drag's own, and has to get through: it is what ends
+		// the gesture normally.
+		if (!dragNode || e.button === 0) return;
+		e.preventDefault();
+		e.stopImmediatePropagation();
+	}
+
+	for (let type of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu']) {
+		window.addEventListener(type, guardDrag, true);
+	}
+
+	// onNodeDragEnd is the normal way out, but a flag that stuck would kill the
+	// right button for the rest of the session -- far worse than the bug above.
+	// The left button coming up ends every drag there is, so it clears it too.
+	window.addEventListener('mouseup', (e) => {
+		if (e.button === 0) dragNode = null;
+	}, true);
 
 	// --- pinning ----------------------------------------------------------
 
