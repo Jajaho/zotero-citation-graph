@@ -19,6 +19,7 @@ let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let readerPane = require('./readerPane.js');
 let itemPane = require('./itemPane.js');
+let splitPane = require('./splitPane.js');
 let l10n = require('./l10n.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
@@ -60,11 +61,11 @@ const MAX_EXTERNAL_NODES = 4000;
 // turn on for someone silently.
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
-// tabID -> { win, tabID, browser, split, pane, itemPane, collection,
+// tabID -> { win, tabID, browser, split, pane, reader, itemPane, collection,
 //             generation, options, built, building }
-// `split` is the box holding the graph and, once opened, the reader and item
-// panes; `pane` is readerPane.js's record for that reader, or null, and
-// `itemPane` is itemPane.js's record for Zotero's own item pane. `built` is the
+// `split` is the box holding the graph and, once opened, the tab's one side
+// panel; `pane` is splitPane.js's record for that panel and `reader` /
+// `itemPane` belong to whichever of the two has it. `built` is the
 // last completed derivation, which runLookup() names in place; `building`
 // says whether a build owns the tab, since a lookup must not push over one.
 let open_ = new Map();
@@ -83,20 +84,18 @@ async function open(win, collection, config) {
 		select: true,
 		onClose: () => {
 			let entry = open_.get(id);
-			// The container is about to be destroyed anyway, but the reader inside
-			// it still has listeners registered on the window and state to flush,
-			// and the item pane has observers registered with Zotero.Notifier.
-			if (entry) {
-				readerPane.close(entry);
-				itemPane.close(entry);
-			}
+			// The container is about to be destroyed anyway, but whatever is in
+			// the side panel is not just markup: a reader has listeners on the
+			// window and state to flush, an item pane has observers registered
+			// with Zotero.Notifier. Closing the panel tells its occupant.
+			if (entry) splitPane.close(entry);
 			open_.delete(id);
 		},
 	});
 
 	// The graph goes inside a horizontal box rather than straight into the tab
-	// container, because readerPane.js and itemPane.js each append a splitter
-	// and a pane beside it.
+	// container, because splitPane.js appends a splitter and the side panel
+	// beside it.
 	// Built up front and never rebuilt: reparenting a <browser> tears down its
 	// docShell and reloads the page, which would throw the graph away the first
 	// time a PDF was opened.
@@ -122,6 +121,7 @@ async function open(win, collection, config) {
 		// rendering while some other tab is on screen.
 		tabID: id,
 		pane: null,
+		reader: null,
 		itemPane: null,
 		generation: 0,
 		options: { ...DEFAULT_OPTIONS },
@@ -218,6 +218,9 @@ async function handleMessage(win, tabID, collection, msg) {
 		case 'open-pdf': {
 			let entry = open_.get(tabID);
 			if (entry && msg.itemID) {
+				// Asking to read a paper is asking for the panel, and there is
+				// one panel: this takes it off the item pane, which unticks the
+				// page's hover box on its way out (see 'item-pane-show').
 				await readerPane.open(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
 				});
@@ -250,6 +253,11 @@ async function handleMessage(win, tabID, collection, msg) {
 			if (entry && msg.itemID) {
 				await itemPane.show(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
+					// Whatever takes the panel next -- a PDF opened beside the
+					// graph, or the panel closing -- the page has to stop
+					// following the pointer, or the next hover would take the
+					// panel straight back.
+					onLost: () => send(entry, 'zgSetItemPane', false),
 				});
 			}
 			break;

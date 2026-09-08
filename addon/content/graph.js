@@ -201,6 +201,27 @@
 		elStatus.textContent = text || '';
 	};
 
+	/**
+	 * Chrome turning the hover pane off, because something else -- a PDF opened
+	 * beside the graph -- has taken the one side panel. The checkbox has to
+	 * follow, or it would claim to be doing something it is not, and the next
+	 * hover would pull the panel back off the paper being read.
+	 */
+	window.zgSetItemPane = function (json) {
+		let on;
+		try {
+			on = !!JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		if (elItemPane.checked === on) return;
+		elItemPane.checked = on;
+		rememberItemPane();
+		window.clearTimeout(itemPaneTimer);
+		itemPaneItem = null;
+	};
+
 	// --- item helpers -----------------------------------------------------
 
 	function year(item) {
@@ -1841,11 +1862,15 @@
 		}, HOVER_ITEM_MS);
 	}
 
-	elItemPane.addEventListener('change', () => {
+	function rememberItemPane() {
 		try {
 			window.localStorage.setItem(ITEM_PANE_KEY, elItemPane.checked ? '1' : '0');
 		}
 		catch (e) { /* no persistence, no problem */ }
+	}
+
+	elItemPane.addEventListener('change', () => {
+		rememberItemPane();
 		window.clearTimeout(itemPaneTimer);
 		itemPaneItem = null;
 		if (!elItemPane.checked) {

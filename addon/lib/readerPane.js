@@ -13,11 +13,16 @@
  *   3. Zotero.Reader.openPreview(itemID, frame) -> a reader instance in ANY browser
  *                                                  element we own.
  *
- * This module is (3): the tab container gets a second <browser> next to the graph
- * and a splitter between them, and core renders into it. It is the same machinery
- * the item pane's attachment preview uses (elements/attachmentPreview.js), which
- * is what makes it safe to drive from a plugin -- we hand core a browser and it
- * owns everything inside it.
+ * This module is (3): a <browser> goes into the tab's one side panel (see
+ * splitPane.js) and core renders into it. It is the same machinery the item
+ * pane's attachment preview uses (elements/attachmentPreview.js), which is what
+ * makes it safe to drive from a plugin -- we hand core a browser and it owns
+ * everything inside it.
+ *
+ * The panel is shared with itemPane.js and holds one of them at a time. Opening
+ * a PDF here therefore takes the panel off the item pane, and graphTab.js
+ * unticks the graph page's hover checkbox when it does -- otherwise the next
+ * hover would take the panel straight back off the paper being read.
  *
  * What (3) costs, and why the header still offers (2): a ReaderPreview is
  * `_isReadOnly()` and `_isTransient()`, and it injects CSS that hides `#reader-ui`.
@@ -27,11 +32,7 @@
  */
 
 let l10n = require('./l10n.js');
-
-// Below this the reader's own layout starts fighting the pane rather than
-// reflowing into it.
-const MIN_WIDTH = 320;
-const DEFAULT_WIDTH = 520;
+let splitPane = require('./splitPane.js');
 
 // reader.html is a whole application; on a cold profile it is not instant, but
 // it is not ten seconds either. Past this we report a failure instead of leaving
@@ -39,18 +40,11 @@ const DEFAULT_WIDTH = 520;
 const LOAD_TIMEOUT_MS = 10000;
 
 const PANE_CSS = `
-	.zg-reader-pane {
-		min-width: ${MIN_WIDTH}px;
-		background: var(--material-sidepane);
-	}
-	.zg-reader-splitter {
-		width: 4px;
-		border: none;
-		background: var(--material-panedivider);
-	}
 	.zg-reader-head {
 		display: flex;
-		align-items: center;
+		/* Not centred: when a long title takes two or three lines the buttons
+		   belong beside its first one, where they were before it wrapped. */
+		align-items: flex-start;
 		gap: 2px;
 		padding: 3px 4px 3px 8px;
 		border-bottom: 1px solid var(--material-panedivider);
@@ -60,9 +54,11 @@ const PANE_CSS = `
 	.zg-reader-title {
 		flex: 1;
 		min-width: 0;
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
+		/* Wraps rather than ellipsising, because the alternative was the title
+		   pushing the buttons past the edge of the pane. A title is worth two
+		   lines of a header; losing the way out to the full reader is not. */
+		overflow-wrap: anywhere;
+		padding-block: 3px;
 		color: var(--fill-primary);
 	}
 	.zg-reader-btn {
@@ -75,6 +71,8 @@ const PANE_CSS = `
 		line-height: 16px;
 		padding: 2px 6px;
 		min-width: 22px;
+		/* The header shrinks the title, never the way out of it. */
+		flex: none;
 	}
 	.zg-reader-btn:hover:not(:disabled) {
 		background: var(--fill-quinary);
@@ -195,39 +193,35 @@ async function readable(itemID, status) {
 	return { item, att };
 }
 
-/** Tear the pane down: remember the width, then the reader, then the DOM. */
+/** Close the panel, if the reader is what is in it. */
 function close(entry) {
-	let pane = entry && entry.pane;
+	if (splitPane.has(entry, 'reader')) splitPane.close(entry);
+}
+
+/**
+ * The panel has been taken by the item pane, or closed. The reader instance is
+ * flushed here, while its browser is still in the document; the elements
+ * themselves go with the panel.
+ */
+function forget(entry) {
+	let pane = entry.reader;
 	if (!pane) return;
-	saveWidth(pane);
+	entry.reader = null;
 	discardReader(pane);
-	pane.splitter.remove();
-	pane.box.remove();
-	entry.pane = null;
 }
 
 // --- the pane ----------------------------------------------------------
 
 function ensurePane(entry) {
-	if (entry.pane) return entry.pane;
+	if (entry.reader) return entry.reader;
 
 	let doc = entry.win.document;
 	// The window is XHTML, so createElement() gives HTML elements and
 	// createXULElement() gives XUL ones -- both are laid out by the same box.
-	// The stylesheet lives inside the pane so it leaves with it.
+	let box = splitPane.claim(entry, 'reader', () => forget(entry));
+	// Inside the box, so it leaves when the panel changes hands.
 	let style = doc.createElement('style');
 	style.textContent = PANE_CSS;
-
-	// Between the graph and the pane, resizing both: the same shape as core's
-	// zotero-items-splitter (zoteroPane.xhtml).
-	let splitter = doc.createXULElement('splitter');
-	splitter.className = 'zg-reader-splitter';
-	splitter.setAttribute('resizebefore', 'closest');
-	splitter.setAttribute('resizeafter', 'closest');
-
-	let box = doc.createXULElement('vbox');
-	box.className = 'zg-reader-pane';
-	box.setAttribute('width', String(storedWidth()));
 
 	let head = doc.createElement('div');
 	head.className = 'zg-reader-head';
@@ -237,7 +231,6 @@ function ensurePane(entry) {
 
 	let pane = {
 		box,
-		splitter,
 		titleEl,
 		browser: null,
 		reader: null,
@@ -260,20 +253,8 @@ function ensurePane(entry) {
 
 	box.appendChild(head);
 	box.appendChild(style);
-	// Before the item pane if one is open, so the order across the tab is
-	// graph | reader | item details however the two panes were opened. That is
-	// the order Zotero itself puts them in, and it keeps the metadata against
-	// the edge of the window rather than sliding between the graph and the
-	// paper it belongs to. insertBefore(x, null) appends.
-	let after = entry.itemPane ? entry.itemPane.splitter : null;
-	entry.split.insertBefore(splitter, after);
-	entry.split.insertBefore(box, after);
 
-	// XUL splitters fire 'command' when a drag ends; core hangs its own layout
-	// bookkeeping off the same event.
-	splitter.addEventListener('command', () => saveWidth(pane));
-
-	entry.pane = pane;
+	entry.reader = pane;
 	return pane;
 }
 
@@ -495,33 +476,6 @@ function refreshPaging(pane) {
 	};
 	pane.prevBtn.disabled = can('prev') === false;
 	pane.nextBtn.disabled = can('next') === false;
-}
-
-// --- remembered width --------------------------------------------------
-
-function storedWidth() {
-	let w = Number(pref('readerPaneWidth'));
-	return Number.isFinite(w) && w >= MIN_WIDTH ? Math.round(w) : DEFAULT_WIDTH;
-}
-
-function saveWidth(pane) {
-	let w = Math.round(pane.box.getBoundingClientRect().width);
-	if (w < MIN_WIDTH) return;
-	try {
-		Zotero.Prefs.set('zoteroGraph.readerPaneWidth', w);
-	}
-	catch (e) {
-		Zotero.logError(e);
-	}
-}
-
-function pref(name) {
-	try {
-		return Zotero.Prefs.get('zoteroGraph.' + name);
-	}
-	catch (e) {
-		return null;
-	}
 }
 
 module.exports = { open, close, readable };

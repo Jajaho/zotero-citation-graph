@@ -14,10 +14,11 @@ pref("extensions.zotero.zoteroGraph.enrichers", "openalex");
 // Free key: https://openalex.org/settings/api
 pref("extensions.zotero.zoteroGraph.openalex.apiKey", "");
 
-// Width of the in-tab reader pane, in pixels. Written back whenever the
-// splitter is dragged, so the pane opens at the size it was last left.
-pref("extensions.zotero.zoteroGraph.readerPaneWidth", 520);
-
-// Width of the in-tab item pane -- Zotero's own <item-details>, opened by
-// resting on a node. Written back whenever its splitter is dragged.
-pref("extensions.zotero.zoteroGraph.itemPaneWidth", 400);
+// Width of the tab's side panel, in pixels -- the one the reader and the item
+// pane share. Written back whenever the splitter is dragged, so the panel opens
+// at the size it was last left, whichever of the two is in it.
+//
+// The old readerPaneWidth is read as a fallback (splitPane.js storedWidth) so a
+// profile that had dragged the reader pane keeps the width it chose; it has no
+// default here any more, so only a value someone actually set is ever seen.
+pref("extensions.zotero.zoteroGraph.paneWidth", 520);

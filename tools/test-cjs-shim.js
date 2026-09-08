@@ -660,49 +660,107 @@ check('lib/ modules load through the shim', () => {
 });
 
 /**
- * A XUL document just real enough for itemPane.ensurePane(): the element is
- * built and wired the way core's contextPane builds its own, and the stub
- * records what it was handed.
+ * A window just real enough for splitPane.js and the two things that build into
+ * it: elements that can be appended, detached and asked for their first child,
+ * since handing the panel over empties it one child at a time.
  */
-function fakeXulDoc(onRender) {
-	const made = [];
-	const element = (localName) => {
-		const el = {
-			localName,
-			children: [],
-			attrs: {},
-			className: '',
-			setAttribute: (k, v) => {
-				el.attrs[k] = v;
-			},
-			appendChild: (c) => {
-				el.children.push(c);
-				return c;
-			},
-			insertBefore: (c) => {
-				el.children.push(c);
-				return c;
-			},
-			addEventListener: () => {},
-			remove: () => {
-				el.removed = true;
-			},
-			getBoundingClientRect: () => ({ width: 400 }),
-		};
-		if (localName === 'item-details') el.render = () => onRender(el);
-		made.push(el);
-		return el;
-	};
-	return {
-		made,
-		document: { createElement: element, createXULElement: element },
-	};
+class FakeElement {
+	constructor(localName, made, onRender) {
+		this.localName = localName;
+		this.children = [];
+		this.attrs = {};
+		this.className = '';
+		this.style = {};
+		this.parent = null;
+		this.removed = false;
+		if (localName === 'item-details') this.render = () => onRender(this);
+		made.push(this);
+	}
+
+	get firstChild() {
+		return this.children[0] || null;
+	}
+
+	setAttribute(k, v) {
+		this.attrs[k] = String(v);
+	}
+
+	getAttribute(k) {
+		return k in this.attrs ? this.attrs[k] : null;
+	}
+
+	appendChild(c) {
+		if (c.parent) c.remove();
+		c.parent = this;
+		this.children.push(c);
+		return c;
+	}
+
+	remove() {
+		if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this);
+		this.parent = null;
+		this.removed = true;
+	}
+
+	addEventListener() {}
+
+	getBoundingClientRect() {
+		return { width: 400 };
+	}
 }
+
+function fakeWindow(onRender = async () => {}) {
+	const made = [];
+	const element = localName => new FakeElement(localName, made, onRender);
+	const win = {
+		document: { createElement: element, createXULElement: element },
+		// splitPane mirrors the splitter's width attribute through one of these.
+		MutationObserver: class {
+			observe() {}
+			disconnect() {}
+		},
+	};
+	return { made, win, element };
+}
+
+/** A graph tab with nothing in its side panel yet. */
+function fakeEntry(win, element, tabID) {
+	return { win, split: element('hbox'), tabID, pane: null, reader: null, itemPane: null };
+}
+
+check('the side panel holds one thing at a time', async () => {
+	const splitPane = require_('./lib/splitPane.js');
+	const { win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-9');
+	Zotero.Prefs = { get: () => 420, set: () => {} };
+
+	let dropped = 0;
+	let first = splitPane.claim(entry, 'reader', () => dropped++);
+	first.appendChild(element('browser'));
+	if (!splitPane.has(entry, 'reader')) throw new Error('the reader did not get the panel');
+
+	// The same occupant asking again keeps what it built.
+	if (splitPane.claim(entry, 'reader', () => dropped++) !== first) throw new Error('the panel was rebuilt');
+	if (dropped) throw new Error('a re-claim tore the occupant down');
+	if (first.children.length !== 1) throw new Error('a re-claim emptied the panel');
+
+	// Someone else asking takes it, and the reader is told before its elements go.
+	let second = splitPane.claim(entry, 'item', () => dropped++);
+	if (second !== first) throw new Error('the two occupants got different panels');
+	if (dropped !== 1) throw new Error('the displaced occupant was not told');
+	if (second.children.length) throw new Error('the panel was handed over still full');
+	if (splitPane.has(entry, 'reader')) throw new Error('the reader still claims the panel');
+
+	splitPane.close(entry);
+	if (dropped !== 2) throw new Error('close() did not tell the occupant');
+	if (entry.pane) throw new Error('close() left the panel on the tab');
+	if (!second.removed) throw new Error('close() left the panel in the DOM');
+});
 
 check('the item pane is handed what <item-details> needs, and nothing more', async () => {
 	const itemPane = require_('./lib/itemPane.js');
-	const doc = fakeXulDoc(async () => {});
-	const entry = { win: { document: doc.document }, split: doc.document.createXULElement('hbox'), tabID: 'tab-7' };
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-7');
 	// Set immediately before the call: show() reads Zotero.Items synchronously,
 	// and the checks in this file share one Zotero stub.
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
@@ -710,8 +768,8 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 	await itemPane.show(entry, 11);
 
-	const details = doc.made.find(el => el.localName === 'item-details');
-	const sidenav = doc.made.find(el => el.localName === 'item-pane-sidenav');
+	const details = made.find(el => el.localName === 'item-details');
+	const sidenav = made.find(el => el.localName === 'item-pane-sidenav');
 	if (!details || !sidenav) throw new Error('no item pane was built');
 	// The three properties contextPane.js sets on its own item-details. Without
 	// tabID the pane renders in a tab nobody is looking at; without a sidenav
@@ -725,9 +783,14 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 
 	itemPane.close(entry);
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');
-	if (!details.removed && !doc.made.some(el => el.className === 'zg-item-pane' && el.removed)) {
-		throw new Error('close() left the pane in the DOM');
+	if (entry.pane) throw new Error('close() left the panel on the tab');
+	// The row is what the panel holds, and taking it out is what disconnects
+	// <item-details> -- which is the whole of the item pane's cleanup, since
+	// ItemDetails unregisters its observers from disconnectedCallback.
+	if (details.parent !== made.find(el => el.className === 'zg-item-row')) {
+		throw new Error('the pane was not left inside the row it was built in');
 	}
+	if (!details.parent.removed) throw new Error('close() left the pane in the DOM');
 });
 
 check('a pointer crossing three nodes draws the last, not all three', async () => {
@@ -739,11 +802,11 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 	const held = new Promise((r) => {
 		release = r;
 	});
-	const doc = fakeXulDoc(async (el) => {
+	const { win, element } = fakeWindow(async (el) => {
 		drawn.push(el.item.id);
 		await held;
 	});
-	const entry = { win: { document: doc.document }, split: doc.document.createXULElement('hbox'), tabID: 'tab-8' };
+	const entry = fakeEntry(win, element, 'tab-8');
 	const items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
 	Zotero.Libraries = { get: () => ({ editable: true }) };
 	Zotero.Prefs = { get: () => 400, set: () => {} };
@@ -1492,7 +1555,8 @@ function referencedIds() {
 	const ids = new Set();
 	const files = [
 		'content/graph.js', 'content/nodeFilters.js',
-		'lib/graphTab.js', 'lib/readerPane.js', 'lib/itemPane.js', 'lib/main.js',
+		'lib/graphTab.js', 'lib/readerPane.js', 'lib/itemPane.js', 'lib/splitPane.js',
+		'lib/main.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;

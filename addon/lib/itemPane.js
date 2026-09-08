@@ -34,28 +34,30 @@
  * the dwell timer that decides when a hover means something lives on the graph
  * page (see HOVER_ITEM_MS in content/graph.js). By the time a message gets here
  * the user has meant it.
+ *
+ * It shares one panel with the reader (splitPane.js) and holds it alone: both
+ * describe the paper you are looking at, and giving each its own strip would
+ * leave the graph a column between two panes.
  */
 
 let l10n = require('./l10n.js');
-
-const MIN_WIDTH = 357;
-const DEFAULT_WIDTH = 400;
+let splitPane = require('./splitPane.js');
 
 const PANE_CSS = `
-	.zg-item-splitter {
-		width: 4px;
-		border: none;
-		background: var(--material-panedivider);
-	}
-	.zg-item-pane {
-		min-width: ${MIN_WIDTH}px;
-		background: var(--material-sidepane);
+	.zg-item-row {
+		/* The row fills the panel; the pane inside it fills the row, less the
+		   37px the sidenav takes. Stated in CSS as well as on the element,
+		   because flex="1" is an attribute and this is not the place to find
+		   out which attributes a given Zotero still maps. */
+		flex: 1;
+		min-height: 0;
+		min-width: 0;
 	}
 	/* The sidenav's first button collapses the pane it lives in, which it finds
 	   with closest('item-pane, context-pane') -- neither of which this is. It
 	   would be an inert button in an otherwise live strip. */
-	.zg-item-pane item-pane-sidenav > toolbarbutton[data-action="toggle-pane"],
-	.zg-item-pane item-pane-sidenav > toolbarbutton[data-action="toggle-pane"] + .divider {
+	.zg-item-row item-pane-sidenav > toolbarbutton[data-action="toggle-pane"],
+	.zg-item-row item-pane-sidenav > toolbarbutton[data-action="toggle-pane"] + .divider {
 		display: none;
 	}
 `;
@@ -71,8 +73,9 @@ const PANE_CSS = `
  * @param {Object}   entry      the graphTab record for this tab
  * @param {Number}   itemID     a regular item, or one of its children
  * @param {Function} [status]   text back to the graph page
+ * @param {Function} [onLost]   the panel has gone to something else, or closed
  */
-async function show(entry, itemID, { status = () => {} } = {}) {
+async function show(entry, itemID, { status = () => {}, onLost = () => {} } = {}) {
 	if (!entry || !entry.split) return;
 
 	let item = await Zotero.Items.getAsync(itemID);
@@ -87,7 +90,7 @@ async function show(entry, itemID, { status = () => {} } = {}) {
 	// once on the status line rather than throwing on every hover.
 	let pane;
 	try {
-		pane = ensurePane(entry);
+		pane = ensurePane(entry, onLost);
 	}
 	catch (e) {
 		Zotero.logError(e);
@@ -131,38 +134,46 @@ function editable(item) {
 	}
 }
 
-/** Tear the pane down: remember the width, then the DOM. */
+/** Close the panel, if the item pane is what is in it. */
 function close(entry) {
-	let pane = entry && entry.itemPane;
-	if (!pane) return;
-	saveWidth(pane);
-	// ItemDetails and the sidenav both unregister their observers from
-	// disconnectedCallback (elements/base.js), so removing them IS the cleanup.
+	if (splitPane.has(entry, 'item')) splitPane.close(entry);
+}
+
+/**
+ * The panel has been taken by the reader, or closed. There is nothing to flush:
+ * ItemDetails and the sidenav both unregister their observers from
+ * disconnectedCallback (elements/base.js), so the panel emptying itself IS the
+ * cleanup. All this has to do is stop claiming to own a pane.
+ */
+function forget(entry) {
 	entry.itemPane = null;
-	pane.splitter.remove();
-	pane.box.remove();
 }
 
 // --- the pane ----------------------------------------------------------
 
-function ensurePane(entry) {
+function ensurePane(entry, onLost) {
 	if (entry.itemPane) return entry.itemPane;
 
 	let doc = entry.win.document;
+	// Losing the panel is not something the graph page can see, and while it
+	// believes it is following the pointer it would take the panel straight
+	// back off whatever displaced it. So it is told.
+	let box = splitPane.claim(entry, 'item', () => {
+		forget(entry);
+		onLost();
+	});
+
 	let style = doc.createElement('style');
 	style.textContent = PANE_CSS;
 
-	let splitter = doc.createXULElement('splitter');
-	splitter.className = 'zg-item-splitter';
-	splitter.setAttribute('resizebefore', 'closest');
-	splitter.setAttribute('resizeafter', 'closest');
-
-	let box = doc.createXULElement('hbox');
-	box.className = 'zg-item-pane';
-	box.setAttribute('width', String(storedWidth()));
+	// The panel is a column; the pane and its sidenav sit side by side inside
+	// it, which is the shape core gives #zotero-context-pane.
+	let row = doc.createXULElement('hbox');
+	row.className = 'zg-item-row';
+	row.setAttribute('flex', '1');
 
 	// The class is what core's stylesheet sizes and colours an item pane by;
-	// the pane is a plain box otherwise, and this is the whole of its styling.
+	// the element is a plain box otherwise, and this is the whole of its styling.
 	let details = doc.createXULElement('item-details');
 	details.className = 'zotero-item-pane-content';
 	let sidenav = doc.createXULElement('item-pane-sidenav');
@@ -171,11 +182,10 @@ function ensurePane(entry) {
 	// deck that does not exist.
 	sidenav.setAttribute('no-context-notes', 'true');
 
-	box.appendChild(details);
-	box.appendChild(sidenav);
+	row.appendChild(details);
+	row.appendChild(sidenav);
+	box.appendChild(row);
 	box.appendChild(style);
-	entry.split.appendChild(splitter);
-	entry.split.appendChild(box);
 
 	// Only now: connectedCallback runs on append and everything below is a
 	// property on an initialised element. Order matters within it too --
@@ -185,11 +195,9 @@ function ensurePane(entry) {
 	details.tabType = 'graph';
 	details.sidenav = sidenav;
 
-	splitter.addEventListener('command', () => saveWidth(entry.itemPane));
-
 	entry.itemPane = {
 		box,
-		splitter,
+		row,
 		details,
 		sidenav,
 		shown: null,       // the item drawn
@@ -197,34 +205,6 @@ function ensurePane(entry) {
 		rendering: false,
 	};
 	return entry.itemPane;
-}
-
-// --- remembered width --------------------------------------------------
-
-function storedWidth() {
-	let w = Number(pref('itemPaneWidth'));
-	return Number.isFinite(w) && w >= MIN_WIDTH ? Math.round(w) : DEFAULT_WIDTH;
-}
-
-function saveWidth(pane) {
-	if (!pane) return;
-	let w = Math.round(pane.box.getBoundingClientRect().width);
-	if (w < MIN_WIDTH) return;
-	try {
-		Zotero.Prefs.set('zoteroGraph.itemPaneWidth', w);
-	}
-	catch (e) {
-		Zotero.logError(e);
-	}
-}
-
-function pref(name) {
-	try {
-		return Zotero.Prefs.get('zoteroGraph.' + name);
-	}
-	catch (e) {
-		return null;
-	}
 }
 
 module.exports = { show, close };
