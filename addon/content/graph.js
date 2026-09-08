@@ -74,7 +74,7 @@
 	let raw = null;
 	let nodeCache = new Map(); // id -> node object, so x/y survive a re-render
 	// The node an incoming payload wants placed without disturbing the rest.
-	// Consumed by render(); see anchorOne().
+	// Consumed by render(); see holdStill().
 	let anchorNext = null;
 	let disabledVia = new Set();
 	let yearRange = null;
@@ -147,6 +147,58 @@
 	let elGroupPull = el('group-pull');
 	let elGroupPullValue = el('group-pull-value');
 
+	/**
+	 * Put the node a just-added paper will be drawn as where the ghost it
+	 * replaces already stood.
+	 *
+	 * Chrome does not re-derive the graph for an add -- see adoptAdded() in
+	 * lib/graphTab.js -- but the work does change key, and to force-graph a new
+	 * id is a node with no coordinates. Left to the engine it lands near the
+	 * origin and the layout has to fetch it, which is the whole re-anneal this
+	 * exists to avoid.
+	 *
+	 * The ghost's own position is the first answer and the right one. With
+	 * outside refs switched off there is no ghost on screen, so the second is the
+	 * middle of the papers that cite it -- roughly where the layout would have
+	 * taken it anyway.
+	 *
+	 * @returns {Boolean} whether it starts life somewhere meant, and so whether
+	 *                    the layout can be held still around it
+	 */
+	function placeAdopted(adopted, edges) {
+		let was = nodeCache.get(adopted.was);
+		nodeCache.delete(adopted.was);
+		if (nodeCache.has(adopted.now)) return false;
+
+		let at = was && was.x != null ? was : citedFrom(edges, adopted.now);
+		if (!at) return false;
+		let n = { id: adopted.now, x: at.x, y: at.y, vx: 0, vy: 0 };
+		// A pinned ghost becomes a pinned item: the pin was a statement about
+		// where that work belongs, not about the key it wore.
+		if (was && was.fx != null) n.fx = was.fx;
+		if (was && was.fy != null) n.fy = was.fy;
+		nodeCache.set(adopted.now, n);
+		return true;
+	}
+
+	/** The middle of the nodes the incoming edges join `id` to, over the ones
+	 *  already on screen. Null when none of them are. */
+	function citedFrom(edges, id) {
+		let x = 0;
+		let y = 0;
+		let seen = 0;
+		for (let e of edges) {
+			let other = e.from === id ? e.to : (e.to === id ? e.from : null);
+			if (!other) continue;
+			let n = nodeCache.get(other);
+			if (!n || n.x == null) continue;
+			x += n.x;
+			y += n.y;
+			seen++;
+		}
+		return seen ? { x: x / seen, y: y / seen } : null;
+	}
+
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
 	}
@@ -163,24 +215,8 @@
 			return;
 		}
 		let firstEdges = (!raw || !raw.edges.length) && next.edges.length;
-		// A paper just added IS the ghost that was there a moment ago, under a
-		// new key. Hand the coordinates over so the new node lands where the
-		// graph already showed it, rather than wherever the engine throws a
-		// node it has never seen.
 		let adopted = next.meta && next.meta.adopted;
-		if (adopted) {
-			let was = nodeCache.get(adopted.was);
-			if (was && !nodeCache.has(adopted.now)) {
-				let n = { id: adopted.now, x: was.x, y: was.y, vx: 0, vy: 0 };
-				// A pinned ghost becomes a pinned item: the pin was a statement
-				// about where that work belongs, not about its key.
-				if (was.fx != null) n.fx = was.fx;
-				if (was.fy != null) n.fy = was.fy;
-				nodeCache.set(adopted.now, n);
-			}
-			nodeCache.delete(adopted.was);
-			anchorNext = adopted.now;
-		}
+		anchorNext = adopted && placeAdopted(adopted, next.edges) ? adopted.now : null;
 		raw = next;
 		raw.external = raw.external || [];
 		// Chrome owns the scope options; reflect what it actually used, which
@@ -1408,7 +1444,7 @@
 		// After updateGraph, which is what handed force-graph the changed node
 		// set and so what set the layout alight.
 		if (anchorNext) {
-			anchorOne(anchorNext);
+			holdStill(anchorNext);
 			anchorNext = null;
 		}
 		renderLegend(nodes);
@@ -2325,7 +2361,17 @@
 	// Alpha is multiplied by (1 - decay) per tick, so this sheds it in halves:
 	// two ticks take 1 down to 0.25.
 	const SHED_DECAY = 0.5;
-	const SHED_TICKS = Math.ceil(Math.log(DROP_ALPHA) / Math.log(1 - SHED_DECAY));
+
+	// The other end a shed can be aimed at: far enough below d3's own alphaMin
+	// that the ticks after the release move nothing anyone can see. Ten ticks of
+	// halving, a sixth of a second -- and that is the whole life of the freeze,
+	// which is what keeps a freeze out of the way of whatever the user does next.
+	const SPENT_ALPHA = 0.001;
+
+	/** Ticks of halving it takes to bring alpha from 1 down to `target`. */
+	function shedTicks(target) {
+		return Math.ceil(Math.log(target) / Math.log(1 - SHED_DECAY));
+	}
 
 	// Fixed for the length of the shed, and not by the user. isPinned() has to
 	// see through this, or every node would wear a pin ring for those two frames.
@@ -2337,43 +2383,50 @@
 	let settleDecay = null;
 
 	/**
-	 * Hold the graph still and let one node find its place in it.
+	 * Fix the graph where it stands, spend alpha down to `target` over the few
+	 * ticks that takes, and let go of everything at once. `freeID` names the one
+	 * node left free to move while the rest are held.
 	 *
-	 * Adding a paper turns a ghost into a held item, which is a different id --
-	 * so force-graph is handed a changed node set and re-anneals the layout from
-	 * full temperature. Nothing about the derivation changed, though: the same
-	 * papers cite the same work. So every node but the new one is fixed where it
-	 * stands, which leaves that run exactly one body to place.
-	 *
-	 * No reheat and no shed: graphData has already set alpha to 1, and this run
-	 * is the one that places the node. The graph is handed back by thaw() from
-	 * onEngineStop, by which time alpha is spent and letting go moves nothing.
+	 * A shed always ENDS, and quickly -- ten ticks at the outside. That is not
+	 * only about how the release looks: a frozen node carries fx/fy, and a drag
+	 * begun while the graph is frozen drags one node against a picture nailed to
+	 * the canvas. A freeze that outlived its shed would take the answer out of
+	 * every gesture the user made next.
 	 */
-	function anchorOne(id) {
+	function shedTo(target, freeID = null) {
 		if (!fg) return;
 		thaw();
 		for (let n of drawnNodes) {
-			if (n.id === id) continue;
-			if (n.fx != null || n.fy != null) continue;
-			n.fx = n.x;
-			n.fy = n.y;
-			frozen.add(n);
-		}
-	}
-
-	function settle() {
-		if (!fg) return;
-		thaw();
-		for (let n of drawnNodes) {
+			if (n.id === freeID) continue;
 			if (n.fx != null || n.fy != null) continue;
 			n.fx = n.x;
 			n.fy = n.y;
 			frozen.add(n);
 		}
 		if (!frozen.size) return;
-		shedLeft = SHED_TICKS;
+		shedLeft = shedTicks(target);
 		settleDecay = fg.d3AlphaDecay();
 		fg.d3AlphaDecay(SHED_DECAY).d3ReheatSimulation();
+	}
+
+	function settle() {
+		shedTo(DROP_ALPHA);
+	}
+
+	/**
+	 * Take a just-added paper into the layout without moving the layout.
+	 *
+	 * Adding turns a ghost into a held item, which is a different id -- so
+	 * force-graph is handed a changed node set and sets alpha to 1, which would
+	 * re-anneal the whole picture. Nothing about the derivation changed, though:
+	 * the same papers cite the same work. placeAdopted() has already put the new
+	 * node where the ghost stood, so there is nothing left to arrange -- this
+	 * spends that alpha against a frozen graph instead of letting it be paid out
+	 * in motion, and leaves the new node itself free for those few ticks so the
+	 * collide force can nudge it off anything it landed on.
+	 */
+	function holdStill(freeID) {
+		shedTo(SPENT_ALPHA, freeID);
 	}
 
 	/**
