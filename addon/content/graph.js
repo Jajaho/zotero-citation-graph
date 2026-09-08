@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks, ZGFilters */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGL10n */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -52,6 +52,18 @@
 	const Scale = ZGScale;
 	const Links = ZGLinks;
 	const Filters = ZGFilters;
+
+	/**
+	 * One string, from the .ftl chrome hands the page. Until that lands t()
+	 * gives back the id it was asked for -- see l10n.js -- so nothing below has
+	 * to check whether the strings have arrived before it can draw.
+	 */
+	const t = (id, args) => ZGL10n.t(id, args);
+
+	// nodeFilters.js is pure and stays that way: it is handed the translator
+	// rather than reaching for one, so the same file still runs under Node with
+	// its own English labels.
+	Filters.setTranslator(t);
 
 	let fg = null;
 	let raw = null;
@@ -131,7 +143,7 @@
 			next = JSON.parse(json);
 		}
 		catch (e) {
-			elStatus.textContent = 'Bad payload: ' + e.message;
+			elStatus.textContent = t('bad-payload', { message: e.message });
 			return;
 		}
 		let firstEdges = (!raw || !raw.edges.length) && next.edges.length;
@@ -219,29 +231,33 @@
 		let x = n.meta || {};
 		let head = x.title ? escapeHtml(x.title) : escapeHtml(n.name);
 		let bits = [];
-		if (x.creators && x.creators.length) {
-			bits.push(escapeHtml(x.creators.slice(0, 3).join(', ')
-				+ (x.creators.length > 3 ? ' et al.' : '')));
-		}
+		if (x.creators && x.creators.length) bits.push(escapeHtml(creatorList(x.creators)));
 		if (x.year) bits.push(x.year);
-		bits.push('cited by ' + n.inDeg + ' here');
+		bits.push(t('tooltip-cited-here', { count: n.inDeg }));
 		if (x.citedByGlobal != null) {
-			bits.push(x.citedByGlobal.toLocaleString() + ' citations total');
+			bits.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
 		}
-		if (isPinned(n)) bits.push('pinned');
-		bits.push('double-click for details · right-click for actions');
-		return 'Not in collection — ' + head + '<br/>' + bits.join(' · ');
+		if (isPinned(n)) bits.push(t('tooltip-pinned'));
+		bits.push(t('tooltip-ghost-actions'));
+		return t('tooltip-not-in-collection', { title: head }) + '<br/>' + bits.join(' · ');
+	}
+
+	/** The first few names, with the rest folded into an "et al." the locale
+	 *  owns -- some languages abbreviate it differently, or not at all. */
+	function creatorList(creators) {
+		let head = creators.slice(0, 3).join(', ');
+		return creators.length > 3 ? t('tooltip-et-al', { names: head }) : head;
 	}
 
 	/** Held items. Same two counts, same wording, so they read side by side. */
 	function itemTooltip(n) {
 		let bits = [];
-		if (n.inDeg) bits.push('cited by ' + n.inDeg + ' here');
+		if (n.inDeg) bits.push(t('tooltip-cited-here', { count: n.inDeg }));
 		if (n.citedByGlobal != null) {
-			bits.push(n.citedByGlobal.toLocaleString() + ' citations total');
+			bits.push(t('tooltip-citations-total', { count: n.citedByGlobal.toLocaleString() }));
 		}
-		if (isPinned(n)) bits.push('pinned');
-		bits.push('double-click to select in Zotero · right-click for actions');
+		if (isPinned(n)) bits.push(t('tooltip-pinned'));
+		bits.push(t('tooltip-item-actions'));
 		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
 			+ '<br/>' + bits.join(' · ');
 	}
@@ -250,10 +266,10 @@
 
 	function colorKey(n) {
 		switch (elColorBy.value) {
-			case 'collection': return (n.collections || [])[0] || '(no collection)';
-			case 'author': return (n.creators || [])[0] || '(no author)';
-			case 'publication': return n.publication || '(no publication)';
-			case 'type': return n.itemType || '(unknown type)';
+			case 'collection': return (n.collections || [])[0] || t('color-no-collection');
+			case 'author': return (n.creators || [])[0] || t('color-no-author');
+			case 'publication': return n.publication || t('color-no-publication');
+			case 'type': return n.itemType || t('color-unknown-type');
 			default: return n.year == null ? null : String(n.year);
 		}
 	}
@@ -306,13 +322,11 @@
 	 * Rebuilt on every render, because every input to it moves: the colour
 	 * mode, the year range, and which nodes survived the filters.
 	 */
-	const LEGEND_TITLE = {
-		year: 'year',
-		collection: 'collection',
-		author: 'first author',
-		publication: 'publication',
-		type: 'item type',
-	};
+	// The same words the panel's "colour" menu offers, so the legend's title is
+	// literally the sentence the user just made there.
+	function colorModeName(mode) {
+		return t('color-by-' + mode);
+	}
 
 	// Author and collection have long tails: a legend with two hundred rows is
 	// a wall, and each row past this one explains a single node.
@@ -323,7 +337,7 @@
 		// Titled as the sentence the user just made in the panel -- "coloured by
 		// year" -- rather than the bare noun, so the legend says what it is a
 		// legend FOR without the panel having to be open beside it.
-		let title = 'Coloured by ' + (LEGEND_TITLE[mode] || mode);
+		let title = t('legend-title', { mode: colorModeName(mode) });
 		elLegendTitle.textContent = title;
 		// One narrow line, and it ellipsises; the tooltip carries the rest.
 		elLegendTitle.title = title;
@@ -342,7 +356,7 @@
 		// Outside references are the one population coloured by what they are
 		// rather than by any metadata they carry, so they get an entry of their
 		// own in every mode.
-		if (ghosts) elLegendBody.appendChild(legendRow(GHOST_COLOR, 'outside refs', ghosts));
+		if (ghosts) elLegendBody.appendChild(legendRow(GHOST_COLOR, t('legend-outside'), ghosts));
 
 		elLegend.hidden = !elLegendBody.firstChild;
 	}
@@ -372,7 +386,7 @@
 			elLegendBody.appendChild(ends);
 		}
 
-		if (undated) elLegendBody.appendChild(legendRow(NO_KEY_COLOR, 'no date', undated));
+		if (undated) elLegendBody.appendChild(legendRow(NO_KEY_COLOR, t('legend-no-date'), undated));
 	}
 
 	/** The hashed modes: one swatch per key, commonest first, so the colours
@@ -392,7 +406,7 @@
 		if (rest > 0) {
 			let more = document.createElement('div');
 			more.className = 'legend-more';
-			more.textContent = '+' + rest + ' more';
+			more.textContent = t('legend-more', { count: rest });
 			elLegendBody.appendChild(more);
 		}
 	}
@@ -402,7 +416,7 @@
 		row.className = 'legend-row';
 		// The name is clipped to the panel width, so the whole of it has to be
 		// reachable somewhere.
-		row.title = label + ' — ' + count + (count === 1 ? ' node' : ' nodes');
+		row.title = t('legend-row-hint', { label, count });
 		let dot = document.createElement('span');
 		dot.className = 'dot';
 		dot.style.background = color;
@@ -485,18 +499,22 @@
 	/** The chip is clipped to the panel width, so the long form -- every value,
 	 *  and which of them are exact -- has to be reachable on hover. */
 	function chipHint(f) {
-		let what = f.field || 'any field';
-		let bits = f.terms.map((t) => {
-			if (t.op === 'range') {
-				if (t.lo != null && t.hi != null) {
-					return t.lo === t.hi ? 'is ' + t.lo : 'is between ' + t.lo + ' and ' + t.hi;
+		let what = f.field ? Filters.fieldLabel(f.field) : t('field-any');
+		let bits = f.terms.map((term) => {
+			if (term.op === 'range') {
+				if (term.lo != null && term.hi != null) {
+					return term.lo === term.hi
+						? t('chip-is', { value: term.lo })
+						: t('chip-between', { lo: term.lo, hi: term.hi });
 				}
-				return t.lo != null ? 'is ' + t.lo + ' or later' : 'is ' + t.hi + ' or earlier';
+				return term.lo != null
+					? t('chip-or-later', { year: term.lo })
+					: t('chip-or-earlier', { year: term.hi });
 			}
-			return (t.op === 'is' ? 'is exactly ' : 'contains ') + '"' + t.value + '"';
+			return t(term.op === 'is' ? 'chip-is-exactly' : 'chip-contains', { value: term.value });
 		});
 		// "or", because terms widen. It is the chips between them that narrow.
-		return what + ' ' + bits.join(', or ') + '\nClick to edit';
+		return what + ' ' + bits.join(t('chip-or-join')) + '\n' + t('chip-click-to-edit');
 	}
 
 	/**
@@ -612,7 +630,7 @@
 				x.type = 'button';
 				x.className = 'chip-x';
 				x.textContent = '✕';
-				x.title = 'Lift this mask';
+				x.title = t('chip-remove');
 				x.addEventListener('click', () => removeFilter(i));
 				chip.appendChild(text);
 				chip.appendChild(x);
@@ -1094,11 +1112,17 @@
 		let ghostCount = visibleGhosts.size;
 		let named = 0;
 		for (let [, { x }] of visibleGhosts) if (x.title) named++;
-		elStats.textContent = (nodes.length - ghostCount) + ' / ' + raw.items.length + ' items'
-			+ (ghostCount ? ' · ' + ghostCount + ' outside'
-				+ (named ? ' (' + named + ' named)' : '') : '')
-			+ ' · ' + links.length + ' edges'
-			+ (phase && phase !== 'done' ? ' · building…' : '');
+		// Fragments joined with a separator rather than one sentence: three of
+		// the four are conditional, and a message with three holes that are
+		// usually empty is not a thing anyone can translate.
+		let stats = [t('stats-items', { shown: nodes.length - ghostCount, total: raw.items.length })];
+		if (ghostCount) {
+			stats.push(t('stats-outside', { count: ghostCount })
+				+ (named ? ' ' + t('stats-named', { count: named }) : ''));
+		}
+		stats.push(t('stats-edges', { count: links.length }));
+		if (phase && phase !== 'done') stats.push(t('stats-building'));
+		elStats.textContent = stats.join(' · ');
 	}
 
 	/**
@@ -1686,9 +1710,10 @@
 		}
 		elIsolate.hidden = !names.length;
 		if (!names.length) return;
-		elIsolate.textContent = 'isolated: '
-			+ (names.length > 1 ? names[0] + ' +' + (names.length - 1) : names[0]) + ' ✕';
-		elIsolate.title = names.join(', ') + ' — click to show the whole graph';
+		elIsolate.textContent = names.length > 1
+			? t('isolate-note-more', { name: names[0], count: names.length - 1 })
+			: t('isolate-note', { name: names[0] });
+		elIsolate.title = t('isolate-note-hint', { names: names.join(', ') });
 	}
 
 	elIsolate.addEventListener('click', clearIsolated);
@@ -2122,7 +2147,7 @@
 
 	/** What the flag says: the masks it pulls by, or the invitation to say. */
 	function groupLabel(g) {
-		if (!g.filters.length) return 'nothing yet';
+		if (!g.filters.length) return t('group-flag-empty');
 		return g.filters.map(Filters.describe).join(' + ');
 	}
 
@@ -2181,7 +2206,7 @@
 		editingGroup = g;
 		// "here" is only true of the flag being planted; on one already stood
 		// up the card is about the group, not about the click that opened it.
-		elGroupTitle.textContent = g.filters.length ? 'Group' : 'Group here';
+		elGroupTitle.textContent = t(g.filters.length ? 'group-existing' : 'group-here');
 		groupBox.load(g.filters);
 		syncGroupNote();
 		elGroup.hidden = false;
@@ -2216,8 +2241,8 @@
 		if (!editingGroup) return;
 		let n = groupSize(editingGroup);
 		elGroupSub.textContent = editingGroup.filters.length
-			? 'pulls ' + n + (n === 1 ? ' paper here' : ' papers here')
-			: 'say what belongs here';
+			? t('group-pulls', { count: n })
+			: t('group-empty');
 	}
 
 	/**
@@ -2341,27 +2366,27 @@
 	 */
 	function showCanvasMenu(event) {
 		let entries = [{
-			label: 'Zoom to fit',
-			hint: 'put the whole graph back in view',
+			label: t('menu-zoom-to-fit'),
+			hint: t('menu-zoom-to-fit-hint'),
 			run: reframe,
 		}];
 		let g = groupAt(event);
 		if (g) {
 			entries.push({
-				label: 'Edit group',
-				hint: 'change what this anchor pulls',
+				label: t('menu-edit-group'),
+				hint: t('menu-edit-group-hint'),
 				run: () => openGroup(g, event),
 			});
 			entries.push({
-				label: 'Remove group',
-				hint: 'let these papers go back to the layout',
+				label: t('menu-remove-group'),
+				hint: t('menu-remove-group-hint'),
 				run: () => removeGroup(g),
 			});
 		}
 		else {
 			entries.push({
-				label: 'Group here',
-				hint: 'plant an anchor, and say what belongs at it',
+				label: t('menu-group-here'),
+				hint: t('menu-group-here-hint'),
 				run: () => addGroup(event),
 			});
 		}
@@ -2425,23 +2450,20 @@
 		let on = isolated.has(n.id);
 		let only = on && isolated.size === 1;
 		let entries = [{
-			label: only ? 'Show whole graph' : 'Isolate',
+			label: t(only ? 'menu-show-whole-graph' : 'menu-isolate'),
 			hint: only
-				? 'undim everything'
+				? t('menu-isolate-hint-undim')
 				: isolateDepth === 0
-					? 'dim everything but this node'
-					: 'dim everything more than ' + isolateDepth
-						+ (isolateDepth === 1 ? ' edge' : ' edges') + ' away',
+					? t('menu-isolate-hint-only')
+					: t('menu-isolate-hint-depth', { depth: isolateDepth }),
 			run: () => (only ? clearIsolated() : isolateOnly(n.id)),
 		}];
 		// Removing the last focused node is what the entry above already reads
 		// as "Show whole graph", so there is nothing left for this one to say.
 		if (isolated.size && !only) {
 			entries.push({
-				label: on ? 'Remove from isolation' : 'Add to isolation',
-				hint: on
-					? 'stop lighting the neighbourhood around this node'
-					: 'light the neighbourhood around this node too, keeping the rest',
+				label: t(on ? 'menu-remove-from-isolation' : 'menu-add-to-isolation'),
+				hint: t(on ? 'menu-remove-from-isolation-hint' : 'menu-add-to-isolation-hint'),
 				run: () => (on ? dropIsolated(n.id) : addIsolated(n.id)),
 			});
 		}
@@ -2451,10 +2473,8 @@
 	function pinEntry(n) {
 		let pinned = isPinned(n);
 		return {
-			label: pinned ? 'Unpin node' : 'Pin node here',
-			hint: pinned
-				? 'let the layout move it again'
-				: 'hold it at this spot; drag it to move the pin',
+			label: t(pinned ? 'menu-unpin' : 'menu-pin'),
+			hint: t(pinned ? 'menu-unpin-hint' : 'menu-pin-hint'),
 			run: () => (pinned ? unpin(n) : pin(n)),
 		};
 	}
@@ -2464,8 +2484,8 @@
 		let url = Links.externalUrl(x.ns, x.id || n.name);
 		return [
 			{
-				label: 'Open in browser',
-				hint: url || 'no resolvable identifier',
+				label: t('menu-open-in-browser'),
+				hint: url || t('menu-open-in-browser-no-id'),
 				disabled: !url,
 				run: () => emit({ type: 'open-url', url }),
 			},
@@ -2474,7 +2494,7 @@
 				// first. A menu entry cannot be hit by a stray click while
 				// panning, and that is the only thing the confirmation was ever
 				// there to prevent.
-				label: 'Add to Zotero',
+				label: t('menu-add-to-zotero'),
 				hint: n.name,
 				disabled: x.ns !== 'doi',
 				run: () => emit({ type: 'add-item', doi: n.name }),
@@ -2486,7 +2506,7 @@
 		let url = Links.itemUrl(n);
 		return [
 			{
-				label: 'Select in Zotero',
+				label: t('menu-select-in-zotero'),
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-item', itemID: n.itemID }),
 			},
@@ -2496,8 +2516,8 @@
 				// here -- the payload carries items, not their files -- so this is
 				// always offered, and chrome says so on the status line when there
 				// is nothing to open.
-				label: 'Open PDF beside the graph',
-				hint: 'read it here, without leaving the graph',
+				label: t('menu-open-pdf-pane'),
+				hint: t('menu-open-pdf-pane-hint'),
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-pdf', itemID: n.itemID }),
 			},
@@ -2506,14 +2526,14 @@
 				// terms as the pane above and for the same reason: whether the
 				// item has a readable file is chrome's to answer, and it says
 				// so on the status line when there is nothing to open.
-				label: 'Open PDF in new tab',
-				hint: 'the whole reader, with search, sidebar and annotation',
+				label: t('menu-open-pdf-tab'),
+				hint: t('menu-open-pdf-tab-hint'),
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-pdf-tab', itemID: n.itemID }),
 			},
 			{
-				label: 'Open in browser',
-				hint: url || 'this item has neither a URL nor a DOI',
+				label: t('menu-open-in-browser'),
+				hint: url || t('menu-open-in-browser-no-url'),
 				disabled: !url,
 				run: () => emit({ type: 'open-url', url }),
 			},
@@ -2553,19 +2573,19 @@
 		let x = n.meta || {};
 		el('action-title').textContent = x.title || n.name;
 		let sub = [];
-		if (x.creators && x.creators.length) {
-			sub.push(x.creators.slice(0, 3).join(', ') + (x.creators.length > 3 ? ' et al.' : ''));
-		}
+		if (x.creators && x.creators.length) sub.push(creatorList(x.creators));
 		if (x.year) sub.push(x.year);
-		sub.push('cited by ' + n.inDeg + ' here');
-		if (x.citedByGlobal != null) sub.push(x.citedByGlobal.toLocaleString() + ' citations total');
+		sub.push(t('tooltip-cited-here', { count: n.inDeg }));
+		if (x.citedByGlobal != null) {
+			sub.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
+		}
 		// The DOI is the thing actually being added, so show it verbatim.
 		sub.push(n.name);
 		el('action-sub').textContent = sub.join(' · ');
 
 		let add = el('action-add');
 		add.disabled = false;
-		add.textContent = 'Add to Zotero';
+		add.textContent = t('action-add');
 
 		elAction.hidden = false;
 		positionAt(elAction, event);
@@ -2581,7 +2601,7 @@
 		if (!actionNode) return;
 		let add = el('action-add');
 		add.disabled = true;
-		add.textContent = 'Adding…';
+		add.textContent = t('action-adding');
 		// Chrome answers by rebuilding, which re-pushes and re-renders; the
 		// popover is dismissed now because the node it describes is about to
 		// stop existing as a ghost.
@@ -2620,7 +2640,7 @@
 	/** Scope changes cannot be filtered into existence -- they need a new build. */
 	function requestRebuild() {
 		syncEnabled();
-		elStatus.textContent = 'Rebuilding…';
+		elStatus.textContent = t('status-rebuilding');
 		emit({
 			type: 'rebuild',
 			options: {
@@ -2641,7 +2661,7 @@
 	 */
 	function requestLookup() {
 		syncEnabled();
-		elStatus.textContent = elEnrich.checked ? 'Looking up names…' : 'Dropping looked-up names…';
+		elStatus.textContent = t(elEnrich.checked ? 'status-looking-up' : 'status-dropping-names');
 		emit({ type: 'lookup', on: elEnrich.checked });
 	}
 
@@ -2754,7 +2774,7 @@
 	function setCollapsed(on) {
 		elPanel.classList.toggle('collapsed', on);
 		elPanelToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
-		elPanelToggle.title = on ? 'Show controls' : 'Collapse controls';
+		elPanelToggle.title = t(on ? 'panel-expand' : 'panel-collapse');
 		// Storage is a nicety, not a requirement: a resource:// page can be
 		// denied it, and the panel still works when the write throws.
 		try {
@@ -2777,7 +2797,7 @@
 	function setLegendCollapsed(on) {
 		elLegend.classList.toggle('collapsed', on);
 		elLegendToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
-		elLegendToggle.title = on ? 'Show legend' : 'Collapse legend';
+		elLegendToggle.title = t(on ? 'legend-expand' : 'legend-collapse');
 		try {
 			window.localStorage.setItem(LEGEND_KEY, on ? '1' : '0');
 		}
@@ -2792,6 +2812,24 @@
 		if (window.localStorage.getItem(LEGEND_KEY) === '1') setLegendCollapsed(true);
 	}
 	catch (e) { /* see setCollapsed */ }
+
+	/**
+	 * Repaint whatever was drawn before the strings landed.
+	 *
+	 * Almost nothing needs this: menus, tooltips, chips and the group card are
+	 * built at the moment they are opened and ask for their strings then. What
+	 * is left is the handful of things this file paints as it loads -- the two
+	 * collapse tooltips, which depend on a state the markup cannot know -- and
+	 * anything a payload that beat the strings across has already rendered.
+	 *
+	 * l10n.js runs this immediately if the strings are already in, so it is not
+	 * a race either way.
+	 */
+	ZGL10n.onReady(() => {
+		setCollapsed(elPanel.classList.contains('collapsed'));
+		setLegendCollapsed(elLegend.classList.contains('collapsed'));
+		if (raw) render();
+	});
 
 	window.addEventListener('resize', () => {
 		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);

@@ -45,6 +45,34 @@
 	var NAMES = FIELDS.map(function (f) { return f.name; });
 
 	/**
+	 * Wording, which is the one thing in here that is not derivable from the
+	 * data. graph.js installs the string bundle's t(); without one -- under
+	 * Node, where the tests care about structure rather than prose -- the
+	 * English written above and below stands in.
+	 *
+	 * A field's `name` is never translated: it is the keyword the box parses
+	 * ("author:"), and a mask has to survive being written to a chip and read
+	 * back. Only the `label` shown beside it moves.
+	 */
+	var translate = null;
+
+	function setTranslator(fn) {
+		translate = typeof fn === 'function' ? fn : null;
+	}
+
+	function tr(id, args, fallback) {
+		return translate ? translate(id, args) : fallback;
+	}
+
+	/** What a field is called on screen. */
+	function fieldLabel(name) {
+		for (var i = 0; i < FIELDS.length; i++) {
+			if (FIELDS[i].name === name) return tr('field-' + name, null, FIELDS[i].label);
+		}
+		return name;
+	}
+
+	/**
 	 * An item flattened to the values each facet can match on. Every facet is a
 	 * list, because two of them genuinely are: an item has several authors and
 	 * can sit in several collections, and matching only the first would make
@@ -310,7 +338,8 @@
 	/** The chip's text. Short, because it sits in a 220px panel -- the chip's
 	 *  title attribute carries the long form. */
 	function describe(f) {
-		return (f.field || 'any') + ': ' + f.terms.map(termLabel).join(', ');
+		var what = f.field ? fieldLabel(f.field) : tr('field-any-short', null, 'any');
+		return what + ': ' + f.terms.map(termLabel).join(', ');
 	}
 
 	// --- completions ------------------------------------------------------
@@ -357,7 +386,8 @@
 				out.push({
 					kind: 'field',
 					label: f.name + ':',
-					hint: 'filter by ' + f.label,
+					hint: tr('suggest-filter-by', { field: fieldLabel(f.name) },
+						'filter by ' + f.label),
 					insert: f.name + ': ',
 				});
 			}
@@ -371,7 +401,7 @@
 				out.push({
 					kind: 'range',
 					label: termLabel({ op: 'range', lo: r.lo, hi: r.hi }),
-					hint: 'a span of years',
+					hint: tr('suggest-year-span', null, 'a span of years'),
 					field: 'year',
 					term: partial,
 				});
@@ -416,7 +446,10 @@
 			out.push({
 				kind: 'value',
 				label: ranked[s].value,
-				hint: ranked[s].field,
+				// Which facet the value came from, named the way the panel names
+				// it: a bare search spans all of them, and Nature the journal is
+				// not Nature the collection.
+				hint: fieldLabel(ranked[s].field),
 				count: ranked[s].count,
 				field: ranked[s].field,
 				term: quote(ranked[s].value),
@@ -434,7 +467,7 @@
 				out.push({
 					kind: 'free',
 					label: termLabel(free),
-					hint: 'anything containing this',
+					hint: tr('suggest-free', null, 'anything containing this'),
 					field: p.field,
 					term: termText(free),
 				});
@@ -446,6 +479,8 @@
 
 	global.ZGFilters = {
 		FIELDS: FIELDS,
+		setTranslator: setTranslator,
+		fieldLabel: fieldLabel,
 		facets: facets,
 		parse: parse,
 		exact: exact,

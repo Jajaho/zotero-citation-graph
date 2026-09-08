@@ -26,6 +26,8 @@
  * header, and it opens a WINDOW rather than a tab so the graph stays on screen.
  */
 
+let l10n = require('./l10n.js');
+
 // Below this the reader's own layout starts fighting the pane rather than
 // reflowing into it.
 const MIN_WIDTH = 320;
@@ -111,7 +113,7 @@ async function open(entry, itemID, { status = () => {} } = {}) {
 	pane.attachmentID = att.id;
 	pane.titleEl.textContent = item.getDisplayTitle();
 	pane.openBtn.disabled = false;
-	setNote(pane, 'Loading...');
+	setNote(pane, l10n.t('reader-loading'));
 
 	// A preview browser is single-use: core's own discard path removes the
 	// element and builds a fresh one rather than pointing an existing reader at
@@ -125,7 +127,7 @@ async function open(entry, itemID, { status = () => {} } = {}) {
 	// A second open() may have raced past this await; that one owns the pane now.
 	if (pane.browser !== browser) return;
 	if (!loaded) {
-		setNote(pane, 'The reader did not load.');
+		setNote(pane, l10n.t('reader-failed'));
 		return;
 	}
 
@@ -137,7 +139,7 @@ async function open(entry, itemID, { status = () => {} } = {}) {
 	}
 	catch (e) {
 		Zotero.logError(e);
-		setNote(pane, 'Could not render this attachment.');
+		setNote(pane, l10n.t('reader-render-failed'));
 		discardReader(pane);
 		return;
 	}
@@ -175,19 +177,19 @@ async function readable(itemID, status) {
 
 	let att = item.isAttachment() ? item : await item.getBestAttachment();
 	if (!att) {
-		status('No attachment on "' + item.getDisplayTitle() + '".');
+		status(l10n.t('reader-no-attachment', { title: item.getDisplayTitle() }));
 		return null;
 	}
 	// pdf | epub | snapshot. Anything else (an image, a bare link) has no reader
 	// to render it, and ReaderInstance's constructor throws on it.
 	if (!att.attachmentReaderType) {
-		status('"' + item.getDisplayTitle() + '" has no PDF, EPUB or snapshot to open.');
+		status(l10n.t('reader-unsupported', { title: item.getDisplayTitle() }));
 		return null;
 	}
 	// Returns false when the row exists but the bytes do not -- the usual state
 	// of an attachment added through the local API without its file.
 	if (!await att.getFilePathAsync()) {
-		status('The attachment file for "' + item.getDisplayTitle() + '" is missing on disk.');
+		status(l10n.t('reader-missing-file', { title: item.getDisplayTitle() }));
 		return null;
 	}
 	return { item, att };
@@ -244,17 +246,17 @@ function ensurePane(entry) {
 		entry,
 	};
 
-	pane.prevBtn = button(doc, head, '‹', 'Previous page', () => goto(pane, 'prev'));
-	pane.nextBtn = button(doc, head, '›', 'Next page', () => goto(pane, 'next'));
+	pane.prevBtn = button(doc, head, '‹', l10n.t('reader-prev'), () => goto(pane, 'prev'));
+	pane.nextBtn = button(doc, head, '›', l10n.t('reader-next'), () => goto(pane, 'next'));
 	// The preview is read-only and has no reader UI, so this is the way out to
 	// annotations, search and the sidebar. A window, not a tab, because leaving
 	// the graph is the one thing this whole feature exists to avoid.
-	pane.openBtn = button(doc, head, 'Open ↗', 'Open in a full reader window', () => {
+	pane.openBtn = button(doc, head, l10n.t('reader-open'), l10n.t('reader-open-hint'), () => {
 		if (!pane.attachmentID) return;
 		Zotero.Reader.open(pane.attachmentID, null, { openInWindow: true })
 			.catch(e => Zotero.logError(e));
 	});
-	button(doc, head, '✕', 'Close this pane', () => close(pane.entry));
+	button(doc, head, '✕', l10n.t('reader-close'), () => close(pane.entry));
 
 	box.appendChild(head);
 	box.appendChild(style);

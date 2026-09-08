@@ -6,6 +6,7 @@
  */
 
 let graphTab = require('./graphTab.js');
+let l10n = require('./l10n.js');
 
 const MENU_ID = 'zotero-graph-collection';
 
@@ -14,6 +15,9 @@ let _config = null;
 module.exports = {
 	async startup(config) {
 		_config = config;
+		// Before anything that can produce a string. Every t() call after this
+		// point is synchronous, and a tab cannot open until startup returns.
+		await l10n.load(config.rootURI);
 		this.registerMenu();
 	},
 
@@ -81,9 +85,11 @@ module.exports = {
 						let ok = rows.length === 1 && rows[0].isCollection && rows[0].isCollection();
 						let el = event.target;
 						el.hidden = !ok;
-						// Fallback if the FTL string didn't resolve.
+						// Fallback if the FTL string didn't resolve through the
+						// window's own bundle -- the same message, read straight
+						// out of the file this plugin ships.
 						if (ok && !el.getAttribute('label')) {
-							el.setAttribute('label', 'View Citation Graph');
+							el.setAttribute('label', l10n.attr('view-citation-graph', 'label'));
 						}
 					},
 					onCommand: (event, ctx) => {

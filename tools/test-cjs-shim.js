@@ -49,6 +49,10 @@ const Zotero = {
 	logError: () => {},
 	Promise: { delay: ms => new Promise(r => setTimeout(r, ms)) },
 	DataDirectory: { dir: addonDir },
+	// lib/l10n.js reads its .ftl through these two, so the chrome side of
+	// localisation runs here exactly as it does inside Zotero.
+	locale: 'en-US',
+	File: { getResourceAsync: async url => fs.readFileSync(fileURLToPath(url), 'utf8') },
 };
 
 const require_ = shim.makeRequire(rootURI, {
@@ -66,6 +70,10 @@ const require_ = shim.makeRequire(rootURI, {
 	setTimeout, clearTimeout,
 	fetch: () => { throw new Error('network disabled in this harness'); },
 });
+
+// Started here rather than inside a check, because several checks want the
+// strings loaded and the chrome side loads them exactly once, at startup.
+const l10nReady = require_('./lib/l10n.js').load(rootURI);
 
 let failures = 0;
 const pending = [];
@@ -706,6 +714,8 @@ function fakeItem({ title = 'A paper', att = undefined, readerType = 'pdf', file
 }
 
 check('readable() gates both PDF entries on the same three questions', async () => {
+	// Its three refusals are strings now, so the bundle has to be in.
+	await l10nReady;
 	const { readable } = require_('./lib/readerPane.js');
 	const said = [];
 	const status = t => said.push(t);
@@ -1203,6 +1213,189 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
 	if (bad.length) {
 		throw new Error('#' + bad.join(', #') + ': has a display rule but no #id[hidden] rule, '
 			+ 'so the hidden attribute will not hide it');
+	}
+});
+
+// --- localisation -----------------------------------------------------------
+
+const Ftl = require(path.join(addonDir, 'content/ftl.js'));
+const localeDir = path.join(addonDir, 'locale');
+const FTL_NAME = 'zotero-graph.ftl';
+const PREFIX = 'zotero-graph-';
+
+function readLocale(code) {
+	return fs.readFileSync(path.join(localeDir, code, FTL_NAME), 'utf8');
+}
+
+check('ftl.js reads values, attributes and continuation lines', () => {
+	const m = Ftl.parse([
+		'# a comment',
+		'thing = plain',
+		'',
+		'other =',
+		'    .label = An attribute',
+		'wrapped = this one was too long',
+		'    for a single line',
+	].join('\n'));
+	if (m.thing !== 'plain') throw new Error('value: ' + JSON.stringify(m.thing));
+	if (m['other.label'] !== 'An attribute') throw new Error('attribute: ' + JSON.stringify(m['other.label']));
+	// A message that carries only attributes has no value of its own.
+	if ('other' in m) throw new Error('stored an empty value for an attribute-only message');
+	if (m.wrapped !== 'this one was too long for a single line') {
+		throw new Error('continuation: ' + JSON.stringify(m.wrapped));
+	}
+});
+
+check('ftl.js substitutes variables and leaves what it cannot read', () => {
+	if (Ftl.format('cited by { $count } here', { count: 3 }) !== 'cited by 3 here') {
+		throw new Error('substitution');
+	}
+	// A missing variable is a hole, not a crash.
+	if (Ftl.format('a { $missing }b', {}) !== 'a b') throw new Error('missing variable');
+	// Quoted literals are how a pattern keeps its edge whitespace.
+	if (Ftl.format('{ ", or " }', {}) !== ', or ') throw new Error('quoted literal');
+	// Anything else survives verbatim, so a broken string is visible.
+	if (Ftl.format('{ SOMEFUNC() }', {}) !== '{ SOMEFUNC() }') throw new Error('unknown placeable');
+});
+
+check('ftl.js picks plural variants by CLDR category', () => {
+	const p = '{ $n -> [one] { $n } edge *[other] { $n } edges }';
+	if (Ftl.format(p, { n: 1 }, 'en-US') !== '1 edge') throw new Error('one');
+	if (Ftl.format(p, { n: 4 }, 'en-US') !== '4 edges') throw new Error('other');
+	// An exact key beats the category it would otherwise fall into.
+	const z = '{ $n -> [0] none *[other] { $n } of them }';
+	if (Ftl.format(z, { n: 0 }, 'en-US') !== 'none') throw new Error('exact key');
+	if (Ftl.format(z, { n: 2 }, 'en-US') !== '2 of them') throw new Error('default variant');
+	// Polish has a third form; the selector must be able to reach it.
+	const pl = '{ $n -> [one] jedna *[few] kilka *[other] wiele }';
+	if (Ftl.format(pl, { n: 1 }, 'pl') !== 'jedna') throw new Error('pl one');
+});
+
+check('every shipped locale is declared in lib/l10n.js and vice versa', () => {
+	const onDisk = fs.readdirSync(localeDir)
+		.filter(d => fs.existsSync(path.join(localeDir, d, FTL_NAME)))
+		.sort();
+	const src = fs.readFileSync(path.join(addonDir, 'lib/l10n.js'), 'utf8');
+	const m = src.match(/const LOCALES = \[([^\]]*)\]/);
+	if (!m) throw new Error('could not find LOCALES in lib/l10n.js');
+	const declared = m[1].match(/'([^']+)'/g).map(s => s.slice(1, -1)).sort();
+	if (JSON.stringify(onDisk) !== JSON.stringify(declared)) {
+		throw new Error('on disk ' + JSON.stringify(onDisk) + ' vs declared ' + JSON.stringify(declared));
+	}
+});
+
+check('every locale carries the same message list as en-US', () => {
+	const base = Object.keys(Ftl.parse(readLocale('en-US'))).sort();
+	const others = fs.readdirSync(localeDir).filter(d => d !== 'en-US');
+	for (const code of others) {
+		const got = Object.keys(Ftl.parse(readLocale(code))).sort();
+		const missing = base.filter(id => !got.includes(id));
+		const extra = got.filter(id => !base.includes(id));
+		if (missing.length || extra.length) {
+			throw new Error(code + ': missing ' + JSON.stringify(missing)
+				+ ', extra ' + JSON.stringify(extra));
+		}
+	}
+});
+
+check('every locale fills the same variables as en-US', () => {
+	const vars = (pattern) => {
+		const out = new Set();
+		for (const m of pattern.matchAll(/\$([A-Za-z][\w-]*)/g)) out.add(m[1]);
+		return [...out].sort().join(',');
+	};
+	const base = Ftl.parse(readLocale('en-US'));
+	for (const code of fs.readdirSync(localeDir).filter(d => d !== 'en-US')) {
+		const got = Ftl.parse(readLocale(code));
+		for (const id of Object.keys(base)) {
+			// A translation that drops a variable loses the number it was there
+			// to show; one that invents a variable renders an empty hole.
+			if (got[id] != null && vars(got[id]) !== vars(base[id])) {
+				throw new Error(code + '/' + id + ': ' + JSON.stringify(vars(got[id]))
+					+ ' vs ' + JSON.stringify(vars(base[id])));
+			}
+		}
+	}
+});
+
+/**
+ * Ids the source asks for by hand, and the families it builds at runtime.
+ *
+ * The families are the two places an id is assembled from a value rather than
+ * written out -- the colour modes and the filter facets -- so they cannot be
+ * found by reading the source and are listed here instead.
+ */
+function referencedIds() {
+	const ids = new Set();
+	const files = [
+		'content/graph.js', 'content/nodeFilters.js',
+		'lib/graphTab.js', 'lib/readerPane.js', 'lib/main.js',
+	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
+
+	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;
+	for (const src of files) {
+		for (const call of src.matchAll(/\b(?:t|tr|attr)\(([^)]*)\)/g)) {
+			for (const s of call[1].matchAll(idLike)) ids.add(s[1]);
+		}
+	}
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	for (const m of html.matchAll(/data-zg-(?:str|title|placeholder|aria-label)="([^"]+)"/g)) {
+		ids.add(m[1]);
+	}
+	for (const mode of ['year', 'collection', 'author', 'publication', 'type']) {
+		ids.add('color-by-' + mode);
+	}
+	for (const f of ['author', 'year', 'type', 'publication', 'collection', 'title']) {
+		ids.add('field-' + f);
+	}
+	return ids;
+}
+
+check('every id the source asks for exists in en-US', () => {
+	const have = Object.keys(Ftl.parse(readLocale('en-US')));
+	// Either as a message or as one carrying attributes: attr() asks for the
+	// message by name and names the attribute separately.
+	const known = new Set(have.concat(have.map(id => id.replace(/\.[\w-]+$/, ''))));
+	const missing = [...referencedIds()].filter(id => !known.has(PREFIX + id)).sort();
+	if (missing.length) throw new Error('not in the .ftl: ' + missing.join(', '));
+});
+
+check('en-US carries no message nothing asks for', () => {
+	const have = Object.keys(Ftl.parse(readLocale('en-US')))
+		// Attributes are addressed as "id.attribute"; the reference scan sees
+		// only the message half, which attr() passes separately.
+		.map(id => id.slice(PREFIX.length).replace(/\.[\w-]+$/, ''));
+	const asked = referencedIds();
+	const dead = [...new Set(have)].filter(id => !asked.has(id)).sort();
+	if (dead.length) throw new Error('unreferenced: ' + dead.join(', '));
+});
+
+check('lib/l10n.js resolves a locale, formats, and hands the page its source', async () => {
+	const l10n = require_('./lib/l10n.js');
+	await l10nReady;
+	if (l10n.t('rebuild') !== 'Rebuild') throw new Error('plain: ' + l10n.t('rebuild'));
+	if (l10n.t('stats-edges', { count: 1 }) !== '1 edge') throw new Error('plural');
+	if (l10n.attr('view-citation-graph', 'label') !== 'View Citation Graph') {
+		throw new Error('attribute: ' + l10n.attr('view-citation-graph', 'label'));
+	}
+	// A missing id comes back as the id, so a typo is visible rather than blank.
+	if (l10n.t('no-such-string') !== 'no-such-string') throw new Error('missing id');
+	const forPage = l10n.contentBundle();
+	if (forPage.locale !== 'en-US') throw new Error('locale: ' + forPage.locale);
+	if (!forPage.source.includes('zotero-graph-rebuild')) throw new Error('empty source');
+});
+
+check('the page loads its string modules before anything that draws', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+	for (const [before, after] of [['ftl.js', 'l10n.js'], ['l10n.js', 'graph.js'],
+		['l10n.js', 'nodeFilters.js']]) {
+		if (order.indexOf(before) < 0 || order.indexOf(after) < 0) {
+			throw new Error('missing script: ' + before + ' or ' + after);
+		}
+		if (order.indexOf(before) > order.indexOf(after)) {
+			throw new Error(before + ' must be loaded before ' + after);
+		}
 	}
 });
 

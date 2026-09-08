@@ -18,6 +18,7 @@ let { ZoteroAdapter } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let readerPane = require('./readerPane.js');
+let l10n = require('./l10n.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
 
@@ -69,7 +70,7 @@ let open_ = new Map();
 async function open(win, collection, config) {
 	// Collection first: the tab strip truncates from the right, and which
 	// collection this is is the half that distinguishes one graph tab from another.
-	let title = collection.name + ' — Citation Graph';
+	let title = l10n.t('tab-title', { collection: collection.name });
 
 	let { id, container } = win.Zotero_Tabs.add({
 		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
@@ -136,6 +137,12 @@ async function ready(win, tabID, cw, collection) {
 		if (n++ > 500) throw new Error('graph page never published zgSetData');
 		await Zotero.Promise.delay(20);
 	}
+
+	// Strings first, before any status or payload can be pushed: the page paints
+	// the English in its own markup until this lands, and the sooner it lands
+	// the less of it anyone sees. See content/l10n.js.
+	let entry = open_.get(tabID);
+	if (entry) send(entry, 'zgSetStrings', l10n.contentBundle());
 
 	// content -> chrome. event.detail is a JSON string (a primitive), so there is
 	// nothing to unwrap.
@@ -286,25 +293,26 @@ async function buildPhases(entry, alive) {
 	};
 
 	// --- phase 1: nodes -------------------------------------------------
-	status(options.recursive ? 'Loading collection and subcollections…' : 'Loading collection…');
+	status(l10n.t(options.recursive
+		? 'build-loading-collection-recursive'
+		: 'build-loading-collection'));
 	let items = await adapter.listItems();
 	if (!alive()) return;
 	state.items = items;
 	state.inCollection = new Set(items.map(i => i.key));
 	push([], { phase: 'items', items: items.length });
 	if (!items.length) {
-		status('This collection has no regular items.');
+		status(l10n.t('build-no-items'));
 		return;
 	}
 
 	// --- phase 2: text strategies ---------------------------------------
-	status('Reading indexed text…');
+	status(l10n.t('build-reading-text'));
 	let textResult = await cg.build(adapter, {
 		enable: TEXT_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
-		onProgress: throttle(p => status(
-			`Reading indexed text… ${p.done}/${p.total} (${p.provider})`)),
+		onProgress: throttle(p => status(l10n.t('build-reading-text-progress', p))),
 	});
 	if (!alive()) return;
 	push(textResult.edges, {
@@ -317,13 +325,14 @@ async function buildPhases(entry, alive) {
 
 	// --- phase 3: PDF hyperlink scan ------------------------------------
 	let pdfs = adapter.pdfCount();
-	status(pdfs ? `Scanning ${pdfs} PDFs for DOI links…` : 'Scanning PDFs…');
+	status(pdfs
+		? l10n.t('build-scanning-pdfs-count', { count: pdfs })
+		: l10n.t('build-scanning-pdfs'));
 	let pdfResult = await cg.build(adapter, {
 		enable: PDF_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
-		onProgress: throttle(p => status(
-			`Scanning PDFs for DOI links… ${p.done}/${p.total}`)),
+		onProgress: throttle(p => status(l10n.t('build-scanning-pdfs-progress', p))),
 	});
 	await cache.flush();
 	if (!alive()) return;
@@ -401,7 +410,7 @@ async function runLookup(tabID) {
 			return;
 		}
 		if (!lookupKeys(built).length) {
-			send(entry, 'zgSetStatus', 'Nothing to look up: no DOIs in this graph.');
+			send(entry, 'zgSetStatus', l10n.t('lookup-nothing'));
 			return;
 		}
 		await lookUpNames(entry, alive, built);
@@ -433,13 +442,12 @@ async function lookUpNames(entry, alive, built) {
 	let toLookUp = lookupKeys(built);
 
 	let metaCache = await MetadataCache.forProfile().load();
-	status(`Looking up ${toLookUp.length} works…`);
+	status(l10n.t('lookup-works', { count: toLookUp.length }));
 	let enriched = await cg.enrich(toLookUp, {
 		enable: enricherList(),
 		cache: metaCache,
 		providers: { openalex: { apiKey: pref('openalex.apiKey') || null } },
-		onProgress: throttle(p => status(
-			`Looking up works… ${p.done}/${p.total} (${p.provider})`)),
+		onProgress: throttle(p => status(l10n.t('lookup-progress', p))),
 	});
 	await metaCache.flush();
 	if (!alive()) return;
@@ -506,11 +514,11 @@ async function addByDoi(win, tabID, collection, doi) {
 	let status = (t) => entry && send(entry, 'zgSetStatus', t);
 	let d = normDoi(doi);
 	if (!d) {
-		status('Not a usable DOI: ' + doi);
+		status(l10n.t('add-bad-doi', { doi }));
 		return;
 	}
 
-	status('Adding ' + d + '…');
+	status(l10n.t('add-adding', { doi: d }));
 	let translate = new Zotero.Translate.Search();
 	translate.setIdentifier({ DOI: d });
 	let newItems = [];
@@ -527,11 +535,11 @@ async function addByDoi(win, tabID, collection, doi) {
 	}
 	catch (e) {
 		Zotero.logError(e);
-		status('Could not add ' + d + ': ' + (e && e.message ? e.message : e));
+		status(l10n.t('add-failed', { doi: d, message: e && e.message ? e.message : e }));
 		return;
 	}
 	if (!newItems.length) {
-		status('No metadata found for ' + d);
+		status(l10n.t('add-no-metadata', { doi: d }));
 		return;
 	}
 
@@ -539,7 +547,7 @@ async function addByDoi(win, tabID, collection, doi) {
 	// 8-character key, and every edge pointing at it has to be re-derived.
 	// A rebuild is the only way to get that consistently, and it is cheap here:
 	// phase 3 comes off the warm pdfLinkCache and phase 4 off the metadata cache.
-	status('Added "' + newItems[0].getDisplayTitle() + '" — rebuilding…');
+	status(l10n.t('add-done', { title: newItems[0].getDisplayTitle() }));
 	await runBuild(tabID);
 }
 

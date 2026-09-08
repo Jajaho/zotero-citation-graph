@@ -14,46 +14,51 @@
 	<div id="panel">
 		<!-- The whole header toggles, not just the chevron: it is a wide, easy
 		     target, and there is nothing else in the header to click. -->
+		<!-- The literal text on every control below is the fallback, not the
+		     source: l10n.js overwrites anything carrying a data-zg-* id as soon
+		     as chrome hands the page its strings. It is left in the markup so
+		     that a page whose strings never arrive is still a usable panel
+		     rather than a column of message names. -->
 		<button id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-body" title="Collapse controls">
 			<span id="panel-chevron">▾</span>
-			<span id="panel-title">settings</span>
+			<span id="panel-title" data-zg-str="panel-title">settings</span>
 		</button>
 
 		<div id="panel-body">
 			<!-- Scope. Both of these change what gets derived, so they cost a
 			     rebuild; everything after them only filters the built graph. -->
 			<div class="group">
-				<label title="Include items from every subcollection">
+				<label data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
 					<input id="recursive" type="checkbox"/>
-					subcollections
+					<span data-zg-str="scope-subcollections">subcollections</span>
 				</label>
-				<label title="Show cited works that are not in the collection">
+				<label data-zg-title="scope-external-hint" title="Show cited works that are not in the collection">
 					<input id="include-external" type="checkbox"/>
-					outside refs
+					<span data-zg-str="scope-external">outside refs</span>
 				</label>
-				<label id="min-cites-label" title="Hide outside works cited by fewer than this many of your papers">
-					cited by ≥
+				<label id="min-cites-label" data-zg-title="scope-min-cites-hint" title="Hide outside works cited by fewer than this many of your papers">
+					<span data-zg-str="scope-min-cites">cited by ≥</span>
 					<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
 				</label>
 				<!-- The only control that reaches the network. Off by default,
 				     and independent of "outside refs": with ghosts off it still
 				     has the held items' own DOIs to look up, which is where the
 				     global citation counts come from. -->
-				<label id="enrich-label" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
+				<label id="enrich-label" data-zg-title="scope-enrich-hint" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
 					<input id="enrich" type="checkbox"/>
-					look up names
+					<span data-zg-str="scope-enrich">look up names</span>
 				</label>
 			</div>
 
 			<div class="group">
 				<label>
-					colour
+					<span data-zg-str="color-by">colour</span>
 					<select id="color-by">
-						<option value="year">year</option>
-						<option value="collection">collection</option>
-						<option value="author">first author</option>
-						<option value="publication">publication</option>
-						<option value="type">item type</option>
+						<option value="year" data-zg-str="color-by-year">year</option>
+						<option value="collection" data-zg-str="color-by-collection">collection</option>
+						<option value="author" data-zg-str="color-by-author">first author</option>
+						<option value="publication" data-zg-str="color-by-publication">publication</option>
+						<option value="type" data-zg-str="color-by-type">item type</option>
 					</select>
 				</label>
 				<!-- Applies to outside refs as well as held items. "global citations"
@@ -62,18 +67,18 @@
 				     user asked for the sizing, not for a lecture about a prerequisite.
 				     The lookup is still never entered on its own. -->
 				<label>
-					size
+					<span data-zg-str="size-by">size</span>
 					<select id="size-by">
-						<option value="here">cited here</option>
-						<option value="global">global citations</option>
+						<option value="here" data-zg-str="size-by-here">cited here</option>
+						<option value="global" data-zg-str="size-by-global">global citations</option>
 					</select>
 				</label>
 				<!-- Layout, not a filter: nothing enters or leaves the graph. A
 				     dense collection packs into balls because every edge pulls at
 				     full strength; slackening the edges lets charge repulsion win
 				     and the clusters open up far enough to read. -->
-				<label id="pull-label" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
-					edge pull
+				<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
+					<span data-zg-str="link-pull">edge pull</span>
 					<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
 					<span id="pull-value">1.00</span>
 				</label>
@@ -86,7 +91,8 @@
 			<div class="group" id="filter-group">
 				<div id="filter-chips"></div>
 				<input id="filter-input" type="text" autocomplete="off" spellcheck="false"
-					placeholder="filter — author:, year:, …"
+					data-zg-placeholder="filter-placeholder" placeholder="filter — author:, year:, …"
+					data-zg-title="filter-hint"
 					title="Type a term, or field:value. Filters stack: each one narrows what is left."
 					role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
 			</div>
@@ -95,13 +101,13 @@
 
 			<div class="group">
 				<label id="conf-label">
-					min confidence
+					<span data-zg-str="min-confidence">min confidence</span>
 					<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
 					<span id="conf-value">0.00</span>
 				</label>
 				<label>
 					<input id="hide-isolated" type="checkbox"/>
-					hide unconnected
+					<span data-zg-str="hide-isolated">hide unconnected</span>
 				</label>
 				<!-- Only present while a node is isolated. Isolation is otherwise
 				     invisible up here, and there would be nothing to tell a user how
@@ -110,15 +116,15 @@
 				<!-- How far an isolation reaches. Always visible, unlike the button
 				     above: it is a setting about how you read a graph, and one you
 				     want to be able to find before you have isolated anything. -->
-				<label id="depth-label" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
-					isolation depth
+				<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
+					<span data-zg-str="isolate-depth">isolation depth</span>
 					<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
 				</label>
 			</div>
 
 			<div class="group" id="panel-foot">
 				<span id="stats"></span>
-				<button id="rebuild" type="button">Rebuild</button>
+				<button id="rebuild" type="button" data-zg-str="rebuild">Rebuild</button>
 			</div>
 		</div>
 	</div>
@@ -141,12 +147,13 @@
 	<!-- Bottom left, the corner nothing else claims: after dragging a node off
 	     screen, or a rebuild that lands a bigger graph than the viewport, there
 	     was no way back short of scrolling around hunting for the nodes. -->
-	<button id="reframe" type="button" title="Fit the whole graph in view" aria-label="Fit the whole graph in view">⤢</button>
+	<button id="reframe" type="button" data-zg-title="reframe-hint" data-zg-aria-label="reframe-hint"
+		title="Fit the whole graph in view" aria-label="Fit the whole graph in view">⤢</button>
 
 	<!-- Outside #graph deliberately: force-graph's init() does
 	     container.innerHTML = "", which would delete anything nested inside.
 	     Same reason the action popover is a sibling and not a child. -->
-	<div id="status">Loading…</div>
+	<div id="status" data-zg-str="status-loading">Loading…</div>
 
 	<!-- An outside reference's detail card, opened by double-clicking it.
 	     Adding to Zotero is a write to the library, so from here it is behind an
@@ -157,8 +164,8 @@
 		<div id="action-title"></div>
 		<div id="action-sub"></div>
 		<div id="action-buttons">
-			<button id="action-add" type="button">Add to Zotero</button>
-			<button id="action-close" type="button">Close</button>
+			<button id="action-add" type="button" data-zg-str="action-add">Add to Zotero</button>
+			<button id="action-close" type="button" data-zg-str="action-close">Close</button>
 		</div>
 	</div>
 
@@ -171,16 +178,19 @@
 	     as the panel's box does -- same chips, same completion list -- but
 	     these masks say what the anchor PULLS, not what the graph shows. -->
 	<div id="group" hidden="hidden">
-		<div id="group-title" title="Drag to move this card">Group here</div>
+		<!-- No data-zg-str on the title: openGroup() rewrites it per flag, and
+		     which of the two names it takes is not a fact the markup knows. -->
+		<div id="group-title" data-zg-title="group-drag-hint" title="Drag to move this card">Group here</div>
 		<div id="group-chips" hidden="hidden"></div>
 		<input id="group-input" type="text" autocomplete="off" spellcheck="false"
-			placeholder="what belongs here — author:, year:, …"
+			data-zg-placeholder="group-placeholder" placeholder="what belongs here — author:, year:, …"
+			data-zg-title="group-hint"
 			title="Type a term, or field:value. Filters stack: each one narrows what this anchor pulls."
 			role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
 		<div id="group-sub"></div>
 		<div id="group-buttons">
-			<button id="group-remove" type="button">Remove</button>
-			<button id="group-close" type="button">Done</button>
+			<button id="group-remove" type="button" data-zg-str="group-remove">Remove</button>
+			<button id="group-close" type="button" data-zg-str="group-done">Done</button>
 		</div>
 	</div>
 
@@ -194,6 +204,11 @@
 	<!-- Every script is a same-origin resource:// URL, so no inline script is
 	     needed and every CSP configuration in Zotero 7-11 allows them. -->
 	<script src="lib/force-graph.min.js"></script>
+	<!-- Strings before anything that draws with them: ftl.js is the reader,
+	     l10n.js publishes window.zgSetStrings for chrome to push the .ftl
+	     source into. -->
+	<script src="ftl.js"></script>
+	<script src="l10n.js"></script>
 	<script src="nodeScale.js"></script>
 	<script src="nodeLinks.js"></script>
 	<script src="nodeFilters.js"></script>
