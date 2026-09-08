@@ -175,24 +175,27 @@ body {
 	white-space: nowrap;
 }
 
-#conf-label {
+#conf-label,
+#depth-label {
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	color: var(--muted);
 }
 
-/* Both sliders give the track whatever the label and the readout leave: a
+/* Every slider gives the track whatever the label and the readout leave: a
    range input's default width would otherwise push the panel wider. */
 #min-conf,
-#link-pull {
+#link-pull,
+#isolate-depth {
 	flex: 1 1 60px;
 	width: auto;
 	min-width: 40px;
 }
 
 #conf-value,
-#pull-value {
+#pull-value,
+#isolate-depth-value {
 	font-variant-numeric: tabular-nums;
 	min-width: 3.2ch;
 }

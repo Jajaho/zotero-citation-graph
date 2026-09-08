@@ -107,6 +107,14 @@
 				     invisible up here, and there would be nothing to tell a user how
 				     to get the rest of the graph back. -->
 				<button id="isolate-clear" type="button" hidden="hidden"></button>
+				<!-- How far an isolation reaches. Always visible, unlike the button
+				     above: it is a setting about how you read a graph, and one you
+				     want to be able to find before you have isolated anything. -->
+				<label id="depth-label" title="How many edges out from an isolated node stays lit">
+					isolation depth
+					<input id="isolate-depth" type="range" min="1" max="4" step="1" value="1"/>
+					<span id="isolate-depth-value">1</span>
+				</label>
 			</div>
 
 			<div class="group" id="panel-foot">

@@ -28,9 +28,9 @@
 	// Held items with nothing to colour BY: no date, when colouring by year.
 	const NO_KEY_COLOR = '#9aa0a6';
 
-	// How far the graph outside the isolated node's neighbourhood is faded.
-	// Faded and not hidden: the whole point of isolating is to read one node's
-	// citations against the shape of the graph they sit in.
+	// How far the graph outside the isolated neighbourhood is faded. Faded and
+	// not hidden: the whole point of isolating is to read one node's citations
+	// against the shape of the graph they sit in.
 	const DIM_NODE_ALPHA = 0.1;
 	const DIM_LINK_FACTOR = 0.15;
 
@@ -43,6 +43,9 @@
 	 *  edges to pull. Worth remembering across windows for the same reason the
 	 *  collapsed panel is -- it is a setting about this screen, not this graph. */
 	const PULL_KEY = 'zg.link.pull';
+	/** Same again, for how far an isolation reaches: someone who reads their
+	 *  graph two steps out reads every graph two steps out. */
+	const DEPTH_KEY = 'zg.isolate.depth';
 
 	// Published by nodeScale.js, nodeLinks.js and nodeFilters.js, which
 	// graph.html loads first.
@@ -69,7 +72,14 @@
 
 	// View state for isolation. None of this filters the graph or reaches
 	// chrome -- see setIsolated() for why it must not.
-	let isolated = null;          // focused node id, or null
+	//
+	// A set rather than one id: isolating answers "what is around this paper",
+	// and the question is often asked of two or three papers at once -- whether
+	// their neighbourhoods overlap is exactly what you are looking at the graph
+	// to find out.
+	let isolated = new Set();     // focused node ids; empty means no isolation
+	let isolateDepth = 1;         // how many edges out from a focus stays lit
+	let litCache = null;          // see lit(); invalidated, never mutated
 	let adjacency = new Map();    // node id -> Set of ids one edge away
 	let hoverNode = null;         // whatever force-graph's hit test is over
 
@@ -92,6 +102,8 @@
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolate = el('isolate-clear');
+	let elIsolateDepth = el('isolate-depth');
+	let elDepthValue = el('isolate-depth-value');
 	let elReframe = el('reframe');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
@@ -905,10 +917,14 @@
 		for (let n of nodes) if (n.citedByGlobal != null) counts.push(n.citedByGlobal);
 		globalRef = Scale.referenceCount(counts);
 
-		// A filter change or a rebuild can take the focused node off screen, and
-		// a focus on a node that is not drawn would dim the whole graph with
-		// nothing left lit.
-		if (isolated !== null && !nodes.some(n => n.id === isolated)) isolated = null;
+		// A filter change or a rebuild can take a focused node off screen, and a
+		// focus on a node that is not drawn would dim the graph around nothing.
+		if (isolated.size) {
+			let onScreen = new Set(nodes.map(n => n.id));
+			for (let id of isolated) if (!onScreen.has(id)) isolated.delete(id);
+		}
+		// The adjacency lit() walks has just been rebuilt out of these edges.
+		litCache = null;
 		syncIsolateNote();
 
 		if (!fg) {
@@ -945,7 +961,7 @@
 			fg.onBackgroundClick(() => {
 				hideAction();
 				hideMenu();
-				setIsolated(null);
+				clearIsolated();
 			});
 			fg.onBackgroundRightClick(() => {
 				hideAction();
@@ -1409,8 +1425,8 @@
 	// --- isolation --------------------------------------------------------
 
 	/**
-	 * Focus one node: it and everything one edge away keep their colour, and the
-	 * rest of the graph fades to a wash.
+	 * Focus a set of nodes: they and everything within `isolateDepth` edges of
+	 * one of them keep their colour, and the rest of the graph fades to a wash.
 	 *
 	 * Dimming, not filtering, and the difference is load-bearing. Filtering
 	 * would drop the other nodes from the simulation, the layout would resettle,
@@ -1420,17 +1436,83 @@
 	 * colour accessors read `isolated` on the way past -- so every node stays
 	 * exactly where it was.
 	 */
-	function setIsolated(id) {
-		if (isolated === id) return;
-		isolated = id;
+	function setIsolated(ids) {
+		isolated = ids;
+		litCache = null;
 		syncIsolateNote();
 		repaint();
 	}
 
+	function clearIsolated() {
+		if (isolated.size) setIsolated(new Set());
+	}
+
+	/** Start over on one node: the whole focus becomes this and nothing else. */
+	function isolateOnly(id) {
+		if (isolated.size === 1 && isolated.has(id)) return;
+		setIsolated(new Set([id]));
+	}
+
+	/** Light a second neighbourhood without losing the first. */
+	function addIsolated(id) {
+		if (isolated.has(id)) return;
+		let next = new Set(isolated);
+		next.add(id);
+		setIsolated(next);
+	}
+
+	function dropIsolated(id) {
+		if (!isolated.has(id)) return;
+		let next = new Set(isolated);
+		next.delete(id);
+		setIsolated(next);
+	}
+
+	/**
+	 * A click keeps its old meaning whatever the focus set holds: one click
+	 * isolates the node clicked, and clicking that same node when it is the
+	 * only thing isolated gives the whole graph back. Building a focus out of
+	 * several nodes is the context menu's job -- a gesture that cannot be made
+	 * by accident while panning.
+	 */
 	function toggleIsolate(id) {
 		hideAction();
 		hideMenu();
-		setIsolated(isolated === id ? null : id);
+		if (isolated.size === 1 && isolated.has(id)) clearIsolated();
+		else isolateOnly(id);
+	}
+
+	/**
+	 * Every node within `isolateDepth` edges of a focus node, mapped to the
+	 * distance it was reached at. The distance is not bookkeeping: it is what
+	 * tells a link whether it is one of the edges walked to get here, or a rung
+	 * past the fringe between two nodes that both happen to be lit.
+	 *
+	 * Cached because it is read once per node and once per link on every frame,
+	 * and thrown away whenever the focus, the depth or the graph changes.
+	 */
+	function lit() {
+		if (litCache) return litCache;
+		let seen = new Map();
+		let frontier = [];
+		for (let id of isolated) {
+			seen.set(id, 0);
+			frontier.push(id);
+		}
+		for (let d = 1; d <= isolateDepth && frontier.length; d++) {
+			let next = [];
+			for (let id of frontier) {
+				let near = adjacency.get(id);
+				if (!near) continue;
+				for (let other of near) {
+					if (seen.has(other)) continue;
+					seen.set(other, d);
+					next.push(other);
+				}
+			}
+			frontier = next;
+		}
+		return (litCache = seen);
 	}
 
 	/**
@@ -1448,9 +1530,8 @@
 	}
 
 	function dimmed(n) {
-		if (isolated === null || n.id === isolated) return false;
-		let near = adjacency.get(isolated);
-		return !(near && near.has(n.id));
+		if (!isolated.size) return false;
+		return !lit().has(n.id);
 	}
 
 	/** force-graph rewrites a link's endpoints into node references once the
@@ -1459,23 +1540,44 @@
 		return x && typeof x === 'object' ? x.id : x;
 	}
 
+	/**
+	 * An edge stays lit only if it is one of the edges the neighbourhood was
+	 * walked along -- both ends lit, and at least one of them reached before the
+	 * last step out. Without that second half, raising the depth would light
+	 * every edge among the fringe nodes as well, and a two-step isolation of a
+	 * dense cluster would come back looking like the whole graph again.
+	 */
 	function dimmedLink(l) {
-		if (isolated === null) return false;
-		return endId(l.source) !== isolated && endId(l.target) !== isolated;
+		if (!isolated.size) return false;
+		let seen = lit();
+		let a = seen.get(endId(l.source));
+		let b = seen.get(endId(l.target));
+		if (a == null || b == null) return true;
+		return Math.min(a, b) >= isolateDepth;
 	}
 
 	/**
 	 * Isolation is otherwise invisible in the panel, and a user who does not
 	 * know that clicking the background clears it would have no way back to the
 	 * whole graph.
+	 *
+	 * A focus of several nodes names the first and counts the rest: the button
+	 * lives in a narrow panel, and the full list is one hover away in the title.
 	 */
 	function syncIsolateNote() {
-		let n = isolated === null ? null : nodeCache.get(isolated);
-		elIsolate.hidden = !n;
-		if (n) elIsolate.textContent = 'isolated: ' + (n.label || n.name) + ' ✕';
+		let names = [];
+		for (let id of isolated) {
+			let n = nodeCache.get(id);
+			if (n) names.push(n.label || n.name);
+		}
+		elIsolate.hidden = !names.length;
+		if (!names.length) return;
+		elIsolate.textContent = 'isolated: '
+			+ (names.length > 1 ? names[0] + ' +' + (names.length - 1) : names[0]) + ' ✕';
+		elIsolate.title = names.join(', ') + ' — click to show the whole graph';
 	}
 
-	elIsolate.addEventListener('click', () => setIsolated(null));
+	elIsolate.addEventListener('click', clearIsolated);
 
 	window.addEventListener('pointerdown', (e) => {
 		if (!elMenu.hidden && !elMenu.contains(e.target)) hideMenu();
@@ -1758,10 +1860,11 @@
 		release();
 		elMenu.textContent = '';
 		let entries = n.ghost ? ghostMenu(n) : itemMenu(n);
-		// Last, and shared by both populations, because it is the one entry
-		// about the picture rather than the paper: where a node sits is a fact
-		// about this layout, and an outside reference has one as much as a held
-		// item does.
+		// Last, and shared by both populations, because these are the entries
+		// about the picture rather than the paper: what a node is next to and
+		// where it sits are facts about this layout, and an outside reference
+		// has both as much as a held item does.
+		for (let entry of isolateEntries(n)) entries.push(entry);
 		entries.push(pinEntry(n));
 		for (let entry of entries) {
 			elMenu.appendChild(menuItem(entry));
@@ -1796,6 +1899,43 @@
 			});
 		}
 		return b;
+	}
+
+	/**
+	 * Isolation, offered to both populations for the same reason pinning is:
+	 * the neighbourhood of an outside reference is as much a question about
+	 * this picture as the neighbourhood of a held item.
+	 *
+	 * Two entries, not one, because there are two different things to ask.
+	 * "Isolate" starts over on this node -- the same thing a click does. "Add
+	 * to isolation" keeps what is already lit and lights the neighbourhood
+	 * around this node beside it, which is how you see whether two papers share
+	 * one. It only appears once something is isolated: with an empty focus it
+	 * would be a second, longer name for the entry above it.
+	 */
+	function isolateEntries(n) {
+		let on = isolated.has(n.id);
+		let only = on && isolated.size === 1;
+		let entries = [{
+			label: only ? 'Show whole graph' : 'Isolate',
+			hint: only
+				? 'undim everything'
+				: 'dim everything more than ' + isolateDepth
+					+ (isolateDepth === 1 ? ' edge' : ' edges') + ' away',
+			run: () => (only ? clearIsolated() : isolateOnly(n.id)),
+		}];
+		// Removing the last focused node is what the entry above already reads
+		// as "Show whole graph", so there is nothing left for this one to say.
+		if (isolated.size && !only) {
+			entries.push({
+				label: on ? 'Remove from isolation' : 'Add to isolation',
+				hint: on
+					? 'stop lighting the neighbourhood around this node'
+					: 'light the neighbourhood around this node too, keeping the rest',
+				run: () => (on ? dropIsolated(n.id) : addIsolated(n.id)),
+			});
+		}
+		return entries;
 	}
 
 	function pinEntry(n) {
@@ -1860,10 +2000,6 @@
 				hint: 'the whole reader, with search, sidebar and annotation',
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-pdf-tab', itemID: n.itemID }),
-			},
-			{
-				label: isolated === n.id ? 'Show whole graph' : 'Isolate',
-				run: () => setIsolated(isolated === n.id ? null : n.id),
 			},
 			{
 				label: 'Open in browser',
@@ -1948,7 +2084,7 @@
 		if (e.key !== 'Escape') return;
 		if (!elMenu.hidden) hideMenu();
 		else if (!elAction.hidden) hideAction();
-		else setIsolated(null);
+		else clearIsolated();
 	});
 
 	// --- controls ---------------------------------------------------------
@@ -2045,6 +2181,26 @@
 	});
 
 	/**
+	 * How far an isolation reaches. Paint, not data, exactly like isolating
+	 * itself: the neighbourhood is recomputed and the canvas redrawn, and no
+	 * node moves while you widen or narrow what is lit.
+	 */
+	function applyIsolateDepth() {
+		isolateDepth = Math.max(1, Number(elIsolateDepth.value) || 1);
+		elDepthValue.textContent = String(isolateDepth);
+		litCache = null;
+		repaint();
+	}
+
+	elIsolateDepth.addEventListener('input', () => {
+		applyIsolateDepth();
+		try {
+			window.localStorage.setItem(DEPTH_KEY, elIsolateDepth.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
+
+	/**
 	 * Put the whole graph back in view.
 	 *
 	 * Nothing else can do this: the layout wanders as later build phases add
@@ -2127,6 +2283,13 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyLinkPull();
+
+	try {
+		let saved = window.localStorage.getItem(DEPTH_KEY);
+		if (saved !== null) elIsolateDepth.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyIsolateDepth();
 
 	syncEnabled();
 }());
