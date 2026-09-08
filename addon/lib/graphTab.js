@@ -206,6 +206,23 @@ async function handleMessage(win, tabID, collection, msg) {
 			}
 			break;
 		}
+		// The same file in Zotero's own reader tab: the full reader, with the
+		// sidebar, search and annotation the read-only pane cannot offer. It
+		// takes the graph off screen, which is exactly why both are offered
+		// rather than one -- the pane is for reading beside the graph, this is
+		// for settling into a paper.
+		case 'open-pdf-tab': {
+			let entry = open_.get(tabID);
+			if (!entry || !msg.itemID) break;
+			let status = t => send(entry, 'zgSetStatus', t);
+			let found = await readerPane.readable(msg.itemID, status);
+			if (!found) break;
+			// No options: this is the same call, and so the same tab, that
+			// double-clicking the item in the library gets you.
+			await Zotero.Reader.open(found.att.id);
+			status('');
+			break;
+		}
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}

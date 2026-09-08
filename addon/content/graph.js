@@ -951,6 +951,9 @@
 				hideAction();
 				hideMenu();
 			});
+			// A settle ends when the engine stops -- see settle().
+			fg.onEngineStop(thaw);
+
 			// Every accessor below is a closure over live state and re-read on
 			// each redraw, so these are set once and never touched again. That
 			// is not merely tidiness: nodeId is one of the handful of props
@@ -1037,6 +1040,11 @@
 		drawnStructure = structure;
 		drawnRadii = radii;
 		drawnNodes = nodes;
+
+		// A settle holds the layout as it stood; anything that reheats the graph
+		// outgrows that freeze and has to lift it first, or it would lay the
+		// graph out around a hundred nodes nailed to their old positions.
+		if (movedStructure || movedRadii) thaw();
 
 		if (movedStructure) {
 			fg.graphData({ nodes, links });
@@ -1580,7 +1588,7 @@
 	 * releases it on drop.
 	 */
 	function isPinned(n) {
-		return (n.fx != null || n.fy != null) && n !== heldNode;
+		return (n.fx != null || n.fy != null) && n !== heldNode && !frozen.has(n);
 	}
 
 	/**
@@ -1611,19 +1619,72 @@
 	}
 
 	function pin(n) {
+		// A node pinned during someone else's settle is pinned by the user, and
+		// must not be freed when that settle lifts its freeze.
+		frozen.delete(n);
 		n.fx = n.x;
 		n.fy = n.y;
 		repaint();
 	}
 
 	function unpin(n) {
-		// Released, but not thrown back into the layout: reheating would move
-		// every other node too, and taking one pin out is no reason to reshuffle
-		// a graph the user has spent time arranging. It rejoins the flow the
-		// next time something else stirs the simulation.
 		delete n.fx;
 		delete n.fy;
 		repaint();
+		settle(n);
+	}
+
+	/**
+	 * Let one node fall back into the layout, and nothing else move.
+	 *
+	 * An unpinned node used to keep the coordinates it was pinned at until
+	 * something else stirred the simulation, so "Unpin node" looked like it had
+	 * done nothing at all -- the ring came off and the node stayed exactly where
+	 * it was. Reheating outright is the other extreme: alpha goes back to 1 and
+	 * the whole graph re-anneals around the one node the user let go of.
+	 *
+	 * So the graph is held still and the released node is not. Every other node
+	 * is fixed where it stands, the simulation is reheated, and the free node
+	 * settles into the place its edges and its neighbours' radii want it. d3
+	 * discards the velocity of a fixed node on every tick, so nothing else can
+	 * move however hard the forces push at it, and the layout the user arranged
+	 * comes out of this identical apart from the one node that was asked to
+	 * rejoin it.
+	 *
+	 * The freeze is lifted by the engine stopping, which is what SETTLE_TICKS is
+	 * for: force-graph runs exactly that many ticks and then stops of its own
+	 * accord, leaving the graph cold rather than mid-anneal with every node
+	 * suddenly free again.
+	 */
+	const SETTLE_TICKS = 60;
+
+	// Held still for a settle, and not by the user. isPinned() has to see
+	// through this, or the whole graph would wear pin rings for a second.
+	let frozen = new Set();
+
+	function settle(n) {
+		if (!fg) return;
+		thaw();
+		for (let other of drawnNodes) {
+			if (other === n || other.fx != null || other.fy != null) continue;
+			other.fx = other.x;
+			other.fy = other.y;
+			frozen.add(other);
+		}
+		if (!frozen.size) return;
+		fg.cooldownTicks(SETTLE_TICKS).d3ReheatSimulation();
+	}
+
+	/** Give the graph its freedom back. Idempotent, and the engine's own stop
+	 *  handler, so an ordinary cooldown ending simply finds nothing to do. */
+	function thaw() {
+		if (fg) fg.cooldownTicks(Infinity);
+		if (!frozen.size) return;
+		for (let other of frozen) {
+			delete other.fx;
+			delete other.fy;
+		}
+		frozen.clear();
 	}
 
 	/** force-graph stops redrawing once the simulation has cooled, so a change
@@ -1740,6 +1801,16 @@
 				hint: 'read it here, without leaving the graph',
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-pdf', itemID: n.itemID }),
+			},
+			{
+				// The full reader, in a tab of its own. Offered on the same
+				// terms as the pane above and for the same reason: whether the
+				// item has a readable file is chrome's to answer, and it says
+				// so on the status line when there is nothing to open.
+				label: 'Open PDF in new tab',
+				hint: 'the whole reader, with search, sidebar and annotation',
+				disabled: !n.itemID,
+				run: () => emit({ type: 'open-pdf-tab', itemID: n.itemID }),
 			},
 			{
 				label: isolated === n.id ? 'Show whole graph' : 'Isolate',

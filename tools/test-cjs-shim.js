@@ -44,14 +44,16 @@ if (typeof shim.makeRequire !== 'function') {
 // Stubs for the chrome globals lib/ touches. Nothing here is exercised beyond
 // module load -- the point is that the chrome modules parse and resolve through
 // the same loader, so a typo cannot wait until Zotero is running to show up.
+const Zotero = {
+	debug: () => {},
+	logError: () => {},
+	Promise: { delay: ms => new Promise(r => setTimeout(r, ms)) },
+	DataDirectory: { dir: addonDir },
+};
+
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
-	Zotero: {
-		debug: () => {},
-		logError: () => {},
-		Promise: { delay: ms => new Promise(r => setTimeout(r, ms)) },
-		DataDirectory: { dir: addonDir },
-	},
+	Zotero,
 	IOUtils: {
 		exists: async () => false,
 		read: async () => new Uint8Array(),
@@ -681,6 +683,54 @@ check('naming a graph changes no node and no edge', () => {
 	if (after.external[0].title !== 'An outside work') throw new Error('the ghost was not named');
 	if (after.external[0].citedBy !== 1) throw new Error('the local count was lost');
 	if (after.items[0].citedByGlobal !== 7) throw new Error('the held count did not arrive');
+});
+
+/**
+ * A Zotero item just real enough for readerPane.readable(): the four things it
+ * asks about a candidate attachment.
+ */
+function fakeItem({ title = 'A paper', att = undefined, readerType = 'pdf', file = '/tmp/a.pdf' } = {}) {
+	const attachment = att === null ? null : {
+		id: 42,
+		attachmentReaderType: readerType,
+		getFilePathAsync: async () => file,
+		getDisplayTitle: () => title,
+		isAttachment: () => true,
+	};
+	return {
+		id: 7,
+		isAttachment: () => false,
+		getDisplayTitle: () => title,
+		getBestAttachment: async () => attachment,
+	};
+}
+
+check('readable() gates both PDF entries on the same three questions', async () => {
+	const { readable } = require_('./lib/readerPane.js');
+	const said = [];
+	const status = t => said.push(t);
+	// The graph page cannot see attachments, so this gate is the only thing
+	// standing between "Open PDF..." and a reader that throws on construction.
+	const run = async (item) => {
+		Zotero.Items = { getAsync: async () => item };
+		said.length = 0;
+		return readable(7, status);
+	};
+
+	if (await run(fakeItem({ att: null })) !== null) throw new Error('opened an item with no attachment');
+	if (!/No attachment on "A paper"/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
+
+	if (await run(fakeItem({ readerType: null })) !== null) throw new Error('opened an unreadable type');
+	if (!/no PDF, EPUB or snapshot/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
+
+	// The exact state an item added through the local API without its bytes is
+	// left in -- see the note in the project's CLAUDE.md.
+	if (await run(fakeItem({ file: false })) !== null) throw new Error('opened a file that is not there');
+	if (!/missing on disk/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
+
+	const found = await run(fakeItem());
+	if (!found || found.att.id !== 42) throw new Error('refused a perfectly good PDF');
+	if (said.length) throw new Error('complained about a working attachment: ' + said[0]);
 });
 
 check('ZoteroAdapter implements the whole adapter contract', () => {

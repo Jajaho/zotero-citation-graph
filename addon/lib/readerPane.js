@@ -101,26 +101,9 @@ const PANE_CSS = `
 async function open(entry, itemID, { status = () => {} } = {}) {
 	if (!entry || !entry.split) return;
 
-	let item = await Zotero.Items.getAsync(itemID);
-	if (!item) return;
-
-	let att = item.isAttachment() ? item : await item.getBestAttachment();
-	if (!att) {
-		status('No attachment on "' + item.getDisplayTitle() + '".');
-		return;
-	}
-	// pdf | epub | snapshot. Anything else (an image, a bare link) has no reader
-	// to render it, and ReaderInstance's constructor throws on it.
-	if (!att.attachmentReaderType) {
-		status('"' + item.getDisplayTitle() + '" has no PDF, EPUB or snapshot to open.');
-		return;
-	}
-	// Returns false when the row exists but the bytes do not -- the usual state
-	// of an attachment added through the local API without its file.
-	if (!await att.getFilePathAsync()) {
-		status('The attachment file for "' + item.getDisplayTitle() + '" is missing on disk.');
-		return;
-	}
+	let found = await readable(itemID, status);
+	if (!found) return;
+	let { item, att } = found;
 
 	let pane = ensurePane(entry);
 	if (pane.attachmentID === att.id && pane.reader) return;
@@ -170,6 +153,44 @@ async function open(entry, itemID, { status = () => {} } = {}) {
 	setNote(pane, null);
 	loosen(reader);
 	refreshPaging(pane);
+}
+
+/**
+ * The file to render for `itemID`, or null with the reason already on the
+ * status line. Shared with the tab opener in graphTab.js so that "open it here"
+ * and "open it in a tab" cannot disagree about what is openable, or explain a
+ * missing file two different ways.
+ *
+ * The graph page cannot answer any of this for itself: the payload carries
+ * items, not their files. So both menu entries are always offered and the
+ * answer comes back here, on the status line.
+ *
+ * @param {Number}   itemID   a regular item, or an attachment
+ * @param {Function} status   text back to the graph page
+ * @returns {?{ item: Object, att: Object }}
+ */
+async function readable(itemID, status) {
+	let item = await Zotero.Items.getAsync(itemID);
+	if (!item) return null;
+
+	let att = item.isAttachment() ? item : await item.getBestAttachment();
+	if (!att) {
+		status('No attachment on "' + item.getDisplayTitle() + '".');
+		return null;
+	}
+	// pdf | epub | snapshot. Anything else (an image, a bare link) has no reader
+	// to render it, and ReaderInstance's constructor throws on it.
+	if (!att.attachmentReaderType) {
+		status('"' + item.getDisplayTitle() + '" has no PDF, EPUB or snapshot to open.');
+		return null;
+	}
+	// Returns false when the row exists but the bytes do not -- the usual state
+	// of an attachment added through the local API without its file.
+	if (!await att.getFilePathAsync()) {
+		status('The attachment file for "' + item.getDisplayTitle() + '" is missing on disk.');
+		return null;
+	}
+	return { item, att };
 }
 
 /** Tear the pane down: remember the width, then the reader, then the DOM. */
@@ -495,4 +516,4 @@ function pref(name) {
 	}
 }
 
-module.exports = { open, close };
+module.exports = { open, close, readable };
