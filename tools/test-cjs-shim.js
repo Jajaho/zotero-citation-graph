@@ -1156,6 +1156,56 @@ check('picking a value extends the mask being built rather than replacing it', (
 	}
 });
 
+/**
+ * A popover shown and hidden through the `hidden` attribute is defeated by its
+ * own `display:` rule: an author rule beats the UA stylesheet's
+ * `[hidden] { display: none }`, so the element is simply always on screen and
+ * the code that "hides" it sets an attribute nothing reads. #group shipped that
+ * way once -- visible from the moment the tab opened, with a Done button that
+ * did nothing -- and every other floating element in the page had already hit
+ * it and grown the same one-line rule. Cheap to assert, invisible until it
+ * bites, and it bites in the one place a test cannot look: the screen.
+ */
+check('nothing hidden by attribute is left visible by its own display rule', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	// Everything the page hides: markup that starts hidden, plus whatever
+	// graph.js assigns .hidden on, through the `let elFoo = el('foo')` handles.
+	const ids = new Set();
+	for (const m of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*\bhidden="hidden"/g)) ids.add(m[1]);
+	for (const m of html.matchAll(/<[^>]*\bhidden="hidden"[^>]*\bid="([^"]+)"/g)) ids.add(m[1]);
+	const byVar = new Map();
+	for (const m of js.matchAll(/let (\w+) = el\('([^']+)'\)/g)) byVar.set(m[1], m[2]);
+	for (const m of js.matchAll(/(\w+)\.hidden = /g)) {
+		if (byVar.has(m[1])) ids.add(byVar.get(m[1]));
+	}
+	if (ids.size < 5) throw new Error('found only ' + ids.size + ' hidden elements; the scan is broken');
+
+	// One pass over the sheet, collecting for each id whether some rule gives it
+	// a display and whether some rule takes it away again while hidden.
+	const displayed = new Set();
+	const guarded = new Set();
+	for (const rule of css.split('}')) {
+		const [selectors, body] = rule.split('{');
+		if (!body) continue;
+		const sels = selectors.split(',').map(s => s.trim());
+		for (const s of sels) {
+			if (/(^|[^-\w])display\s*:/.test(body) && ids.has(s.slice(1))) displayed.add(s.slice(1));
+			const m = s.match(/^#([\w-]+)\[hidden\]$/);
+			if (m) guarded.add(m[1]);
+		}
+	}
+
+	const bad = [...displayed].filter(id => !guarded.has(id));
+	if (bad.length) {
+		throw new Error('#' + bad.join(', #') + ': has a display rule but no #id[hidden] rule, '
+			+ 'so the hidden attribute will not hide it');
+	}
+});
+
 Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);

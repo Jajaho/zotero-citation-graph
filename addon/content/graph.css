@@ -648,8 +648,19 @@ body {
 	color: var(--fg);
 }
 
+/* See #menu[hidden]: the display rule above is an author rule and would
+   otherwise beat the UA stylesheet's [hidden] { display: none } -- which left
+   this card on screen from the moment the tab opened, with a Done button that
+   set an attribute nothing was reading. */
+#group[hidden] {
+	display: none;
+}
+
+/* The drag handle, and the only part of the card that is not a control. */
 #group-title {
 	font-weight: 600;
+	cursor: move;
+	user-select: none;
 }
 
 #group-sub {

@@ -118,6 +118,7 @@
 	let elGroupInput = el('group-input');
 	let elGroupChips = el('group-chips');
 	let elGroupSub = el('group-sub');
+	let elGroupTitle = el('group-title');
 
 	function emit(msg) {
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
@@ -2177,7 +2178,7 @@
 		editingGroup = g;
 		// "here" is only true of the flag being planted; on one already stood
 		// up the card is about the group, not about the click that opened it.
-		el('group-title').textContent = g.filters.length ? 'Group' : 'Group here';
+		elGroupTitle.textContent = g.filters.length ? 'Group' : 'Group here';
 		groupBox.load(g.filters);
 		syncGroupNote();
 		elGroup.hidden = false;
@@ -2245,6 +2246,50 @@
 			if (ok) out.push(f);
 		}
 		return out;
+	}
+
+	/**
+	 * The card is dragged by its title.
+	 *
+	 * It opens at the pointer, which is exactly where the flag it describes was
+	 * just planted -- so the one thing it is certain to cover is the thing you
+	 * are looking at while you decide what belongs there. Every other floating
+	 * thing in this page can be dismissed and re-opened somewhere better; this
+	 * one is being typed into, and dismissing it is not free.
+	 *
+	 * Pointer capture, so a fast drag that outruns the title bar keeps the
+	 * card rather than dropping it under the cursor.
+	 */
+	let cardDrag = null;
+
+	elGroupTitle.addEventListener('pointerdown', (e) => {
+		if (e.button !== 0) return;
+		let r = elGroup.getBoundingClientRect();
+		cardDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+		try {
+			elGroupTitle.setPointerCapture(e.pointerId);
+		}
+		catch (err) { /* no capture, just a draggier drag */ }
+		// Otherwise the gesture selects the title text instead of moving it.
+		e.preventDefault();
+	});
+
+	elGroupTitle.addEventListener('pointermove', (e) => {
+		if (!cardDrag) return;
+		// Clamped the way positionAt() clamps: a card dragged off the edge
+		// would take the handle it is dragged by with it.
+		let w = elGroup.offsetWidth;
+		let h = elGroup.offsetHeight;
+		elGroup.style.left = Math.max(4,
+			Math.min(e.clientX - cardDrag.dx, window.innerWidth - w - 8)) + 'px';
+		elGroup.style.top = Math.max(4,
+			Math.min(e.clientY - cardDrag.dy, window.innerHeight - h - 8)) + 'px';
+	});
+
+	for (let type of ['pointerup', 'pointercancel']) {
+		elGroupTitle.addEventListener(type, () => {
+			cardDrag = null;
+		});
 	}
 
 	el('group-close').addEventListener('click', closeGroup);
