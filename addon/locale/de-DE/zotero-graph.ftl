@@ -221,11 +221,18 @@ zotero-graph-action-adding = Wird hinzugefügt…
 zotero-graph-action-close = Schließen
 
 
+## Die Karte, die eine leere Sammlung anstelle eines Graphen bekommt.
+
+zotero-graph-empty-title = Nichts zu zeichnen
+zotero-graph-empty-body = Diese Sammlung enthält keine regulären Einträge – nur Anhänge, Notizen oder gar nichts.
+zotero-graph-empty-sub = Nicht einbezogen: { $count -> [one] eine Untersammlung *[other] { $count } Untersammlungen }.
+zotero-graph-empty-include-sub = Untersammlungen einbeziehen
+
+
 ## Aufbauphasen, aus dem Chrome auf der Statuszeile gemeldet.
 
 zotero-graph-build-loading-collection = Sammlung wird geladen…
 zotero-graph-build-loading-collection-recursive = Sammlung und Untersammlungen werden geladen…
-zotero-graph-build-no-items = Diese Sammlung enthält keine regulären Einträge.
 zotero-graph-build-reading-text = Indexierter Text wird gelesen…
 zotero-graph-build-reading-text-progress = Indexierter Text wird gelesen… { $done }/{ $total } ({ $provider })
 zotero-graph-build-scanning-pdfs = PDFs werden durchsucht…

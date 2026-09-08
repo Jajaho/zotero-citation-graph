@@ -788,6 +788,60 @@ body {
 	cursor: default;
 }
 
+/* The card an empty collection gets instead of a graph. Centred rather than
+   parked in a corner: there is nothing else on the canvas to compete with it,
+   and a message about the whole tab should not look like an aside about one
+   node. Pointer events stay off the box itself so a stray click still reaches
+   the canvas -- only the button inside it takes one. */
+#empty {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 5;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	max-width: min(360px, calc(100% - 32px));
+	padding: 18px 22px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	text-align: center;
+	color: var(--fg);
+	pointer-events: none;
+}
+
+/* An author display: rule beats the UA stylesheet's [hidden] { display: none },
+   and all three of these are laid out with display: flex or shown through the
+   hidden attribute -- so each needs its own rule or it is simply always on
+   screen, with the code that "hides" it setting an attribute nothing reads. */
+#empty[hidden],
+#empty-sub[hidden],
+#empty-recursive[hidden] {
+	display: none;
+}
+
+#empty-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+#empty-body,
+#empty-sub {
+	color: var(--muted);
+	line-height: 1.4;
+}
+
+#empty-recursive {
+	font: inherit;
+	margin-top: 4px;
+	padding: 3px 10px;
+	pointer-events: auto;
+}
+
 /* Action popover for outside references. A sibling of #graph, like #status,
    because force-graph's init() empties its container. */
 #action {

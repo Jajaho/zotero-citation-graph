@@ -141,6 +141,21 @@
 
 	<div id="graph"></div>
 
+	<!-- Nothing came back from the collection at all. Said here rather than in
+	     #status because the status pill is a corner of a graph you are already
+	     reading, and this is the whole answer: there is no graph, and the stats
+	     line beside it has just stopped claiming one is on its way. Sibling of
+	     #graph for the same reason as everything else out here -- force-graph's
+	     init() empties its container. -->
+	<div id="empty" hidden="hidden">
+		<div id="empty-title" data-zg-str="empty-title">Nothing to graph</div>
+		<div id="empty-body" data-zg-str="empty-body">This collection has no regular items — only attachments, notes, or nothing at all.</div>
+		<!-- Only when there is something down there to include: offering to
+		     turn on a switch that would change nothing is worse than silence. -->
+		<div id="empty-sub" hidden="hidden"></div>
+		<button id="empty-recursive" type="button" hidden="hidden" data-zg-str="empty-include-sub">Include subcollections</button>
+	</div>
+
 	<!-- What the node colours mean, in the corner opposite the controls: the
 	     legend answers a question you ask while reading the graph, not while
 	     changing it. Built per render in graph.js, and hidden until there is

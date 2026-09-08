@@ -1260,6 +1260,78 @@ check('naming a graph changes no node and no edge', () => {
 	if (after.items[0].citedByGlobal !== 7) throw new Error('the held count did not arrive');
 });
 
+/* --- what survives a restart ---------------------------------------------
+ *
+ * A graph tab comes back from session.json and nothing else, so what tabData()
+ * puts there is the whole of what a restored tab can know about itself. These
+ * check the round trip rather than the tab machinery: Zotero_Tabs.getState()
+ * JSON-serialises tab.data, and restoreOptions() is what reads it back.
+ */
+
+check('a graph tab reduces to what session.json can hold, and reads back', () => {
+	const { tabData, restoreOptions } = require_('./lib/graphTab.js');
+	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
+	const options = { recursive: true, includeExternal: true, enrich: false };
+
+	const data = JSON.parse(JSON.stringify(tabData(collection, options)));
+	if (data.collectionKey !== 'ABCD1234') throw new Error('key: ' + data.collectionKey);
+	if (data.libraryID !== 1) throw new Error('libraryID: ' + data.libraryID);
+	// tabs.js _update() goes looking for an item to take a type icon from when
+	// this is missing, and a graph tab has no item to find.
+	if (data.icon !== 'zotero-graph') throw new Error('icon: ' + data.icon);
+	// Nothing derived: an edge list or a layout stored here would be reread
+	// stale, and is re-derived off the two caches far more cheaply than it
+	// could be invalidated honestly.
+	if (Object.keys(data).sort().join(',') !== 'collectionKey,icon,libraryID,options') {
+		throw new Error('carries more than it should: ' + Object.keys(data).join(','));
+	}
+	if (JSON.stringify(restoreOptions(data)) !== JSON.stringify(options)) {
+		throw new Error('scope did not survive: ' + JSON.stringify(restoreOptions(data)));
+	}
+	// The stored copy must not alias the live options, or a later rebuild would
+	// silently rewrite what the last save recorded.
+	options.recursive = false;
+	if (!restoreOptions(data).recursive) throw new Error('the stored scope aliases the live one');
+});
+
+check('a scope written by an older version fills in from the defaults', () => {
+	const { restoreOptions } = require_('./lib/graphTab.js');
+	for (const data of [undefined, {}, { options: null }, { options: { recursive: true } }]) {
+		const o = restoreOptions(data);
+		for (const k of ['recursive', 'includeExternal', 'enrich']) {
+			if (typeof o[k] !== 'boolean') {
+				throw new Error(`${k} is ${o[k]} for ${JSON.stringify(data)}`);
+			}
+		}
+	}
+	// What it did know is still honoured; what it did not defaults off.
+	const o = restoreOptions({ options: { recursive: true } });
+	if (!o.recursive || o.includeExternal || o.enrich) throw new Error(JSON.stringify(o));
+	// The network option is never entered by a default.
+	if (restoreOptions({}).enrich) throw new Error('a restored tab defaulted into the lookup');
+});
+
+check('an empty collection reports why, and offers the switch only when it helps', () => {
+	const { emptyReason } = require_('./lib/graphTab.js');
+	const withKids = n => ({ getChildCollections: asIDs => Array(n).fill(asIDs ? 1 : {}) });
+
+	// Something down there to include, and it is not included: worth offering.
+	const offer = emptyReason(withKids(3), { recursive: false });
+	if (offer.subcollections !== 3 || offer.recursive) throw new Error(JSON.stringify(offer));
+	// Already recursive, or nothing below -- the page has nothing to offer, and
+	// a button that would change nothing is worse than none.
+	if (!emptyReason(withKids(3), { recursive: true }).recursive) throw new Error('lost recursive');
+	if (emptyReason(withKids(0), { recursive: false }).subcollections !== 0) {
+		throw new Error('counted a subcollection that is not there');
+	}
+	// A count that cannot be taken is a hint that cannot be offered, not a
+	// build that fails.
+	const throws = { getChildCollections: () => { throw new Error('not loaded'); } };
+	if (emptyReason(throws, { recursive: false }).subcollections !== 0) {
+		throw new Error('a throwing collection did not fall back to zero');
+	}
+});
+
 /**
  * A Zotero item just real enough for readerPane.readable(): the four things it
  * asks about a candidate attachment.

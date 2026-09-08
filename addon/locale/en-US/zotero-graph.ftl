@@ -249,11 +249,18 @@ zotero-graph-action-adding = Adding…
 zotero-graph-action-close = Close
 
 
+## The card an empty collection gets in place of a graph.
+
+zotero-graph-empty-title = Nothing to graph
+zotero-graph-empty-body = This collection has no regular items — only attachments, notes, or nothing at all.
+zotero-graph-empty-sub = Not included: { $count -> [one] one subcollection *[other] { $count } subcollections }.
+zotero-graph-empty-include-sub = Include subcollections
+
+
 ## Build phases, reported on the status line from chrome.
 
 zotero-graph-build-loading-collection = Loading collection…
 zotero-graph-build-loading-collection-recursive = Loading collection and subcollections…
-zotero-graph-build-no-items = This collection has no regular items.
 zotero-graph-build-reading-text = Reading indexed text…
 zotero-graph-build-reading-text-progress = Reading indexed text… { $done }/{ $total } ({ $provider })
 zotero-graph-build-scanning-pdfs = Scanning PDFs…

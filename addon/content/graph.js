@@ -132,6 +132,9 @@
 	let elLegendToggle = el('legend-toggle');
 	let elLegendTitle = el('legend-title');
 	let elLegendBody = el('legend-body');
+	let elEmpty = el('empty');
+	let elEmptySub = el('empty-sub');
+	let elEmptyRecursive = el('empty-recursive');
 	let elGaps = el('gaps');
 	let elGapsTitle = el('gaps-title');
 	let elGapsBody = el('gaps-body');
@@ -595,6 +598,26 @@
 			elGapsFoot.appendChild(div);
 		}
 		elGapsFoot.hidden = !foot.length;
+	}
+
+	/**
+	 * The card that stands in for a graph when the collection produced no node.
+	 *
+	 * Driven by meta.empty rather than by items.length, so it only ever appears
+	 * for a build that FINISHED empty -- a first payload on the way to a real
+	 * graph carries no nodes either, and painting this over it would be a lie
+	 * that lasts a second and reads as a bug.
+	 */
+	function renderEmpty() {
+		let info = raw.meta && raw.meta.empty;
+		elEmpty.hidden = !info;
+		if (!info) return;
+		// Worth offering only what is not already on: with subcollections
+		// included, or with none to include, this button would change nothing.
+		let offer = info.subcollections > 0 && !info.recursive;
+		elEmptySub.hidden = !offer;
+		elEmptyRecursive.hidden = !offer;
+		if (offer) elEmptySub.textContent = t('empty-sub', { count: info.subcollections });
 	}
 
 	function gapRow(g) {
@@ -1452,6 +1475,7 @@
 		// landing, a strategy switched off or a paper added all change what is
 		// missing, and a stale list would be a list of the wrong papers.
 		renderGaps();
+		renderEmpty();
 
 		let phase = raw.meta && raw.meta.phase;
 		let ghostCount = visibleGhosts.size;
@@ -3344,6 +3368,13 @@
 		elStatus.textContent = t(elEnrich.checked ? 'status-looking-up' : 'status-dropping-names');
 		emit({ type: 'lookup', on: elEnrich.checked });
 	}
+
+	// Ticks the box the panel already owns rather than sending a scope of its
+	// own, so the control and the shortcut to it cannot drift apart.
+	elEmptyRecursive.addEventListener('click', () => {
+		elRecursive.checked = true;
+		requestRebuild();
+	});
 
 	elRecursive.addEventListener('change', requestRebuild);
 	elIncludeExternal.addEventListener('change', requestRebuild);

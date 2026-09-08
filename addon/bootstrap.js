@@ -84,13 +84,13 @@ function onMainWindowUnload({ window }) {
 	}
 }
 
-async function shutdown() {
+async function shutdown(params, reason) {
 	log('shutdown');
 	try {
-		for (let win of Zotero.getMainWindows()) {
-			if (win.ZoteroPane) CG && CG.onMainWindowUnload(win);
-		}
-		CG && await CG.shutdown();
+		// No per-window unload loop of its own: which teardown each window wants
+		// depends on the reason, and main.js owns that decision -- a window
+		// forgotten here would be a graph tab that never reaches session.json.
+		CG && await CG.shutdown(reason);
 	}
 	catch (e) {
 		Zotero.logError(e);

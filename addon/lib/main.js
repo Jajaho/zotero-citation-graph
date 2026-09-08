@@ -9,6 +9,11 @@ let graphTab = require('./graphTab.js');
 let l10n = require('./l10n.js');
 
 const MENU_ID = 'zotero-graph-collection';
+
+// plugins.js REASONS.APP_SHUTDOWN, the reason Zotero passes when it is quitting
+// rather than when the plugin alone is going away. The two want opposite
+// teardowns, and the difference is the whole of whether a graph tab comes back.
+const REASON_APP_SHUTDOWN = 2;
 const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
 
 /**
@@ -44,14 +49,35 @@ module.exports = {
 		this.registerMenu();
 	},
 
-	async shutdown() {
+	/**
+	 * @param {Integer} reason - plugins.js REASONS; see REASON_APP_SHUTDOWN.
+	 */
+	async shutdown(reason) {
 		try {
 			Zotero.MenuManager.unregisterMenu(MENU_ID);
 		}
 		catch (e) {
 			Zotero.logError(e);
 		}
-		graphTab.closeAll();
+
+		// Zotero.Session.save() snapshots the tab strip synchronously, from the
+		// quit-application-granted observer -- which fires before the
+		// quit-application that starts this teardown. So at app shutdown the
+		// tabs are already recorded, the windows are going regardless, and
+		// closing the tabs here would do nothing but take work off the restore.
+		//
+		// Every other reason -- disable, uninstall, upgrade -- leaves Zotero
+		// running while resource://zotero-graph/ stops resolving underneath a
+		// live graph page. Those tabs have to go, and they have to go out of
+		// session.json with it: a 'graph' entry restored by a Zotero with no
+		// restoreState.graph hook is the throw at tabs.js:611 that aborts
+		// restore for every tab after it.
+		if (reason === REASON_APP_SHUTDOWN) graphTab.forgetAll();
+		else graphTab.closeAll();
+
+		for (let win of Zotero.getMainWindows()) {
+			if (win.ZoteroPane) removeWindowIntegration(win);
+		}
 	},
 
 	onMainWindowLoad(win) {
@@ -67,30 +93,16 @@ module.exports = {
 
 		addTabIconStyle(win);
 
-		// restoreState is the ONE tab hook that must exist for a custom tab type.
-		// tabs.js:611 does `let { itemID } = await restoreStateHook(tab, i)` and the
-		// missing-hook default returns undefined, so destructuring would throw and
-		// abort restore for every later tab. Returning itemID:null and not re-adding
-		// the tab makes graph tabs vanish cleanly on restart.
-		// Note the indexing: tabHooks[action][type], per _getHook(type, action).
-		let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
-		if (hooks) {
-			if (!hooks.restoreState) hooks.restoreState = {};
-			hooks.restoreState.graph = async () => ({ itemID: null });
-		}
+		addTabHooks(win);
 	},
 
 	onMainWindowUnload(win) {
-		let style = win.document.getElementById(TAB_ICON_STYLE_ID);
-		if (style) style.remove();
-
-		let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
-		if (hooks && hooks.restoreState) {
-			delete hooks.restoreState.graph;
-		}
-		// Close graph tabs so they never reach session.json, in case the hook is
-		// already gone by the time restore runs.
-		graphTab.closeAllInWindow(win);
+		removeWindowIntegration(win);
+		// Deliberately not closeAllInWindow(): the tabs have to stay in the strip
+		// for ZoteroPane.destroy() to hand to Zotero.Session, which is what puts
+		// them in session.json for restore() to find. Their side panels still
+		// have to be told, which is what this does.
+		graphTab.forgetWindow(win);
 	},
 
 	registerMenu() {
@@ -145,4 +157,35 @@ function addTabIconStyle(win) {
 	style.id = TAB_ICON_STYLE_ID;
 	style.textContent = TAB_ICON_CSS(_config.resRoot);
 	doc.documentElement.appendChild(style);
+}
+
+/**
+ * The two tab hooks a graph tab needs, in the window's own Zotero_Tabs.
+ *
+ * restoreState is the ONE that must exist for a custom tab type: tabs.js:611
+ * does `let { itemID } = await restoreStateHook(tab, i)` and the missing-hook
+ * default returns undefined, so destructuring would throw and abort restore for
+ * every later tab. load is what makes restore lazy -- see graphTab.restore().
+ *
+ * Note the indexing: tabHooks[action][type], per _getHook(type, action).
+ */
+function addTabHooks(win) {
+	let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
+	if (!hooks) return;
+	if (!hooks.restoreState) hooks.restoreState = {};
+	if (!hooks.load) hooks.load = {};
+	hooks.restoreState.graph = (tab, tabIndex) => graphTab.restore(win, tab, tabIndex);
+	hooks.load.graph = tab => graphTab.load(win, tab, _config);
+}
+
+/** Everything this plugin put into one main window, taken back out. Shared by
+ *  the window closing and by the plugin going away under a window that is not. */
+function removeWindowIntegration(win) {
+	let style = win.document.getElementById(TAB_ICON_STYLE_ID);
+	if (style) style.remove();
+
+	let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
+	if (!hooks) return;
+	if (hooks.restoreState) delete hooks.restoreState.graph;
+	if (hooks.load) delete hooks.load.graph;
 }

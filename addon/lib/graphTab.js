@@ -71,38 +71,218 @@ const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: fals
 // says whether a build owns the tab, since a lookup must not push over one.
 let open_ = new Map();
 
-async function open(win, collection, config) {
-	// Collection first: the tab strip truncates from the right, and which
-	// collection this is is the half that distinguishes one graph tab from another.
-	let title = l10n.t('tab-title', { collection: collection.name });
+// Restored from the last session but never selected, so there is a tab in the
+// strip with no page behind it yet. Kept apart from open_ rather than entered
+// there as a half-record, so nothing that walks live tabs -- a build, a lookup,
+// a message from a page -- can reach an entry that has no browser.
+// tabID -> { win, tabID }
+let pending_ = new Map();
 
-	let { id, container } = win.Zotero_Tabs.add({
-		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
-		// the content type from the '-unloaded' state suffix.
-		type: 'graph',
-		title,
+/**
+ * What a graph tab is, reduced to what has to survive a restart.
+ *
+ * Zotero_Tabs.getState() serialises tab.data wholesale into session.json, so
+ * this IS the persisted form: two collection coordinates and the scope the user
+ * set. Everything else about a graph -- its edges, its layout, its names -- is
+ * derived, and re-derived far more cheaply than it could be stored honestly.
+ * See pdfLinkCache.js and metadataCache.js, which are where the expensive
+ * phases already survive a restart, invalidated per input rather than wholesale.
+ */
+function tabData(collection, options) {
+	return {
+		collectionKey: collection.key,
+		libraryID: collection.libraryID,
 		// `icon` is read by tabs.js _update(): with one set, it does not go looking
 		// for an item to take a type icon from -- a graph tab has no item, and the
 		// lookup it would otherwise attempt leaves the tab with no icon at all.
 		// The name lands on the tab's <span> as data-item-type, which is what the
 		// stylesheet main.js injects paints. See TAB_ICON_CSS there.
-		data: {
-			collectionKey: collection.key,
-			libraryID: collection.libraryID,
-			icon: 'zotero-graph',
-		},
+		icon: 'zotero-graph',
+		options: { ...options },
+	};
+}
+
+/**
+ * The scope a restored tab reopens with. Spread over the defaults rather than
+ * used as it comes, so data written by an older version -- which knew fewer
+ * options, or different ones -- fills in instead of leaving a scope undefined.
+ */
+function restoreOptions(data) {
+	return { ...DEFAULT_OPTIONS, ...((data && data.options) || null) };
+}
+
+/**
+ * The tab title, which is the collection's name. Read from the live collection
+ * on every path including restore, so a collection renamed while its tab was
+ * closed comes back under the name it has now rather than the one it had.
+ * Control characters are stripped for the reason core's reader hook strips them
+ * (tabs.js restoreState): one in a title raises "An invalid or illegal string
+ * was specified" and takes the whole restore down with it.
+ */
+function tabTitle(collection) {
+	// Collection first: the tab strip truncates from the right, and which
+	// collection this is is the half that distinguishes one graph tab from another.
+	let title = l10n.t('tab-title', { collection: collection.name });
+	// t() answers with the bare message id when the strings have not landed.
+	// Restore can run on a timeline of Zotero's choosing, so this path is not
+	// guaranteed to be after startup the way opening from the menu is, and a
+	// tab labelled "tab-title" would be a poor way to find that out.
+	if (title === 'tab-title') title = collection.name;
+	// eslint-disable-next-line no-control-regex
+	return title.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+}
+
+/**
+ * Teardown for a tab that is going away. The container is about to be destroyed
+ * anyway, but whatever is in the side panel is not just markup: a reader has
+ * listeners on the window and state to flush, an item pane has observers
+ * registered with Zotero.Notifier. Closing the panel tells its occupant.
+ */
+function dropEntry(tabID) {
+	let entry = open_.get(tabID);
+	try {
+		if (entry) splitPane.close(entry);
+	}
+	catch (e) {
+		// Reached during window teardown as well as on a plain tab close, and
+		// by then the panel's own nodes may already be gone. Letting go of the
+		// entry matters more than the tidying, and the caller is usually part
+		// way through a loop over the rest of them.
+		Zotero.logError(e);
+	}
+	open_.delete(tabID);
+	pending_.delete(tabID);
+}
+
+async function open(win, collection, config) {
+	let { id, container } = win.Zotero_Tabs.add({
+		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
+		// the content type from the '-unloaded' state suffix.
+		type: 'graph',
+		title: tabTitle(collection),
+		data: tabData(collection, DEFAULT_OPTIONS),
 		select: true,
-		onClose: () => {
-			let entry = open_.get(id);
-			// The container is about to be destroyed anyway, but whatever is in
-			// the side panel is not just markup: a reader has listeners on the
-			// window and state to flush, an item pane has observers registered
-			// with Zotero.Notifier. Closing the panel tells its occupant.
-			if (entry) splitPane.close(entry);
-			open_.delete(id);
-		},
+		onClose: () => dropEntry(id),
 	});
 
+	mount(win, id, container, collection, config, { ...DEFAULT_OPTIONS })
+		.catch(e => Zotero.logError(e));
+}
+
+/**
+ * Bring a graph tab back from the last session -- tabHooks.restoreState.graph.
+ *
+ * This hook is mandatory for a custom tab type: tabs.js:611 does
+ * `let { itemID } = await restoreStateHook(tab, i)` and the missing-hook default
+ * returns undefined, so no hook at all throws and aborts restore for every LATER
+ * tab. Returning itemID:null without re-adding is the "drop this one" answer,
+ * and is still what a tab that cannot be honoured gets.
+ *
+ * Re-added unloaded, which is core's own mechanism for reader and note tabs:
+ * select() promotes 'graph-unloaded' through 'graph-loading' to 'graph' by
+ * calling tabHooks.load.graph. So a window restored with four graph tabs pays
+ * for one build -- the selected one -- rather than four concurrent PDF scans at
+ * the slowest moment of startup. Note that 'graph' is deliberately NOT added to
+ * core's _loadableTypes: that list is what unloadUnusedTabs() reads, and a built
+ * graph must not be thrown away behind the user's back after a day unselected.
+ */
+async function restore(win, tab, tabIndex) {
+	// Nothing below may throw: restoreState() is a plain loop over the session's
+	// tabs with no per-tab catch, so an exception here does not cost this tab --
+	// it costs every tab after it. Dropping one graph tab is the worst outcome
+	// this function is allowed to have.
+	try {
+		let collection = await tabCollection(tab.data);
+		if (!collection) return { itemID: null };
+
+		let id;
+		({ id } = win.Zotero_Tabs.add({
+			type: 'graph-unloaded',
+			title: tabTitle(collection),
+			// add() rejects an index below 1; index 0 is the library tab's, and
+			// no hook of ours is called for it.
+			index: tabIndex > 0 ? tabIndex : 1,
+			data: tab.data,
+			select: !!tab.selected,
+			onClose: () => dropEntry(id),
+		}));
+		// add() runs select() inline when select is set, so by the time this
+		// line is reached load() may already have mounted the tab and taken it
+		// back out of pending_.
+		if (!open_.has(id)) pending_.set(id, { win, tabID: id });
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	return { itemID: null };
+}
+
+/**
+ * Put a page behind a restored tab -- tabHooks.load.graph, on first select.
+ *
+ * Settles once the bridge is up, NOT once the graph is built: select() holds
+ * core's loading cover over the tab until this resolves, and a cold PDF scan is
+ * half a minute of it. The build runs on behind the cover coming off, reporting
+ * itself through the status line like any other build.
+ */
+async function load(win, tab, config) {
+	// Nor may this throw: select() calls the hook as
+	// `loadHook(...).then(() => showLoadingMessage(false))` with no catch, so a
+	// rejection here leaves the loading cover over the tab until the tab is
+	// closed -- and leaves the rejection unhandled.
+	try {
+		if (open_.has(tab.id)) return;
+		let collection = await tabCollection(tab.data);
+		if (!collection) {
+			// The collection went away between sessions. There is nothing to
+			// draw and nowhere honest to say so, since the tab IS the graph of it.
+			win.Zotero_Tabs.close(tab.id);
+			return;
+		}
+		let container = win.Zotero_Tabs.getTabContent(tab.id);
+		if (!container || container.querySelector('.zg-split')) return;
+
+		await Promise.race([
+			mount(win, tab.id, container, collection, config, restoreOptions(tab.data)),
+			// A page that never fires DOMContentLoaded must not leave the
+			// loading cover over the tab for the rest of the session.
+			Zotero.Promise.delay(15000),
+		]);
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/**
+ * The collection a tab's persisted data points at, or null when it cannot be
+ * honoured -- data from before any of this was stored, or a collection deleted
+ * while the tab was closed.
+ */
+async function tabCollection(data) {
+	// getIDFromLibraryAndKey() throws on a falsy library id rather than missing.
+	if (!data || !data.libraryID || !data.collectionKey) return null;
+	try {
+		// Returns false, not null, when there is no such collection.
+		let c = await Zotero.Collections.getByLibraryAndKeyAsync(
+			data.libraryID, data.collectionKey);
+		return c || null;
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return null;
+	}
+}
+
+/**
+ * The page itself, inside a tab container that already exists. Shared by a tab
+ * opened from the collection menu and one restored from the last session, so
+ * the two cannot come to mean different things.
+ *
+ * @returns {Promise} resolved when the chrome<->content bridge is up. The build
+ *          runs on after that, deliberately unawaited -- see load().
+ */
+function mount(win, tabID, container, collection, config, options) {
 	// The graph goes inside a horizontal box rather than straight into the tab
 	// container, because splitPane.js appends a splitter and the side panel
 	// beside it.
@@ -125,27 +305,38 @@ async function open(win, collection, config) {
 	split.appendChild(browser);
 	container.appendChild(split);
 
-	open_.set(id, {
+	open_.set(tabID, {
 		win, browser, split, collection,
 		// Handed to <item-details>, which watches tab selection by it and stops
 		// rendering while some other tab is on screen.
-		tabID: id,
+		tabID,
 		pane: null,
 		reader: null,
 		itemPane: null,
 		generation: 0,
-		options: { ...DEFAULT_OPTIONS },
+		options,
 		built: null,
 		building: false,
 	});
+	pending_.delete(tabID);
 
-	let onDOMContentLoaded = (event) => {
-		if (browser.contentWindow && browser.contentWindow.document === event.target) {
-			win.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
-			ready(win, id, browser.contentWindow, collection).catch(e => Zotero.logError(e));
-		}
-	};
-	win.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+	return new Promise((resolve) => {
+		let onDOMContentLoaded = (event) => {
+			if (browser.contentWindow && browser.contentWindow.document === event.target) {
+				win.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
+				ready(win, tabID, browser.contentWindow, collection)
+					.then(() => {
+						resolve();
+						return runBuild(tabID);
+					})
+					.catch((e) => {
+						Zotero.logError(e);
+						resolve();
+					});
+			}
+		};
+		win.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+	});
 }
 
 async function ready(win, tabID, cw, collection) {
@@ -177,8 +368,6 @@ async function ready(win, tabID, cw, collection) {
 		}
 		handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
 	});
-
-	await runBuild(tabID);
 }
 
 async function handleMessage(win, tabID, collection, msg) {
@@ -192,6 +381,7 @@ async function handleMessage(win, tabID, collection, msg) {
 		case 'rebuild': {
 			let entry = open_.get(tabID);
 			if (entry && msg.options) Object.assign(entry.options, msg.options);
+			if (entry) saveTabData(entry);
 			await runBuild(tabID);
 			break;
 		}
@@ -204,6 +394,7 @@ async function handleMessage(win, tabID, collection, msg) {
 			let entry = open_.get(tabID);
 			if (!entry) break;
 			entry.options.enrich = !!msg.on;
+			saveTabData(entry);
 			// Nothing settled to add to: no build has finished, or one is still
 			// running and will pick the option up itself.
 			if (!entry.built || entry.building) await runBuild(tabID);
@@ -337,11 +528,19 @@ async function buildPhases(entry, alive) {
 	if (!alive()) return;
 	state.items = items;
 	state.inCollection = new Set(items.map(i => i.key));
-	push([], { phase: 'items', items: items.length });
+	// Stamped 'done', not 'items': the renderer reads any other phase as work
+	// still in flight, and would go on saying "building..." over a canvas that
+	// is never going to get anything on it. The one payload an empty collection
+	// produces has to be a finished one. The `empty` block is what the page
+	// paints its card from, and says whether there is a next thing to try.
 	if (!items.length) {
-		status(l10n.t('build-no-items'));
+		push([], { phase: 'done', items: 0, empty: emptyReason(collection, options) });
+		// The card is the single voice. A pill in the opposite corner saying
+		// the same thing in fewer words is half of what made this confusing.
+		status('');
 		return;
 	}
+	push([], { phase: 'items', items: items.length });
 
 	// --- phase 2: text strategies ---------------------------------------
 	status(l10n.t('build-reading-text'));
@@ -415,6 +614,30 @@ async function buildPhases(entry, alive) {
 		return;
 	}
 	await lookUpNames(entry, alive, entry.built);
+}
+
+/**
+ * Why the canvas is blank, and whether there is an obvious next thing to try.
+ *
+ * Only ever asked when the collection produced no regular item at all, which
+ * has three causes that look identical on screen: the collection is empty, it
+ * holds nothing but attachments and notes, or everything in it is one level
+ * down and subcollections are switched off. The last one is the only one the
+ * page can offer to fix, so it is the only one worth reporting in detail.
+ *
+ * getChildCollections(true) returns ids, so this counts them without loading
+ * a single collection.
+ */
+function emptyReason(collection, options) {
+	let subcollections = 0;
+	try {
+		subcollections = collection.getChildCollections(true).length;
+	}
+	catch (e) {
+		// A count we cannot take is a hint we cannot offer, not a failed build.
+		Zotero.logError(e);
+	}
+	return { recursive: !!options.recursive, subcollections };
 }
 
 /**
@@ -752,6 +975,24 @@ function scopeNames(entry, item) {
 	return names.length ? names : null;
 }
 
+/**
+ * Write the tab's scope back to where a restart can read it.
+ *
+ * Zotero_Tabs.setTabData merges into tab.data and debounces a session save;
+ * the save at quit reads the live tab strip regardless, so this is about the
+ * five-minute autosave and about crash recovery rather than the normal path.
+ */
+function saveTabData(entry) {
+	try {
+		entry.win.Zotero_Tabs.setTabData(entry.tabID, { options: { ...entry.options } });
+	}
+	catch (e) {
+		// A scope that will not persist is worth a line in the log and nothing
+		// more -- the graph on screen is unaffected.
+		Zotero.logError(e);
+	}
+}
+
 /** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */
 function pref(name) {
 	try {
@@ -875,27 +1116,61 @@ function logMeta(phase, result) {
 	}
 }
 
+/**
+ * Close every graph tab in a window, mounted or not.
+ *
+ * This is the teardown for a plugin going away under a Zotero that is staying:
+ * resource://zotero-graph/ is about to stop resolving, so a live graph page
+ * cannot survive it -- and a 'graph' entry left in session.json would meet a
+ * Zotero with no restoreState.graph hook next time, which tabs.js:611 turns
+ * into a thrown restore for every later tab. Unmounted tabs are swept too, for
+ * exactly that second reason.
+ */
 function closeAllInWindow(win) {
-	for (let [tabID, entry] of [...open_]) {
-		if (entry.win === win) {
-			try {
-				win.Zotero_Tabs.close(tabID);
-			}
-			catch (e) { /* tab may already be gone */ }
-			open_.delete(tabID);
+	for (let [tabID, entry] of [...open_, ...pending_]) {
+		if (entry.win !== win) continue;
+		try {
+			win.Zotero_Tabs.close(tabID);
 		}
+		catch (e) { /* tab may already be gone */ }
+		open_.delete(tabID);
+		pending_.delete(tabID);
 	}
 }
 
 function closeAll() {
-	for (let [, entry] of [...open_]) {
+	for (let [, entry] of [...open_, ...pending_]) {
 		closeAllInWindow(entry.win);
 	}
 	open_.clear();
+	pending_.clear();
+}
+
+/**
+ * Let go of a window's tabs without closing them -- the teardown for a Zotero
+ * that is quitting under a plugin that is staying.
+ *
+ * The tabs have to stay in the strip: Zotero.Session.save() reads it to build
+ * session.json, and a tab closed here is a tab that does not come back. What
+ * still has to happen is the panel teardown, since a reader holds listeners on
+ * a window that is about to go and an item pane holds Notifier observers.
+ */
+function forgetWindow(win) {
+	for (let [tabID, entry] of [...open_, ...pending_]) {
+		if (entry.win === win) dropEntry(tabID);
+	}
+}
+
+function forgetAll() {
+	for (let [tabID] of [...open_, ...pending_]) dropEntry(tabID);
 }
 
 module.exports = {
-	open, closeAll, closeAllInWindow, mergeEdges, toWireExternal, adoptAdded,
+	open, restore, load, closeAll, closeAllInWindow, forgetWindow, forgetAll,
+	mergeEdges, toWireExternal, adoptAdded,
+	// Exported for the restore tests: what a graph tab is once reduced to what
+	// session.json can hold, and how that reads back.
+	tabData, restoreOptions, emptyReason,
 	// Exported for the payload test: what a lookup pass may and may not change
 	// about the graph on screen is the whole reason it is not a rebuild.
 	pushData,
