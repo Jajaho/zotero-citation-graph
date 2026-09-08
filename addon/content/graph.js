@@ -920,8 +920,17 @@
 			fg.onNodeDrag((n) => {
 				dragNode = n;
 			});
-			fg.onNodeDragEnd(() => {
+			fg.onNodeDragEnd((n) => {
 				dragNode = null;
+				if (!menuOnDrop) return;
+				let event = menuOnDrop;
+				menuOnDrop = null;
+				// Built first, while the node is merely dropped: the entry has
+				// to read "Pin node here", and it would say "Unpin" if the hold
+				// below were already on. Nothing ticks in between -- both run
+				// inside the mouseup -- so the node cannot move between them.
+				showMenu(n, event);
+				if (!isPinned(n)) hold(n);
 			});
 			// Clicking empty canvas dismisses, the way a popover should, and
 			// gives the whole graph back.
@@ -1396,30 +1405,43 @@
 	// --- defending a drag in progress -------------------------------------
 
 	/**
-	 * d3-drag ends a gesture on ANY mouseup that reaches the window: its
-	 * handler is registered on the view, not the canvas, and never looks at
-	 * which button came up. So pressing the right button while the left is
-	 * carrying a node drops it, and the layout pulls it away from the spot the
-	 * user was aiming at -- the one thing a drag must never do, and doubly so
-	 * here, where aiming a node at a spot is exactly what pinning is for.
+	 * Right-clicking a node you are still carrying is the gesture the pin was
+	 * built for: drag it where it belongs, ask for the menu, pin it there.
+	 * Getting there takes some care, because d3-drag ends a gesture on ANY
+	 * mouseup that reaches the window -- its handler is registered on the view,
+	 * not the canvas, and never looks at which button came up.
 	 *
-	 * While a node is being carried, the other buttons are therefore swallowed
-	 * outright: the gesture in progress outranks the one being started. No menu
-	 * opens either, deliberately -- a menu that appears mid-drag would have to
-	 * be reached with the button still down, which would drag the node across
-	 * the canvas on the way to it. Drop the node first; the menu is one click
-	 * away, and the node is where you left it.
+	 * Left alone, that drops the node and the layout immediately pulls it off
+	 * the spot being aimed at, which is the one thing this gesture must not do.
+	 * So the drag is allowed to end -- a node the pointer is no longer carrying
+	 * cannot be dragged across the canvas on the way to the menu, which is the
+	 * other half of the problem -- and the node is HELD where it was dropped
+	 * for as long as the menu is open. Pin makes the hold permanent; dismissing
+	 * the menu any other way gives the node back to the layout.
+	 *
+	 * Everything else about the press is swallowed: the whole point is that the
+	 * right button decides when the drag ends, not the browser's idea of what a
+	 * second button means.
 	 *
 	 * Capture on window, and registered at load, which is what puts these ahead
 	 * of d3's: d3 re-registers its window listeners on every mousedown, and a
 	 * later registration on the same target and phase runs later.
 	 */
-	let dragNode = null;
+	let dragNode = null;      // node the pointer is carrying, or null
+	let menuOnDrop = null;    // the right-click that asked for a menu, if any
 
 	function guardDrag(e) {
 		// Button 0 is the drag's own, and has to get through: it is what ends
 		// the gesture normally.
 		if (!dragNode || e.button === 0) return;
+		// The right button's mouseup is the one event that IS allowed past, so
+		// that d3 sees it and ends the drag. Noted on the way, because
+		// force-graph will not raise its own right-click for it -- it suppresses
+		// clicks that end a drag, which is otherwise exactly the right rule.
+		if (e.type === 'mouseup' && e.button === 2) {
+			menuOnDrop = e;
+			return;
+		}
 		e.preventDefault();
 		e.stopImmediatePropagation();
 	}
@@ -1428,11 +1450,23 @@
 		window.addEventListener(type, guardDrag, true);
 	}
 
-	// onNodeDragEnd is the normal way out, but a flag that stuck would kill the
-	// right button for the rest of the session -- far worse than the bug above.
-	// The left button coming up ends every drag there is, so it clears it too.
+	// onNodeDragEnd is the normal way out, but a flag that stuck here would
+	// swallow every right-click for the rest of the session -- far worse than
+	// the bug above. Two ways back, then: the left button coming up ends every
+	// drag there is, and a mouse that moves without it down was never dragging.
+	// The second catches the case the first cannot -- a button released outside
+	// the window, whose mouseup never arrives.
+	function endDrag() {
+		dragNode = null;
+		menuOnDrop = null;
+	}
+
 	window.addEventListener('mouseup', (e) => {
-		if (e.button === 0) dragNode = null;
+		if (e.button === 0) endDrag();
+	}, true);
+
+	window.addEventListener('mousemove', (e) => {
+		if (dragNode && !(e.buttons & 1)) endDrag();
 	}, true);
 
 	// --- pinning ----------------------------------------------------------
@@ -1454,7 +1488,34 @@
 	 * releases it on drop.
 	 */
 	function isPinned(n) {
-		return n.fx != null || n.fy != null;
+		return (n.fx != null || n.fy != null) && n !== heldNode;
+	}
+
+	/**
+	 * A hold is a pin the user has not agreed to yet: the same fixed
+	 * coordinates, worn only while the menu that offers to make it permanent is
+	 * open. Without it, a node dropped by the right button would drift away
+	 * underneath the menu asking whether to pin it -- and it would be pinned to
+	 * wherever it had got to by the time the answer came.
+	 *
+	 * Deliberately not drawn: a ring means "this node is staying", and a hold
+	 * lasts only as long as an open menu.
+	 */
+	let heldNode = null;
+
+	function hold(n) {
+		heldNode = n;
+		n.fx = n.x;
+		n.fy = n.y;
+	}
+
+	function release() {
+		if (!heldNode) return;
+		let n = heldNode;
+		heldNode = null;
+		delete n.fx;
+		delete n.fy;
+		// No repaint: a hold draws nothing, so there is nothing to un-draw.
 	}
 
 	function pin(n) {
@@ -1490,6 +1551,9 @@
 	 */
 	function showMenu(n, event) {
 		hideAction();
+		// A menu replaced rather than dismissed still owes the previous node
+		// its freedom.
+		release();
 		elMenu.textContent = '';
 		let entries = n.ghost ? ghostMenu(n) : itemMenu(n);
 		// Last, and shared by both populations, because it is the one entry
@@ -1506,6 +1570,12 @@
 
 	function hideMenu() {
 		elMenu.hidden = true;
+		// Every way out of the menu comes through here -- Escape, a click on
+		// the canvas, picking an entry, a rebuild landing -- so this is the one
+		// place the hold has to be given up. Picking "Pin node here" releases
+		// and then re-fixes the node at coordinates nothing has had a chance to
+		// change, which is the same spot.
+		release();
 	}
 
 	function menuItem({ label, hint, disabled, run }) {
