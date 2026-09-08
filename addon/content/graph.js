@@ -951,7 +951,9 @@
 				hideAction();
 				hideMenu();
 			});
-			// A settle ends when the engine stops -- see settle().
+			// A settle sheds its alpha tick by tick and ends when the engine
+			// stops -- see settle().
+			fg.onEngineTick(shed);
 			fg.onEngineStop(thaw);
 
 			// Every accessor below is a closure over live state and re-read on
@@ -1655,31 +1657,95 @@
 	 * for: force-graph runs exactly that many ticks and then stops of its own
 	 * accord, leaving the graph cold rather than mid-anneal with every node
 	 * suddenly free again.
+	 *
+	 * Energy is the other half of moving like a dropped node, and the reason a
+	 * released node used to travel visibly faster than the same node dragged and
+	 * let go from the same spot. force-graph drags at an alpha TARGET of 0.3, so
+	 * a drop is released into an alpha of about 0.3 and falling. The only way
+	 * into the engine from out here is d3ReheatSimulation(), which sets alpha to
+	 * 1 -- and alpha scales the link, charge and centre-pull forces, so the node
+	 * was being thrown home with three times a drop's push.
+	 *
+	 * There is no alpha setter on force-graph's public API, so the settle sheds
+	 * the difference instead of setting it: the released node stays fixed with
+	 * everything else for the first few ticks, alphaDecay is turned right up so
+	 * those ticks cost alpha and nothing else, and the node is let go once alpha
+	 * has fallen to what a drop would have left it. Nothing is on the move while
+	 * that happens -- the whole graph is fixed, including the node itself -- so
+	 * the only thing visible is the gentler fall it then makes.
 	 */
-	const SETTLE_TICKS = 60;
+	const SETTLE_TICKS = 120;
+
+	// force-graph's own d3AlphaTarget while a node is being dragged, and so the
+	// alpha a dropped node is released into.
+	const DROP_ALPHA = 0.3;
+
+	// Alpha is multiplied by (1 - decay) per tick, so this sheds it in halves:
+	// two ticks take 1 down to 0.25, which is a drop's push and a frame or two
+	// of a frozen graph.
+	const SHED_DECAY = 0.5;
+	const SHED_TICKS = Math.ceil(Math.log(DROP_ALPHA) / Math.log(1 - SHED_DECAY));
 
 	// Held still for a settle, and not by the user. isPinned() has to see
 	// through this, or the whole graph would wear pin rings for a second.
 	let frozen = new Set();
 
+	// The node the shed above is being run for, and what the graph's own alpha
+	// decay was before the shed borrowed it.
+	let settling = null;
+	let shedLeft = 0;
+	let settleDecay = null;
+
 	function settle(n) {
 		if (!fg) return;
 		thaw();
+		// n included: it is let go by shed(), not here, and until then it has to
+		// stay as still as the graph around it.
 		for (let other of drawnNodes) {
-			if (other === n || other.fx != null || other.fy != null) continue;
+			if (other.fx != null || other.fy != null) continue;
 			other.fx = other.x;
 			other.fy = other.y;
 			frozen.add(other);
 		}
-		if (!frozen.size) return;
-		fg.cooldownTicks(SETTLE_TICKS).d3ReheatSimulation();
+		// Not a node on screen, so there is nothing to settle -- and nothing
+		// that would ever lift the freeze just laid down.
+		if (!frozen.has(n)) {
+			thaw();
+			return;
+		}
+		settling = n;
+		shedLeft = SHED_TICKS;
+		settleDecay = fg.d3AlphaDecay();
+		fg.d3AlphaDecay(SHED_DECAY).cooldownTicks(SETTLE_TICKS).d3ReheatSimulation();
+	}
+
+	/**
+	 * One tick of the shed. Alpha cannot be read back from out here, so the
+	 * ticks are counted rather than the value watched -- which comes to the same
+	 * thing, because the decay is fixed and the starting alpha is always 1.
+	 */
+	function shed() {
+		if (!settling || --shedLeft > 0) return;
+		let n = settling;
+		settling = null;
+		frozen.delete(n);
+		delete n.fx;
+		delete n.fy;
+		fg.d3AlphaDecay(settleDecay);
 	}
 
 	/** Give the graph its freedom back. Idempotent, and the engine's own stop
 	 *  handler, so an ordinary cooldown ending simply finds nothing to do. */
 	function thaw() {
-		if (fg) fg.cooldownTicks(Infinity);
+		if (fg) {
+			fg.cooldownTicks(Infinity);
+			if (settleDecay !== null) fg.d3AlphaDecay(settleDecay);
+		}
+		settling = null;
+		settleDecay = null;
 		if (!frozen.size) return;
+		// A node still waiting to be let go is in here too, so this frees it
+		// along with the rest.
 		for (let other of frozen) {
 			delete other.fx;
 			delete other.fy;
