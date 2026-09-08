@@ -722,9 +722,9 @@ class FakeElement {
 	}
 
 	getBoundingClientRect() {
-		// Zero once hidden, the way a display:none box measures -- which is what
+		// Zero once collapsed, the way a width:0 box measures -- which is what
 		// stops a collapse from being remembered as a width.
-		return { width: this.getAttribute('hidden') ? 0 : 400 };
+		return { width: this.getAttribute('data-zg-collapsed') ? 0 : 400 };
 	}
 }
 
@@ -738,7 +738,6 @@ function fakeWindow(onRender = async () => {}) {
 			observe() {}
 			disconnect() {}
 		},
-		// It also follows window resizes, to keep the chevron on the edge.
 		addEventListener() {},
 		removeEventListener() {},
 	};
@@ -752,7 +751,7 @@ function fakeEntry(win, element, tabID) {
 
 check('the side panel holds one thing at a time', async () => {
 	const splitPane = require_('./lib/splitPane.js');
-	const { win, element } = fakeWindow();
+	const { made, win, element } = fakeWindow();
 	const entry = fakeEntry(win, element, 'tab-9');
 	Zotero.Prefs = { get: () => 420, set: () => {} };
 
@@ -761,16 +760,22 @@ check('the side panel holds one thing at a time', async () => {
 	first.appendChild(element('browser'));
 	if (!splitPane.has(entry, 'reader')) throw new Error('the reader did not get the panel');
 
+	// The chevron is a child of the panel, and it belongs to the panel rather
+	// than to whoever is in it -- so it is not part of any of these counts.
+	const toggle = made.find(el => el.className === 'zg-pane-toggle');
+	const occupants = box => box.children.filter(c => c !== toggle);
+
 	// The same occupant asking again keeps what it built.
 	if (splitPane.claim(entry, 'reader', () => dropped++) !== first) throw new Error('the panel was rebuilt');
 	if (dropped) throw new Error('a re-claim tore the occupant down');
-	if (first.children.length !== 1) throw new Error('a re-claim emptied the panel');
+	if (occupants(first).length !== 1) throw new Error('a re-claim emptied the panel');
 
 	// Someone else asking takes it, and the reader is told before its elements go.
 	let second = splitPane.claim(entry, 'item', () => dropped++);
 	if (second !== first) throw new Error('the two occupants got different panels');
 	if (dropped !== 1) throw new Error('the displaced occupant was not told');
-	if (second.children.length) throw new Error('the panel was handed over still full');
+	if (occupants(second).length) throw new Error('the panel was handed over still full');
+	if (toggle.parent !== second) throw new Error('the handover took the chevron with it');
 	if (splitPane.has(entry, 'reader')) throw new Error('the reader still claims the panel');
 
 	splitPane.close(entry);
@@ -779,27 +784,42 @@ check('the side panel holds one thing at a time', async () => {
 	if (!second.removed) throw new Error('close() left the panel in the DOM');
 });
 
-check('the chevron rides on the divider without being inside it', () => {
+check('the chevron hangs off the panel and is never positioned by arithmetic', () => {
 	const splitPane = require_('./lib/splitPane.js');
 	const { made, win, element } = fakeWindow();
 	const entry = fakeEntry(win, element, 'tab-11');
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 
-	splitPane.claim(entry, 'item', () => {});
+	const box = splitPane.claim(entry, 'item', () => {});
 	const toggle = made.find(el => el.className === 'zg-pane-toggle');
 	const splitter = made.find(el => el.className === 'zg-pane-splitter');
 	// A XUL <splitter> is a leaf frame in current Gecko -- it lays out no
 	// children, so a button inside one is invisible. That is not a thing a
 	// stylesheet can rescue, hence the check.
 	if (splitter.children.length) throw new Error('the divider has children, and they never paint');
-	if (toggle.parent !== entry.split) throw new Error('the chevron must be a sibling of the divider');
+	// Inside the panel, so that every way the panel's edge can move -- a drag, a
+	// narrower window, min-width biting -- moves the button with it. An offset
+	// computed once and stored goes stale on all three, and a stale offset puts
+	// the button off the side of the tab, which is how it kept vanishing.
+	if (toggle.parent !== box) throw new Error('the chevron must be a child of the panel');
+	if (Object.keys(entry.split.style.props).length) {
+		throw new Error('the chevron is being placed by measurement again: '
+			+ JSON.stringify(entry.split.style.props));
+	}
 
-	// Parked so its centre lands on the 4px divider left of a 400px panel, and
-	// flush with the edge once there is no panel to sit beside.
-	const right = () => entry.split.style.props['--zg-toggle-right'];
-	if (right() !== 400 - 18 / 2 + 2 + 'px') throw new Error('parked at ' + right());
+	// Collapsing is width, not display: a panel that is display:none takes the
+	// button down with it, and then there is no way back.
 	toggle.fire('click');
-	if (right() !== '0px') throw new Error('hidden, but parked at ' + right());
+	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the panel did not collapse');
+	if (box.getAttribute('hidden')) throw new Error('display:none would hide the chevron too');
+	// Neither an inline width nor a XUL width attribute may be left behind to
+	// argue with `width: 0`.
+	if (box.style.width) throw new Error('an inline width outranks the collapsed rule: ' + box.style.width);
+	if (box.getAttribute('width')) throw new Error('a width attribute survived the collapse');
+	if (toggle.parent !== box) throw new Error('collapsing detached the chevron');
+	// The attribute is what the panel comes back at, so it survives the collapse.
+	toggle.fire('click');
+	if (box.style.width !== '400px') throw new Error('came back at ' + box.style.width);
 });
 
 check('hiding the panel keeps what is in it, and asking again brings it back', () => {
@@ -812,24 +832,25 @@ check('hiding the panel keeps what is in it, and asking again brings it back', (
 	let box = splitPane.claim(entry, 'reader', () => dropped++);
 	box.appendChild(element('browser'));
 	const toggle = made.find(el => el.className === 'zg-pane-toggle');
-	if (!toggle) throw new Error('the divider has no chevron');
+	if (!toggle) throw new Error('the panel has no chevron');
+	const occupants = () => box.children.filter(c => c !== toggle);
 
 	toggle.fire('click');
-	if (box.getAttribute('hidden') !== 'true') throw new Error('the chevron did not hide the panel');
+	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the chevron did not hide the panel');
 	// Hidden, not emptied: a reader keeps its page and an item pane its scroll
 	// position, so the way back is instant and lands where you left.
 	if (dropped) throw new Error('hiding tore the occupant down');
-	if (box.children.length !== 1) throw new Error('hiding emptied the panel');
+	if (occupants().length !== 1) throw new Error('hiding emptied the panel');
 	if (toggle.textContent !== '«') throw new Error('the chevron points the wrong way: ' + toggle.textContent);
 
 	// A claim that is not a request to SEE something leaves the chevron's
 	// decision alone -- that is what stops a node click reopening the panel.
 	splitPane.claim(entry, 'reader', () => dropped++, { show: false });
-	if (box.getAttribute('hidden') !== 'true') throw new Error('a quiet claim reopened the panel');
+	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('a quiet claim reopened the panel');
 
 	// "Open PDF beside the graph" is one, so it shows it again.
 	if (splitPane.claim(entry, 'reader', () => dropped++) !== box) throw new Error('the panel was rebuilt');
-	if (box.getAttribute('hidden')) throw new Error('claiming left the panel hidden');
+	if (box.getAttribute('data-zg-collapsed')) throw new Error('claiming left the panel hidden');
 	if (toggle.textContent !== '»') throw new Error('the chevron did not flip back');
 	if (dropped) throw new Error('showing it again tore the occupant down');
 });
@@ -865,10 +886,10 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	toggle.fire('click');
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
 	await itemPane.show(entry, 12);
-	if (!entry.pane.box.getAttribute('hidden')) throw new Error('a click reopened a hidden panel');
+	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('a click reopened a hidden panel');
 	if (details.item.id !== 12) throw new Error('the hidden pane did not follow the click');
 	toggle.fire('click');
-	if (entry.pane.box.getAttribute('hidden')) throw new Error('the chevron did not bring it back');
+	if (entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the chevron did not bring it back');
 
 	require_('./lib/splitPane.js').close(entry);
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');

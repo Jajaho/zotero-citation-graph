@@ -36,9 +36,9 @@
  *
  * It shares one panel with the reader (splitPane.js) and holds it alone: both
  * describe the paper you are looking at, and giving each its own strip would
- * leave the graph a column between two panes. Hiding is the divider's chevron,
- * not anything here -- and a click never undoes it: see the guard at the top of
- * show().
+ * leave the graph a column between two panes. Hiding is the chevron on the
+ * panel's edge, not anything here -- and a click never undoes it: see the guard
+ * at the top of show().
  */
 
 let l10n = require('./l10n.js');

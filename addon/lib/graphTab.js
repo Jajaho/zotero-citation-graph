@@ -229,7 +229,7 @@ async function handleMessage(win, tabID, collection, msg) {
 			if (entry && msg.itemID) {
 				// Asking to read a paper is asking for the panel, and there is
 				// one panel: this takes it off the item pane, and opens it
-				// again if the divider's chevron had hidden it.
+				// again if the panel's chevron had hidden it.
 				await readerPane.open(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
 				});

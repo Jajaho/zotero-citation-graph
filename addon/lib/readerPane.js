@@ -21,7 +21,7 @@
  *
  * The panel is shared with itemPane.js and holds one of them at a time, so
  * opening a PDF here takes it off the item pane -- and opens the panel again if
- * the chevron on its divider had hidden it. Clicking another node takes it back
+ * the chevron on its edge had hidden it. Clicking another node takes it back
  * the other way. There is no close button in the header for the same reason:
  * the divider hides either pane, and one gesture beats two.
  *
@@ -247,7 +247,7 @@ function ensurePane(entry) {
 		Zotero.Reader.open(pane.attachmentID, null, { openInWindow: true })
 			.catch(e => Zotero.logError(e));
 	});
-	// No close button: the panel is hidden from the chevron on its divider,
+	// No close button: the panel is hidden from the chevron on its edge,
 	// which is the one gesture that puts either pane away. A ✕ here would have
 	// been a second way to do it, and only for this one of the two.
 

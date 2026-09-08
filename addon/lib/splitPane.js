@@ -14,11 +14,11 @@
  * instance has listeners and a docShell to flush and an item pane has
  * observers registered with Zotero.Notifier.
  *
- * Hiding it is one gesture too: a chevron on the divider, at the height your
- * eye is already at. Whatever is in the panel, that is how it goes away, and
- * clicking it again brings back exactly what was there -- collapsing hides the
- * panel rather than tearing its occupant down, so a reader keeps its page and
- * an item pane its scroll position.
+ * Hiding it is one gesture too: a chevron hung off the panel's outer edge, at
+ * the height your eye is already at. Whatever is in the panel, that is how it
+ * goes away, and clicking it again brings back exactly what was there --
+ * collapsing hides the panel rather than tearing its occupant down, so a reader
+ * keeps its page and an item pane its scroll position.
  *
  * A hidden panel stays hidden. Someone who put it away is not asking for it
  * back every time they click a node, so claim() only shows the panel when the
@@ -39,6 +39,15 @@
  *   contain: inline-size    the panel's width never depends on its contents
  *   attribute -> style      mirrored, so the width the splitter writes is the
  *                           width the panel gets
+ *
+ * The chevron is sized by the same problem from the other side. It was once
+ * parked over the divider by measuring the panel and writing an offset, and it
+ * kept disappearing: every way the panel can change width without the width
+ * attribute changing -- the window narrowing, min-width biting, a drag Gecko
+ * applied to the graph side instead -- left the offset stale, and a stale offset
+ * puts the button past the edge of the tab. So nothing is measured now. The
+ * button is a child of the panel, absolutely positioned one button-width to the
+ * left of it, and it follows the panel's edge because it IS the panel's edge.
  */
 
 let l10n = require('./l10n.js');
@@ -48,39 +57,61 @@ let l10n = require('./l10n.js');
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
 
-// Kept in step with the CSS below: placeToggle() needs the number.
+// Kept in step with the CSS below only as documentation -- the button's own
+// width is what pushes it off the panel's edge, in CSS, with no measuring.
 const TOGGLE_WIDTH = 18;
 
 const PANE_CSS = `
-	/* The chevron is positioned against the tab's own box; see placeToggle(). */
-	.zg-split {
-		position: relative;
-	}
 	.zg-pane-splitter {
 		width: 4px;
 		border: none;
 		background: var(--material-panedivider);
 	}
 	/* The divider stays put when the panel is hidden -- it is what the way back
-	   sits on -- but it has nothing to resize. */
+	   sits beside -- but it has nothing to resize. */
 	.zg-pane-splitter[data-zg-collapsed] {
 		pointer-events: none;
 	}
+	.zg-pane {
+		/* The chevron is positioned against THIS box: see .zg-pane-toggle. */
+		position: relative;
+		min-width: ${MIN_WIDTH}px;
+		background: var(--material-sidepane);
+		/* Nothing inside the panel gets a say in how wide it is. */
+		contain: inline-size;
+		flex-grow: 0;
+		flex-shrink: 1;
+	}
 	/*
-	 * ON the divider, not beside it: absolutely positioned over the tab, so the
-	 * button takes no horizontal space of its own and the panel is exactly as
-	 * wide as the panel. It overhangs the 4px splitter on both sides, which is
-	 * what makes a target out of a strip too thin to aim at.
+	 * Hidden is a panel of zero width, not a panel that is display:none, because
+	 * the chevron lives inside the panel and has to outlive its hiding. What is
+	 * IN the panel goes; the panel itself stays as the thing the button hangs
+	 * off, and slides to the edge of the window as it shrinks to nothing.
+	 */
+	.zg-pane[data-zg-collapsed] {
+		width: 0;
+		min-width: 0;
+	}
+	.zg-pane[data-zg-collapsed] > *:not(.zg-pane-toggle) {
+		display: none;
+	}
+	/*
+	 * Hung off the panel's outer edge: absolutely positioned against the panel
+	 * itself, one button-width to the left of it, so it covers the divider and a
+	 * little of the graph. Being absolute it takes no space, so the panel is
+	 * exactly as wide as the panel; being anchored to the panel it needs no
+	 * arithmetic -- a drag, a window resize and a collapse all move it because
+	 * they move the edge it is nailed to.
 	 *
-	 * A sibling of the splitter rather than a child of it, because a XUL
-	 * <splitter> is a LEAF frame in current Gecko: it lays out no children at
-	 * all, which is why core's own <grippy> elements inside splitters render
-	 * nothing. A button in there is simply invisible.
+	 * Inside the panel rather than beside the divider, and never inside the
+	 * divider: a XUL <splitter> is a LEAF frame in current Gecko and lays out no
+	 * children at all, which is why core's own <grippy> elements inside splitters
+	 * render nothing.
 	 */
 	.zg-pane-toggle {
 		position: absolute;
 		top: 50%;
-		right: var(--zg-toggle-right, 0px);
+		left: -${TOGGLE_WIDTH}px;
 		transform: translateY(-50%);
 		z-index: 2;
 		appearance: none;
@@ -88,7 +119,7 @@ const PANE_CSS = `
 		height: 56px;
 		padding: 0;
 		border: 1px solid var(--material-panedivider);
-		border-radius: 5px;
+		border-radius: 5px 0 0 5px;
 		background: var(--material-sidepane);
 		color: var(--fill-secondary);
 		font-size: 12px;
@@ -97,14 +128,6 @@ const PANE_CSS = `
 	.zg-pane-toggle:hover {
 		background: var(--fill-quinary);
 		color: var(--fill-primary);
-	}
-	.zg-pane {
-		min-width: ${MIN_WIDTH}px;
-		background: var(--material-sidepane);
-		/* Nothing inside the panel gets a say in how wide it is. */
-		contain: inline-size;
-		flex-grow: 0;
-		flex-shrink: 1;
 	}
 `;
 
@@ -147,9 +170,7 @@ function close(entry) {
 	entry.pane = null;
 	release(pane);
 	if (pane.observer) pane.observer.disconnect();
-	entry.win.removeEventListener('resize', pane.onResize);
 	pane.splitter.remove();
-	pane.toggle.remove();
 	pane.box.remove();
 	pane.style.remove();
 }
@@ -158,6 +179,9 @@ function close(entry) {
  * Hand the panel back: the occupant flushes its own state while its elements
  * are still in the document -- a reader has to uninit() before its browser
  * goes -- and only then is the box emptied.
+ *
+ * Emptied of the OCCUPANT, that is. The chevron is a child of the box too, and
+ * it belongs to the panel rather than to whoever is in it.
  */
 function release(pane) {
 	let teardown = pane.teardown;
@@ -171,7 +195,9 @@ function release(pane) {
 			Zotero.logError(e);
 		}
 	}
-	while (pane.box.firstChild) pane.box.firstChild.remove();
+	for (let child of Array.from(pane.box.children)) {
+		if (child !== pane.toggle) child.remove();
+	}
 }
 
 // --- showing and hiding ------------------------------------------------
@@ -186,8 +212,15 @@ function collapse(pane) {
 	if (pane.collapsed) return;
 	saveWidth(pane);
 	pane.collapsed = true;
-	pane.box.setAttribute('hidden', 'true');
-	// The divider itself stays: it is what the way back sits on. It just has
+	// Both widths have to go, or they outrank `width: 0`: an inline style always
+	// does, and a XUL width ATTRIBUTE maps to a presentational hint whose
+	// standing against an author rule is not worth betting a collapse on. The
+	// number is kept here instead, and it is what the panel comes back at.
+	pane.width = Number(pane.box.getAttribute('width')) || pane.width;
+	pane.box.style.width = '';
+	pane.box.removeAttribute('width');
+	pane.box.setAttribute('data-zg-collapsed', 'true');
+	// The divider itself stays: it is what the way back sits beside. It just has
 	// nothing left to drag.
 	pane.splitter.setAttribute('data-zg-collapsed', 'true');
 	syncToggle(pane);
@@ -196,8 +229,9 @@ function collapse(pane) {
 function expand(pane) {
 	if (!pane.collapsed) return;
 	pane.collapsed = false;
-	pane.box.removeAttribute('hidden');
+	pane.box.removeAttribute('data-zg-collapsed');
 	pane.splitter.removeAttribute('data-zg-collapsed');
+	setWidth(pane, pane.width >= MIN_WIDTH ? Math.round(pane.width) : storedWidth());
 	syncToggle(pane);
 }
 
@@ -206,26 +240,6 @@ function syncToggle(pane) {
 	// to pull it back out.
 	pane.toggle.textContent = pane.collapsed ? '«' : '»';
 	pane.toggle.title = l10n.t(pane.collapsed ? 'pane-show' : 'pane-hide');
-	placeToggle(pane);
-}
-
-/**
- * Park the button over the divider: half of it either side of the 4px
- * splitter, which sits immediately left of the panel. Measured rather than
- * assumed, because the panel can be narrower than its width says -- min-width
- * and a shrunk window both have a vote -- and falling back to the attribute
- * covers the one moment there is no layout yet.
- *
- * Flush with the edge when the panel is hidden: half a button off the side of
- * the window would be half a button.
- */
-function placeToggle(pane) {
-	let w = 0;
-	if (!pane.collapsed) {
-		w = pane.box.getBoundingClientRect().width || Number(pane.box.getAttribute('width')) || 0;
-	}
-	let right = Math.max(0, Math.round(w) - Math.round(TOGGLE_WIDTH / 2) + 2);
-	pane.split.style.setProperty('--zg-toggle-right', right + 'px');
 }
 
 // --- the panel ---------------------------------------------------------
@@ -244,30 +258,30 @@ function create(entry) {
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
 
-	// The chevron rides ON the divider without being in it: absolutely
-	// positioned over the tab, parked against the panel's edge by placeToggle().
-	// It costs the layout nothing, so the panel is exactly as wide as the panel.
-	let toggle = doc.createElement('button');
-	toggle.className = 'zg-pane-toggle';
-
 	// A column: the reader stacks a header over its browser, and the item pane
 	// puts its own row inside. Either way the panel is one box.
 	let box = doc.createXULElement('vbox');
 	box.className = 'zg-pane';
 
+	// The chevron hangs off the panel's outer edge, and is a child of the panel
+	// so that it moves with that edge without anyone having to work out where
+	// the edge went. Absolute, so it costs the layout nothing.
+	let toggle = doc.createElement('button');
+	toggle.className = 'zg-pane-toggle';
+
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
 	entry.split.appendChild(box);
-	entry.split.appendChild(toggle);
+	box.appendChild(toggle);
 
 	let pane = {
 		box, splitter, toggle, style,
-		split: entry.split,
 		kind: null,
 		teardown: null,
 		observer: null,
 		collapsed: false,
-		onResize: null,
+		// Only ever read while collapsed, when the box carries no width of its own.
+		width: 0,
 	};
 	setWidth(pane, storedWidth());
 	syncToggle(pane);
@@ -275,11 +289,6 @@ function create(entry) {
 		if (pane.collapsed) expand(pane);
 		else collapse(pane);
 	});
-
-	// A narrower window shrinks the panel without touching its width attribute,
-	// and the button has to follow the edge it is parked against.
-	pane.onResize = () => placeToggle(pane);
-	entry.win.addEventListener('resize', pane.onResize);
 
 	// The splitter writes the attribute as the drag goes; this is what makes
 	// that visible whether or not the attribute is honoured by itself.
@@ -299,14 +308,15 @@ function create(entry) {
 function setWidth(pane, px) {
 	pane.box.setAttribute('width', String(px));
 	pane.box.style.width = px + 'px';
-	placeToggle(pane);
 }
 
 function mirrorWidth(pane) {
+	// A collapse is not a resize: the panel is at zero on purpose, and the
+	// attribute is only being kept for when it comes back.
+	if (pane.collapsed) return;
 	let w = Number(pane.box.getAttribute('width'));
 	if (!Number.isFinite(w) || w <= 0) return;
 	pane.box.style.width = w + 'px';
-	placeToggle(pane);
 }
 
 function storedWidth() {
@@ -317,7 +327,7 @@ function storedWidth() {
 	return Number.isFinite(w) && w >= MIN_WIDTH ? Math.round(w) : DEFAULT_WIDTH;
 }
 
-/** A hidden box measures zero, so a collapse can never record itself. */
+/** A collapsed box measures zero, so a collapse can never record itself. */
 function saveWidth(pane) {
 	let w = Math.round(pane.box.getBoundingClientRect().width);
 	if (w < MIN_WIDTH) return;
