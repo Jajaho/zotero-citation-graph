@@ -745,15 +745,38 @@ body {
 }
 
 .menu-item {
+	/* Icon then label, on one baseline-independent row: the icons are 16px
+	   boxes and the labels are one line each, so centring the two is what keeps
+	   a column of them even. */
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	font: inherit;
 	text-align: left;
 	white-space: nowrap;
-	padding: 4px 10px;
+	padding: 4px 8px;
 	border: 0;
 	border-radius: 3px;
 	background: transparent;
 	color: var(--fg);
 	cursor: pointer;
+}
+
+/* 16px whatever grid the icon was drawn on, and never squeezed: a menu row is
+   as wide as its longest label, and letting the icon give width up would leave
+   one row's icon narrower than the rest. */
+.menu-icon {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	/* Not quite the label's weight. These are solid shapes next to a single
+	   line of text, and at full strength they read as the loudest thing in the
+	   menu -- which is backwards, since the label is what is being chosen. */
+	opacity: 0.8;
+}
+
+.menu-label {
+	flex: 1 1 auto;
 }
 
 .menu-item:hover:not([disabled]) {

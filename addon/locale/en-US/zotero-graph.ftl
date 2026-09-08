@@ -126,6 +126,18 @@ zotero-graph-tooltip-item-actions = double-click to select in Zotero · right-cl
 
 ## Filter chips and the completion list.
 
+# Two names per facet, and they are not the same thing.
+#
+# field-* is the label: a noun phrase, shown on the chip and beside a value in
+# the completion list, and free to be as long as it needs to be.
+#
+# fieldkey-* is the keyword the filter box parses -- what goes before the colon.
+# One word, no space and no colon in it, because everything up to the first
+# colon is the field name and a space in the middle would make the mask
+# unreadable; nodeFilters.js falls back to the English keyword for anything that
+# breaks that rule. Lower case, like the rest of the panel. The English keywords
+# are always accepted as well as the translated ones, so a mask written in one
+# language still opens in another.
 zotero-graph-field-author = author
 zotero-graph-field-year = year
 zotero-graph-field-tag = tag
@@ -134,6 +146,16 @@ zotero-graph-field-publication = publication
 zotero-graph-field-collection = collection
 zotero-graph-field-cluster = subfield
 zotero-graph-field-title = title
+
+zotero-graph-fieldkey-author = author
+zotero-graph-fieldkey-year = year
+zotero-graph-fieldkey-tag = tag
+zotero-graph-fieldkey-type = type
+zotero-graph-fieldkey-publication = publication
+zotero-graph-fieldkey-collection = collection
+zotero-graph-fieldkey-cluster = subfield
+zotero-graph-fieldkey-title = title
+
 # The chip's own short label for a mask that is not scoped to one field.
 zotero-graph-field-any-short = any
 # The same mask, spelled out in the chip's tooltip.

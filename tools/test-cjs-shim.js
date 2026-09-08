@@ -2019,7 +2019,8 @@ check('every locale fills the same variables as en-US', () => {
  *
  * The families are the two places an id is assembled from a value rather than
  * written out -- the colour modes and the filter facets -- so they cannot be
- * found by reading the source and are listed here instead.
+ * found by reading the source and are listed here instead. The facet list is
+ * FIELDS in nodeFilters.js, and the check below keeps the two in step.
  */
 function referencedIds() {
 	const ids = new Set();
@@ -2042,8 +2043,10 @@ function referencedIds() {
 	for (const mode of ['year', 'collection', 'cluster', 'author', 'publication', 'type']) {
 		ids.add('color-by-' + mode);
 	}
+	// Two per facet: the label on the chip, and the keyword the box parses.
 	for (const f of ['author', 'year', 'tag', 'type', 'publication', 'collection', 'cluster', 'title']) {
 		ids.add('field-' + f);
+		ids.add('fieldkey-' + f);
 	}
 	return ids;
 }
@@ -2094,6 +2097,253 @@ check('the page loads its string modules before anything that draws', () => {
 			throw new Error(before + ' must be loaded before ' + after);
 		}
 	}
+});
+
+check('icons.js is loaded before the menu that draws from it', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+	if (order.indexOf('icons.js') < 0) throw new Error('icons.js is not loaded at all');
+	if (order.indexOf('icons.js') > order.indexOf('graph.js')) {
+		throw new Error('icons.js must be loaded before graph.js');
+	}
+});
+
+/** Same trick as loadFilters(), with just enough of a document for svg() to
+ *  build into: FakeElement already keeps attributes and children. */
+function loadIcons() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/icons.js'), 'utf8');
+	const made = [];
+	const ctx = {
+		window: {
+			document: { createElementNS: (ns, name) => new FakeElement(name, made) },
+		},
+	};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'icons.js' });
+	if (!ctx.window.ZGIcons) throw new Error('icons.js did not publish ZGIcons');
+	return ctx.window.ZGIcons;
+}
+
+/**
+ * Every menu entry names an icon, and every name it gives resolves.
+ *
+ * A missing icon is deliberately not a visible failure -- svg() draws an empty
+ * box of the right width, so that one renamed icon cannot leave a column of
+ * labels half-indented -- which means it would ship as a blank space beside one
+ * entry and nothing would say so. Hence reading the entries out of the source:
+ * they are object literals built in six separate places, and the one thing they
+ * all have is an icon directly above a label.
+ */
+check('every menu entry names an icon that icons.js can draw', () => {
+	const src = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const icons = loadIcons();
+	const entries = [...src.matchAll(/\n\t+(?:icon: (.*?),\r?\n\t+)?label: t\(/g)];
+	if (entries.length < 12) {
+		throw new Error('found only ' + entries.length + ' entries; the scan is broken');
+	}
+	const bad = [];
+	for (const [, icon] of entries) {
+		if (icon == null) {
+			bad.push('(an entry with no icon at all)');
+			continue;
+		}
+		// A plain name, or a ternary between two of them.
+		const names = [...icon.matchAll(/'([^']+)'/g)].map(m => m[1]);
+		if (!names.length) throw new Error('could not read an icon name out of: ' + icon);
+		for (const n of names) if (!icons.has(n)) bad.push(n);
+	}
+	if (bad.length) throw new Error('no such icon: ' + bad.join(', '));
+});
+
+/**
+ * The icons are Zotero's own files, copied in rather than referenced, because
+ * chrome:// is out of reach from a content docshell. What goes wrong in copying
+ * is a path that lost a character on the way -- which draws a subtly wrong
+ * shape rather than nothing at all -- and a fill that was left as Zotero wrote
+ * it: `context-fill` means something to a chrome image loader and nothing
+ * whatsoever here, so an icon carrying it would render invisible.
+ */
+check('every icon is a drawable path that paints in the menu colour', () => {
+	// Comments stripped first: both names below appear in them, to say why the
+	// thing they name is gone.
+	const src = fs.readFileSync(path.join(addonDir, 'content/icons.js'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '')
+		.replace(/^\s*\/\/.*$/gm, '');
+	if (/context-fill/.test(src)) {
+		throw new Error('context-fill does not resolve in a content page; use currentColor');
+	}
+	// Zotero wraps several of these in a clipPath whose id would be the same in
+	// every copy, and two of them inlined into one document is one clip too many.
+	if (/clip-path|clipPath/.test(src)) throw new Error('a clipPath id would collide');
+
+	const icons = loadIcons();
+	if (icons.names().length < 10) throw new Error('only ' + icons.names().length + ' icons');
+	for (const name of icons.names()) {
+		const svg = icons.svg(name);
+		if (!/^0 0 (16|20) (16|20)$/.test(svg.getAttribute('viewBox'))) {
+			throw new Error(name + ': viewBox ' + svg.getAttribute('viewBox'));
+		}
+		if (svg.getAttribute('fill') !== 'currentColor') {
+			throw new Error(name + ': fill is ' + svg.getAttribute('fill'));
+		}
+		const paths = svg.children.filter(c => c.localName === 'path');
+		if (!paths.length) throw new Error(name + ': no paths');
+		for (const p of paths) {
+			const d = p.getAttribute('d');
+			if (!/^M/.test(d)) throw new Error(name + ': a path does not start with a moveto');
+			if (!/Z$/.test(d)) throw new Error(name + ': a path is left open');
+			// Commands, coordinates and separators. eE and + are in there because
+			// a couple of these carry a coordinate in scientific notation, which
+			// is a number SVG accepts and Figma evidently exports.
+			if (/[^MmLlHhVvCcSsQqTtAaZzeE0-9.+\-, ]/.test(d)) {
+				throw new Error(name + ': path data holds something that is not path data');
+			}
+		}
+	}
+	// An unknown name is a box of the right size and nothing in it, which is
+	// what keeps a renamed icon from shifting the labels around it.
+	const blank = icons.svg('no-such-icon');
+	if (blank.getAttribute('viewBox') !== '0 0 16 16') throw new Error('blank has no box');
+	if (blank.children.length) throw new Error('blank drew something');
+});
+
+// --- localised filter keywords ----------------------------------------------
+
+/** ZGFilters with a locale's real .ftl behind its translator, which is the
+ *  arrangement on the page: chrome hands over the source, graph.js installs t(). */
+function filtersIn(code) {
+	const F = loadFilters();
+	const bundle = Ftl.bundle(readLocale(code), code, PREFIX);
+	F.setTranslator((id, args) => bundle.t(id, args));
+	return F;
+}
+
+const FACETS = ['author', 'year', 'tag', 'type', 'publication', 'collection', 'cluster', 'title'];
+
+check('the facet list the .ftl is checked against is the one in the source', () => {
+	// referencedIds() writes the facets out by hand, because they are assembled
+	// from values at runtime and cannot be found by reading the source. That
+	// list going stale would quietly drop a whole facet's two messages out of
+	// the check that they exist at all.
+	const src = fs.readFileSync(path.join(addonDir, 'content/nodeFilters.js'), 'utf8');
+	const table = src.match(/var FIELDS = \[([\s\S]*?)\];/);
+	if (!table) throw new Error('could not find FIELDS in nodeFilters.js');
+	const real = [...table[1].matchAll(/name: '([^']+)'/g)].map(m => m[1]).sort();
+	const scanned = [...referencedIds()]
+		.filter(id => id.startsWith('fieldkey-'))
+		.map(id => id.slice('fieldkey-'.length))
+		.sort();
+	if (JSON.stringify(real) !== JSON.stringify(scanned)) {
+		throw new Error('FIELDS ' + JSON.stringify(real) + ' vs scanned ' + JSON.stringify(scanned));
+	}
+	if (JSON.stringify(real) !== JSON.stringify([...FACETS].sort())) {
+		throw new Error('FIELDS ' + JSON.stringify(real) + ' vs this file ' + JSON.stringify(FACETS));
+	}
+});
+
+check('a keyword is one parseable word, and no two facets claim the same one', () => {
+	for (const code of fs.readdirSync(localeDir)) {
+		if (!fs.existsSync(path.join(localeDir, code, FTL_NAME))) continue;
+		const bundle = Ftl.bundle(readLocale(code), code, PREFIX);
+		const seen = new Map();
+		for (const f of FACETS) {
+			const key = bundle.t('fieldkey-' + f);
+			// Everything up to the first colon is the field name, so a keyword
+			// with a space or a colon in it authors a mask nothing can read back.
+			if (!/^[^\s:]+$/.test(key)) throw new Error(code + '/' + f + ': ' + JSON.stringify(key));
+			if (key !== key.toLowerCase()) throw new Error(code + '/' + f + ': ' + key + ' is not lower case');
+			if (seen.has(key)) {
+				throw new Error(code + ': ' + key + ' is both ' + seen.get(key) + ' and ' + f);
+			}
+			seen.set(key, f);
+			// A keyword that is some other facet's own name would be unreachable:
+			// the names stay accepted in every locale, and they are matched first.
+			if (key !== f && FACETS.includes(key)) {
+				throw new Error(code + '/' + f + ": " + key + " is another facet's own name");
+			}
+		}
+	}
+});
+
+check('a translated keyword scopes the box, and the English one still does', () => {
+	const F = filtersIn('de-DE');
+	// The German panel says "Autor" on the chip and offers "autor:" in the
+	// completion list, so "autor:" is what a German user types. It used to parse
+	// as a bare substring search for the literal text "autor: Kucsko", which
+	// matched nothing and said nothing about why.
+	const de = F.parse('autor: Kucsko');
+	if (!de || de.field !== 'author') throw new Error('autor: -> ' + JSON.stringify(de));
+	// Resolved to the facet's own name and not the German word: facets() keys on
+	// that name, so no locale may reach past here.
+	if (F.parse('teilgebiet: x').field !== 'cluster') throw new Error('teilgebiet:');
+	if (F.parse('art: book').field !== 'type') throw new Error('art:');
+	if (F.parse('schlagwort: x').field !== 'tag') throw new Error('schlagwort:');
+	// And the English keywords keep working, so a mask written under one
+	// language still opens under another.
+	if (F.parse('author: Kucsko').field !== 'author') throw new Error('author: stopped working');
+	// A prefix that is neither is still a search term, not a syntax error.
+	if (F.parse('10.1038:x').field !== null) throw new Error('invented a field for a DOI');
+});
+
+check('a chip round-trips through the box in the language it is shown in', () => {
+	const F = filtersIn('de-DE');
+	// Chips go back into the box as text, so toInput() writing the keyword the
+	// user was offered and parse() reading it back have to be exact inverses --
+	// otherwise clicking a chip to edit it would unscope the mask on the way in.
+	for (const text of ['autor: soc', 'jahr: 2013, 1990-2000', 'art: "book"', 'sammlung: "Quantum"']) {
+		const f = F.parse(text);
+		if (!f) throw new Error('did not parse: ' + text);
+		const back = F.parse(F.toInput(f));
+		if (!back || F.key(back) !== F.key(f)) {
+			throw new Error(text + ' -> ' + F.toInput(f) + ' -> ' + JSON.stringify(back));
+		}
+	}
+	// An English mask is normalised to the keyword the panel shows, rather than
+	// being handed back in a vocabulary this panel does not use anywhere else.
+	if (F.toInput(F.parse('author: soc')) !== 'autor: soc') {
+		throw new Error(F.toInput(F.parse('author: soc')));
+	}
+	// Picking a value writes the keyword too, and what it leaves in the box parses.
+	const box = F.spliceTerm('publikation:', 'publication', '"Nature"');
+	if (box !== 'publikation: "Nature", ') throw new Error(JSON.stringify(box));
+	if (F.parse(box).field !== 'publication') throw new Error('the spliced box does not parse back');
+});
+
+check('the completion list offers the keyword it will insert', () => {
+	const F = filtersIn('de-DE');
+	const lib = library(F);
+	const fields = F.suggest('', lib).filter(s => s.kind === 'field');
+	if (fields.length !== FACETS.length) throw new Error('offered ' + fields.length + ' field rows');
+	for (const row of fields) {
+		if (row.label !== row.insert.trim()) throw new Error(row.label + ' inserts ' + row.insert);
+		// A row has to leave the box scoped to something, or taking it would
+		// turn the next thing typed into a bare substring search.
+		const after = F.parse(row.insert + 'x');
+		if (!after || after.field === null) throw new Error(row.label + ' does not scope the box');
+	}
+	if (!fields.some(r => r.label === 'autor:')) {
+		throw new Error('offered ' + fields.map(r => r.label).join(' ') + ', not autor:');
+	}
+	// Typing towards a row narrows to it: the text is matched against the
+	// keyword on the row, not against a facet name that is nowhere on screen.
+	const typed = F.suggest('jah', lib).filter(s => s.kind === 'field').map(r => r.label);
+	if (typed.join() !== 'jahr:') throw new Error('typing "jah" offered ' + JSON.stringify(typed));
+	if (F.suggest('year', lib).some(s => s.kind === 'field' && s.label === 'jahr:')) {
+		throw new Error('an English name still narrows the German list');
+	}
+});
+
+check('with no translator a keyword is the facet name, so the rest of these hold', () => {
+	// nodeFilters.js is pure and runs under Node with no bundle behind it. Every
+	// other filter check in this file leans on that giving the English
+	// vocabulary back unchanged.
+	const F = loadFilters();
+	for (const f of FACETS) {
+		if (F.fieldKey(f) !== f) throw new Error(f + ' -> ' + F.fieldKey(f));
+		if (F.fieldFor(f) !== f) throw new Error('fieldFor(' + f + ') -> ' + F.fieldFor(f));
+	}
+	if (F.fieldFor('nonsense') !== null) throw new Error('invented a field');
+	if (F.toInput(F.parse('author: soc')) !== 'author: soc') throw new Error('the English round trip moved');
 });
 
 Promise.all(pending).then(() => {

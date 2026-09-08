@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGGaps, ZGL10n */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGGaps, ZGL10n, ZGIcons */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -56,6 +56,7 @@
 	const Filters = ZGFilters;
 	const Cluster = ZGCluster;
 	const Gaps = ZGGaps;
+	const Icons = ZGIcons;
 
 	/**
 	 * One string, from the .ftl chrome hands the page. Until that lands t()
@@ -2676,10 +2677,14 @@
 	 */
 	function groupEntries(g, event) {
 		return [{
+			icon: 'edit',
 			label: t('menu-edit-group'),
 			hint: t('menu-edit-group-hint'),
 			run: () => openGroup(g, event),
 		}, {
+			// Not the trash: removing an anchor throws away a way of reading the
+			// graph, never a paper.
+			icon: 'minus-circle',
 			label: t('menu-remove-group'),
 			hint: t('menu-remove-group-hint'),
 			run: () => removeGroup(g),
@@ -2902,6 +2907,7 @@
 	 */
 	function showCanvasMenu(event) {
 		let entries = [{
+			icon: 'zoom-to-fit',
 			label: t('menu-zoom-to-fit'),
 			hint: t('menu-zoom-to-fit-hint'),
 			run: reframe,
@@ -2909,6 +2915,7 @@
 			// Not a node gesture: what is missing is a question about the
 			// collection, so it is asked of the canvas rather than of any one
 			// paper on it.
+			icon: elGaps.hidden ? 'gaps' : 'hide',
 			label: t(elGaps.hidden ? 'menu-gaps' : 'menu-gaps-hide'),
 			hint: t('menu-gaps-hint'),
 			run: () => (elGaps.hidden ? openGaps() : closeGaps()),
@@ -2919,6 +2926,7 @@
 		}
 		else {
 			entries.push({
+				icon: 'group-here',
 				label: t('menu-group-here'),
 				hint: t('menu-group-here-hint'),
 				run: () => addGroup(event),
@@ -2950,11 +2958,22 @@
 		release();
 	}
 
-	function menuItem({ label, hint, disabled, run }) {
+	/**
+	 * One row: Zotero's own icon for the gesture, then what it is called.
+	 *
+	 * Every entry carries an icon, and a name icons.js does not know still draws
+	 * an empty box of the same width -- a column where some labels are indented
+	 * past an icon and others start at the edge reads as two lists, not one.
+	 */
+	function menuItem({ icon, label, hint, disabled, run }) {
 		let b = document.createElement('button');
 		b.type = 'button';
 		b.className = 'menu-item';
-		b.textContent = label;
+		b.appendChild(Icons.svg(icon));
+		let text = document.createElement('span');
+		text.className = 'menu-label';
+		text.textContent = label;
+		b.appendChild(text);
 		if (hint) b.title = hint;
 		if (disabled) {
 			b.disabled = true;
@@ -2984,6 +3003,7 @@
 		let on = isolated.has(n.id);
 		let only = on && isolated.size === 1;
 		let entries = [{
+			icon: only ? 'show-all' : 'isolate',
 			label: t(only ? 'menu-show-whole-graph' : 'menu-isolate'),
 			hint: only
 				? t('menu-isolate-hint-undim')
@@ -2996,6 +3016,7 @@
 		// as "Show whole graph", so there is nothing left for this one to say.
 		if (isolated.size && !only) {
 			entries.push({
+				icon: on ? 'minus-circle' : 'plus-circle',
 				label: t(on ? 'menu-remove-from-isolation' : 'menu-add-to-isolation'),
 				hint: t(on ? 'menu-remove-from-isolation-hint' : 'menu-add-to-isolation-hint'),
 				run: () => (on ? dropIsolated(n.id) : addIsolated(n.id)),
@@ -3007,6 +3028,7 @@
 	function pinEntry(n) {
 		let pinned = isPinned(n);
 		return {
+			icon: pinned ? 'unpin' : 'pin',
 			label: t(pinned ? 'menu-unpin' : 'menu-pin'),
 			hint: t(pinned ? 'menu-unpin-hint' : 'menu-pin-hint'),
 			run: () => (pinned ? unpin(n) : pin(n)),
@@ -3018,6 +3040,7 @@
 		let url = Links.externalUrl(x.ns, x.id || n.name);
 		return [
 			{
+				icon: 'open-link',
 				label: t('menu-open-in-browser'),
 				hint: url || t('menu-open-in-browser-no-id'),
 				disabled: !url,
@@ -3028,6 +3051,7 @@
 				// first. A menu entry cannot be hit by a stray click while
 				// panning, and that is the only thing the confirmation was ever
 				// there to prevent.
+				icon: 'add-to-zotero',
 				label: t('menu-add-to-zotero'),
 				hint: n.name,
 				disabled: x.ns !== 'doi',
@@ -3040,6 +3064,7 @@
 		let url = Links.itemUrl(n);
 		return [
 			{
+				icon: 'show-item',
 				label: t('menu-select-in-zotero'),
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-item', itemID: n.itemID }),
@@ -3050,6 +3075,7 @@
 				// here -- the payload carries items, not their files -- so this is
 				// always offered, and chrome says so on the status line when there
 				// is nothing to open.
+				icon: 'open-pane',
 				label: t('menu-open-pdf-pane'),
 				hint: t('menu-open-pdf-pane-hint'),
 				disabled: !n.itemID,
@@ -3060,12 +3086,14 @@
 				// terms as the pane above and for the same reason: whether the
 				// item has a readable file is chrome's to answer, and it says
 				// so on the status line when there is nothing to open.
+				icon: 'new-tab',
 				label: t('menu-open-pdf-tab'),
 				hint: t('menu-open-pdf-tab-hint'),
 				disabled: !n.itemID,
 				run: () => emit({ type: 'open-pdf-tab', itemID: n.itemID }),
 			},
 			{
+				icon: 'open-link',
 				label: t('menu-open-in-browser'),
 				hint: url || t('menu-open-in-browser-no-url'),
 				disabled: !url,

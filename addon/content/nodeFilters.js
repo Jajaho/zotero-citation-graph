@@ -52,9 +52,12 @@
 	 * Node, where the tests care about structure rather than prose -- the
 	 * English written above and below stands in.
 	 *
-	 * A field's `name` is never translated: it is the keyword the box parses
-	 * ("author:"), and a mask has to survive being written to a chip and read
-	 * back. Only the `label` shown beside it moves.
+	 * A field's `name` is its identity and never moves: it is what facets() keys
+	 * on, what a mask carries around, and what every test names. What the user
+	 * types is a separate thing -- see fieldKey() -- because "author:" is a
+	 * category name like any other, and a German panel that says "Autor" on the
+	 * chip while only answering to "author:" in the box is asking its user to
+	 * know a word the interface never showed them.
 	 */
 	var translate = null;
 
@@ -72,6 +75,47 @@
 			if (FIELDS[i].name === name) return tr('field-' + name, null, FIELDS[i].label);
 		}
 		return name;
+	}
+
+	/**
+	 * The keyword that scopes the box to a field -- what goes before the colon,
+	 * and what the completion list offers.
+	 *
+	 * Its own message rather than fieldLabel(): a label is a noun phrase and can
+	 * be as long as it needs to be ("item type"), where a keyword is one word
+	 * with no space in it, because everything up to the first colon is the field
+	 * and a space in the middle would make "item type: book" unparseable. Where a
+	 * locale has nothing better to offer, its keyword is the field's own name.
+	 */
+	function fieldKey(name) {
+		for (var i = 0; i < FIELDS.length; i++) {
+			if (FIELDS[i].name === name) {
+				var key = tr('fieldkey-' + name, null, name);
+				// A translation with a space or a colon in it would author masks
+				// that cannot be read back. Falling through to the name keeps a
+				// filter box that works over one that matches the .ftl.
+				return /^[^\s:]+$/.test(key) ? key.toLowerCase() : name;
+			}
+		}
+		return name;
+	}
+
+	/**
+	 * Keyword -> field name, for both the localised keyword and the field's own
+	 * name.
+	 *
+	 * Both, always, and not only in English: a chip authored before Zotero's
+	 * language changed still spells its field the old way, and the two
+	 * vocabularies do not collide -- every localised keyword either equals a
+	 * field's own name or is a word in another language.
+	 */
+	function fieldFor(word) {
+		var w = String(word).toLowerCase();
+		if (NAMES.indexOf(w) >= 0) return w;
+		for (var i = 0; i < FIELDS.length; i++) {
+			if (fieldKey(FIELDS[i].name) === w) return FIELDS[i].name;
+		}
+		return null;
 	}
 
 	/**
@@ -164,13 +208,17 @@
 	 * Split "publication: Nature, Science" into its field and its raw terms. An
 	 * unrecognised prefix is not a field and not an error either -- "10.1038:x"
 	 * is a string someone is looking for, so the whole of it stays the term.
+	 *
+	 * The prefix is resolved through fieldFor(), so "publikation:" and
+	 * "publication:" both scope the box, and `field` past here is always the
+	 * field's own name -- nothing downstream has to know a locale exists.
 	 */
 	function split(text) {
 		var s = String(text == null ? '' : text);
 		var i = s.indexOf(':');
 		if (i >= 0) {
-			var name = s.slice(0, i).trim().toLowerCase();
-			if (NAMES.indexOf(name) >= 0) return { field: name, raw: splitTerms(s.slice(i + 1)) };
+			var name = fieldFor(s.slice(0, i).trim());
+			if (name) return { field: name, raw: splitTerms(s.slice(i + 1)) };
 		}
 		return { field: null, raw: splitTerms(s) };
 	}
@@ -246,7 +294,7 @@
 	}
 
 	function toInput(f) {
-		return (f.field ? f.field + ': ' : '') + f.terms.map(termText).join(', ');
+		return (f.field ? fieldKey(f.field) + ': ' : '') + f.terms.map(termText).join(', ');
 	}
 
 	/**
@@ -266,7 +314,7 @@
 		// itself left behind would double every time a term is added.
 		kept = kept.map(function (t) { return t.trim(); }).filter(Boolean);
 		kept.push(term);
-		return (field ? field + ': ' : '') + kept.join(', ') + ', ';
+		return (field ? fieldKey(field) + ': ' : '') + kept.join(', ') + ', ';
 	}
 
 	// --- matching ---------------------------------------------------------
@@ -389,13 +437,17 @@
 		if (!p.field && p.raw.length === 1) {
 			for (var i = 0; i < FIELDS.length; i++) {
 				var f = FIELDS[i];
-				if (term && f.name.indexOf(term) !== 0) continue;
+				var fkey = fieldKey(f.name);
+				// Matched against the keyword on the row, not against the field's
+				// own name: a row that does not narrow as you type towards it is
+				// a row you cannot find.
+				if (term && fkey.indexOf(term) !== 0) continue;
 				out.push({
 					kind: 'field',
-					label: f.name + ':',
+					label: fkey + ':',
 					hint: tr('suggest-filter-by', { field: fieldLabel(f.name) },
 						'filter by ' + f.label),
-					insert: f.name + ': ',
+					insert: fkey + ': ',
 				});
 			}
 		}
@@ -488,6 +540,8 @@
 		FIELDS: FIELDS,
 		setTranslator: setTranslator,
 		fieldLabel: fieldLabel,
+		fieldKey: fieldKey,
+		fieldFor: fieldFor,
 		facets: facets,
 		parse: parse,
 		exact: exact,
