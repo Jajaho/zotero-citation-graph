@@ -91,6 +91,15 @@
 					<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
 					<span id="center-value">1.00</span>
 				</label>
+				<!-- Zotero's own item pane, opened beside the graph by resting on
+				     a paper. A checkbox rather than an unconditional behaviour
+				     because the pane takes real width off the canvas, and a
+				     panel that appeared whenever the pointer crossed a node
+				     while panning would be a poor trade. -->
+				<label data-zg-title="item-pane-hint" title="Rest on a paper to open Zotero's item pane for it, beside the graph">
+					<input id="item-pane" type="checkbox"/>
+					<span data-zg-str="item-pane">item details on hover</span>
+				</label>
 			</div>
 
 			<!-- Filters. Each one is a mask over the held items, and they stack:

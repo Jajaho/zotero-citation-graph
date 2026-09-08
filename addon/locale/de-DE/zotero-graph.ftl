@@ -46,6 +46,10 @@ zotero-graph-link-pull-hint = Wie stark eine Kante ihre beiden Knoten zusammenzi
 zotero-graph-center-pull = Mittelzug
 zotero-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Aufsätze davon; höher packt den Graphen enger zusammen.
 
+zotero-graph-item-pane = Details beim Überfahren
+zotero-graph-item-pane-hint = Auf einem Aufsatz verweilen, um Zoteros Infobereich dazu neben dem Graphen zu öffnen
+zotero-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
+
 zotero-graph-filter-placeholder = Filter — author:, year:, …
 zotero-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
 

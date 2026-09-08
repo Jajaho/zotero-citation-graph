@@ -260,8 +260,14 @@ function ensurePane(entry) {
 
 	box.appendChild(head);
 	box.appendChild(style);
-	entry.split.appendChild(splitter);
-	entry.split.appendChild(box);
+	// Before the item pane if one is open, so the order across the tab is
+	// graph | reader | item details however the two panes were opened. That is
+	// the order Zotero itself puts them in, and it keeps the metadata against
+	// the edge of the window rather than sliding between the graph and the
+	// paper it belongs to. insertBefore(x, null) appends.
+	let after = entry.itemPane ? entry.itemPane.splitter : null;
+	entry.split.insertBefore(splitter, after);
+	entry.split.insertBefore(box, after);
 
 	// XUL splitters fire 'command' when a drag ends; core hangs its own layout
 	// bookkeeping off the same event.

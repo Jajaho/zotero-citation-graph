@@ -57,6 +57,10 @@ zotero-graph-link-pull-hint = How hard a link pulls its two nodes together. Lowe
 zotero-graph-center-pull = centre pull
 zotero-graph-center-pull-hint = How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.
 
+zotero-graph-item-pane = item details on hover
+zotero-graph-item-pane-hint = Rest on a paper to open Zotero's item pane for it, beside the graph
+zotero-graph-item-pane-failed = Could not open Zotero's item pane here.
+
 zotero-graph-filter-placeholder = filter — author:, year:, …
 zotero-graph-filter-hint = Type a term, or field:value. Filters stack: each one narrows what is left.
 

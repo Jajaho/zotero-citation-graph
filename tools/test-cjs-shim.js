@@ -653,6 +653,115 @@ check('lib/ modules load through the shim', () => {
 	if (typeof r.open !== 'function' || typeof r.close !== 'function') {
 		throw new Error('readerPane must expose open()/close()');
 	}
+	const i = require_('./lib/itemPane.js');
+	if (typeof i.show !== 'function' || typeof i.close !== 'function') {
+		throw new Error('itemPane must expose show()/close()');
+	}
+});
+
+/**
+ * A XUL document just real enough for itemPane.ensurePane(): the element is
+ * built and wired the way core's contextPane builds its own, and the stub
+ * records what it was handed.
+ */
+function fakeXulDoc(onRender) {
+	const made = [];
+	const element = (localName) => {
+		const el = {
+			localName,
+			children: [],
+			attrs: {},
+			className: '',
+			setAttribute: (k, v) => {
+				el.attrs[k] = v;
+			},
+			appendChild: (c) => {
+				el.children.push(c);
+				return c;
+			},
+			insertBefore: (c) => {
+				el.children.push(c);
+				return c;
+			},
+			addEventListener: () => {},
+			remove: () => {
+				el.removed = true;
+			},
+			getBoundingClientRect: () => ({ width: 400 }),
+		};
+		if (localName === 'item-details') el.render = () => onRender(el);
+		made.push(el);
+		return el;
+	};
+	return {
+		made,
+		document: { createElement: element, createXULElement: element },
+	};
+}
+
+check('the item pane is handed what <item-details> needs, and nothing more', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const doc = fakeXulDoc(async () => {});
+	const entry = { win: { document: doc.document }, split: doc.document.createXULElement('hbox'), tabID: 'tab-7' };
+	// Set immediately before the call: show() reads Zotero.Items synchronously,
+	// and the checks in this file share one Zotero stub.
+	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	await itemPane.show(entry, 11);
+
+	const details = doc.made.find(el => el.localName === 'item-details');
+	const sidenav = doc.made.find(el => el.localName === 'item-pane-sidenav');
+	if (!details || !sidenav) throw new Error('no item pane was built');
+	// The three properties contextPane.js sets on its own item-details. Without
+	// tabID the pane renders in a tab nobody is looking at; without a sidenav
+	// ItemDetails throws the first time it updates one; and tabType decides
+	// which of core's library-only branches are taken.
+	if (details.tabID !== 'tab-7') throw new Error('tabID: ' + details.tabID);
+	if (details.tabType !== 'graph') throw new Error('tabType: ' + details.tabType);
+	if (details.sidenav !== sidenav) throw new Error('the sidenav was not attached');
+	if (details.item.id !== 11) throw new Error('the item never arrived');
+	if (details.editable !== true) throw new Error('an editable library came out read-only');
+
+	itemPane.close(entry);
+	if (entry.itemPane) throw new Error('close() left the pane on the tab');
+	if (!details.removed && !doc.made.some(el => el.className === 'zg-item-pane' && el.removed)) {
+		throw new Error('close() left the pane in the DOM');
+	}
+});
+
+check('a pointer crossing three nodes draws the last, not all three', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const drawn = [];
+	let release;
+	// The first render is held open, which is the whole scenario: a render walks
+	// every section of the pane, and the pointer moves on while it does.
+	const held = new Promise((r) => {
+		release = r;
+	});
+	const doc = fakeXulDoc(async (el) => {
+		drawn.push(el.item.id);
+		await held;
+	});
+	const entry = { win: { document: doc.document }, split: doc.document.createXULElement('hbox'), tabID: 'tab-8' };
+	const items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+
+	Zotero.Items = items;
+	const first = itemPane.show(entry, 1);
+	Zotero.Items = items;
+	const second = itemPane.show(entry, 2);
+	Zotero.Items = items;
+	const third = itemPane.show(entry, 3);
+	// Let all three past their item lookups before the held render lets go.
+	await new Promise(r => setTimeout(r, 0));
+	release();
+	await Promise.all([first, second, third]);
+
+	// 2 was passed over while 1 was still drawing, and drawing it would have
+	// cost a full render of a pane nobody was going to look at.
+	if (drawn.join(',') !== '1,3') throw new Error('drew ' + drawn.join(','));
 });
 
 check('naming a graph changes no node and no edge', () => {
@@ -1353,7 +1462,7 @@ function referencedIds() {
 	const ids = new Set();
 	const files = [
 		'content/graph.js', 'content/nodeFilters.js',
-		'lib/graphTab.js', 'lib/readerPane.js', 'lib/main.js',
+		'lib/graphTab.js', 'lib/readerPane.js', 'lib/itemPane.js', 'lib/main.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;

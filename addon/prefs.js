@@ -17,3 +17,7 @@ pref("extensions.zotero.zoteroGraph.openalex.apiKey", "");
 // Width of the in-tab reader pane, in pixels. Written back whenever the
 // splitter is dragged, so the pane opens at the size it was last left.
 pref("extensions.zotero.zoteroGraph.readerPaneWidth", 520);
+
+// Width of the in-tab item pane -- Zotero's own <item-details>, opened by
+// resting on a node. Written back whenever its splitter is dragged.
+pref("extensions.zotero.zoteroGraph.itemPaneWidth", 400);

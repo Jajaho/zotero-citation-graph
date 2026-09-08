@@ -48,6 +48,18 @@
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
+	/** And for whether the item pane follows the pointer -- how you like to read
+	 *  a graph, not anything about this one. */
+	const ITEM_PANE_KEY = 'zg.item.pane';
+
+	/**
+	 * How long the pointer has to rest on a node before chrome is asked to
+	 * describe it. Crossing a node on the way somewhere else is not a request
+	 * for its metadata, and building the item pane walks every section of it --
+	 * abstract, attachments with their previews, tags, related. Long enough to
+	 * mean it, short enough that resting on a paper feels like it answers.
+	 */
+	const HOVER_ITEM_MS = 250;
 
 	// Published by nodeScale.js, nodeLinks.js and nodeFilters.js, which
 	// graph.html loads first.
@@ -96,6 +108,8 @@
 	let litCache = null;          // see lit(); invalidated, never mutated
 	let adjacency = new Map();    // node id -> Set of ids one edge away
 	let hoverNode = null;         // whatever force-graph's hit test is over
+	let itemPaneTimer = null;     // the dwell before a hover asks for the pane
+	let itemPaneItem = null;      // the itemID chrome was last asked to describe
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -109,6 +123,7 @@
 	let elIncludeExternal = el('include-external');
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
+	let elItemPane = el('item-pane');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
 	let elLinkPull = el('link-pull');
@@ -169,6 +184,9 @@
 		hideMenu();
 		hideSuggest();
 		hoverNode = null;
+		// The node a dwell was counting down for may not survive this payload,
+		// and nobody is hovering anything by the time it lands.
+		window.clearTimeout(itemPaneTimer);
 		renderStrategyToggles();
 		// Only auto-hide unconnected nodes the first time edges show up; after
 		// that the checkbox belongs to the user.
@@ -1033,6 +1051,7 @@
 			fg.onNodeRightClick(showMenu);
 			fg.onNodeHover((n) => {
 				hoverNode = n;
+				hoverItemPane(n);
 			});
 			// Which node the pointer is carrying, for the guard below. Both
 			// fire on the same condition -- force-graph raises neither until
@@ -1792,6 +1811,56 @@
 		if (n.ghost) showAction(n, event);
 		else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
 	}
+
+	// --- the item pane, on hover ------------------------------------------
+
+	/**
+	 * Ask chrome to describe the node the pointer has come to rest on, in
+	 * Zotero's own item pane beside the graph. Chrome opens the pane on the
+	 * first such request; see lib/itemPane.js.
+	 *
+	 * Everything this decides not to do is deliberate:
+	 *
+	 *   - Leaving a node does NOT empty the pane. The pane is where you look
+	 *     next, and the way to it crosses empty canvas -- a pane that blanked on
+	 *     the way there would be useless. It holds the last paper until another
+	 *     one is rested on, exactly as the library pane holds the last selection.
+	 *   - An outside reference does not replace what is shown. There is no item
+	 *     to describe, and no metadata beyond the DOI already on the tooltip;
+	 *     the ghost's own card is what a double click is for.
+	 *   - A node being dragged is still hovered, so dropping a paper somewhere
+	 *     does describe it. That reads as intent rather than as an accident.
+	 */
+	function hoverItemPane(n) {
+		window.clearTimeout(itemPaneTimer);
+		if (!elItemPane.checked) return;
+		if (!n || n.ghost || !n.itemID || n.itemID === itemPaneItem) return;
+		itemPaneTimer = window.setTimeout(() => {
+			itemPaneItem = n.itemID;
+			emit({ type: 'item-pane-show', itemID: n.itemID });
+		}, HOVER_ITEM_MS);
+	}
+
+	elItemPane.addEventListener('change', () => {
+		try {
+			window.localStorage.setItem(ITEM_PANE_KEY, elItemPane.checked ? '1' : '0');
+		}
+		catch (e) { /* no persistence, no problem */ }
+		window.clearTimeout(itemPaneTimer);
+		itemPaneItem = null;
+		if (!elItemPane.checked) {
+			emit({ type: 'item-pane-close' });
+			return;
+		}
+		// Switching it on IS the request for whatever is under the pointer, so
+		// it answers now rather than waiting for a dwell the user has already
+		// spent. With the pointer on the panel, which is where it must be to
+		// have just ticked this, the pane opens on the next paper rested on.
+		if (hoverNode && !hoverNode.ghost && hoverNode.itemID) {
+			itemPaneItem = hoverNode.itemID;
+			emit({ type: 'item-pane-show', itemID: hoverNode.itemID });
+		}
+	});
 
 	// --- defending a drag in progress -------------------------------------
 
@@ -2958,6 +3027,14 @@
 	// A number box keeps a stored value its own min/max would reject, so the
 	// clamp above has to be written back before it is ever read as the truth.
 	elIsolateDepth.value = String(isolateDepth);
+
+	try {
+		// Restored ticked, but nothing is opened for it here: the pane arrives
+		// on the first paper rested on, which is the only moment there is
+		// anything to put in it.
+		elItemPane.checked = window.localStorage.getItem(ITEM_PANE_KEY) === '1';
+	}
+	catch (e) { /* see setCollapsed */ }
 
 	syncEnabled();
 }());
