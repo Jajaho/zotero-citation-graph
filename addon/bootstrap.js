@@ -16,6 +16,7 @@
 var rootURI;
 var resProto;
 var CG; // the plugin's main module
+var startupReason;
 
 const RES_ROOT = 'zotero-graph';
 const PLUGIN_ID = 'zotero-graph@jajaho.dev';
@@ -28,9 +29,10 @@ function install() {}
 
 function uninstall() {}
 
-async function startup({ id, version, rootURI: uri }) {
+async function startup({ id, version, rootURI: uri }, reason) {
 	rootURI = uri; // always ends with '/'
 	log('startup ' + version + ' rootURI=' + rootURI);
+	startupReason = reason;
 
 	// Serve the plugin over resource://zotero-graph/. Core loads its own content
 	// pages the same way (resource://zotero/reader/reader.html), and this behaves
@@ -57,6 +59,7 @@ async function startup({ id, version, rootURI: uri }) {
 
 	CG = require('./lib/main.js');
 	Zotero.ZoteroGraph = CG;
+	require('./lib/trace.js').log('--- startup v' + version + ' reason=' + startupReason);
 	await CG.startup({ id, version, rootURI, pluginID: PLUGIN_ID, resRoot: RES_ROOT });
 
 	// Windows already open when the plugin is enabled at runtime don't get

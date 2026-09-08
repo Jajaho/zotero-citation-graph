@@ -7,15 +7,14 @@
 
 let graphTab = require('./graphTab.js');
 let l10n = require('./l10n.js');
+let trace = require('./trace.js');
 
 const MENU_ID = 'zotero-graph-collection';
 
-// plugins.js REASONS. Which of these a shutdown carries decides what happens
-// to the open graph tabs, and they want three different answers -- see
-// shutdown() below.
+// plugins.js REASONS.APP_SHUTDOWN, the reason Zotero passes when it is quitting
+// rather than when the plugin alone is going away. The two want opposite
+// teardowns, and the difference is the whole of whether a graph tab comes back.
 const REASON_APP_SHUTDOWN = 2;
-const REASON_ADDON_UPGRADE = 7;
-const REASON_ADDON_DOWNGRADE = 8;
 const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
 
 /**
@@ -65,6 +64,13 @@ module.exports = {
 	 * @param {Integer} reason - plugins.js REASONS; see REASON_APP_SHUTDOWN.
 	 */
 	async shutdown(reason) {
+		for (let win of Zotero.getMainWindows()) {
+			if (win.ZoteroPane) {
+				trace.log(`shutdown reason=${reason}`
+					+ `  -> ${reason === REASON_APP_SHUTDOWN ? 'forgetAll (tabs kept)' : 'closeAll (tabs closed)'}`
+					+ `  strip=[${graphTab.stripSummary(win)}]`);
+			}
+		}
 		try {
 			Zotero.MenuManager.unregisterMenu(MENU_ID);
 		}
@@ -78,30 +84,27 @@ module.exports = {
 			if (win.ZoteroPane) removeWindowIntegration(win);
 		}
 
-		// Three reasons, three answers.
-		//
 		// Zotero quitting: Zotero.Session.save() has already snapshotted the tab
 		// strip, synchronously, from the quit-application-granted observer that
 		// fires before the quit-application starting this teardown. The tabs are
 		// recorded and the windows are going regardless, so closing them here
 		// would do nothing but take work off the restore.
 		//
-		// Being replaced by another version of ourselves: the pages cannot
-		// survive it, because resource://zotero-graph/ is about to be
-		// re-registered against a new rootURI -- but the tabs can, and an
-		// upgrade is much the most common reason this runs at all. They are
-		// unloaded rather than closed, so the version coming in inherits them.
-		//
-		// Being disabled or uninstalled: nothing is coming back, and a 'graph'
-		// entry left in session.json meets a Zotero with no restoreState.graph
-		// hook -- which is the tabs.js:611 destructure that aborts restore for
-		// every tab after it. Those tabs have to go, out of the strip and so
-		// out of the session with it.
+		// Every other reason -- disable, uninstall, upgrade -- leaves Zotero
+		// running while resource://zotero-graph/ stops resolving underneath a
+		// live graph page. Those tabs have to go, and they have to go out of
+		// session.json with them: a 'graph' entry restored by a Zotero with no
+		// restoreState.graph hook is the throw at tabs.js:611 that aborts
+		// restore for every tab after it.
 		if (reason === REASON_APP_SHUTDOWN) graphTab.forgetAll();
-		else if (reason === REASON_ADDON_UPGRADE || reason === REASON_ADDON_DOWNGRADE) {
-			graphTab.unloadAll();
-		}
 		else graphTab.closeAll();
+
+		// The process is about to end; an unflushed line is a line that never
+		// existed, and this one is the whole point of the file.
+		for (let win of Zotero.getMainWindows()) {
+			if (win.ZoteroPane) trace.log(`shutdown done  strip=[${graphTab.stripSummary(win)}]`);
+		}
+		await trace.flush();
 	},
 
 	onMainWindowLoad(win) {
@@ -116,11 +119,15 @@ module.exports = {
 		}
 
 		addTabIconStyle(win);
-
 		addTabHooks(win);
+		// Was the session carrying a graph tab, and had restore already run by
+		// the time this plugin got here? Those two answers together say whether
+		// a lost tab was lost on the way out or on the way back in.
+		trace.log(`window load  session=[${sessionSummary()}]  strip=[${graphTab.stripSummary(win)}]`);
 	},
 
 	onMainWindowUnload(win) {
+		trace.log(`window unload  strip=[${graphTab.stripSummary(win)}]`);
 		removeWindowIntegration(win);
 		// Deliberately not closeAllInWindow(): the tabs have to stay in the strip
 		// for ZoteroPane.destroy() to hand to Zotero.Session, which is what puts
@@ -168,6 +175,20 @@ module.exports = {
 		});
 	},
 };
+
+/**
+ * What session.json held for the main window, as a list of tab types.
+ * Zotero.Session.state is the parsed file, so this is what restore was given.
+ */
+function sessionSummary() {
+	try {
+		let pane = (Zotero.Session.state.windows || []).find(w => w.type === 'pane');
+		return pane ? pane.tabs.map(t => t.type).join(',') : 'no pane window';
+	}
+	catch (e) {
+		return '?';
+	}
+}
 
 /**
  * The tab-icon rule, in the main window's own document: the tab strip lives

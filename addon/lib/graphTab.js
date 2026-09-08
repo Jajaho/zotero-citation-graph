@@ -22,6 +22,7 @@ let readerPane = require('./readerPane.js');
 let itemPane = require('./itemPane.js');
 let splitPane = require('./splitPane.js');
 let l10n = require('./l10n.js');
+let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
 
@@ -133,6 +134,20 @@ function tabTitle(collection) {
 }
 
 /**
+ * What the tab strip actually holds, as a list of types. Diagnostic only, and
+ * reaching into Zotero_Tabs._tabs to get it -- the question it answers (was the
+ * graph tab still there when Zotero looked?) has no public form.
+ */
+function stripSummary(win) {
+	try {
+		return ((win.Zotero_Tabs && win.Zotero_Tabs._tabs) || []).map(t => t.type).join(',') || 'empty';
+	}
+	catch (e) {
+		return '?';
+	}
+}
+
+/**
  * Teardown for a tab that is going away. The container is about to be destroyed
  * anyway, but whatever is in the side panel is not just markup: a reader has
  * listeners on the window and state to flush, an item pane has observers
@@ -165,6 +180,7 @@ async function open(win, collection, config) {
 		onClose: () => dropEntry(id),
 	});
 
+	trace.log(`opened a graph tab for ${collection.key}  strip=[${stripSummary(win)}]`);
 	mount(win, id, container, collection, config, { ...DEFAULT_OPTIONS })
 		.catch(e => Zotero.logError(e));
 }
@@ -193,6 +209,9 @@ async function restore(win, tab, tabIndex) {
 	// this function is allowed to have.
 	try {
 		let collection = await tabCollection(tab.data);
+		trace.log(`restoreState.graph fired  index=${tabIndex}`
+			+ `  key=${(tab.data && tab.data.collectionKey) || '-'}`
+			+ `  -> ${collection ? 'restoring' : 'dropped (no such collection)'}`);
 		if (!collection) return { itemID: null };
 
 		let id;
@@ -1147,71 +1166,6 @@ function closeAll() {
 }
 
 /**
- * Take the page out from under a window's graph tabs, but leave the tabs.
- *
- * The teardown for a plugin being replaced by another version of itself. The
- * live pages cannot survive it -- resource://zotero-graph/ is unregistered and
- * re-registered against the new rootURI -- but the tabs can, and should: an
- * upgrade is the most common reason this ever runs, and losing every open graph
- * to it would make installing a build cost the user their work.
- *
- * This is core's own unload(), transcribed: close, then re-add at the same
- * index carrying the same id and data, one state suffix further back. Its
- * unload() cannot be called directly because canUnload() gates on
- * _loadableTypes, which 'graph' is deliberately not in -- see restore().
- *
- * The tab that comes back is 'graph-unloaded', so it serialises as 'graph'
- * (getState strips the suffix) and the incoming version mounts it from its own
- * load hook the next time it is selected. It is re-added unselected even if it
- * was selected: selecting it here would call a load hook belonging to the
- * version that is going away.
- */
-function unloadAllInWindow(win) {
-	let tabs = win.Zotero_Tabs;
-	for (let [tabID, entry] of [...open_, ...pending_]) {
-		if (entry.win !== win) continue;
-		// Never mounted, so there is no page to take away.
-		if (pending_.has(tabID)) continue;
-		try {
-			let { tab, tabIndex } = tabs._getTab(tabID);
-			if (!tab) {
-				dropEntry(tabID);
-				continue;
-			}
-			let { title, data } = tab;
-			// close() fires onClose, which is the panel teardown and the map
-			// delete -- the same cleanup this would otherwise have to repeat.
-			tabs.close(tabID);
-			let id;
-			({ id } = tabs.add({
-				id: tabID,
-				type: 'graph-unloaded',
-				title,
-				index: tabIndex,
-				data,
-				onClose: () => dropEntry(id),
-			}));
-			pending_.set(id, { win, tabID: id });
-		}
-		catch (e) {
-			// _getTab is core's, and private. If a Zotero this plugin has not
-			// seen has moved it, the tab is worth less than the risk of leaving
-			// a dead page in the strip.
-			Zotero.logError(e);
-			try {
-				tabs.close(tabID);
-			}
-			catch (e2) { /* already gone */ }
-			dropEntry(tabID);
-		}
-	}
-}
-
-function unloadAll() {
-	for (let [, entry] of [...open_, ...pending_]) unloadAllInWindow(entry.win);
-}
-
-/**
  * Let go of a window's tabs without closing them -- the teardown for a Zotero
  * that is quitting under a plugin that is staying.
  *
@@ -1231,7 +1185,7 @@ function forgetAll() {
 }
 
 module.exports = {
-	open, restore, load, closeAll, closeAllInWindow, unloadAll, forgetWindow, forgetAll,
+	open, restore, load, closeAll, closeAllInWindow, forgetWindow, forgetAll, stripSummary,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.

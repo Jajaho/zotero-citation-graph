@@ -1516,7 +1516,7 @@ const t1 = check('a graph tab is still in the strip when Zotero.Session reads it
 	if (win.Zotero_Tabs.closed.length) throw new Error('shutdown closed the tab: ' + win.Zotero_Tabs.closed);
 });
 
-const t2 = check('installing a new build unloads the graph tabs rather than closing them', async () => {
+const t2 = check('the plugin going away takes its tabs out of the session with it', async () => {
 	await t1;
 	const graphTab = require_('./lib/graphTab.js');
 	const main = require_('./lib/main.js');
@@ -1526,52 +1526,18 @@ const t2 = check('installing a new build unloads the graph tabs rather than clos
 	Zotero.getMainWindows = () => [win];
 
 	await graphTab.open(win, COLLECTION, CFG);
-	const before = win.Zotero_Tabs._tabs.find(t => t.type === 'graph');
-	const at = win.Zotero_Tabs._tabs.indexOf(before);
-
-	// ADDON_UPGRADE. plugins.js onInstalling() calls shutdown with this on the
-	// running plugin the moment a new XPI is installed over it -- which is what
-	// every test build does. Closing the tabs here took them out of the strip,
-	// so Zotero.Session never saw them and the restart had nothing to restore.
+	// Anything but APP_SHUTDOWN: resource://zotero-graph/ stops resolving under
+	// a live page, and a 'graph' entry left in session.json meets a Zotero with
+	// no restoreState.graph hook -- the tabs.js:611 destructure that aborts
+	// restore for every tab after it.
 	await main.shutdown(7);
-
-	const after = win.Zotero_Tabs._tabs.find(t => /^graph/.test(t.type));
-	if (!after) throw new Error('installing a new build closed the graph tab');
-	if (after.type !== 'graph-unloaded') throw new Error('left mounted as ' + after.type);
-	if (win.Zotero_Tabs._tabs.indexOf(after) !== at) throw new Error('the tab moved');
-	if (after.id !== before.id) throw new Error('the tab did not keep its id');
-	// Which is what session.json gets, so the next start restores it.
-	if (!win.Zotero_Tabs.getState().some(t => t.type === 'graph')) {
-		throw new Error('the unloaded tab did not reach session.json');
-	}
-	// And the page is gone: its resource:// is about to be re-registered.
-	const container = win.Zotero_Tabs.getTabContent(after.id);
-	if (container && container.querySelector('.zg-split')) {
-		throw new Error('the dying version left its page behind');
-	}
-});
-
-const t2b = check('being disabled does take the tabs out of the session', async () => {
-	await t2;
-	const graphTab = require_('./lib/graphTab.js');
-	const main = require_('./lib/main.js');
-	const { win } = fakeMainWindow();
-	stubCollections();
-	Zotero.Prefs = { get: () => null, set: () => {} };
-	Zotero.getMainWindows = () => [win];
-
-	await graphTab.open(win, COLLECTION, CFG);
-	// ADDON_DISABLE. Nothing is coming back, and a 'graph' entry left in
-	// session.json meets a Zotero with no restoreState.graph hook -- the
-	// tabs.js:611 destructure that aborts restore for every tab after it.
-	await main.shutdown(4);
 	if (win.Zotero_Tabs.getState().some(t => /^graph/.test(t.type))) {
-		throw new Error('a graph tab survived the plugin being disabled');
+		throw new Error('a graph tab survived the plugin being removed');
 	}
 });
 
 const t3 = check('a restored graph tab comes back unloaded, in place, and builds on select', async () => {
-	await t2b;
+	await t2;
 	const main = require_('./lib/main.js');
 	const { win } = fakeMainWindow();
 	stubCollections();
