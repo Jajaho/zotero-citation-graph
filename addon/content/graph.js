@@ -204,6 +204,7 @@
 		if (x.citedByGlobal != null) {
 			bits.push(x.citedByGlobal.toLocaleString() + ' citations total');
 		}
+		if (isPinned(n)) bits.push('pinned');
 		bits.push('double-click for details · right-click for actions');
 		return 'Not in collection — ' + head + '<br/>' + bits.join(' · ');
 	}
@@ -215,6 +216,7 @@
 		if (n.citedByGlobal != null) {
 			bits.push(n.citedByGlobal.toLocaleString() + ' citations total');
 		}
+		if (isPinned(n)) bits.push('pinned');
 		bits.push('double-click to select in Zotero · right-click for actions');
 		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
 			+ '<br/>' + bits.join(' · ');
@@ -294,7 +296,13 @@
 
 	function renderLegend(nodes) {
 		let mode = elColorBy.value;
-		elLegendTitle.textContent = LEGEND_TITLE[mode] || mode;
+		// Titled as the sentence the user just made in the panel -- "coloured by
+		// year" -- rather than the bare noun, so the legend says what it is a
+		// legend FOR without the panel having to be open beside it.
+		let title = 'Coloured by ' + (LEGEND_TITLE[mode] || mode);
+		elLegendTitle.textContent = title;
+		// One narrow line, and it ellipsises; the tooltip carries the rest.
+		elLegendTitle.title = title;
 		elLegendBody.textContent = '';
 
 		let held = [];
@@ -936,7 +944,7 @@
 			.nodeVal(nodeVal)
 			.nodeColor(nodeColor)
 			.nodeCanvasObjectMode(() => 'after')
-			.nodeCanvasObject(drawLabel)
+			.nodeCanvasObject(drawNode)
 			.linkDirectionalArrowLength(4)
 			.linkDirectionalArrowRelPos(1)
 			.linkCurvature(0.08)
@@ -1174,6 +1182,33 @@
 	const LABEL_PER_RADIUS = 0.85; // screen px of type per px of node radius
 	const LABEL_FIT = 1.9;         // how far past its diameter a label may run
 
+	function drawNode(node, ctx, globalScale) {
+		drawPin(node, ctx, globalScale);
+		drawLabel(node, ctx, globalScale);
+	}
+
+	/**
+	 * A pinned node wears a ring just outside its circle, in the label colour.
+	 * Drawn rather than recoloured: the fill already means whatever the panel
+	 * is colouring by, and pinning must not take a hue away from it.
+	 *
+	 * Sized in screen pixels like the label, so the ring stays a hairline at
+	 * any zoom instead of swelling with the node.
+	 */
+	const PIN_RING_GAP = 2.5;   // screen px between the node edge and the ring
+	const PIN_RING_WIDTH = 1.5; // screen px
+
+	function drawPin(node, ctx, globalScale) {
+		if (!isPinned(node)) return;
+		let theme = themeColors();
+		ctx.beginPath();
+		ctx.arc(node.x, node.y, nodeRadius(node) + PIN_RING_GAP / globalScale,
+			0, 2 * Math.PI);
+		ctx.lineWidth = PIN_RING_WIDTH / globalScale;
+		ctx.strokeStyle = dimmed(node) ? fade(theme.fg, DIM_NODE_ALPHA) : theme.fg;
+		ctx.stroke();
+	}
+
 	function drawLabel(node, ctx, globalScale) {
 		if (!node.label) return;
 		// Dimmed nodes lose their label entirely rather than fading it. A halo
@@ -1224,7 +1259,7 @@
 	if (window.matchMedia) {
 		window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 			_theme = null;
-			if (fg) fg.nodeCanvasObject(drawLabel); // force a repaint
+			repaint();
 		});
 	}
 
@@ -1348,6 +1383,51 @@
 		else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
 	}
 
+	// --- pinning ----------------------------------------------------------
+
+	/**
+	 * Holding a node where the user put it. d3 reads fx/fy as "this coordinate
+	 * is fixed" and stops integrating the node, while every force the node
+	 * exerts on its neighbours keeps acting -- so pinning one paper anchors the
+	 * cluster around it rather than freezing it.
+	 *
+	 * The pin lives on the node object, and nodeCache hands the same objects
+	 * back on every re-render, so a pin survives a filter change and a late
+	 * build phase landing -- exactly the moments when a layout arranged by hand
+	 * would otherwise be lost.
+	 *
+	 * force-graph's drag handler restores fx/fy to whatever they were before
+	 * the drag, which gives the two gestures the right shapes for free:
+	 * dragging a pinned node MOVES its pin, dragging an unpinned one still
+	 * releases it on drop.
+	 */
+	function isPinned(n) {
+		return n.fx != null || n.fy != null;
+	}
+
+	function pin(n) {
+		n.fx = n.x;
+		n.fy = n.y;
+		repaint();
+	}
+
+	function unpin(n) {
+		// Released, but not thrown back into the layout: reheating would move
+		// every other node too, and taking one pin out is no reason to reshuffle
+		// a graph the user has spent time arranging. It rejoins the flow the
+		// next time something else stirs the simulation.
+		delete n.fx;
+		delete n.fy;
+		repaint();
+	}
+
+	/** force-graph stops redrawing once the simulation has cooled, so a change
+	 *  that is purely visual has to announce itself. Re-setting a visual
+	 *  accessor is what marks the canvas dirty. */
+	function repaint() {
+		if (fg) fg.nodeCanvasObject(drawNode);
+	}
+
 	// --- the node context menu --------------------------------------------
 
 	/**
@@ -1359,7 +1439,13 @@
 	function showMenu(n, event) {
 		hideAction();
 		elMenu.textContent = '';
-		for (let entry of (n.ghost ? ghostMenu(n) : itemMenu(n))) {
+		let entries = n.ghost ? ghostMenu(n) : itemMenu(n);
+		// Last, and shared by both populations, because it is the one entry
+		// about the picture rather than the paper: where a node sits is a fact
+		// about this layout, and an outside reference has one as much as a held
+		// item does.
+		entries.push(pinEntry(n));
+		for (let entry of entries) {
 			elMenu.appendChild(menuItem(entry));
 		}
 		elMenu.hidden = false;
@@ -1386,6 +1472,17 @@
 			});
 		}
 		return b;
+	}
+
+	function pinEntry(n) {
+		let pinned = isPinned(n);
+		return {
+			label: pinned ? 'Unpin node' : 'Pin node here',
+			hint: pinned
+				? 'let the layout move it again'
+				: 'hold it at this spot; drag it to move the pin',
+			run: () => (pinned ? unpin(n) : pin(n)),
+		};
 	}
 
 	function ghostMenu(n) {
