@@ -1,6 +1,6 @@
 {
   "name": "zotero-graph-plugin",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
   "scripts": {

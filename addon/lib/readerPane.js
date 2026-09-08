@@ -324,26 +324,103 @@ function setNote(pane, text) {
 }
 
 /**
- * Undo the two things ReaderPreview does to keep a thumbnail-sized preview tidy:
- * it pins the scale to page-height and puts pdf.js in page mode (scrollMode 3),
- * re-applying both on every resize. In a pane this wide that turns a document
- * into a slide deck, so we drop the resize handler and hand it back page-width
- * and ordinary vertical scrolling.
+ * CSS undoing ReaderPreview's per-type CSS, injected into the same document it
+ * injected into -- the view's own iframe, not reader.html.
  *
- * Internals, and best-effort on purpose: if core moves them the pane still
- * works, one page at a time, through the header's paging buttons.
+ * The pdf rule is the one that matters: `#viewerContainer { overflow: hidden }`
+ * is what makes a preview a still image, and no scroll mode can get around it.
+ * Its epub counterpart is not CSS at all -- paginated flow is a mode, and
+ * switching it drops the `flow-mode-paginated` rules with it -- so epub is
+ * handled in loosen() below. Snapshots are frozen by `pointer-events: none` and
+ * a `--win-scale` transform, both of which have to go for the page to scroll.
+ */
+const UNPREVIEW_CSS = {
+	pdf: `
+		#viewerContainer { overflow: auto !important; }
+	`,
+	snapshot: `
+		html {
+			pointer-events: auto !important;
+			user-select: auto !important;
+			transform: none !important;
+			min-width: 0 !important;
+			overflow-x: auto !important;
+		}
+	`,
+};
+
+/**
+ * Turn the preview back into something readable.
+ *
+ * ReaderPreview is built for a thumbnail in the item pane, so on top of hiding
+ * the reader UI it pins the scale to page-height, puts pdf.js in page mode
+ * (scrollMode 3), locks `#viewerContainer` to `overflow: hidden`, and re-applies
+ * the first two on every resize. In a half-screen pane that is a slide deck you
+ * cannot even page with the wheel, so all four are undone here: drop the resize
+ * handlers, inject CSS that gives the scrollbar back, and ask the reader itself
+ * for ordinary vertical scrolling (`scrollMode` on a PDF, `flowMode` on an EPUB
+ * -- both are properties of core's own Reader class, reached through the
+ * ReaderInstance proxy).
+ *
+ * Internals, and best-effort on purpose: each step is guarded on its own, so if
+ * core moves one of them the rest still apply and the pane at worst goes back to
+ * paging through the header buttons.
  */
 function loosen(reader) {
-	if (reader.type !== 'pdf') return;
+	let win = viewWindow(reader);
+	if (!win) {
+		Zotero.debug('[zotero-graph] reader pane: no primary view to loosen');
+		return;
+	}
+
+	// Registered by ReaderPreview on the view window; both re-pin what we are
+	// about to unpin, on the next resize.
+	for (let handler of [reader.updatePDFAttr, reader.updateSnapshotAttr]) {
+		if (handler) tryTo('drop preview resize handler', () => win.removeEventListener('resize', handler));
+	}
+
+	let css = UNPREVIEW_CSS[reader.type];
+	if (css) {
+		tryTo('inject scroll CSS', () => {
+			let style = win.document.createElement('style');
+			style.textContent = css;
+			(win.document.head || win.document.documentElement).appendChild(style);
+		});
+	}
+
+	if (reader.type === 'pdf') {
+		// 0 is pdf.js ScrollMode.VERTICAL; page-width because the pane is
+		// narrower than the window the reader would otherwise get.
+		tryTo('set vertical scrolling', () => {
+			reader.scrollMode = 0;
+		});
+		tryTo('fit page width', () => {
+			win.PDFViewerApplication.pdfViewer.currentScaleValue = 'page-width';
+		});
+	}
+	else if (reader.type === 'epub') {
+		tryTo('set scrolled flow', () => {
+			reader.flowMode = 'scrolled';
+		});
+	}
+}
+
+/** The document the view actually renders into, one iframe below reader.html. */
+function viewWindow(reader) {
 	try {
-		let win = reader._internalReader._primaryView._iframeWindow;
-		win.removeEventListener('resize', reader.updatePDFAttr);
-		let viewer = win.PDFViewerApplication.pdfViewer;
-		viewer.scrollMode = 0;
-		viewer.currentScaleValue = 'page-width';
+		return reader._internalReader._primaryView._iframeWindow || null;
 	}
 	catch (e) {
-		Zotero.debug('[zotero-graph] reader pane kept the preview scroll mode: ' + e);
+		return null;
+	}
+}
+
+function tryTo(what, fn) {
+	try {
+		fn();
+	}
+	catch (e) {
+		Zotero.debug('[zotero-graph] reader pane could not ' + what + ': ' + e);
 	}
 }
 
