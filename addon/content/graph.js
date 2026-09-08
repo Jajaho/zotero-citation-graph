@@ -60,6 +60,13 @@
 	// filtering the graph should rescale it.
 	let globalRef = 1;
 
+	// What force-graph is currently holding on screen. Handing it new graphData
+	// restarts its simulation, so render() compares against these to work out
+	// whether it has to -- see updateGraph().
+	let drawnStructure = null;    // node ids + every drawn edge property
+	let drawnRadii = null;        // the radii the collision force was sized from
+	let drawnNodes = [];          // the node array those two describe
+
 	// View state for isolation. None of this filters the graph or reaches
 	// chrome -- see setIsolated() for why it must not.
 	let isolated = null;          // focused node id, or null
@@ -944,6 +951,31 @@
 				hideAction();
 				hideMenu();
 			});
+			// Every accessor below is a closure over live state and re-read on
+			// each redraw, so these are set once and never touched again. That
+			// is not merely tidiness: nodeId is one of the handful of props
+			// force-graph re-initialises its whole engine for, so re-setting
+			// the chain per render reheated the layout all by itself.
+			fg.nodeId('id')
+				.nodeLabel(n => (n.ghost ? ghostTooltip(n) : itemTooltip(n)))
+				.nodeRelSize(NODE_REL_SIZE)
+				.nodeVal(nodeVal)
+				.nodeColor(nodeColor)
+				.nodeCanvasObjectMode(() => 'after')
+				.nodeCanvasObject(drawNode)
+				.linkDirectionalArrowLength(4)
+				.linkDirectionalArrowRelPos(1)
+				.linkCurvature(0.08)
+				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
+				// Colour by the strongest strategy backing the edge, so a
+				// publisher's own DOI link reads differently from an inferred
+				// title match.
+				.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
+					(l.confidence >= ASSERTED ? 0.85 : 0.45)
+					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
+				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
+				.d3VelocityDecay(0.3);
+
 			// d3 re-initialises every registered force whenever the node array
 			// is replaced, so these pick up new nodes and new radii on their
 			// own and only ever need registering once.
@@ -955,28 +987,11 @@
 			fg.d3Force('link').strength(linkStrength);
 		}
 
-		fg.width(elGraph.clientWidth)
-			.height(elGraph.clientHeight)
-			.graphData({ nodes, links })
-			.nodeId('id')
-			.nodeLabel(n => (n.ghost ? ghostTooltip(n) : itemTooltip(n)))
-			.nodeRelSize(NODE_REL_SIZE)
-			.nodeVal(nodeVal)
-			.nodeColor(nodeColor)
-			.nodeCanvasObjectMode(() => 'after')
-			.nodeCanvasObject(drawNode)
-			.linkDirectionalArrowLength(4)
-			.linkDirectionalArrowRelPos(1)
-			.linkCurvature(0.08)
-			.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
-			// Colour by the strongest strategy backing the edge, so a publisher's
-			// own DOI link reads differently from an inferred title match.
-			.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
-				(l.confidence >= ASSERTED ? 0.85 : 0.45)
-				* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
-			.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
-			.d3VelocityDecay(0.3);
+		// The pane can be resized without a window resize event -- a Zotero
+		// layout change, or the tab coming back into view.
+		fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
 
+		updateGraph(nodes, links);
 		renderLegend(nodes);
 
 		let phase = raw.meta && raw.meta.phase;
@@ -988,6 +1003,82 @@
 				+ (named ? ' (' + named + ' named)' : '') : '')
 			+ ' · ' + links.length + ' edges'
 			+ (phase && phase !== 'done' ? ' · building…' : '');
+	}
+
+	/**
+	 * Give force-graph the part of the new graph that actually changed.
+	 *
+	 * graphData is the one prop it re-initialises its engine for: setting it
+	 * runs `forceLayout.stop().alpha(1)`, which re-anneals the whole layout
+	 * from full temperature. Reusing the node objects (see nodeCache) carries
+	 * their coordinates across, but a re-annealed layout drifts off them within
+	 * a second anyway -- so recolouring the graph, or writing looked-up names
+	 * onto it, used to move every node on screen to report a change that had
+	 * touched neither a position nor an edge.
+	 *
+	 * Three tiers, cheapest first:
+	 *
+	 *  nothing structural   Repaint in place. Node objects are mutated by
+	 *                       render(), so new names and new tooltips are already
+	 *                       on them; all that is missing is a redraw.
+	 *  radii changed        Re-register the collision force, which caches the
+	 *                       radii it was built with, and reheat. Sizing by
+	 *                       global citations is the case that matters: the
+	 *                       counts arrive with the looked-up names and every
+	 *                       circle changes size, so the layout genuinely has to
+	 *                       resolve overlaps that did not exist before.
+	 *  nodes or edges       The real thing.
+	 */
+	function updateGraph(nodes, links) {
+		let structure = structureSig(nodes, links);
+		let radii = radiiSig(nodes);
+		let movedStructure = structure !== drawnStructure;
+		let movedRadii = radii !== drawnRadii;
+		drawnStructure = structure;
+		drawnRadii = radii;
+		drawnNodes = nodes;
+
+		if (movedStructure) {
+			fg.graphData({ nodes, links });
+			return;
+		}
+		// Skipping graphData leaves force-graph holding the previous link
+		// objects. That is safe precisely because the signature covers every
+		// field anything reads off them: identical signature, interchangeable
+		// arrays -- and the old ones have their endpoints already resolved.
+		if (movedRadii) {
+			fg.d3Force('collide', collide()).d3ReheatSimulation();
+			return;
+		}
+		repaint();
+	}
+
+	// A separator no key, DOI or strategy name can contain.
+	const SIG_SEP = String.fromCharCode(1);
+
+	/**
+	 * Everything a new graphData would tell force-graph that it does not
+	 * already know: which nodes are on screen, and every edge property that is
+	 * drawn or that the layout prices. Taken from the fresh arrays, before
+	 * force-graph resolves link endpoints from ids to node objects.
+	 */
+	function structureSig(nodes, links) {
+		let out = [];
+		for (let node of nodes) out.push(node.id);
+		out.push('|');
+		for (let l of links) {
+			out.push(l.source + '>' + l.target + ':' + l.confidence
+				+ ':' + l.via.join('+') + ':' + (l.doi || ''));
+		}
+		return out.join(SIG_SEP);
+	}
+
+	/** The other thing the layout is built from. Rounded, because a radius that
+	 *  differs in the fourth decimal moves nothing anyone can see. */
+	function radiiSig(nodes) {
+		let out = [];
+		for (let node of nodes) out.push(nodeRadius(node).toFixed(2));
+		return out.join(',');
 	}
 
 	/**
@@ -1313,17 +1404,15 @@
 	 * would drop the other nodes from the simulation, the layout would resettle,
 	 * and the neighbourhood you were trying to look at would end up somewhere
 	 * else on screen -- destroying exactly the spatial memory you were reading
-	 * the graph with. Nothing here touches graphData; only the colour accessors
-	 * change, so every node stays exactly where it was.
+	 * the graph with. Nothing here touches graphData -- it repaints, and the
+	 * colour accessors read `isolated` on the way past -- so every node stays
+	 * exactly where it was.
 	 */
 	function setIsolated(id) {
 		if (isolated === id) return;
 		isolated = id;
 		syncIsolateNote();
-		// Re-setting a visual accessor is what marks the canvas dirty.
-		// force-graph pauses its redraw loop once the simulation has cooled, so
-		// without this the fade would not appear until something else moved.
-		if (fg) fg.nodeColor(nodeColor);
+		repaint();
 	}
 
 	function toggleIsolate(id) {
@@ -1791,9 +1880,15 @@
 		catch (e) { /* no persistence, no problem */ }
 	});
 	elMinCites.addEventListener('input', render);
-	elColorBy.addEventListener('change', render);
-	// Size changes node radii, which the collision force sizes its grid from --
-	// re-registering it is what makes it pick the new radii up.
+	// Paint, not data: the colour accessors read elColorBy live, so the graph
+	// only has to be redrawn and its legend retitled. Going through render()
+	// would hand force-graph the same nodes and edges back and re-anneal the
+	// layout, moving every node on screen to explain a change of hue.
+	elColorBy.addEventListener('change', () => {
+		if (!fg) return;
+		renderLegend(drawnNodes);
+		repaint();
+	});
 	elSizeBy.addEventListener('change', () => {
 		// Picking "global citations" IS the request for the counts it needs, so
 		// it fetches them instead of refusing to be picked until someone finds
@@ -1804,8 +1899,12 @@
 			elEnrich.checked = true;
 			requestRebuild();
 		}
+		// Sizing changes node radii, and the collision force caches the radii
+		// it was built with -- but render() compares the new ones against the
+		// drawn ones and re-registers it itself, so a size change that alters
+		// nothing (picking "global citations" before any counts have arrived)
+		// costs nothing.
 		render();
-		if (fg) fg.d3Force('collide', collide()).d3ReheatSimulation();
 	});
 	elHideIsolated.addEventListener('change', () => {
 		elHideIsolated.dataset.touched = '1';
