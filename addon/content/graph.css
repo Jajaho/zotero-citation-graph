@@ -162,14 +162,11 @@ body {
 	padding: 3px 8px;
 }
 
-#collection-name {
+#panel-title {
 	font-weight: 600;
-	/* Shrinkable, or the ellipsis below never applies and a long collection
-	   name pushes the panel wider than its own box. */
+	/* Takes the rest of the header row, so the chevron stays hard left. */
 	flex: 1 1 auto;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 

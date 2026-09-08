@@ -70,7 +70,6 @@
 	let elGraph = el('graph');
 	let elStats = el('stats');
 	let elStatus = el('status');
-	let elName = el('collection-name');
 	let elMinConf = el('min-conf');
 	let elConfValue = el('conf-value');
 	let elStrategies = el('strategies');
@@ -114,7 +113,6 @@
 		let firstEdges = (!raw || !raw.edges.length) && next.edges.length;
 		raw = next;
 		raw.external = raw.external || [];
-		elName.textContent = (raw.collection && raw.collection.name) || '';
 		// Chrome owns the scope options; reflect what it actually used, which
 		// matters after a rebuild that was still in flight.
 		if (raw.options) {

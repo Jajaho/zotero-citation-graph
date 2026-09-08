@@ -59,7 +59,9 @@ const DEFAULT_OPTIONS = { recursive: false, includeExternal: true, enrich: false
 let open_ = new Map();
 
 async function open(win, collection, config) {
-	let title = 'Citation Graph — ' + collection.name;
+	// Collection first: the tab strip truncates from the right, and which
+	// collection this is is the half that distinguishes one graph tab from another.
+	let title = collection.name + ' — Citation Graph';
 
 	let { id, container } = win.Zotero_Tabs.add({
 		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
