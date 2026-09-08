@@ -266,6 +266,11 @@ zotero-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 
 ## Adding an outside reference to the library.
 
+zotero-graph-add-tag-label = Tag
+zotero-graph-add-collection-label = Collection
+zotero-graph-add-new-collection = New Collection…
+zotero-graph-add-cancel = Cancel
+zotero-graph-add-confirm = Add
 zotero-graph-add-bad-doi = Not a usable DOI: { $doi }
 zotero-graph-add-adding = Adding { $doi }…
 zotero-graph-add-failed = Could not add { $doi }: { $message }

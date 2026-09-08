@@ -238,6 +238,11 @@ zotero-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphe
 
 ## Eine externe Referenz zur Bibliothek hinzufügen.
 
+zotero-graph-add-tag-label = Schlagwort
+zotero-graph-add-collection-label = Sammlung
+zotero-graph-add-new-collection = Neue Sammlung…
+zotero-graph-add-cancel = Abbrechen
+zotero-graph-add-confirm = Hinzufügen
 zotero-graph-add-bad-doi = Keine brauchbare DOI: { $doi }
 zotero-graph-add-adding = { $doi } wird hinzugefügt…
 zotero-graph-add-failed = { $doi } konnte nicht hinzugefügt werden: { $message }

@@ -665,6 +665,12 @@ check('lib/ modules load through the shim', () => {
 		if (typeof s[fn] !== 'function') throw new Error('splitPane must expose ' + fn + '()');
 	}
 	if (s.MIN_WIDTH !== 357) throw new Error('splitPane.MIN_WIDTH: ' + s.MIN_WIDTH);
+	// Same reasoning as splitPane above: addDialog.js interpolates its own id
+	// into a CSS template literal, so its exports are the canary for that string
+	// ending where it was meant to.
+	const a = require_('./lib/addDialog.js');
+	if (typeof a.open !== 'function') throw new Error('addDialog must expose open()');
+	if (a.PANEL_WIDTH !== 420) throw new Error('addDialog.PANEL_WIDTH: ' + a.PANEL_WIDTH);
 });
 
 /**
@@ -717,13 +723,52 @@ class FakeElement {
 		this.removed = true;
 	}
 
+	replaceChildren(...kids) {
+		for (const c of [...this.children]) c.remove();
+		for (const c of kids) this.appendChild(c);
+	}
+
+	get tagName() {
+		return this.localName;
+	}
+
+	/** Enough of a selector engine for the one shape addDialog.js asks for:
+	 *  [value="..."], which is how it finds the collection the menu ticked. */
+	querySelector(sel) {
+		const m = /^\[value="(.*)"\]$/.exec(sel);
+		if (!m) throw new Error('unsupported selector: ' + sel);
+		const walk = (el) => {
+			for (const c of el.children) {
+				if (c.getAttribute('value') === m[1]) return c;
+				const found = walk(c);
+				if (found) return found;
+			}
+			return null;
+		};
+		return walk(this);
+	}
+
+	focus() {}
+
+	select() {}
+
+	// A XUL popup announces both edges of its life, and addDialog.js hangs the
+	// focus on one and the answer on the other.
+	openPopup() {
+		this.fire('popupshown');
+	}
+
+	hidePopup() {
+		this.fire('popuphidden');
+	}
+
 	addEventListener(type, fn) {
 		(this.listeners[type] = this.listeners[type] || []).push(fn);
 	}
 
 	/** Press the chevron, or whatever else the panel wired up. */
-	fire(type) {
-		for (const fn of this.listeners[type] || []) fn();
+	fire(type, event) {
+		for (const fn of this.listeners[type] || []) fn(event);
 	}
 
 	getBoundingClientRect() {
@@ -737,7 +782,14 @@ function fakeWindow(onRender = async () => {}) {
 	const made = [];
 	const element = localName => new FakeElement(localName, made, onRender);
 	const win = {
-		document: { createElement: element, createXULElement: element },
+		document: {
+			createElement: element,
+			createXULElement: element,
+			// A dialog is appended to the window itself and looked up by id,
+			// which is how a second one displaces the first.
+			documentElement: element('window'),
+			getElementById: id => made.find(el => el.id === id && !el.removed) || null,
+		},
 		// splitPane mirrors the splitter's width attribute through one of these.
 		MutationObserver: class {
 			observe() {}
@@ -940,6 +992,122 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 	// 2 was passed over while 1 was still drawing, and drawing it would have
 	// cost a full render of a pane nobody was going to look at.
 	if (drawn.join(',') !== '1,3') throw new Error('drew ' + drawn.join(','));
+});
+
+/**
+ * Core's collection menu, as far as this side of it goes: a flat list of
+ * entries, each carrying the treeViewID addDialog.js ticks against and calling
+ * back with the library or collection it stands for.
+ */
+function collectionMenuStub(element, rows) {
+	return (libraryOrCollection, elem, currentTarget, clickAction) => {
+		let first = null;
+		for (const row of rows) {
+			const item = element('menuitem');
+			item.setAttribute('value', row.target.treeViewID);
+			item.setAttribute('label', row.target.name);
+			item.setAttribute('image', '');
+			if (row.target.treeViewID === currentTarget) item.setAttribute('checked', 'true');
+			item.addEventListener('command', () => clickAction({ target: item }, row.target));
+			elem.appendChild(item);
+			first = first || item;
+		}
+		return first;
+	};
+}
+
+const MY_LIBRARY = {
+	libraryID: 1, objectType: 'library', name: 'My Library', treeViewID: 'L1', treeViewImage: '',
+};
+const READING_LIST = {
+	libraryID: 1, objectType: 'collection', id: 7, name: 'Reading list',
+	treeViewID: 'C7', treeViewImage: '',
+};
+
+/** A dialog on screen, with core's two collaborators stubbed. Everything the
+ *  dialog asks of them it asks synchronously, inside open(). */
+function openAddDialog(opts = {}) {
+	const addDialog = require_('./lib/addDialog.js');
+	const { win, made, element } = fakeWindow();
+	Zotero.Libraries = { get: () => MY_LIBRARY };
+	Zotero.Utilities = {
+		Internal: {
+			createMenuForTarget: collectionMenuStub(element, [
+				{ target: MY_LIBRARY }, { target: READING_LIST },
+			]),
+		},
+	};
+	const asked = addDialog.open(win, {
+		doi: '10.5555/outside',
+		title: 'A paper the collection cites',
+		libraryID: 1,
+		collectionID: 7,
+		tag: 'added by citation graph',
+		...opts,
+	});
+	const find = (localName, pred = () => true) =>
+		made.find(el => el.localName === localName && !el.removed && pred(el));
+	const press = label => find('button', el => el.textContent === label).fire('click');
+	return { asked, made, find, press, panel: made.find(el => el.id === addDialog.PANEL_ID) };
+}
+
+check('the add dialog opens on the collection the graph is of', async () => {
+	await l10nReady;
+	const { asked, find, press } = openAddDialog();
+	// Not "selected" in the menulist's own sense -- a native menulist filled by
+	// core's menu builder wears the label of whichever entry is ticked.
+	if (find('menulist').getAttribute('label') !== 'Reading list') {
+		throw new Error('opened on ' + find('menulist').getAttribute('label'));
+	}
+	press('Add');
+	const out = await asked;
+	if (out.libraryID !== 1 || out.collectionID !== 7) {
+		throw new Error('target: ' + JSON.stringify(out));
+	}
+	if (out.tag !== 'added by citation graph' || out.tagOn !== true) {
+		throw new Error('tag: ' + JSON.stringify(out));
+	}
+});
+
+check('picking the library itself out of the menu means the library root', async () => {
+	await l10nReady;
+	const { asked, find, press } = openAddDialog();
+	find('menuitem', el => el.getAttribute('value') === 'L1').fire('command');
+	if (find('menulist').getAttribute('label') !== 'My Library') {
+		throw new Error('the menu did not follow the pick');
+	}
+	press('Add');
+	const out = await asked;
+	// No collection is an answer, not a missing one: it is what the translator
+	// is handed as an empty collections list.
+	if (out.collectionID !== null) throw new Error('collectionID: ' + out.collectionID);
+});
+
+check('unticking the tag greys the field without forgetting what is in it', async () => {
+	await l10nReady;
+	const { asked, find, press } = openAddDialog();
+	const box = find('input', el => el.type === 'checkbox');
+	box.checked = false;
+	box.fire('change');
+	if (!find('input', el => el.type === 'text').disabled) {
+		throw new Error('the field stayed live with the box unticked');
+	}
+	press('Add');
+	const out = await asked;
+	// The two come back separately so that a box unticked this once is not what
+	// forgets the tag someone typed -- chrome writes both back to the prefs.
+	if (out.tagOn !== false) throw new Error('tagOn: ' + out.tagOn);
+	if (out.tag !== 'added by citation graph') throw new Error('tag: ' + out.tag);
+});
+
+check('a cancelled dialog answers null once and leaves nothing behind', async () => {
+	await l10nReady;
+	const { asked, press, panel } = openAddDialog();
+	press('Cancel');
+	// Cancelling hides the popup, which fires popuphidden, which answers again.
+	// One question, one answer, whichever of the two paths gets there first.
+	if (await asked !== null) throw new Error('cancel must answer null');
+	if (!panel.removed) throw new Error('the panel outlived the question');
 });
 
 check('naming a graph changes no node and no edge', () => {
@@ -2027,6 +2195,7 @@ function referencedIds() {
 	const files = [
 		'content/graph.js', 'content/nodeFilters.js',
 		'lib/graphTab.js', 'lib/readerPane.js', 'lib/itemPane.js', 'lib/splitPane.js',
+		'lib/addDialog.js',
 		'lib/main.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 

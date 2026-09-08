@@ -14,6 +14,13 @@ pref("extensions.zotero.zoteroGraph.enrichers", "openalex");
 // Free key: https://openalex.org/settings/api
 pref("extensions.zotero.zoteroGraph.openalex.apiKey", "");
 
+// The "Add to Zotero" dialog opens with these, and writes back whatever it was
+// last used with. The tag is deliberately NOT localised: it is library data, not
+// interface text, and a tag that changed with Zotero's display language would
+// split one shelf of papers across two names.
+pref("extensions.zotero.zoteroGraph.addTag", "added by citation graph");
+pref("extensions.zotero.zoteroGraph.addTagEnabled", true);
+
 // Width of the tab's side panel, in pixels -- the one the reader and the item
 // pane share. Written back whenever the splitter is dragged, so the panel opens
 // at the size it was last left, whichever of the two is in it.

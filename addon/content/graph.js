@@ -190,6 +190,13 @@
 		elStatus.textContent = text || '';
 	};
 
+	// An add that ended without a rebuild. The gap list disables a row's "+"
+	// the moment it is pressed and gets it back from the rebuild that normally
+	// follows; with no rebuild coming, this is what gives it back.
+	window.zgAddSettled = function () {
+		renderGaps();
+	};
+
 	// --- item helpers -----------------------------------------------------
 
 	function year(item) {
@@ -572,8 +579,10 @@
 			add.disabled = true;
 			add.textContent = '…';
 			// Chrome answers by rebuilding, after which this work is held and
-			// drops off the list by itself.
-			emit({ type: 'add-item', doi: g.id });
+			// drops off the list by itself. When nothing was added -- the
+			// dialog was cancelled, the DOI resolved to nothing -- it answers
+			// zgAddSettled instead, and that redraws this row enabled again.
+			emit({ type: 'add-item', doi: g.id, title: g.title || null });
 		});
 
 		row.addEventListener('click', () => showGapCiters(g));
@@ -3055,7 +3064,7 @@
 				label: t('menu-add-to-zotero'),
 				hint: n.name,
 				disabled: x.ns !== 'doi',
-				run: () => emit({ type: 'add-item', doi: n.name }),
+				run: () => emit({ type: 'add-item', doi: n.name, title: x.title || null }),
 			},
 		];
 	}
@@ -3167,7 +3176,7 @@
 		// Chrome answers by rebuilding, which re-pushes and re-renders; the
 		// popover is dismissed now because the node it describes is about to
 		// stop existing as a ghost.
-		emit({ type: 'add-item', doi: actionNode.name });
+		emit({ type: 'add-item', doi: actionNode.name, title: (actionNode.meta || {}).title || null });
 		hideAction();
 	});
 	// One layer per press, outermost first, so Escape never throws away more

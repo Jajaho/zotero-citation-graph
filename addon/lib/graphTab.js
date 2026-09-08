@@ -17,6 +17,7 @@ let cg = require('../citation-graph/index.js');
 let { ZoteroAdapter } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
+let addDialog = require('./addDialog.js');
 let readerPane = require('./readerPane.js');
 let itemPane = require('./itemPane.js');
 let splitPane = require('./splitPane.js');
@@ -62,7 +63,7 @@ const MAX_EXTERNAL_NODES = 4000;
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
 // tabID -> { win, tabID, browser, split, pane, reader, itemPane, collection,
-//             generation, options, built, building }
+//             generation, options, built, building, addTarget }
 // `split` is the box holding the graph and, once opened, the tab's one side
 // panel; `pane` is splitPane.js's record for that panel and `reader` /
 // `itemPane` belong to whichever of the two has it. `built` is the
@@ -210,7 +211,7 @@ async function handleMessage(win, tabID, collection, msg) {
 			break;
 		}
 		case 'add-item':
-			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi);
+			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi, msg.title);
 			break;
 		// The graph page runs with a content principal and cannot open a browser
 		// itself. Only http(s) is passed on: a held item's URL comes from the
@@ -544,14 +545,57 @@ function pushData(entry, state, meta) {
  *
  * extractIdentifiers() is not needed -- a ghost's key already holds a DOI that
  * normDoi produced.
+ *
+ * Where it goes and what it is marked with are asked first, in a dialog: this
+ * is the one thing the graph does that WRITES to the library, and a paper filed
+ * somewhere the user did not choose is cheap to undo but tedious to find. See
+ * addDialog.js.
  */
-async function addByDoi(win, tabID, collection, doi) {
+async function addByDoi(win, tabID, collection, doi, title) {
 	let entry = open_.get(tabID);
 	let status = (t) => entry && send(entry, 'zgSetStatus', t);
+	// The gap list disables its row the moment the '+' is pressed and gets it
+	// back from the rebuild an add ends in. Every path that does NOT rebuild
+	// has to say so, or the row stays dead until the next build.
+	let settle = () => entry && send(entry, 'zgAddSettled', '');
 	let d = normDoi(doi);
 	if (!d) {
 		status(l10n.t('add-bad-doi', { doi }));
+		settle();
 		return;
+	}
+
+	// The collection this graph is of, until the tab is told otherwise: filing a
+	// missing reference beside the papers that cite it is the common case, and
+	// it is the collection the ghost was derived from in the first place.
+	let target = (entry && entry.addTarget)
+		|| { libraryID: collection.libraryID, collectionID: collection.id };
+	let choice = await addDialog.open(win, {
+		doi: d,
+		title: title || null,
+		libraryID: target.libraryID,
+		collectionID: target.collectionID,
+		tag: typeof pref('addTag') === 'string' ? pref('addTag') : '',
+		tagOn: pref('addTagEnabled') !== false,
+		anchor: entry ? entry.browser : null,
+	});
+	// The tab can have been closed while the dialog was up; the add still
+	// happens, it just has nowhere to report to and nothing to rebuild.
+	entry = open_.get(tabID);
+	if (!choice) {
+		status('');
+		settle();
+		return;
+	}
+	// Both halves, whichever way the box was left: an unticked box this once
+	// must not be what forgets the tag someone typed.
+	setPref('addTag', choice.tag);
+	setPref('addTagEnabled', !!choice.tagOn);
+	if (entry) {
+		entry.addTarget = {
+			libraryID: choice.libraryID,
+			collectionID: choice.collectionID,
+		};
 	}
 
 	status(l10n.t('add-adding', { doi: d }));
@@ -563,8 +607,10 @@ async function addByDoi(win, tabID, collection, doi) {
 		if (!translators.length) throw new Error('no translator accepted the DOI');
 		translate.setTranslator(translators);
 		newItems = await translate.translate({
-			libraryID: collection.libraryID,
-			collections: [collection.id],
+			libraryID: choice.libraryID,
+			// Empty is the library root, which is what picking the library
+			// itself out of the menu means.
+			collections: choice.collectionID ? [choice.collectionID] : [],
 			// Zotero's own open-access PDF lookup, for free.
 			saveAttachments: true,
 		});
@@ -572,11 +618,34 @@ async function addByDoi(win, tabID, collection, doi) {
 	catch (e) {
 		Zotero.logError(e);
 		status(l10n.t('add-failed', { doi: d, message: e && e.message ? e.message : e }));
+		settle();
 		return;
 	}
 	if (!newItems.length) {
 		status(l10n.t('add-no-metadata', { doi: d }));
+		settle();
 		return;
+	}
+
+	// After the save rather than through it: Zotero.Translate.ItemSaver takes a
+	// library and collections and nothing else, so a tag is a second write.
+	// Type 0 is a manual tag -- the kind the tag selector offers and colours --
+	// which is what someone typing one into the dialog is asking for.
+	if (choice.tagOn && choice.tag) {
+		try {
+			await Zotero.DB.executeTransaction(async () => {
+				for (let item of newItems) {
+					if (!item.isRegularItem()) continue;
+					item.addTag(choice.tag, 0);
+					await item.save();
+				}
+			});
+		}
+		catch (e) {
+			// The paper is in the library either way. A tag that would not
+			// stick is a line in the log, not an add reported as failed.
+			Zotero.logError(e);
+		}
 	}
 
 	// The ghost's key was 'doi:<doi>'; the work is now a real item with an
@@ -594,6 +663,17 @@ function pref(name) {
 	}
 	catch (e) {
 		return null;
+	}
+}
+
+/** The other half of pref(). Only the add dialog writes back so far: what it
+ *  was last told to tag with is the answer it opens with next time. */
+function setPref(name, value) {
+	try {
+		Zotero.Prefs.set('zoteroGraph.' + name, value);
+	}
+	catch (e) {
+		Zotero.logError(e);
 	}
 }
 
