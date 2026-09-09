@@ -34,6 +34,14 @@
 	const DIM_NODE_ALPHA = 0.1;
 	const DIM_LINK_FACTOR = 0.15;
 
+	// How far a highlighted node's own edges are lifted out of the picture.
+	// Lifted, where isolation dims: a highlight answers "which lines touch this
+	// one", and that only reads against the lines it is being picked out from.
+	// The two are meant to be legible at the same time, so they must not both
+	// work by taking colour away.
+	const HL_LINK_ALPHA = 1;
+	const HL_LINK_WIDTH = 2;
+
 	// Whether the control panel was left collapsed, remembered across openings.
 	const COLLAPSE_KEY = 'zg.panel.collapsed';
 
@@ -102,6 +110,12 @@
 	let litCache = null;          // see lit(); invalidated, never mutated
 	let adjacency = new Map();    // node id -> Set of ids one edge away
 	let hoverNode = null;         // whatever force-graph's hit test is over
+
+	// View state for the highlight, kept apart from isolation because they are
+	// different questions asked with different gestures. One id and not a set:
+	// a highlight is "this one, and the lines out of it", which is only ever
+	// about a single node -- see setHighlight().
+	let highlighted = null;       // node id picked out, or null for none
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -342,7 +356,7 @@
 			bits.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
 		}
 		if (isPinned(n)) bits.push(t('tooltip-pinned'));
-		bits.push(t('tooltip-ghost-actions'));
+		bits.push(t('tooltip-actions'));
 		return t('tooltip-not-in-collection', { title: head }) + '<br/>' + bits.join(' · ');
 	}
 
@@ -361,7 +375,7 @@
 			bits.push(t('tooltip-citations-total', { count: n.citedByGlobal.toLocaleString() }));
 		}
 		if (isPinned(n)) bits.push(t('tooltip-pinned'));
-		bits.push(t('tooltip-item-actions'));
+		bits.push(t('tooltip-actions'));
 		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
 			+ '<br/>' + bits.join(' · ');
 	}
@@ -1375,11 +1389,14 @@
 		for (let n of nodes) if (n.citedByGlobal != null) counts.push(n.citedByGlobal);
 		globalRef = Scale.referenceCount(counts);
 
-		// A filter change or a rebuild can take a focused node off screen, and a
-		// focus on a node that is not drawn would dim the graph around nothing.
-		if (isolated.size) {
+		// A filter change or a rebuild can take a focused or highlighted node
+		// off screen. A focus on a node that is not drawn would dim the graph
+		// around nothing, and a highlight on one would leave a handful of edges
+		// lit with nothing at the end of them.
+		if (isolated.size || highlighted != null) {
 			let onScreen = new Set(nodes.map(n => n.id));
 			for (let id of isolated) if (!onScreen.has(id)) isolated.delete(id);
+			if (highlighted != null && !onScreen.has(highlighted)) highlighted = null;
 		}
 		// The adjacency lit() walks has just been rebuilt out of these edges.
 		litCache = null;
@@ -1390,15 +1407,17 @@
 
 		if (!fg) {
 			fg = ForceGraph()(elGraph);
-			// One click asks what this paper is: it isolates the neighbourhood
-			// AND describes the item in the pane beside the graph. Both halves
-			// answer the same question, one about what it is connected to and
-			// one about what it is, so they are one gesture. Opening it in the
-			// library is still the double click, because that throws the user
-			// into a different tab.
+			// One click asks what this paper is: it picks the node and its own
+			// edges out of the picture AND describes the item in the pane
+			// beside the graph. Both halves answer the same question, one about
+			// what it is connected to and one about what it is, so they are one
+			// gesture. It is the cheap half of the pair on purpose -- nothing
+			// else on screen changes, so a stray click while panning costs a
+			// ring rather than a graph you have to undim. Isolating, which does
+			// change the whole picture, is the double click.
 			fg.onNodeClick((n) => {
 				if (spentPress()) return;
-				toggleIsolate(n.id);
+				toggleHighlight(n.id);
 				showItemPane(n);
 			});
 			fg.onNodeRightClick(showMenu);
@@ -1433,6 +1452,7 @@
 				if (spentPress()) return;
 				hideAction();
 				hideMenu();
+				clearHighlight();
 				clearIsolated();
 			});
 			fg.onBackgroundRightClick(showCanvasMenu);
@@ -1461,11 +1481,17 @@
 				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
-				// title match.
+				// title match. A highlighted node's own edges give up the
+				// alpha that says how well attested they are and go to full
+				// strength: what is being asked of them is which lines touch
+				// this node, and the hue still answers the other question.
 				.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
-					(l.confidence >= ASSERTED ? 0.85 : 0.45)
+					(highlightedLink(l)
+						? HL_LINK_ALPHA
+						: l.confidence >= ASSERTED ? 0.85 : 0.45)
 					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
-				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8))
+				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8)
+					* (highlightedLink(l) ? HL_LINK_WIDTH : 1))
 				// After the graph, so a flag is never buried under the cluster
 				// it gathered.
 				.onRenderFramePost(drawGroups)
@@ -1890,8 +1916,37 @@
 	const LABEL_FIT = 1.9;         // how far past its diameter a label may run
 
 	function drawNode(node, ctx, globalScale) {
+		drawHighlight(node, ctx, globalScale);
 		drawPin(node, ctx, globalScale);
 		drawLabel(node, ctx, globalScale);
+	}
+
+	/**
+	 * The highlighted node wears a ring in the accent colour, outside where a
+	 * pin's ring goes so that a node which is both still reads as both.
+	 *
+	 * A ring rather than a recoloured fill, for the reason the pin's is: the
+	 * fill already means whatever the panel is colouring by, and a highlight
+	 * must not take that hue away from the one node you are looking hardest at.
+	 *
+	 * Faded with the rest when isolation has dimmed it, exactly as drawPin is.
+	 * Highlighting a node outside the isolated neighbourhood is a fair thing to
+	 * do -- it is how you check whether something over there connects in -- and
+	 * a ring at full strength on a node that is otherwise a ghost would read as
+	 * the isolation having lost track of itself.
+	 */
+	const HL_RING_GAP = 5.5;   // screen px between the node edge and the ring
+	const HL_RING_WIDTH = 2;   // screen px
+
+	function drawHighlight(node, ctx, globalScale) {
+		if (!isHighlighted(node)) return;
+		let theme = themeColors();
+		ctx.beginPath();
+		ctx.arc(node.x, node.y, nodeRadius(node) + HL_RING_GAP / globalScale,
+			0, 2 * Math.PI);
+		ctx.lineWidth = HL_RING_WIDTH / globalScale;
+		ctx.strokeStyle = dimmed(node) ? fade(theme.accent, DIM_NODE_ALPHA) : theme.accent;
+		ctx.stroke();
 	}
 
 	/**
@@ -1959,6 +2014,7 @@
 				fg: get('--fg', '#1a1a1a'),
 				muted: get('--muted', '#6b6b6b'),
 				halo: get('--bg', '#ffffff'),
+				accent: get('--accent', '#0a67c2'),
 			};
 		}
 		return _theme;
@@ -1986,6 +2042,54 @@
 	function escapeHtml(s) {
 		return String(s == null ? '' : s).replace(/[&<>"]/g,
 			c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+	}
+
+	// --- highlight --------------------------------------------------------
+
+	/**
+	 * Pick one node and the edges out of it out of the picture: the node gets a
+	 * ring, its own edges are drawn at full strength, and nothing else on
+	 * screen changes at all.
+	 *
+	 * That last part is the whole design. This is the gesture a single click
+	 * makes, so it is made constantly and half of those are made by accident
+	 * while panning a dense graph -- which means it has to be free to undo and
+	 * free to ignore. Isolation, which repaints the entire graph into a wash,
+	 * is behind the double click for the same reason.
+	 *
+	 * Like isolation, it touches nothing but the repaint: no filtering, no
+	 * graphData, so the layout never resettles and the node stays where your
+	 * eye left it.
+	 */
+	function setHighlight(id) {
+		if (highlighted === id) return;
+		highlighted = id;
+		repaint();
+	}
+
+	function clearHighlight() {
+		if (highlighted != null) setHighlight(null);
+	}
+
+	/** Clicking the highlighted node again puts it back, which is the only way
+	 *  out of a highlight that does not involve clicking the canvas. */
+	function toggleHighlight(id) {
+		setHighlight(highlighted === id ? null : id);
+	}
+
+	function isHighlighted(n) {
+		return highlighted != null && n.id === highlighted;
+	}
+
+	/**
+	 * Only the edges incident to the highlighted node, and not the ones among
+	 * its neighbours. "This node and its edges" is a question about one node;
+	 * lighting the rungs between its neighbours would answer a question about
+	 * its neighbourhood, which is what isolation is for.
+	 */
+	function highlightedLink(l) {
+		if (highlighted == null) return false;
+		return endId(l.source) === highlighted || endId(l.target) === highlighted;
 	}
 
 	// --- isolation --------------------------------------------------------
@@ -2035,11 +2139,11 @@
 	}
 
 	/**
-	 * A click keeps its old meaning whatever the focus set holds: one click
-	 * isolates the node clicked, and clicking that same node when it is the
-	 * only thing isolated gives the whole graph back. Building a focus out of
-	 * several nodes is the context menu's job -- a gesture that cannot be made
-	 * by accident while panning.
+	 * A double click keeps its meaning whatever the focus set holds: it
+	 * isolates the node clicked, and double-clicking that same node when it is
+	 * the only thing isolated gives the whole graph back. Building a focus out
+	 * of several nodes is the context menu's job -- a gesture that cannot be
+	 * made by accident while panning.
 	 */
 	function toggleIsolate(id) {
 		hideAction();
@@ -2160,24 +2264,15 @@
 	 * whatever the pointer is over -- force-graph's own hit test already knows,
 	 * and asking it is more reliable than timing two clicks ourselves.
 	 *
-	 * The pair of clicks underneath still runs toggleIsolate twice, which
-	 * cancels out: a double click leaves the isolation state exactly as it found
-	 * it and does nothing but open the node.
+	 * The pair of clicks underneath still runs toggleHighlight twice, which
+	 * cancels out: the highlight goes on and straight back off, and a double
+	 * click ends with the neighbourhood isolated and no ring left over. That is
+	 * the right end state -- isolation already says which node was asked about,
+	 * far louder than a ring would.
 	 */
-	elGraph.addEventListener('dblclick', (event) => {
-		if (hoverNode) activate(hoverNode, event);
+	elGraph.addEventListener('dblclick', () => {
+		if (hoverNode) toggleIsolate(hoverNode.id);
 	});
-
-	/**
-	 * What "open this" means for the two node populations. A held item is
-	 * selected in the library pane; an outside reference has no item to select,
-	 * so it gets the card describing what adding it would add.
-	 */
-	function activate(n, event) {
-		hideMenu();
-		if (n.ghost) showAction(n, event);
-		else if (n.itemID) emit({ type: 'open-item', itemID: n.itemID });
-	}
 
 	/**
 	 * Ask chrome to describe this node in Zotero's own item pane beside the
@@ -2190,7 +2285,8 @@
 	 *
 	 * An outside reference does not replace what is shown. There is no item to
 	 * describe, and no metadata beyond the DOI already on the tooltip; the
-	 * ghost's own card is what a double click is for.
+	 * ghost's own card, on its context menu, is what answers this for one of
+	 * those.
 	 */
 	function showItemPane(n) {
 		if (!n || n.ghost || !n.itemID) return;
@@ -3202,9 +3298,13 @@
 			b.disabled = true;
 		}
 		else {
-			b.addEventListener('click', () => {
+			// The click is handed on because an entry may put something at the
+			// pointer -- "Show details" opens the ghost card -- and that
+			// belongs where the row was picked, not where the menu was asked
+			// for.
+			b.addEventListener('click', (event) => {
 				hideMenu();
-				run();
+				run(event);
 			});
 		}
 		return b;
@@ -3216,8 +3316,8 @@
 	 * this picture as the neighbourhood of a held item.
 	 *
 	 * Two entries, not one, because there are two different things to ask.
-	 * "Isolate" starts over on this node -- the same thing a click does. "Add
-	 * to isolation" keeps what is already lit and lights the neighbourhood
+	 * "Isolate" starts over on this node -- the same thing a double click does.
+	 * "Add to isolation" keeps what is already lit and lights the neighbourhood
 	 * around this node beside it, which is how you see whether two papers share
 	 * one. It only appears once something is isolated: with an empty focus it
 	 * would be a second, longer name for the entry above it.
@@ -3263,6 +3363,16 @@
 		let url = Links.externalUrl(x.ns, x.id || n.name);
 		return [
 			{
+				// A held node's answer to "tell me about this one" is Zotero's
+				// own item pane, which a click already opens. An outside
+				// reference has no item to put there, so the card is it -- and
+				// it lives here now that the double click isolates.
+				icon: 'show-item',
+				label: t('menu-show-details'),
+				hint: x.title || n.name,
+				run: event => showAction(n, event),
+			},
+			{
 				icon: 'open-link',
 				label: t('menu-open-in-browser'),
 				hint: url || t('menu-open-in-browser-no-id'),
@@ -3270,10 +3380,10 @@
 				run: () => emit({ type: 'open-url', url }),
 			},
 			{
-				// Straight to the add, where the card on double click asks
-				// first. A menu entry cannot be hit by a stray click while
-				// panning, and that is the only thing the confirmation was ever
-				// there to prevent.
+				// Straight to the add, where the card above it asks first. A
+				// menu entry cannot be hit by a stray click while panning, and
+				// that is the only thing the confirmation was ever there to
+				// prevent.
 				icon: 'add-to-zotero',
 				label: t('menu-add-to-zotero'),
 				hint: n.name,
@@ -3300,14 +3410,19 @@
 	// --- the outside-reference action popover -----------------------------
 
 	/**
-	 * A ghost's detail card, opened by double click -- the outside reference's
-	 * answer to "select this in Zotero", since there is no item to select yet.
+	 * A ghost's detail card -- the outside reference's answer to Zotero's item
+	 * pane, which a click opens for a held node and which has nothing to show
+	 * for one of these.
 	 *
-	 * Adding WRITES to the library, so from here it sits behind an explicit
-	 * button: a double click is one stray gesture away while panning, and
-	 * silently filing a paper is cheap to undo but not something to do unasked.
-	 * The context menu skips the confirmation because a right-click menu entry
-	 * cannot be hit by accident.
+	 * Opened from the context menu. It used to be the double click, back when
+	 * that meant "open this"; the double click now isolates, and everything a
+	 * card is for -- reading the metadata, and the Add button below it -- is
+	 * worth a deliberate gesture rather than a stray one made while panning.
+	 *
+	 * The Add here is still a button rather than the act of opening the card,
+	 * because adding WRITES to the library. The menu's own "Add to Zotero" goes
+	 * straight there: a right-click entry cannot be hit by accident, which is
+	 * the only thing the confirmation was ever guarding against.
 	 */
 	let actionNode = null;
 
@@ -3362,6 +3477,10 @@
 		// neighbourhood, and the press that undoes that must not instead take
 		// away the list you were reading down.
 		else if (isolated.size) clearIsolated();
+		// After the isolation, not before it: a highlight takes nothing away,
+		// so the graph an Escape is most likely asking for back is the undimmed
+		// one. Both come off in two presses either way.
+		else if (highlighted != null) clearHighlight();
 		else if (!elGaps.hidden) closeGaps();
 	});
 

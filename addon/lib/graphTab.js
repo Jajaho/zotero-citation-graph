@@ -509,12 +509,6 @@ async function ready(win, tabID, cw, collection) {
 
 async function handleMessage(win, tabID, collection, msg) {
 	switch (msg.type) {
-		case 'open-item':
-			if (msg.itemID) {
-				win.Zotero_Tabs.select('zotero-pane');
-				await win.ZoteroPane.selectItem(msg.itemID);
-			}
-			break;
 		case 'rebuild': {
 			let entry = open_.get(tabID);
 			if (entry && msg.options) Object.assign(entry.options, msg.options);

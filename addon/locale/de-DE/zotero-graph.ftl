@@ -102,8 +102,7 @@ zotero-graph-tooltip-cited-here = hier von { $count } zitiert
 zotero-graph-tooltip-citations-total = { $count } Zitationen insgesamt
 zotero-graph-tooltip-pinned = angeheftet
 zotero-graph-tooltip-et-al = { $names } u. a.
-zotero-graph-tooltip-ghost-actions = Doppelklick für Details · Rechtsklick für Aktionen
-zotero-graph-tooltip-item-actions = Doppelklick zum Auswählen in Zotero · Rechtsklick für Aktionen
+zotero-graph-tooltip-actions = Klick zum Hervorheben · Doppelklick zum Isolieren · Rechtsklick für Aktionen
 
 
 ## Filter-Chips und die Vorschlagsliste.
@@ -201,6 +200,7 @@ zotero-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen
 zotero-graph-menu-unpin = Knoten lösen
 zotero-graph-menu-unpin-hint = das Layout darf ihn wieder bewegen
 
+zotero-graph-menu-show-details = Details anzeigen
 zotero-graph-menu-open-in-browser = Im Browser öffnen
 zotero-graph-menu-open-in-browser-no-id = kein auflösbarer Bezeichner
 zotero-graph-menu-add-to-zotero = Zu Zotero hinzufügen

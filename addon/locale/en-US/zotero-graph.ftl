@@ -118,8 +118,7 @@ zotero-graph-tooltip-cited-here = cited by { $count } here
 zotero-graph-tooltip-citations-total = { $count } citations total
 zotero-graph-tooltip-pinned = pinned
 zotero-graph-tooltip-et-al = { $names } et al.
-zotero-graph-tooltip-ghost-actions = double-click for details · right-click for actions
-zotero-graph-tooltip-item-actions = double-click to select in Zotero · right-click for actions
+zotero-graph-tooltip-actions = click to highlight · double-click to isolate · right-click for actions
 
 
 ## Filter chips and the completion list.
@@ -229,6 +228,7 @@ zotero-graph-menu-pin-hint = hold it at this spot; drag it to move the pin
 zotero-graph-menu-unpin = Unpin node
 zotero-graph-menu-unpin-hint = let the layout move it again
 
+zotero-graph-menu-show-details = Show details
 zotero-graph-menu-open-in-browser = Open in browser
 zotero-graph-menu-open-in-browser-no-id = no resolvable identifier
 zotero-graph-menu-add-to-zotero = Add to Zotero
