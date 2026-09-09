@@ -2587,6 +2587,48 @@ check('a Zotero border variable is used as the shorthand it is', () => {
 });
 
 /**
+ * The edge of a collapsed pane is one hairline, and there are two elements that
+ * could draw it: the splitter, and the sidenav's border-inline-start -- which is
+ * buried between the pane content and the sidenav until that content goes
+ * visibility: collapse, and is then the panel's outer edge.
+ *
+ * Both ways of getting this wrong have shipped. Letting both draw gave a
+ * doubled, visibly darker edge than the library's. Taking core's answer to that
+ * -- its [state=collapsed] rules, which park the splitter's line at the far side
+ * of 8-10px of splitter -- gave a strip of nothing beside the icons, because
+ * core can afford that width only as the grab handle its collapse="after"
+ * markup makes it, and this splitter is deliberately not one.
+ *
+ * So the sidenav draws it and the splitter gets out of the way: no border, and
+ * margins that cancel --draggable-size off the same variable core uses, so the
+ * density bump on a collapsed splitter cancels itself too.
+ */
+check('a collapsed pane edge is drawn once, by the sidenav', () => {
+	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
+	const rule = /\.zg-pane-splitter\[state="collapsed"\]\s*\{([^}]*)\}/.exec(src);
+	if (!rule) throw new Error('nothing styles the splitter of a collapsed pane');
+	const body = rule[1].replace(/\/\*[\s\S]*?\*\//g, '');
+
+	// Core's [state=collapsed] rule sets border-left, and it is the more
+	// specific selector -- so leaving it to win is the doubled edge.
+	if (!/\bborder\s*:\s*0\b/.test(body)) {
+		throw new Error('the splitter still draws a line at the edge the sidenav draws: ' + body.trim());
+	}
+	// And core drops the negative margins there, which is what turns
+	// --draggable-size into real width. Both have to come back, and off the
+	// variable rather than a number, or the density bump reopens the gap.
+	for (const side of ['margin-left', 'margin-right']) {
+		if (!new RegExp(side + '\\s*:').test(body)) {
+			throw new Error('a collapsed splitter takes real width again: no ' + side);
+		}
+	}
+	if (!/margin-left\s*:\s*calc\(1px - var\(--draggable-size\)\)/.test(body)) {
+		throw new Error('the width is cancelled by a number, not by --draggable-size, '
+			+ 'so a density change reopens the gap: ' + body.trim());
+	}
+});
+
+/**
  * A flag has to take its press before the two layers underneath it do: d3-zoom
  * reads a left drag on the canvas as a pan, and force-graph raises a background
  * click on the way up that gives the whole graph back. Registered in the bubble

@@ -76,21 +76,40 @@ function collapsible() {
 
 const PANE_CSS = `
 	/*
-	 * The splitter carries no rules of its own -- core styles it, keyed on the
-	 * attributes collapsiblePane.mjs writes. Nothing here may set a border on it
-	 * either: both --material-panedivider and --material-border-quarternary are
-	 * border SHORTHANDS, not colours, so the
-	 * background: var(--material-panedivider) this once carried resolved to
-	 * "1px solid #dadada" and was dropped as invalid.
+	 * Expanded, the splitter is core's entirely: it draws the panel's outer edge
+	 * and costs the layout nothing, because the attributes core's rules are
+	 * keyed on are on the element (see create()).
 	 *
-	 * The one deviation, and not something an API replaces: a collapsed splitter
-	 * here is inert. Core's stays draggable because core's markup has
-	 * collapse="after", which is what lets nsSplitterFrame un-collapse the pane
-	 * on a drag away from the edge; this panel deliberately does not have that
-	 * attribute (see create()), so a drag could only push against max-width and
-	 * feel broken. The way back is the sidenav's button.
+	 * Collapsed, it draws nothing, and this is the one rule in this plugin that
+	 * departs from core on purpose.
+	 *
+	 * Only ONE hairline belongs at the edge of a collapsed pane, and there are
+	 * two candidates for it: the splitter's own border, and the sidenav's
+	 * border-inline-start -- which is normally buried between the pane content
+	 * and the sidenav, but becomes the panel's outer edge the moment that
+	 * content goes visibility: collapse. Core resolves it by moving the
+	 * splitter's line to border-left and dropping the negative margins, which
+	 * parks the line at the far side of 8-10px of splitter. It can afford that
+	 * width because core's markup carries collapse="after", so the collapsed
+	 * splitter is the grab handle that pulls the pane back out.
+	 *
+	 * This one is not a handle -- the sidenav's button is the way back, and
+	 * collapse="after" is deliberately not set (see create()) -- so core's
+	 * treatment would leave a strip of nothing beside the icons. Both artefacts
+	 * have shipped: the doubled, darker edge from letting both lines land
+	 * together, and the strip from taking core's answer to it.
+	 *
+	 * So: the sidenav draws the edge, and the splitter gets out of the way
+	 * entirely. The margins keep it at zero layout width the same way core's own
+	 * rule does, off the same variable, so the density bump on --draggable-size
+	 * cancels itself. The line you see is the sidenav's border-inline-start --
+	 * which is the same line, from the same element, that the library shows
+	 * beside ITS collapsed item pane.
 	 */
 	.zg-pane-splitter[state="collapsed"] {
+		border: 0;
+		margin-left: calc(1px - var(--draggable-size));
+		margin-right: -1px;
 		pointer-events: none;
 	}
 	.zg-pane {
