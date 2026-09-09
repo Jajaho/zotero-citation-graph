@@ -1095,11 +1095,17 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	Zotero.Libraries = { get: () => ({ editable: true }) };
 	await itemPane.show(entry, 12, { expand: true });
 	const note = made.find(el => el.localName === 'note-editor');
+	const deck = made.find(el => el.localName === 'deck');
 	if (!note) throw new Error('a note did not open an editor');
 	if (note.item !== fakeItems[12]) throw new Error('the editor was handed something else');
 	if (note.mode !== 'edit') throw new Error('an editable note came out read-only');
-	if (note.hidden) throw new Error('the editor was built and left hidden');
-	if (!details.hidden) throw new Error('the item pane is still on screen behind it');
+	// A deck page, not a hidden element. display: none would take the item
+	// pane's box away, its sections would stop intersecting, and the observer
+	// that watches them would strip every button off the sidenav -- for good,
+	// because nothing puts them back until the sections render again.
+	if (note.parent !== deck) throw new Error('the editor was not put in the deck');
+	if (deck.selectedPanel !== note) throw new Error('the deck is not showing the note');
+	if (note.hidden || details.hidden) throw new Error('a deck page was hidden as well');
 	// EditorInstance closes the tab a note belongs to when the note is deleted.
 	// The tab this one sits in is the graph.
 	if (note.tabID !== undefined) throw new Error('a deleted note would close the graph tab');
@@ -1108,8 +1114,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 
 	// And back to a paper, which puts the pane in front again.
 	await itemPane.show(entry, 11, { expand: true });
-	if (details.hidden) throw new Error('the paper did not come back');
-	if (!note.hidden) throw new Error('the editor was left over the pane');
+	if (deck.selectedPanel !== details) throw new Error('the paper did not come back');
 	if (sidenav.defaultStatus !== false) throw new Error('the sidenav was left greyed out');
 
 	// An explicit request to look at something -- unlike a click on a node --
@@ -1125,10 +1130,12 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');
 	if (entry.pane) throw new Error('close() left the panel on the tab');
 	// Taking the panel out of the document is the whole of the item pane's
-	// cleanup: ItemDetails and the sidenav both unregister their observers from
-	// disconnectedCallback, so the pane has to still be inside the panel when
-	// the panel goes.
-	if (details.parent !== row) throw new Error('the pane was not left inside the row it was built in');
+	// cleanup: ItemDetails, the sidenav and the note editor all unregister their
+	// observers from disconnectedCallback, so all three have to still be inside
+	// the panel when the panel goes.
+	if (details.parent !== deck) throw new Error('the pane was taken out of its deck');
+	if (note.parent !== deck) throw new Error('the editor was taken out of its deck');
+	if (deck.parent !== row) throw new Error('the deck was not left inside the row it was built in');
 	if (row.parent !== box) throw new Error('the row was taken out of the panel before it was closed');
 	if (!box.removed) throw new Error('close() left the panel in the DOM');
 });

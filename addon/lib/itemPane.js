@@ -7,7 +7,7 @@
  *
  * This is the same element the library pane builds for the item you click:
  * `<item-details>` (elements/itemDetails.js) with an `<item-pane-sidenav>`
- * beside it. Not a copy of it, and not a reimplementation -- the actual custom
+ * beside it, in a `<deck>` it shares with the note editor -- see face(). Not a copy of it, and not a reimplementation -- the actual custom
  * element, created in the main window's document, which is why every section
  * (info, abstract, attachments, notes, tags, related, and any section another
  * plugin has registered) is present and behaves exactly as it does in the
@@ -62,8 +62,9 @@ const PANE_CSS = `
 	}
 	/* Collapsed, the sidenav is the whole panel. Core's own rule, which it
 	   writes as "item-pane[collapsed=true] #zotero-item-pane-content" -- that
-	   id belongs to the library's pane and not to ours, but the attribute is
-	   the same one, because the collapse is core's own (splitPane.js). */
+	   id belongs to the library's deck and not to ours, but it is the same
+	   element in the same place, and the attribute is the same one, because the
+	   collapse is core's own (splitPane.js). */
 	.zg-pane[collapsed="true"] .zg-item-row > .zotero-item-pane-content {
 		visibility: collapse;
 	}
@@ -205,20 +206,27 @@ function showNote(entry, pane, item) {
 /**
  * Which of the two is on screen, and what the sidenav makes of it.
  *
- * Core switches a deck; this hides the one not wanted, which comes to the same
- * thing and leaves the pane the shape contextPane.js gave it -- the sizing class
- * is on the element itself here, not on a container around it.
+ * A <deck>, which is core's own way of holding these two (itemPane.js), and NOT
+ * because it is tidier. `hidden` is display: none, and an <item-details> with no
+ * box at all is one whose sections stop intersecting the viewport -- so its
+ * IntersectionObserver discards every one of them, each discard hides a section,
+ * and each hidden section is a mutation that tells the sidenav to take that
+ * section's button away. Opening one note emptied the whole strip, and it stayed
+ * empty, because nothing puts those buttons back until the sections render
+ * again. A deck's unselected child keeps its box and its size -- toolkit gives
+ * it `visibility: hidden`, not `display: none` -- so nothing observes anything
+ * and the pane is exactly where it was left.
  *
- * The strip of icons is core's rule verbatim (itemPane.js
+ * The strip of icons is then core's rule verbatim (itemPane.js
  * _handleViewTypeChange): section buttons mean nothing beside a note editor, so
- * they go back to their default greyed state, and coming back to the paper
+ * they go back to their default state -- present and greyed, which is what the
+ * library window shows for a selected note -- and coming back to the paper
  * re-reads which sections it has.
  */
 function face(pane, wanted) {
 	if (pane.facing === wanted) return;
 	pane.facing = wanted;
-	pane.details.hidden = wanted !== pane.details;
-	if (pane.note) pane.note.hidden = wanted !== pane.note;
+	pane.deck.selectedPanel = wanted;
 	let onItem = wanted === pane.details;
 	if (typeof pane.sidenav.toggleDefaultStatus === 'function') {
 		pane.sidenav.toggleDefaultStatus(!onItem);
@@ -243,9 +251,10 @@ function ensureNote(entry, pane) {
 		// there before the element is in the document.
 		note.setAttribute('notitle', '1');
 		note.setAttribute('flex', '1');
-		note.className = 'zotero-item-pane-content';
-		note.hidden = true;
-		pane.row.insertBefore(note, pane.sidenav);
+		// Into the deck, where it is the second page and the one nothing is
+		// looking at until face() says so. Appending re-runs the deck's own
+		// childList observer, which keeps the current page selected.
+		pane.deck.appendChild(note);
 		pane.note = note;
 	}
 	catch (e) {
@@ -339,17 +348,27 @@ function ensurePane(entry) {
 	row.className = 'zg-item-row';
 	row.setAttribute('flex', '1');
 
-	// The class is what core's stylesheet sizes and colours an item pane by;
-	// the element is a plain box otherwise, and this is the whole of its styling.
+	// The two things that can be in the pane -- a paper's sections, or a note --
+	// stacked in core's own <deck>. See face() for why a deck and not `hidden`.
+	//
+	// The class goes on the deck rather than on what is inside it, which is where
+	// core's <item-pane> puts it too: it is what core's stylesheet sizes and
+	// colours an item pane by, and here it also has to be the thing the collapsed
+	// rule in PANE_CSS can find as a child of the row.
+	let deck = doc.createXULElement('deck');
+	deck.className = 'zotero-item-pane-content';
+	deck.setAttribute('selectedIndex', '0');
+	deck.setAttribute('flex', '1');
+
 	let details = doc.createXULElement('item-details');
-	details.className = 'zotero-item-pane-content';
 	let sidenav = doc.createXULElement('item-pane-sidenav');
 	sidenav.className = 'zotero-view-item-sidenav';
 	// There is no notes context beside a graph, and the button would open a
 	// deck that does not exist.
 	sidenav.setAttribute('no-context-notes', 'true');
 
-	row.appendChild(details);
+	deck.appendChild(details);
+	row.appendChild(deck);
 	row.appendChild(sidenav);
 	box.appendChild(row);
 	box.appendChild(style);
@@ -385,10 +404,11 @@ function ensurePane(entry) {
 	entry.itemPane = {
 		box,
 		row,
+		deck,
 		details,
 		sidenav,
 		note: null,        // the note editor, built on the first note (ensureNote)
-		facing: details,   // whichever of the two is not hidden
+		facing: details,   // the deck page on show
 		shown: null,       // the item drawn
 		wanted: null,      // the item most recently clicked
 		rendering: false,
