@@ -835,6 +835,22 @@ check('the side panel is built once and closes with the tab', () => {
 	const splitter = made.find(el => el.className === 'zg-pane-splitter');
 	if (!splitter) throw new Error('the panel has no divider');
 	if (splitter.parent !== entry.split) throw new Error('the divider is not beside the panel');
+	// Every one of core's divider rules is keyed on [collapse=...] or
+	// [substate=...]. A <splitter> carrying neither matches only
+	// "splitter:not([orient=vertical]) { min-width: var(--draggable-size) }",
+	// which is 5-8px of transparent layout width and no line at all -- a strip
+	// of window between the graph and the panel, which is what shipped until a
+	// chevron sitting on top of it was removed and uncovered it.
+	if (splitter.getAttribute('substate') !== 'after') {
+		throw new Error('the divider matches none of the rules core styles dividers with: '
+			+ 'it draws no line and takes real width. substate=' + splitter.getAttribute('substate'));
+	}
+	// Not 'collapse': that is what nsSplitterFrame keys its own drag-to-collapse
+	// off, and it writes collapsed="true" onto the panel without going through
+	// this module -- a second collapse the sidenav's toggle knows nothing about.
+	if (splitter.getAttribute('collapse')) {
+		throw new Error('collapse= gives the splitter a collapse of its own, behind _collapsed');
+	}
 
 	splitPane.close(entry);
 	if (entry.pane) throw new Error('close() left the panel on the tab');
@@ -854,6 +870,14 @@ check('collapsing leaves the sidenav on screen and remembers the width', () => {
 
 	splitPane.setCollapsed(entry, true);
 	if (!splitPane.collapsed(entry)) throw new Error('the panel did not collapse');
+	// Core widens a collapsed splitter (--draggable-size goes to 8-10px, its
+	// negative margins to zero) to make it the grab handle that pulls the pane
+	// back out. The way back here is the sidenav's own button, so that width
+	// would buy nothing and show as a slice of nothing beside the icons.
+	if (splitter.getAttribute('state')) {
+		throw new Error('state=collapsed pays the divider real width to be a grab handle '
+			+ 'this panel does not use');
+	}
 	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the panel kept its width');
 	// Collapsed is 37px of sidenav, the way core collapses an <item-pane> --
 	// not display:none, which would take the button that collapsed it down too,

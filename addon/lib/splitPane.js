@@ -44,17 +44,21 @@ const SIDENAV_WIDTH = 37;
 
 const PANE_CSS = `
 	/*
-	 * No styling of its own. Core already gives every <splitter> its line and its
-	 * grab width -- --draggable-size, a border-left of
-	 * var(--material-border-quarternary), and the negative margins that let that
-	 * line sit between its neighbours -- and matching Zotero's other dividers is
-	 * the whole point. What was here before did nothing anyway: both
-	 * --material-panedivider and --material-border-quarternary are border
-	 * SHORTHANDS, not colours, so a background of var(--material-panedivider)
-	 * resolved to "1px solid #dadada" and was dropped as invalid.
+	 * No styling of its own: core styles the divider, and the attribute that
+	 * asks it to is on the element itself -- see create().
+	 *
+	 * Nothing here may set one either. Both --material-panedivider and
+	 * --material-border-quarternary are border SHORTHANDS, not colours, so the
+	 * background: var(--material-panedivider) this once carried resolved to
+	 * "1px solid #dadada" and was dropped as invalid.
 	 *
 	 * The divider stays put when the pane is collapsed -- it is what the strip of
-	 * icons sits beside -- but it has nothing left to resize.
+	 * icons sits beside -- but it has nothing left to resize. It is NOT given
+	 * core's state="collapsed" for that: core uses the collapsed splitter as the
+	 * grab handle that pulls the pane back out, and pays it real width to be one
+	 * (--draggable-size goes UP to 8-10px, the negative margins go to zero). The
+	 * way back here is the sidenav's own button, so that width would buy nothing
+	 * and show as a strip of nothing beside the icons.
 	 */
 	.zg-pane-splitter[data-zg-collapsed] {
 		pointer-events: none;
@@ -163,6 +167,32 @@ function create(entry) {
 	splitter.className = 'zg-pane-splitter';
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
+	// The attribute every one of core's divider rules is keyed on. Without it
+	// the only rule that matches a <splitter> is
+	//
+	//     splitter:not([orient=vertical]) { min-width: var(--draggable-size) }
+	//
+	// which is 5-8px of TRANSPARENT, REAL layout width and no line anywhere --
+	// a strip of window between the graph and the panel, and no divider drawn.
+	// With it, core's own rule applies:
+	//
+	//     border-right: var(--material-border-quarternary);
+	//     margin-left: calc(1px - var(--draggable-size)); margin-right: -1px;
+	//
+	// so the divider costs the layout nothing, paints Zotero's hairline, and
+	// keeps its full grab width by overlapping its neighbours -- which is how
+	// every other divider in the window is built.
+	//
+	// 'substate' rather than 'collapse', which core's items splitter uses and
+	// which selects the identical rule: 'collapse' is the attribute
+	// nsSplitterFrame keys its OWN drag-to-the-edge collapse off, and that
+	// writes collapsed="true" onto the panel directly. This module's collapsed
+	// state is what the sidenav's toggle reads and writes (itemPane.js
+	// _collapsed), and a second mechanism that hides the panel without telling
+	// it would leave the toggle undoing a collapse it did not make. substate is
+	// core's own marker for the same shape -- setPaneCollapsed() writes exactly
+	// this, on both branches -- and carries no behaviour.
+	splitter.setAttribute('substate', 'after');
 
 	let box = doc.createXULElement('vbox');
 	box.className = 'zg-pane';
