@@ -1,11 +1,24 @@
 /**
  * The menu icons.
  *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * The sixteen icons below are Copyright (c) Corporation for Digital Scholarship,
+ * taken from Zotero (AGPL-3.0) and carried here under that same licence. See
+ * THIRD-PARTY-NOTICES.md section 2 for the file-by-file provenance table.
+ *
  * Zotero's own icon set, inlined. Every entry below is the path data of one file
  * under Zotero's chrome/skin/default/zotero/{16,20}/universal/, copied verbatim
  * so that a menu in this plugin and a menu in the library window are drawn from
- * the same shapes -- these are the Acorn icons Firefox and Zotero share, and
- * redrawing them by hand would put a near-miss next to the real thing.
+ * the same shapes; redrawing them by hand would put a near-miss next to the real
+ * thing.
+ *
+ * These are Zotero's own artwork, NOT Mozilla's Acorn set -- an earlier version
+ * of this comment claimed otherwise and was wrong. It matters: Acorn is MPL-2.0
+ * marked "Incompatible With Secondary Licenses", which could not be carried
+ * under this plugin's AGPL, whereas Zotero's own icons can. Checked against
+ * FirefoxUX/acorn-icons, which has no icon of any of these names and whose
+ * nearest equivalents (edit-16, filter-16, pin-16) are different path data in a
+ * different drawing style.
  *
  * Copied rather than referenced because this page is a content docshell at a
  * resource:// URL: chrome:// is not reachable from here, and an <img> would need

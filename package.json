@@ -1,8 +1,9 @@
 {
   "name": "zotero-graph-plugin",
-  "version": "0.22.5",
+  "version": "0.22.6",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "test": "node tools/test-cjs-shim.js",
     "strategies": "node tools/cli.js --list",

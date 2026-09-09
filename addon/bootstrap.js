@@ -4,6 +4,19 @@
 /**
  * Zotero Citation Graph -- plugin entry point.
  *
+ * Copyright (C) 2026 Jakob Holz
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option) any
+ * later version. It is distributed WITHOUT ANY WARRANTY; without even the
+ * implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+ * the GNU Affero General Public License in LICENSE for more details.
+ *
+ * Third-party material bundled with this plugin, and the notices its licences
+ * require, are listed in THIRD-PARTY-NOTICES.md beside this file.
+ *
  * Zotero loads this file into a system-principal sandbox and calls each lifecycle
  * method as fn({ id, version, rootURI, ... }, reason). See Zotero core
  * chrome/content/zotero/xpcom/plugins.js (_callMethod).
