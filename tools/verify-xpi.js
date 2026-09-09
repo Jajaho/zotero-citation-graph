@@ -106,6 +106,21 @@ function main() {
 		if (name.startsWith('citation-graph/adapters')) problems.push(`${name} should have been excluded`);
 		if (name.includes(String.fromCharCode(92))) problems.push(`${name} uses a backslash separator`);
 	}
+	// A CR in a packed file means some source escaped the LF normalisation, and
+	// the archive's bytes -- so its hash -- now depend on who checked it out.
+	// That is exactly how types.js behaved while one NUL byte had git treating it
+	// as binary and exempt from the text rules. A published checksum is only worth
+	// something if this cannot happen quietly.
+	const TEXT = /.(js|json|css|html|svg|ftl|md)$/;
+	for (const entry of entries) {
+		if (!TEXT.test(entry.name)) continue;
+		let data;
+		try { data = extract(buf, entry); } catch { continue; } // CRC errors are reported below
+		if (data.includes(String.fromCharCode(13))) {
+			problems.push(`${entry.name} contains CR: the build is not reproducible across platforms`);
+		}
+	}
+
 	// The bundled force-graph is MIT; its notice has to travel with every copy.
 	if (!names.includes('THIRD-PARTY-NOTICES.md')) {
 		problems.push('THIRD-PARTY-NOTICES.md is missing -- the bundled MIT code needs its notice');

@@ -39,9 +39,35 @@ jobs:
       - name: Check the XPI is loadable
         run: node tools/verify-xpi.js
 
+      # The published checksum is the whole point: a user has to be able to
+      # rebuild the tag and get the same bytes. Building twice and comparing
+      # proves the packer is not smuggling in a timestamp or a directory order.
+      # This runs on Linux while releases are cut from a Windows desktop, so it
+      # is also the cross-platform half of the claim.
+      - name: Build again and compare
+        run: |
+          set -euo pipefail
+          first=$(sha256sum dist/*.xpi | cut -d' ' -f1)
+          rm -rf dist
+          npm run build >/dev/null
+          second=$(sha256sum dist/*.xpi | cut -d' ' -f1)
+          if [ "$first" != "$second" ]; then
+            echo "::error::the build is not reproducible: $first then $second"
+            exit 1
+          fi
+          echo "reproducible: $first"
+
+      - name: Write checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.xpi | tee SHA256SUMS
+
       - name: Upload XPI
         uses: actions/upload-artifact@v4
         with:
           name: xpi
-          path: dist/*.xpi
+          path: |
+            dist/*.xpi
+            dist/SHA256SUMS
           if-no-files-found: error
