@@ -1,0 +1,47 @@
+# Build verification for the plugin.
+#
+# Runs on pushes to main and on demand. Day-to-day work happens on dev, which is
+# deliberately not a trigger -- the gate is what reaches main, not every commit
+# on the way there. Use the Run workflow button to check a branch before merging.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No dependencies to install -- the test harness and the packer are both
+      # plain Node against the standard library.
+
+      - name: Version gate
+        run: npm run check-version
+
+      - name: Tests
+        run: npm test
+
+      - name: Build XPI
+        run: npm run build
+
+      - name: Check the XPI is loadable
+        run: node tools/verify-xpi.js
+
+      - name: Upload XPI
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpi
+          path: dist/*.xpi
+          if-no-files-found: error

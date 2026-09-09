@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "Citation Graph for Zotero",
-	"version": "0.26.1",
+	"version": "0.27.0",
 	"description": "Force-directed citation graph for a Zotero collection.",
 	"icons": {
 		"48": "content/icons/graph.svg",
@@ -10,7 +10,7 @@
 	"applications": {
 		"zotero": {
 			"id": "zotero-graph@jajaho.dev",
-			"update_url": "https://raw.githubusercontent.com/Jajaho/zotero-graph-plugin/main/updates.json",
+			"update_url": "https://raw.githubusercontent.com/Jajaho/zotero-citation-graph/main/updates.json",
 			"strict_min_version": "8.0.1",
 			"strict_max_version": "10.*"
 		}

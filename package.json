@@ -1,11 +1,21 @@
 {
-  "name": "zotero-graph-plugin",
-  "version": "0.26.1",
+  "name": "zotero-citation-graph",
+  "version": "0.27.0",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jajaho/zotero-citation-graph.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node tools/test-cjs-shim.js",
+    "check-version": "node tools/check-version.js",
+    "verify": "node tools/check-version.js && node tools/test-cjs-shim.js",
+    "build": "node tools/build-xpi.js",
     "strategies": "node tools/cli.js --list",
     "install-dev": "powershell -ExecutionPolicy Bypass -File tools/install-dev.ps1"
   }
