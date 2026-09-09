@@ -1,24 +1,135 @@
+/*
+ * The graph page's stylesheet.
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * The colours below are Zotero's own design tokens, copied out of a Zotero 7
+ * installation, and several rules further down are Zotero's own rules with only
+ * a selector changed. Both are noted where they appear. See
+ * THIRD-PARTY-NOTICES.md section 2 for why this plugin copies rather than
+ * references: this page is a content document at a resource:// URL, and
+ * chrome://zotero/skin/... is not reachable from it.
+ *
+ * The source worth copying from is not zotero.css but resource/reader/reader.css
+ * -- Zotero's PDF reader is itself a plain HTML document that cannot reach
+ * chrome:// either, so it already re-declares the whole token set for exactly
+ * the situation this file is in, and already translates the XUL toolbarbutton
+ * rules into HTML. Where a rule below exists in both, the reader's is the one
+ * quoted.
+ */
+
+/* --- Zotero's tokens --------------------------------------------------- */
+
+/*
+ * Light is the bare :root, so it is also what a document gets when neither the
+ * media query nor the attribute has anything to say.
+ *
+ * The three-way shape -- bare :root, a media query guarded with
+ * :not([data-color-scheme]), then the attribute itself -- is core's, from
+ * reader.css, down to the attribute's name. It is what lets Zotero's
+ * View > Color Scheme override win in BOTH directions: without the :not() an OS
+ * set to dark would beat a window explicitly told to be light, and forcing a
+ * scheme would work one way only. chrome pushes the resolved answer over the
+ * bridge (zgSetChrome), because a content document's own matchMedia only ever
+ * sees the OS.
+ */
 :root {
-	--bg: #fff;
-	--fg: #1a1a1a;
-	--muted: #6b6b6b;
-	--border: #d7d7d7;
-	--surface: #f6f6f6;
+	--accent-blue: #4072e5;
+	--color-background: #fff;
+	--color-sidepane: #f2f2f2;
+	--color-toolbar: #f9f9f9;
+	--color-panedivider: #dadada;
+	--color-quinary-on-sidepane: #e6e6e6;
+	--fill-primary: rgba(0, 0, 0, 0.851);
+	--fill-secondary: rgba(0, 0, 0, 0.549);
+	--fill-tertiary: rgba(0, 0, 0, 0.251);
+	--fill-quarternary: rgba(0, 0, 0, 0.102);
+	--fill-quinary: rgba(0, 0, 0, 0.051);
+
+	/*
+	 * The --material-* aliases, which are what Zotero's own rules are written
+	 * against. Note that the border ones are whole SHORTHANDS, not colours:
+	 * `border: 1px solid var(--material-panedivider)` expands to
+	 * `1px solid 1px solid #dadada` and is thrown away silently. This plugin has
+	 * shipped that bug twice -- see docs/development.md -- and npm test scans for
+	 * both shapes.
+	 */
+	--material-background: var(--color-background);
+	--material-sidepane: var(--color-sidepane);
+	--material-toolbar: var(--color-toolbar);
+	--material-panedivider: 1px solid var(--color-panedivider);
+	--material-border-quinary: 1px solid var(--fill-quinary);
+
+	/*
+	 * The focus ring, which is platform-conditional in core and is copied that
+	 * way: the plugin runs on all three. Windows draws an outer outline plus an
+	 * inner shadow; macOS and Linux draw the shadow alone.
+	 */
+	--color-focus-border: var(--accent-blue);
+	--width-focus-border: 2px;
+	--color-focus-outer-border: var(--fill-primary);
+	--width-focus-outer-border: 2px;
+
+	/*
+	 * The five names this file used before it had Zotero's, kept as aliases so
+	 * that the couple of hundred declarations written against them did not all
+	 * have to be rewritten to say the same thing.
+	 */
+	--bg: var(--color-background);
+	--fg: var(--fill-primary);
+	--muted: var(--fill-secondary);
+	--border: var(--color-panedivider);
+	--surface: var(--color-sidepane);
+
 	/* The ring a highlighted node wears. Not one of the hues the graph colours
 	   BY -- a highlight that could be mistaken for a category would say the
-	   wrong thing about the node it is picking out. */
+	   wrong thing about the node it is picking out. Deliberately not
+	   --accent-blue: this one has to read against the node palette, not against
+	   the chrome. */
 	--accent: #0a67c2;
+
+	/* The sidebar's width, driven by the drag handle and restored from
+	   localStorage. Here rather than on #side so that one custom property is the
+	   whole of the state. */
+	--zg-side-width: 240px;
 }
 
 @media (prefers-color-scheme: dark) {
-	:root {
-		--bg: #232323;
-		--fg: #e8e8e8;
-		--muted: #9a9a9a;
-		--border: #3d3d3d;
-		--surface: #2b2b2b;
+	:root:not([data-color-scheme]) {
+	--accent-blue: #4072e5;
+	--color-background: #1e1e1e;
+	--color-sidepane: #303030;
+	--color-toolbar: #272727;
+	--color-panedivider: #404040;
+	--color-quinary-on-sidepane: #3c3c3c;
+	--fill-primary: rgba(255, 255, 255, 0.898);
+	--fill-secondary: rgba(255, 255, 255, 0.549);
+	--fill-tertiary: rgba(255, 255, 255, 0.302);
+	--fill-quarternary: rgba(255, 255, 255, 0.122);
+	--fill-quinary: rgba(255, 255, 255, 0.059);
 		--accent: #6fb4ff;
+		--color-focus-outer-border: #fff;
 	}
+}
+
+:root[data-color-scheme="dark"] {
+	--accent-blue: #4072e5;
+	--color-background: #1e1e1e;
+	--color-sidepane: #303030;
+	--color-toolbar: #272727;
+	--color-panedivider: #404040;
+	--color-quinary-on-sidepane: #3c3c3c;
+	--fill-primary: rgba(255, 255, 255, 0.898);
+	--fill-secondary: rgba(255, 255, 255, 0.549);
+	--fill-tertiary: rgba(255, 255, 255, 0.302);
+	--fill-quarternary: rgba(255, 255, 255, 0.122);
+	--fill-quinary: rgba(255, 255, 255, 0.059);
+	--accent: #6fb4ff;
+	--color-focus-outer-border: #fff;
+}
+
+@media (-moz-platform: macos) {
+	:root { --width-focus-border: 3px; }
 }
 
 html, body {
@@ -26,88 +137,407 @@ html, body {
 	padding: 0;
 	height: 100%;
 	overflow: hidden;
-	background: var(--bg);
-	color: var(--fg);
-	font: menu;
-	font-size: 12px;
+	background: var(--color-background);
+	color: var(--fill-primary);
+	font-family: system-ui, -apple-system, sans-serif;
+	/* Zotero's root is 13px scaled by the fontSize pref, and chrome pushes the
+	   scaled value; the fallback is what core's own :root says. */
+	font-size: var(--zotero-font-size, 13px);
+	line-height: 1.3333333333;
 }
 
 body {
-	/* The controls float over the canvas now, so the body is nothing but the
-	   canvas. #panel, #legend, #status, #action and #menu all position against
-	   this. */
+	/* Still the positioning context, because four things are placed against the
+	   viewport by hand rather than laid out: #menu, #action, #group and
+	   #filter-suggest all open at the pointer, and all four would be clipped by
+	   whichever grid cell they were opened over. */
 	position: relative;
 }
 
-/* --- The floating control panel --------------------------------------- */
+/* --- The frame: a top bar over a sidebar and the canvas ---------------- */
 
-#panel {
-	position: absolute;
-	top: 10px;
-	left: 10px;
-	/* Below #action (10) and #menu (11): a popover or context menu opened over
-	   the top-left corner has to win, or the click looks like it did nothing. */
-	z-index: 9;
-	width: 220px;
-	max-width: calc(100% - 20px);
-	/* Never taller than the window, however many strategies turn up -- and it
-	   stops short of the bottom strip, which belongs to the reframe button and
-	   the status line. The panel outranks both in z-order, so a panel tall
-	   enough to reach the corner would swallow the one control that gets a lost
-	   viewport back. #panel-body scrolls, so this costs nothing but a scrollbar
-	   36px earlier. */
-	max-height: calc(100% - 46px);
-	display: flex;
-	flex-direction: column;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	background: var(--surface);
-	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-	overflow: hidden;
+/*
+ * The shape of Zotero's own library tab. Two rows: the bar spans both columns,
+ * and under it the sidebar sits beside the canvas -- which is why the bar runs
+ * from the sidebar's outer edge to the item pane's, exactly as the library's
+ * two toolbars do.
+ *
+ * The sidebar's width is a custom property rather than a width on #side so
+ * that closing it is one value changing, and the canvas is 1fr so it takes
+ * whatever is left instead of being told a number.
+ */
+#frame {
+	display: grid;
+	grid-template-rows: auto 1fr;
+	grid-template-columns: var(--zg-side-width) 1fr;
+	grid-template-areas: "bar bar" "side canvas";
+	height: 100%;
 }
 
-/* The whole header is the toggle, not just the chevron: a wide target, and
-   there is nothing else in the header to click. */
+#frame.side-closed {
+	grid-template-columns: 0 1fr;
+}
+
+/* --- The top bar ------------------------------------------------------- */
+
+/* zotero.css .toolbar -- 41px is a fixed number there, not a variable, and is
+   duplicated into zoteroPane.js's layout constraints for the same reason. */
+#bar {
+	grid-area: bar;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 41px;
+	padding: 0 8px;
+	background: var(--material-toolbar);
+	border-bottom: var(--material-panedivider);
+	/* Above the canvas, below the popovers: #action (10) and #menu (11) can be
+	   opened over the bar and have to win. */
+	z-index: 9;
+}
+
+/*
+ * reader.css .toolbar-button, which is core's own HTML translation of
+ * zotero.css's XUL `toolbarbutton` rules -- 28x28, radius 5, --fill-quinary on
+ * hover and --fill-quarternary when pressed. Quoted from the reader rather than
+ * from zotero.css because the reader is the one already written for an HTML
+ * document, which is what this is.
+ */
+#bar > button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 28px;
+	height: 28px;
+	padding: 0 4px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: pointer;
+}
+
+#bar > button:hover {
+	background-color: var(--fill-quinary);
+}
+
+#bar > button:active,
+/* The toggle stays lit while the sidebar is open, which is what the reader's
+   own sidebarToggle does and what makes a toggle read as a toggle rather than
+   as a button that did nothing. */
+#bar > button.on {
+	background-color: var(--fill-quarternary);
+}
+
+#bar > button svg {
+	width: 20px;
+	height: 20px;
+	flex: 0 0 auto;
+}
+
+#bar-spacer {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* --- The search field -------------------------------------------------- */
+
+/*
+ * Core's search-textbox, rebuilt.
+ *
+ * It has to be rebuilt rather than used: <search-textbox> is a Mozilla toolkit
+ * XUL custom element that Zotero only skins, so it is out of reach twice over
+ * from a content document. What is below is Zotero's skin for it, from
+ * zotero.css, with #zotero-collections-search's 28px height -- the field in the
+ * collections toolbar, which is the one this is modelled on.
+ *
+ * Deliberately not the items toolbar's <quick-search-textbox>: its dropmarker
+ * offers Title/Creator/Year, All Fields & Tags and Everything, three questions
+ * about Zotero's search index that mean nothing asked of a built graph.
+ */
+#search-box {
+	display: flex;
+	align-items: center;
+	flex: 0 1 auto;
+	width: 180px;
+	min-width: 0;
+	height: 28px;
+	border-radius: 5px;
+	background: var(--material-background);
+	border: var(--material-border-quinary);
+	padding-inline-end: 6px;
+}
+
+/* ::part(search-icon) */
+#search-icon {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	color: var(--fill-secondary);
+	padding: 6px 4px 6px 6px;
+	box-sizing: content-box;
+}
+
+#search {
+	flex: 1 1 auto;
+	min-width: 0;
+	font: inherit;
+	color: var(--fill-primary);
+	background: transparent;
+	border: 0;
+	padding: 0;
+	outline: none;
+}
+
+#search::placeholder {
+	color: var(--fill-tertiary);
+	opacity: 1;
+}
+
+/*
+ * The focus ring, in core's two-branch form. Windows draws an outer outline
+ * plus an inner shadow and everything else draws the shadow alone; the plugin
+ * runs on all three platforms, so the branch is copied rather than picked.
+ */
+@media (-moz-platform: windows) {
+	#search-box:focus-within {
+		outline: var(--color-focus-outer-border) solid var(--width-focus-outer-border);
+		outline-offset: var(--width-focus-border);
+		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
+	}
+}
+
+@media not (-moz-platform: windows) {
+	#search-box:focus-within {
+		outline: none;
+		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
+	}
+}
+
+/* Only while there is something to clear: a permanently visible x over an
+   empty field is a control that does nothing, sitting where the eye goes to
+   check whether anything is being searched for.
+
+   Styled here rather than by the bar's own button rule, which is scoped to
+   #bar's direct children -- this one is inside the field, and takes the field's
+   16px icon size rather than the bar's 20px. */
+#search-clear {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: pointer;
+}
+
+#search-clear:hover {
+	background-color: var(--fill-quinary);
+}
+
+#search-clear svg {
+	width: 16px;
+	height: 16px;
+}
+
+#search-clear[hidden] {
+	display: none;
+}
+
+/*
+ * The result list. A sibling of #frame rather than a child of the bar, placed
+ * against the field by hand: #bar is 41px tall and clips, so a ten-row list
+ * hung inside it would be a sliver.
+ *
+ * Its own element rather than #filter-suggest, which is one shared node with a
+ * suggestBox pointer -- sound only because a single box can hold the focus at
+ * a time, which stops being true the moment there are two boxes on screen.
+ */
+#search-suggest {
+	position: absolute;
+	z-index: 12;
+	max-height: 260px;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	background: var(--material-background);
+	border: 1px solid var(--color-panedivider);
+	border-radius: 5px;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	padding: 3px;
+}
+
+#search-suggest[hidden] {
+	display: none;
+}
+
+.search-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 6px;
+	border-radius: 3px;
+	cursor: pointer;
+}
+
+.search-row:hover,
+.search-row.on {
+	background: var(--fill-quinary);
+}
+
+/* The citekey is what the node is labelled with on the canvas, so it leads:
+   the row and the circle it will centre on say the same word. */
+.search-key {
+	flex: 0 0 auto;
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
+.search-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fill-secondary);
+}
+
+.search-empty {
+	padding: 3px 6px;
+	color: var(--fill-secondary);
+}
+
+/* --- The sidebar ------------------------------------------------------- */
+
+/* reader.css #sidebarContainer for the surface and the divider; the 200px
+   floor is zotero.css's own #zotero-collections-pane. */
+#side {
+	grid-area: side;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--material-sidepane);
+	border-right: var(--material-panedivider);
+	/* A width the contents cannot argue with: the strategy list and a long
+	   publication name would otherwise push the sidebar wider than it was
+	   dragged. The same containment the chrome-side item pane needs, and for
+	   the same reason -- see lib/splitPane.js. */
+	contain: inline-size;
+	position: relative;
+}
+
+#frame.side-closed #side {
+	display: none;
+}
+
+/* Settings and the legend scroll as one column, so the legend is reachable
+   however long the strategy list grows -- two independent scrollers in a
+   200px-wide pane is two scrollbars and no way to see both ends at once. */
+#side-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+/*
+ * The drag handle. Pointer events rather than a <splitter>, because there is
+ * no such element in an HTML document -- which is exactly why the reader
+ * carries its own sidebar_resizer rather than using core's.
+ *
+ * Laid over the sidebar's own right edge, so it costs the grid nothing and the
+ * hairline you grab is the border already drawn there. Same trick as core's
+ * negative-margin splitter rules, arrived at from the other direction.
+ */
+#side-grip {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: -3px;
+	width: 6px;
+	cursor: col-resize;
+	z-index: 2;
+}
+
+/* --- The canvas -------------------------------------------------------- */
+
+#canvas-wrap {
+	grid-area: canvas;
+	position: relative;
+	min-width: 0;
+	min-height: 0;
+}
+
+/* --- The settings section --------------------------------------------- */
+
+#panel {
+	display: flex;
+	flex-direction: column;
+}
+
+/*
+ * The two section headers.
+ *
+ * These are core's <collapsible-section> heads, which is what they now are: a
+ * title and a twisty over a body that collapses, stacked down a side pane. The
+ * rules are collapsibleSection's own -- .head .title-box .title for the weight
+ * and the colour, .twisty .toolbarbutton-icon for the chevron.
+ *
+ * The whole header is the button, not just the chevron: a wide target, and
+ * there is nothing else in the header to click.
+ */
 #panel-toggle,
 #legend-toggle {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
+	width: 100%;
 	font: inherit;
+	font-weight: 600;
 	text-align: left;
 	padding: 6px 9px;
 	border: 0;
 	background: transparent;
-	color: var(--fg);
+	color: var(--fill-secondary);
 	cursor: pointer;
 }
 
 #panel-toggle:hover,
 #legend-toggle:hover {
-	background: var(--bg);
+	background: var(--color-quinary-on-sidepane);
 }
 
+/*
+ * Core draws the chevron pointing DOWN and rotates it 180 degrees when the
+ * section is open. That is the opposite of what this file used to do -- a
+ * caret rotated -90 when closed -- and matching it costs one rule and one
+ * swapped resting state.
+ */
 #panel-chevron,
 #legend-chevron {
-	color: var(--muted);
-	/* Rotated rather than swapped for a second glyph, so both states sit on
-	   the same baseline and the arrow animates between them. */
-	transition: transform 120ms ease;
+	flex: 0 0 auto;
+	width: 12px;
+	height: 12px;
+	color: var(--fill-secondary);
+	transform: rotate(0deg);
+	transform-origin: center;
+	transition: transform 0.2s ease-in-out;
 }
 
-#panel.collapsed #panel-chevron,
-#legend.collapsed #legend-chevron {
-	transform: rotate(-90deg);
+#panel:not(.collapsed) #panel-chevron,
+#legend:not(.collapsed) #legend-chevron {
+	transform: rotate(-180deg);
 }
 
 #panel-body {
-	/* Scrolls rather than clipping: the strategy list grows with the data, and
-	   a clipped panel hides settings the user needs. */
-	overflow-y: auto;
 	padding: 0 9px 8px;
-	/* A flex item will not shrink past its content without this, and the panel
-	   would grow past its max-height instead of scrolling. */
 	min-height: 0;
 	display: flex;
 	flex-direction: column;
@@ -118,13 +548,16 @@ body {
 	display: none;
 }
 
+/* Inside a section rather than between two, so the lighter hairline: core
+   separates sections with --color-panedivider and rules within one with
+   --fill-quinary. */
 #panel .group {
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
 	gap: 6px;
 	padding-top: 8px;
-	border-top: 1px solid var(--border);
+	border-top: 1px solid var(--fill-quinary);
 }
 
 /* #strategies is empty until a graph arrives, and an empty group is just a
@@ -366,51 +799,20 @@ body {
 	opacity: 0.75;
 }
 
-/* --- The colour legend ------------------------------------------------- */
+/* --- The legend section ------------------------------------------------ */
 
-/* Top right, the corner opposite the controls: it explains the graph rather
-   than changing it, and that keeps it clear of both the panel and the status
-   line bottom left. Same chrome as #panel, so the two read as one family. */
-/* The right-hand column: the legend, and under it the gap list. One rail so
-   neither card has to know the other's height, and so a card appearing does not
-   shove the other off the canvas -- each keeps its own scroll instead.
-
-   Transparent to the pointer, or the empty column between the cards would
-   swallow drags aimed at the graph underneath. The cards themselves take clicks
-   back. */
-#rail {
-	position: absolute;
-	top: 10px;
-	right: 10px;
-	/* Clear of the status line, which runs along the bottom. */
-	bottom: 34px;
-	/* Same layer as #panel, below #action (10) and #menu (11). */
-	z-index: 9;
-	display: flex;
-	flex-direction: column;
-	align-items: flex-end;
-	gap: 8px;
-	pointer-events: none;
-}
-
-#rail > * {
-	pointer-events: auto;
-}
-
+/*
+ * The second section of the sidebar, under the settings. It explains the graph
+ * rather than changing it, which is why it sits below the controls rather than
+ * among them -- but it belongs in the same column, because both answer
+ * questions about the picture and neither is worth covering the picture for.
+ *
+ * The hairline above it is the one core draws between two collapsible-sections.
+ */
 #legend {
-	width: 176px;
-	max-width: calc(100vw - 20px);
-	/* Shrinks before the gap list does: a colour key is a reference, and the
-	   list underneath is what the user opened. */
-	flex: 0 1 auto;
-	min-height: 0;
 	display: flex;
 	flex-direction: column;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	background: var(--surface);
-	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-	overflow: hidden;
+	border-top: 1px solid var(--fill-quinary);
 }
 
 /* display:flex above is an author rule and would otherwise beat the UA
@@ -429,9 +831,9 @@ body {
 }
 
 #legend-body {
-	/* Scrolls rather than clipping, for the same reason #panel-body does: the
-	   row count comes from the data. */
-	overflow-y: auto;
+	/* No scroller of its own: #side-body is the one, so settings and legend
+	   scroll together and a twelve-author key is reached by scrolling the pane
+	   rather than a box inside it. */
 	min-height: 0;
 	padding: 0 9px 8px;
 	display: flex;
@@ -494,208 +896,20 @@ body {
 	font-variant-numeric: tabular-nums;
 }
 
-/* --- The gap list ------------------------------------------------------ */
-
-#gaps {
-	width: 300px;
-	max-width: calc(100vw - 20px);
-	/* Takes what the legend leaves: this is the card the user opened, and its
-	   rows are the content. */
-	flex: 1 1 auto;
-	min-height: 0;
-	display: flex;
-	flex-direction: column;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	background: var(--surface);
-	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-	overflow: hidden;
-}
-
-#gaps[hidden] {
-	display: none;
-}
-
-#gaps-head {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 7px 6px 6px 9px;
-	font-weight: 600;
-}
-
-#gaps-title {
-	flex: 1 1 auto;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-#gaps-close {
-	flex: 0 0 auto;
-	font: inherit;
-	font-weight: normal;
-	line-height: 1;
-	padding: 2px 5px;
-	cursor: pointer;
-	color: var(--muted);
-	background: none;
-	border: 0;
-	border-radius: 3px;
-}
-
-#gaps-close:hover {
-	color: var(--fg);
-	background: var(--bg);
-}
-
-#gaps-body {
-	overflow-y: auto;
-	min-height: 0;
-	padding: 0 4px 6px;
-}
-
-.gap-row {
-	display: flex;
-	align-items: baseline;
-	gap: 7px;
-	width: 100%;
-	padding: 4px 5px;
-	text-align: left;
-	font: inherit;
-	color: inherit;
-	background: none;
-	border: 0;
-	border-radius: 4px;
-	cursor: pointer;
-}
-
-.gap-row:hover {
-	background: var(--bg);
-}
-
-/* How many of your papers cite it -- the number the list is about, so it leads
-   the row rather than trailing it. */
-.gap-count {
-	flex: 0 0 auto;
-	min-width: 1.5em;
-	text-align: right;
-	font-variant-numeric: tabular-nums;
-	font-weight: 600;
-}
-
-.gap-main {
-	flex: 1 1 auto;
-	min-width: 0;
-}
-
-.gap-name {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/* An unresolved DOI is an identifier, not a title, and reads as one. */
-.gap-name.bare {
-	font-family: monospace;
-	font-size: 11px;
-	color: var(--muted);
-}
-
-.gap-sub {
-	color: var(--muted);
-	font-size: 11px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.gap-add {
-	flex: 0 0 auto;
-	align-self: center;
-	font: inherit;
-	line-height: 1;
-	padding: 2px 6px;
-	cursor: pointer;
-	color: var(--fg);
-	background: var(--bg);
-	border: 1px solid var(--border);
-	border-radius: 4px;
-}
-
-.gap-add[disabled] {
-	cursor: default;
-	opacity: 0.55;
-}
-
-#gaps-foot {
-	padding: 6px 9px 7px;
-	border-top: 1px solid var(--border);
-	color: var(--muted);
-}
-
-#gaps-foot[hidden] {
-	display: none;
-}
-
-.gaps-empty {
-	padding: 4px 5px 8px;
-	color: var(--muted);
-}
-
-/* Two floating boxes do not fit side by side on a narrow Zotero pane. The
-   legend gives way first: the panel is the one you interact with, and a
-   clipped label still has its title attribute. */
-@media (max-width: 460px) {
-	#legend {
-		width: 128px;
-	}
-
-	#gaps {
-		width: calc(100vw - 20px);
-	}
-}
-
 #graph {
 	position: absolute;
 	inset: 0;
 }
 
-/* Bottom left, under the panel and opposite the legend. Square and icon-only:
-   it is one action, it is pressed while reading the graph rather than while
-   configuring it, and a word here would be a word of chrome over the nodes. */
-#reframe {
+/* Bottom-left rather than centred: it reports build progress while a partial
+   graph is already on screen, so it must not sit on top of the nodes. It has
+   the corner to itself now that the reframe button has gone up to the bar, so
+   it starts where the button used to. */
+#status {
 	position: absolute;
 	left: 10px;
 	bottom: 8px;
-	z-index: 8;
-	width: 24px;
-	height: 24px;
-	padding: 0;
-	font-size: 13px;
-	line-height: 1;
-	cursor: pointer;
-	color: var(--fg);
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 4px;
-	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-}
-
-#reframe:hover {
-	background: var(--bg);
-}
-
-/* Bottom-left rather than centred: it reports build progress while a partial
-   graph is already on screen, so it must not sit on top of the nodes. Beside
-   the reframe button, not over it -- the button is there the whole time and
-   this line only while a build runs. */
-#status {
-	position: absolute;
-	left: 42px;
-	bottom: 8px;
-	max-width: calc(100% - 52px);
+	max-width: calc(100% - 20px);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

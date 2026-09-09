@@ -2613,8 +2613,12 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
  * screenshot. Both mistakes below shipped.
  */
 check('a Zotero border variable is used as the shorthand it is', () => {
-	for (const name of ['splitPane.js', 'itemPane.js']) {
-		const src = fs.readFileSync(path.join(addonDir, 'lib', name), 'utf8')
+	// content/graph.css is on this list because the graph page carries copies
+	// of these variables now: they are declared there rather than inherited,
+	// which does not make the shorthand any less of a shorthand.
+	for (const name of ['lib/splitPane.js', 'lib/itemPane.js', 'lib/gapsPane.js',
+		'content/graph.css']) {
+		const src = fs.readFileSync(path.join(addonDir, name), 'utf8')
 			// Comments talk about the wrong version on purpose.
 			.replace(/\/\*[\s\S]*?\*\//g, '');
 		for (const m of src.matchAll(/([\w-]+)\s*:\s*([^;\n]*var\(--material-(?:panedivider|border-[\w-]+)\)[^;\n]*)/g)) {
@@ -2626,6 +2630,75 @@ check('a Zotero border variable is used as the shorthand it is', () => {
 				throw new Error(name + ': ' + prop + ' is not a border, and the variable is one');
 			}
 		}
+	}
+});
+
+/**
+ * A forced colour scheme has to win in BOTH directions.
+ *
+ * The page follows the OS through a media query, but Zotero's own
+ * View > Color Scheme override is not something a content document can see --
+ * chrome resolves it and pushes the answer, and the page stamps
+ * data-color-scheme. That only works if every media query is guarded with
+ * :not([data-color-scheme]): without the guard an OS set to dark beats a window
+ * explicitly told to be light, and forcing a scheme works one way only.
+ *
+ * The failure is silent -- the graph simply keeps the OS's colours -- which is
+ * why it is worth a test rather than a look.
+ */
+check('a forced colour scheme outranks the OS, in both directions', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	const queries = [...css.matchAll(
+		/@media\s*\(prefers-color-scheme:\s*(\w+)\)\s*\{\s*([^{]*)\{/g)];
+	if (!queries.length) throw new Error('no prefers-color-scheme query at all');
+	for (const [, scheme, selector] of queries) {
+		if (!selector.includes(':not([data-color-scheme])')) {
+			throw new Error('the ' + scheme + ' media query selects "' + selector.trim()
+				+ '", which a forced scheme cannot outrank');
+		}
+	}
+
+	// And every scheme the media queries define has to be reachable by name,
+	// or forcing it selects nothing and the page stays light.
+	for (const [, scheme] of queries) {
+		if (!css.includes(':root[data-color-scheme="' + scheme + '"]')) {
+			throw new Error('no :root[data-color-scheme="' + scheme + '"] rule to force ' + scheme);
+		}
+	}
+});
+
+/**
+ * The icon table in THIRD-PARTY-NOTICES.md is a licence document, not a
+ * comment: it is what says which file each shape came from, which is the whole
+ * of how this plugin discharges the AGPL's attribution. It has drifted before
+ * -- an icon retired from icons.js left its row behind, and the count in the
+ * prose above disagreed with both.
+ */
+check('the icon notices name exactly the icons that ship', () => {
+	const icons = new Set(loadIcons().names());
+	const md = fs.readFileSync(path.join(addonDir, 'THIRD-PARTY-NOTICES.md'), 'utf8');
+
+	const listed = new Set();
+	for (const m of md.matchAll(/^\| `([\w-]+)` \| `(\d+\/universal\/[\w-]+\.svg)` \|$/gm)) {
+		listed.add(m[1]);
+	}
+
+	const missing = [...icons].filter(n => !listed.has(n)).sort();
+	if (missing.length) throw new Error('shipped but not attributed: ' + missing.join(', '));
+	const stale = [...listed].filter(n => !icons.has(n)).sort();
+	if (stale.length) throw new Error('attributed but not shipped: ' + stale.join(', '));
+
+	// The prose says how many there are, in words, and that has to be the
+	// number of rows under it.
+	const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
+		'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
+		'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+	const said = md.match(/path data of (\w+) icons/);
+	if (!said) throw new Error('the notices no longer say how many icons there are');
+	if (WORDS[icons.size] !== said[1]) {
+		throw new Error('the notices say ' + said[1] + ' icons; ' + icons.size + ' ship');
 	}
 });
 
@@ -2893,6 +2966,7 @@ function referencedIds() {
 	const files = [
 		'content/graph.js', 'content/nodeFilters.js',
 		'lib/graphTab.js', 'lib/itemPane.js', 'lib/splitPane.js',
+		'lib/gapsPane.js',
 		'lib/addDialog.js',
 		'lib/main.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));

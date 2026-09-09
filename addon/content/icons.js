@@ -2,7 +2,7 @@
  * The menu icons.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * The sixteen icons below are Copyright (c) Corporation for Digital Scholarship,
+ * The nineteen icons below are Copyright (c) Corporation for Digital Scholarship,
  * taken from Zotero (AGPL-3.0) and carried here under that same licence. See
  * THIRD-PARTY-NOTICES.md section 2 for the file-by-file provenance table.
  *
@@ -110,7 +110,32 @@
 		// 16/edit
 		'edit': [16, [
 			'M11.5857 0.707093C12.3668 -0.0739554 13.6331 -0.0739542 14.4141 0.707094L15.2928 1.58577C16.0739 2.36682 16.0739 3.63315 15.2928 4.4142L5.25555 14.4515L0.312744 15.6872L1.54845 10.7444L11.5857 0.707093ZM13.707 1.4142C13.3165 1.02368 12.6833 1.02368 12.2928 1.4142L11.207 2.49999L13.4999 4.79288L14.5857 3.70709C14.9762 3.31657 14.9762 2.6834 14.5857 2.29288L13.707 1.4142ZM12.7928 5.49999L10.4999 3.20709L2.45141 11.2556L1.68711 14.3128L4.7443 13.5485L12.7928 5.49999Z',
-		]],	};
+		]],
+		// 20/sidebar -- the reader's own Toggle Sidebar button, and the library
+		// sidenav's. The bar in this tab asks for exactly what those two ask for.
+		'open-pane': [20, [
+			'M7 7.25H4V6H7V7.25Z',
+			'M7 10.25H4V9H7V10.25Z',
+			'M7 13.25H4V12H7V13.25Z',
+			'M2.25 3C1.55964 3 1 3.55964 1 4.25V15.75C1 16.4404 1.55964 17 2.25 17H17.75C18.4404 17 19 16.4404 19 15.75V4.25C19 3.55964 18.4404 3 17.75 3H2.25ZM17.75 4.25H10V15.75H17.75V4.25ZM2.25 4.25H8.75V15.75H2.25V4.25Z',
+		]],
+		// 16/magnifier -- the glass inside the search field, as core's
+		// search-textbox draws it through ::part(search-icon). The file wraps its
+		// path in a <clipPath> of the full 16px box, which clips nothing.
+		'magnifier': [16, [
+			'M11 6C11 8.76142 8.76142 11 6 11C3.23858 11 1 8.76142 1 6C1 3.23858 3.23858 1 6 1C8.76142 1 11 3.23858 11 6ZM9.87438 10.5816C8.82905 11.4664 7.47683 12 6 12C2.68629 12 0 9.31371 0 6C0 2.68629 2.68629 0 6 0C9.31371 0 12 2.68629 12 6C12 7.47687 11.4664 8.82911 10.5815 9.87446L16 15.2929L15.2929 16L9.87438 10.5816Z',
+		]],
+		// 16/x-8 -- the search field's clear button.
+		'clear': [16, [
+			'M11.2923 12L12 11.292L8.70711 7.99999L12 4.70796L11.2922 4L8.00011 7.29299L4.70798 4L4 4.70774L7.29311 7.99999L4 11.2922L4.70796 12L8.00011 8.70699L11.2923 12Z',
+		]],
+		// 16/chevron-12 -- the twisty on a <collapsible-section> header, which is
+		// what the sidebar's two section headers now are. Core draws it pointing
+		// down and rotates it 180 degrees when the section is open.
+		'chevron-12': [16, [
+			'M2 5.70711L8 11.7071L14 5.70711L13.2929 5L8 10.2929L2.70711 5L2 5.70711Z',
+		]],
+	};
 
 	/**
 	 * One icon, as an <svg> ready to go into a menu row.

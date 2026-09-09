@@ -54,7 +54,10 @@ module.exports = {
 		// falls back to the collection's own name. onMainWindowLoad registers
 		// them again for every window, and doing it twice costs nothing.
 		for (let win of Zotero.getMainWindows()) {
-			if (win.ZoteroPane) addTabHooks(win);
+			if (win.ZoteroPane) {
+				addTabHooks(win);
+				addChromeWatch(win);
+			}
 		}
 		// Before anything that can produce a string. Every t() call after this
 		// point is synchronous, and a tab cannot open until startup returns.
@@ -135,6 +138,7 @@ module.exports = {
 
 		addTabIconStyle(win);
 		addTabHooks(win);
+		addChromeWatch(win);
 		addTabContext(win);
 		// Was the session carrying a graph tab, and had restore already run by
 		// the time this plugin got here? Those two answers together say whether
@@ -215,6 +219,9 @@ function sessionSummary() {
  * outside every tab's container, so this cannot ride along with the tab the
  * way splitPane.js's stylesheet rides with its panel.
  */
+/** win -> the function that undoes addChromeWatch() for it. */
+let _chromeWatch = new WeakMap();
+
 function addTabIconStyle(win) {
 	let doc = win.document;
 	if (doc.getElementById(TAB_ICON_STYLE_ID)) return;
@@ -244,6 +251,19 @@ function addTabHooks(win) {
 }
 
 /**
+ * Keep the graph's colours, type size and density agreeing with the window's.
+ *
+ * The page is told all three when it loads; this is what tells it again when
+ * one of them changes under it, so that switching Zotero to dark does not leave
+ * one tab light until it is reopened. The listener belongs to the window, so
+ * the function that removes it is kept beside everything else this plugin has
+ * to take back out.
+ */
+function addChromeWatch(win) {
+	_chromeWatch.set(win, graphTab.watchChrome(win));
+}
+
+/**
  * Teach this window what a graph tab IS -- what it has selected, which
  * collection it is a view of, and whether that collection can be written to --
  * so that core's menus act on the node the user clicked rather than on nothing
@@ -261,6 +281,13 @@ function addTabContext(win) {
  *  the window closing and by the plugin going away under a window that is not. */
 function removeWindowIntegration(win) {
 	tabContext.uninstall(win);
+
+	let unwatch = _chromeWatch.get(win);
+	if (unwatch) {
+		_chromeWatch.delete(win);
+		unwatch();
+	}
+
 	// A node menu still up is this plugin's markup on core's popup. Taking it
 	// down is what sweeps that markup off again -- see lib/nodeMenu.js -- and a
 	// plugin going away under a window that is staying must not leave it there.

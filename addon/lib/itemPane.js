@@ -234,6 +234,12 @@ function face(pane, wanted) {
 	if (onItem && typeof pane.details.forceUpdateSideNav === 'function') {
 		pane.details.forceUpdateSideNav();
 	}
+	// Whoever else is interested in which page is up. The gap list is: the
+	// graph page draws a menu entry from whether the list is showing, and this
+	// deck can be turned away from it by a click on a node as readily as by the
+	// list's own close button -- so chrome tells, rather than the page
+	// remembering something it does not decide. See lib/gapsPane.js.
+	if (typeof pane.onFace === 'function') pane.onFace(wanted);
 }
 
 /**
@@ -444,4 +450,11 @@ function nameToggleForThisPane(doc, sidenav) {
 	fix();
 }
 
-module.exports = { show, close };
+/*
+ * ensurePane and face are out here for lib/gapsPane.js, which adds a third page
+ * to this deck. They are deliberately the same two functions this file uses
+ * itself rather than a facade over them: a second way to reach the deck is a
+ * second thing that can come to disagree with face() about which page is up,
+ * and `facing` is what both sides read.
+ */
+module.exports = { show, close, pane: ensurePane, face };

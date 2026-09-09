@@ -56,6 +56,17 @@
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
+	/** Whether the sidebar is showing, and how wide it was left. Both are facts
+	 *  about this screen rather than about this collection, which is why they
+	 *  live here beside the rest and not in a Zotero pref. */
+	const SIDE_KEY = 'zg.side.open';
+	const SIDE_WIDTH_KEY = 'zg.side.width';
+
+	/** What the drag handle will let the sidebar be. The floor is core's own
+	 *  #zotero-collections-pane minimum; the ceiling is the point past which a
+	 *  pane of settings is wider than the graph it is settings for. */
+	const SIDE_MIN = 200;
+	const SIDE_MAX = 420;
 
 	// Published by nodeScale.js, nodeLinks.js, nodeFilters.js, graphCluster.js
 	// and graphGaps.js, which graph.html loads first.
@@ -140,6 +151,15 @@
 	let elIsolate = el('isolate-clear');
 	let elIsolateDepth = el('isolate-depth');
 	let elReframe = el('reframe');
+	let elFrame = el('frame');
+	let elSide = el('side');
+	let elSideToggle = el('side-toggle');
+	let elSideGrip = el('side-grip');
+	let elSearch = el('search');
+	let elSearchBox = el('search-box');
+	let elSearchIcon = el('search-icon');
+	let elSearchClear = el('search-clear');
+	let elSearchSuggest = el('search-suggest');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
 	let elLegend = el('legend');
@@ -149,10 +169,6 @@
 	let elEmpty = el('empty');
 	let elEmptySub = el('empty-sub');
 	let elEmptyRecursive = el('empty-recursive');
-	let elGaps = el('gaps');
-	let elGapsTitle = el('gaps-title');
-	let elGapsBody = el('gaps-body');
-	let elGapsFoot = el('gaps-foot');
 	let elFilterChips = el('filter-chips');
 	let elFilterInput = el('filter-input');
 	let elSuggest = el('filter-suggest');
@@ -436,10 +452,12 @@
 	// --- legend -----------------------------------------------------------
 
 	/**
-	 * What the node colours mean right now, in the corner opposite the
-	 * controls. "Which collection is the blue one" is a question you ask while
-	 * reading the graph rather than while changing it, so the answer sits away
-	 * from the settings -- and clear of the status line bottom left.
+	 * What the node colours mean right now, in the sidebar under the settings.
+	 * "Which collection is the blue one" is a question you ask while reading
+	 * the graph rather than while changing it, so it sits below the controls
+	 * rather than among them -- but in the same column, because both are
+	 * questions about the picture and neither is worth covering the picture up
+	 * for.
 	 *
 	 * Rebuilt on every render, because every input to it moves: the colour
 	 * mode, the year range, and which nodes survived the filters.
@@ -574,15 +592,41 @@
 	 * canvas the interesting ones sit somewhere in a cloud of several thousand,
 	 * and filtering the cloud down far enough to read leaves you reading a
 	 * graph where a list is what the question wants. So the same data, ranked,
-	 * beside the graph rather than in it.
+	 * as a list.
 	 *
 	 * The ranking is not the raw count -- see graphGaps.js for why fame is
 	 * divided out of it -- and the subfield attribution comes from the same
 	 * partition the graph colours by, which is what lets a row say that seven
 	 * papers of one subfield lean on something the library does not have.
+	 *
+	 * The LIST is chrome's, in the right-hand pane beside the item pane. The
+	 * RANKING stays here, and that split is the only sensible one: ranking
+	 * reads the believed edges, the external works, the cluster partition and
+	 * the lookup checkbox, none of which chrome has, while drawing needs a XUL
+	 * deck that this page cannot reach. So the page ranks and pushes rows, and
+	 * chrome draws them and pushes the clicks back.
 	 */
+	/**
+	 * Whether the list is the page currently showing in the pane.
+	 *
+	 * Set optimistically on the way out and then corrected by chrome, which is
+	 * the side that actually knows: the deck is turned away from the list by a
+	 * click on a node as readily as by the list's own close button, and neither
+	 * of those starts here. The canvas menu reads this to decide whether it is
+	 * offering to open the list or to put it away, and an answer that drifted
+	 * would cost a click every time.
+	 */
+	let gapsOpen = false;
+
+	window.zgGapsShowing = function (json) {
+		try {
+			gapsOpen = !!JSON.parse(json).showing;
+		}
+		catch (e) { /* leave it as it was */ }
+	};
+
 	function openGaps() {
-		elGaps.hidden = false;
+		gapsOpen = true;
 		// The list is built from the outside references, and the build only
 		// derives those when they are asked for. Opening the list IS that
 		// request -- the same bargain "size by global citations" strikes with
@@ -592,50 +636,44 @@
 			elIncludeExternal.checked = true;
 			requestRebuild();
 		}
+		emit({ type: 'gaps-open' });
 		renderGaps();
 	}
 
 	function closeGaps() {
-		elGaps.hidden = true;
+		if (!gapsOpen) return;
+		gapsOpen = false;
+		emit({ type: 'gaps-close' });
 	}
 
+	/**
+	 * Rank, and push what came out.
+	 *
+	 * Pushed on every render, because every one of the ranking's inputs is
+	 * something a render can have changed. Chrome drops the payload when its
+	 * page is not showing, which is the same deal the item pane already has:
+	 * the side that knows whether anything needs drawing is the side holding
+	 * the pane.
+	 */
 	function renderGaps() {
-		if (elGaps.hidden) return;
-		elGapsBody.textContent = '';
-		elGapsFoot.textContent = '';
-		elGapsFoot.hidden = true;
+		if (!gapsOpen) return;
 
 		let ranked = raw
 			? Gaps.rank(believedEdges(), raw.external, { clusterOf: clusters().of })
 			: { rows: [], total: 0 };
 
-		if (!ranked.rows.length) {
-			let note = document.createElement('div');
-			note.className = 'gaps-empty';
+		emit({
+			type: 'gaps-rows',
+			rows: ranked.rows,
+			total: ranked.total,
 			// A build still running has not read most of the PDFs yet, and
 			// "nothing is missing" would be a lie until it has.
-			let building = !raw || (raw.meta && raw.meta.phase && raw.meta.phase !== 'done');
-			note.textContent = t(building ? 'gaps-building' : 'gaps-empty');
-			elGapsBody.appendChild(note);
-			return;
-		}
-
-		for (let g of ranked.rows) elGapsBody.appendChild(gapRow(g));
-
-		let foot = [];
-		if (ranked.total > ranked.rows.length) {
-			foot.push(t('gaps-more', { count: ranked.total - ranked.rows.length }));
-		}
-		// Without the counts every gap is ranked at face value, which is the
-		// plain "most cited here" order. Worth saying, since the ranking is the
-		// reason to read this list rather than the graph.
-		if (!elEnrich.checked) foot.push(t('gaps-lookup-hint'));
-		for (let line of foot) {
-			let div = document.createElement('div');
-			div.textContent = line;
-			elGapsFoot.appendChild(div);
-		}
-		elGapsFoot.hidden = !foot.length;
+			building: !raw || !!(raw.meta && raw.meta.phase && raw.meta.phase !== 'done'),
+			// Without the counts every gap is ranked at face value, which is
+			// the plain "most cited here" order. Worth saying, since the
+			// ranking is the reason to read this list rather than the graph.
+			lookup: !!elEnrich.checked,
+		});
 	}
 
 	/**
@@ -658,99 +696,34 @@
 		if (offer) elEmptySub.textContent = t('empty-sub', { count: info.subcollections });
 	}
 
-	function gapRow(g) {
-		let row = document.createElement('div');
-		row.className = 'gap-row';
-		row.setAttribute('role', 'button');
-		row.tabIndex = 0;
-		row.title = t('gaps-row-hint', { count: g.citedBy });
-
-		let count = document.createElement('span');
-		count.className = 'gap-count';
-		count.textContent = g.citedBy;
-
-		let main = document.createElement('div');
-		main.className = 'gap-main';
-		let name = document.createElement('div');
-		// Offline a ghost is a DOI and nothing else, and a bare identifier
-		// should look like one rather than sit where a title would.
-		name.className = g.title ? 'gap-name' : 'gap-name bare';
-		name.textContent = g.title || g.id;
-		let sub = document.createElement('div');
-		sub.className = 'gap-sub';
-		sub.textContent = gapSub(g);
-		main.appendChild(name);
-		if (sub.textContent) main.appendChild(sub);
-
-		let add = document.createElement('button');
-		add.type = 'button';
-		add.className = 'gap-add';
-		add.textContent = '+';
-		// Only a DOI can be added: that is what Zotero's add-by-identifier
-		// takes, and it is the same gate the ghost's own context menu applies.
-		add.disabled = g.ns !== 'doi';
-		add.title = t(add.disabled ? 'gaps-add-no-doi' : 'gaps-add');
-		add.addEventListener('click', (e) => {
-			// The row underneath means "show me who cites this", which is not
-			// what someone reaching for the button asked for.
-			e.stopPropagation();
-			add.disabled = true;
-			add.textContent = '…';
-			// Chrome answers by rebuilding, after which this work is held and
-			// drops off the list by itself. When nothing was added -- the
-			// dialog was cancelled, the DOI resolved to nothing -- it answers
-			// zgAddSettled instead, and that redraws this row enabled again.
-			emit({ type: 'add-item', doi: g.id, title: g.title || null });
-		});
-
-		row.addEventListener('click', () => showGapCiters(g));
-		row.addEventListener('keydown', (e) => {
-			if (e.key !== 'Enter' && e.key !== ' ') return;
-			e.preventDefault();
-			showGapCiters(g);
-		});
-
-		row.appendChild(count);
-		row.appendChild(main);
-		row.appendChild(add);
-		return row;
-	}
-
-	/** Authors, fame and which subfield is doing the citing -- the three things
-	 *  that decide whether a gap is worth filling, on one line. */
-	function gapSub(g) {
-		let bits = [];
-		if (g.creators && g.creators.length) bits.push(creatorList(g.creators));
-		if (g.year) bits.push(g.year);
-		if (g.citedByGlobal != null) {
-			bits.push(t('tooltip-citations-total', { count: g.citedByGlobal.toLocaleString() }));
-		}
-		// One subfield leaning on it is a hole in that subfield and can be
-		// named as one; several leaning on it is common ground, which is a
-		// different kind of missing and is said differently.
-		if (g.subfields.top) bits.push(g.subfields.top);
-		else if (g.subfields.spread > 1) bits.push(t('gaps-mixed', { count: g.subfields.spread }));
-		return bits.join(' · ');
-	}
-
 	/**
-	 * Light the papers that cite this gap.
+	 * Light the papers that cite a gap, from a click on its row in the pane.
 	 *
 	 * The gap itself joins them when it is drawn, so the star reads as a star;
 	 * with outside refs hidden it cannot, and what is left -- your own papers,
 	 * lit together -- is still the answer to "who leans on this". Anything the
 	 * filters have taken off screen is not isolated, because isolating a node
 	 * nobody can see would dim the graph around nothing.
+	 *
+	 * The citers come back with the click rather than being looked up here:
+	 * chrome is holding the ranked rows, and a second copy of them on this side
+	 * could only ever come to disagree with the one being clicked.
 	 */
-	function showGapCiters(g) {
+	window.zgGapsIsolate = function (json) {
+		let msg;
+		try {
+			msg = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
 		let onScreen = new Set((drawnNodes || []).map(n => n.id));
 		let ids = new Set();
-		for (let key of g.citers) if (onScreen.has(key)) ids.add(key);
-		if (onScreen.has(g.key)) ids.add(g.key);
+		for (let key of (msg.citers || [])) if (onScreen.has(key)) ids.add(key);
+		if (msg.key && onScreen.has(msg.key)) ids.add(msg.key);
 		if (ids.size) setIsolated(ids);
-	}
+	};
 
-	el('gaps-close').addEventListener('click', closeGaps);
 
 	// --- strategy toggles -------------------------------------------------
 
@@ -3225,10 +3198,10 @@
 			// Not a node gesture: what is missing is a question about the
 			// collection, so it is asked of the canvas rather than of any one
 			// paper on it.
-			icon: elGaps.hidden ? 'gaps' : 'hide',
-			label: t(elGaps.hidden ? 'menu-gaps' : 'menu-gaps-hide'),
+			icon: gapsOpen ? 'hide' : 'gaps',
+			label: t(gapsOpen ? 'menu-gaps-hide' : 'menu-gaps'),
 			hint: t('menu-gaps-hint'),
-			run: () => (elGaps.hidden ? openGaps() : closeGaps()),
+			run: () => (gapsOpen ? closeGaps() : openGaps()),
 		}];
 		let g = groupAt(event);
 		if (g) {
@@ -3481,7 +3454,7 @@
 		// so the graph an Escape is most likely asking for back is the undimmed
 		// one. Both come off in two presses either way.
 		else if (highlighted != null) clearHighlight();
-		else if (!elGaps.hidden) closeGaps();
+		else if (gapsOpen) closeGaps();
 	});
 
 	// --- controls ---------------------------------------------------------
@@ -3650,8 +3623,352 @@
 
 	elReframe.addEventListener('click', reframe);
 
-	// The panel floats over the canvas, so collapsing it does not resize the
-	// graph -- it just gives the nodes underneath back.
+	// --- the sidebar ------------------------------------------------------
+
+	/**
+	 * Re-measure the canvas.
+	 *
+	 * force-graph is told its size in pixels rather than reading it, so a grid
+	 * column changing under it leaves it drawing at the old width -- the nodes
+	 * stay put and the canvas is simply the wrong shape. The window's own
+	 * resize listener does not fire for this: nothing about the window changed.
+	 */
+	function remeasure() {
+		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
+	}
+
+	/**
+	 * Show or hide the sidebar.
+	 *
+	 * The button stays lit while the pane is open, which is what the reader's
+	 * own sidebar toggle does: a toggle that looks the same in both states is a
+	 * button you have to press to find out what it did.
+	 */
+	function setSideOpen(on) {
+		elFrame.classList.toggle('side-closed', !on);
+		elSideToggle.classList.toggle('on', on);
+		elSideToggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+		// Both ids written out at each call rather than picked into a variable:
+		// npm test reads the ids this page asks for out of the source, and a
+		// name it cannot see is a string nothing knows is needed.
+		elSideToggle.title = t(on ? 'side-toggle-hide' : 'side-toggle-show');
+		elSideToggle.setAttribute('aria-label', t(on ? 'side-toggle-hide' : 'side-toggle-show'));
+		remeasure();
+		try {
+			window.localStorage.setItem(SIDE_KEY, on ? '1' : '0');
+		}
+		catch (e) { /* no persistence, no problem */ }
+	}
+
+	elSideToggle.addEventListener('click', () => {
+		setSideOpen(elFrame.classList.contains('side-closed'));
+	});
+
+	function setSideWidth(px) {
+		let w = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)));
+		document.documentElement.style.setProperty('--zg-side-width', w + 'px');
+		return w;
+	}
+
+	/**
+	 * Drag the sidebar's edge.
+	 *
+	 * Pointer events rather than a <splitter>, because there is no such element
+	 * in an HTML document -- which is exactly why Zotero's reader carries a
+	 * sidebar resizer of its own instead of using core's.
+	 *
+	 * setPointerCapture is what makes the drag survive the pointer leaving the
+	 * 6px handle, which at any speed it immediately does; without it the grip
+	 * is only draggable as fast as the layout can keep up.
+	 */
+	elSideGrip.addEventListener('pointerdown', (e) => {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		elSideGrip.setPointerCapture(e.pointerId);
+		let startX = e.clientX;
+		let startW = elSide.getBoundingClientRect().width;
+
+		let move = (ev) => {
+			// Live, so the graph reflows under the hand rather than jumping
+			// when it is let go. remeasure() is cheap: it sets two numbers.
+			setSideWidth(startW + (ev.clientX - startX));
+			remeasure();
+		};
+		let up = () => {
+			elSideGrip.removeEventListener('pointermove', move);
+			elSideGrip.removeEventListener('pointerup', up);
+			elSideGrip.removeEventListener('pointercancel', up);
+			// Written back only on release: a pref written sixty times a second
+			// is a pref written sixty times a second.
+			try {
+				window.localStorage.setItem(SIDE_WIDTH_KEY,
+					String(Math.round(elSide.getBoundingClientRect().width)));
+			}
+			catch (e2) { /* no persistence, no problem */ }
+		};
+
+		elSideGrip.addEventListener('pointermove', move);
+		elSideGrip.addEventListener('pointerup', up);
+		elSideGrip.addEventListener('pointercancel', up);
+	});
+
+	// The two bar buttons and the field's two icons. Drawn from icons.js rather
+	// than written as glyphs, for the reason that file exists: a near-miss
+	// beside the real thing is worse than either.
+	elSideToggle.appendChild(Icons.svg('open-pane'));
+	elReframe.appendChild(Icons.svg('zoom-to-fit'));
+	elSearchIcon.appendChild(Icons.svg('magnifier'));
+	elSearchClear.appendChild(Icons.svg('clear'));
+	el('panel-chevron').appendChild(Icons.svg('chevron-12'));
+	el('legend-chevron').appendChild(Icons.svg('chevron-12'));
+
+	try {
+		let saved = window.localStorage.getItem(SIDE_WIDTH_KEY);
+		if (saved !== null && Number.isFinite(Number(saved))) setSideWidth(Number(saved));
+	}
+	catch (e) { /* see setSideOpen */ }
+
+	try {
+		if (window.localStorage.getItem(SIDE_KEY) === '0') setSideOpen(false);
+	}
+	catch (e) { /* see setSideOpen */ }
+
+	// --- the search field -------------------------------------------------
+
+	/**
+	 * Find a paper on the canvas and go to it.
+	 *
+	 * Deliberately NOT a second filter. The panel's chips already narrow the
+	 * graph, and typing the same thing into two boxes to mean two different
+	 * things would be a trap. What had no answer until now is the other
+	 * question -- "where in here is the paper I am thinking of" -- because a
+	 * force-directed layout puts a known paper somewhere you have to hunt for,
+	 * and there is no ordering to hunt along.
+	 *
+	 * Matching is the filter grammar's own, over the facets render() already
+	 * kept: a bare term is asked of all eight fields, so a surname, a journal
+	 * and half a title all work without anyone having to say which is which.
+	 * No new matching code, and no new pass over the data.
+	 */
+	const SEARCH_MAX = 10;
+
+	let searchRows = [];   // the nodes offered, in the order they are drawn
+	let searchAt = -1;     // which row the keyboard is on, or -1
+
+	function searchMatches(text) {
+		let filter = Filters.parse(text);
+		if (!filter || !filter.terms.length) return [];
+		let out = [];
+		for (let n of (drawnNodes || [])) {
+			let fac = facetCache.get(n.id);
+			// A ghost has no facets to match on -- it is a DOI and, with the
+			// lookup on, a title -- and the panel's masks already leave them
+			// out for the same reason. Its title is worth searching, though,
+			// which is the one thing the facets cannot answer for it.
+			if (fac ? Filters.matches(filter, fac) : ghostMatches(filter, n)) out.push(n);
+			if (out.length >= SEARCH_MAX) break;
+		}
+		return out;
+	}
+
+	/** A ghost's own text, since it has no facet record. */
+	function ghostMatches(filter, n) {
+		if (!n.ghost) return false;
+		let hay = ((n.label || '') + ' ' + (n.name || '') + ' ' + (n.id || '')).toLowerCase();
+		for (let term of filter.terms) {
+			// A year range has no text to look for, and a ghost has no year to
+			// find it in; the held nodes answer that one through their facets.
+			if (term.value == null) continue;
+			if (hay.includes(String(term.value).toLowerCase())) return true;
+		}
+		return false;
+	}
+
+	function renderSearch() {
+		let text = elSearch.value.trim();
+		elSearchClear.hidden = !text;
+		if (!text) return hideSearch();
+
+		searchRows = searchMatches(text);
+		searchAt = -1;
+		elSearchSuggest.textContent = '';
+
+		if (!searchRows.length) {
+			let none = document.createElement('div');
+			none.className = 'search-empty';
+			none.textContent = t('search-empty');
+			elSearchSuggest.appendChild(none);
+		}
+		for (let i = 0; i < searchRows.length; i++) {
+			elSearchSuggest.appendChild(searchRow(searchRows[i], i));
+		}
+
+		elSearchSuggest.hidden = false;
+		elSearch.setAttribute('aria-expanded', 'true');
+		placeSearch();
+	}
+
+	function searchRow(n, i) {
+		let row = document.createElement('div');
+		row.className = 'search-row';
+		row.setAttribute('role', 'option');
+
+		let key = document.createElement('span');
+		key.className = 'search-key';
+		key.textContent = n.label || '';
+
+		let title = document.createElement('span');
+		title.className = 'search-title';
+		title.textContent = n.name || n.id || '';
+		row.title = n.name || n.id || '';
+
+		row.appendChild(key);
+		row.appendChild(title);
+		// mousedown, not click: the field is about to lose the focus either
+		// way, and a blur handler that closed the list first would take the
+		// row out from under the pointer before the click landed on it.
+		row.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			goTo(i);
+		});
+		return row;
+	}
+
+	/** Against the field, by hand, because #bar is 41px tall and clips. */
+	function placeSearch() {
+		let r = elSearchBox.getBoundingClientRect();
+		elSearchSuggest.style.top = Math.round(r.bottom + 2) + 'px';
+		elSearchSuggest.style.left = Math.round(r.left) + 'px';
+		elSearchSuggest.style.width = Math.round(r.width) + 'px';
+	}
+
+	function hideSearch() {
+		elSearchSuggest.hidden = true;
+		elSearch.setAttribute('aria-expanded', 'false');
+		searchRows = [];
+		searchAt = -1;
+	}
+
+	function markSearch(i) {
+		let rows = elSearchSuggest.querySelectorAll('.search-row');
+		for (let k = 0; k < rows.length; k++) rows[k].classList.toggle('on', k === i);
+		if (rows[i]) rows[i].scrollIntoView({ block: 'nearest' });
+		searchAt = i;
+	}
+
+	/**
+	 * Go to the paper on row i.
+	 *
+	 * The same three things a click on the node itself does -- centre it, ring
+	 * it, describe it in the item pane -- because they are the same gesture
+	 * arrived at from a list instead of from the canvas, and the two must not
+	 * come to mean different things.
+	 *
+	 * The zoom is deliberately left alone. Someone reading a dense cluster at
+	 * one magnification did not ask to be pulled out of it; centring is what
+	 * was asked for, and it is enough to put the node under the eye.
+	 */
+	function goTo(i) {
+		let n = searchRows[i];
+		if (!n || !fg) return;
+		if (Number.isFinite(n.x) && Number.isFinite(n.y)) fg.centerAt(n.x, n.y, REFRAME_MS);
+		setIsolated(new Set([n.id]));
+		showItemPane(n);
+		hideSearch();
+		elSearch.blur();
+	}
+
+	function clearSearch() {
+		elSearch.value = '';
+		elSearchClear.hidden = true;
+		hideSearch();
+	}
+
+	elSearch.addEventListener('input', renderSearch);
+	elSearch.addEventListener('focus', () => {
+		if (elSearch.value.trim()) renderSearch();
+	});
+	// The list is closed on the way out, but the field keeps its text: what was
+	// typed is still the answer to "what was I looking for", and clearing it
+	// silently would be the box forgetting on the user's behalf.
+	elSearch.addEventListener('blur', hideSearch);
+
+	elSearch.addEventListener('keydown', (e) => {
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			if (!searchRows.length) return;
+			e.preventDefault();
+			let step = e.key === 'ArrowDown' ? 1 : -1;
+			let i = searchAt < 0
+				? (step > 0 ? 0 : searchRows.length - 1)
+				: (searchAt + step + searchRows.length) % searchRows.length;
+			markSearch(i);
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			// With nothing picked, Enter means the first row -- which is what
+			// the list is ordered to make true.
+			goTo(searchAt < 0 ? 0 : searchAt);
+			return;
+		}
+		if (e.key === 'Escape') {
+			// Escape closes the list, then empties the box, and only then is
+			// let through. The same ladder the filter box climbs, so that one
+			// key means one thing everywhere on this page.
+			e.stopPropagation();
+			if (!elSearchSuggest.hidden) hideSearch();
+			else if (elSearch.value) clearSearch();
+			else elSearch.blur();
+		}
+	});
+
+	elSearchClear.addEventListener('click', () => {
+		clearSearch();
+		elSearch.focus();
+	});
+
+		// --- what Zotero's chrome looks like ----------------------------------
+
+	/**
+	 * The three properties this page cannot work out for itself.
+	 *
+	 * A content document's matchMedia only ever sees the OS, so Zotero's own
+	 * View > Color Scheme override is invisible from here; and the font size
+	 * and interface density are prefs, which is to say chrome. Core pushes all
+	 * three onto its own documents through Zotero.UIProperties.registerRoot(),
+	 * which cannot reach across the privilege boundary -- so chrome reads them
+	 * and hands them over, and this sets the same three things registerRoot()
+	 * would have.
+	 *
+	 * Everything here is optional. A page that is never told keeps following
+	 * the OS, which is what it did before and is right more often than not.
+	 */
+	window.zgSetChrome = function (json) {
+		let props;
+		try {
+			props = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		let root = document.documentElement;
+		// The attribute name is core's own, from the reader's stylesheet, and
+		// so is the three-way CSS it selects: absent means "follow the OS".
+		if (props.scheme === 'dark' || props.scheme === 'light') {
+			root.setAttribute('data-color-scheme', props.scheme);
+		}
+		else {
+			root.removeAttribute('data-color-scheme');
+		}
+		if (props.fontSize) root.style.setProperty('--zotero-font-size', props.fontSize + 'rem');
+		if (props.density) root.setAttribute('zoteroUIDensity', props.density);
+		// The canvas reads its background out of the stylesheet, so a scheme
+		// arriving after the first paint has to be painted again.
+		if (fg) repaint();
+	};
+
+	// The panel is a section of the sidebar, so collapsing it does not resize
+	// the graph -- the pane keeps its width and the section folds inside it.
 	function setCollapsed(on) {
 		elPanel.classList.toggle('collapsed', on);
 		elPanelToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
@@ -3709,6 +4026,10 @@
 	ZGL10n.onReady(() => {
 		setCollapsed(elPanel.classList.contains('collapsed'));
 		setLegendCollapsed(elLegend.classList.contains('collapsed'));
+		// Same reason as the two above: the sidebar toggle's tooltip depends on
+		// a state the markup cannot know, and a sidebar left open is the case
+		// where setSideOpen() never ran to say so in the user's language.
+		setSideOpen(!elFrame.classList.contains('side-closed'));
 		if (raw) render();
 	});
 
@@ -3718,6 +4039,7 @@
 		hideMenu();
 		hideAction();
 		hideSuggest();
+		hideSearch();
 		closeGroup();
 	});
 

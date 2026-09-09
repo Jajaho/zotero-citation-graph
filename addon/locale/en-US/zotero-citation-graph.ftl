@@ -71,6 +71,16 @@ zotero-citation-graph-rebuild = Rebuild
 
 zotero-citation-graph-reframe-hint = Fit the whole graph in view
 
+## The top bar: the sidebar toggle, and the search field.
+
+zotero-citation-graph-side-toggle-hide = Hide the sidebar
+zotero-citation-graph-side-toggle-show = Show the sidebar
+
+zotero-citation-graph-search-placeholder = Search
+zotero-citation-graph-search-hint = Find a paper on the canvas and go to it. This does not filter the graph — the filter box in the sidebar does that.
+zotero-citation-graph-search-clear = Clear
+zotero-citation-graph-search-empty = No paper on screen matches
+
 
 ## Status line.
 

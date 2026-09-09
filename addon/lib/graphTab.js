@@ -19,6 +19,7 @@ let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let addDialog = require('./addDialog.js');
 let itemPane = require('./itemPane.js');
+let gapsPane = require('./gapsPane.js');
 let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
@@ -531,6 +532,10 @@ async function ready(win, tabID, cw, collection) {
 	// the less of it anyone sees. See content/l10n.js.
 	let entry = open_.get(tabID);
 	if (entry) send(entry, 'zgSetStrings', l10n.contentBundle());
+	// Beside the strings and for the same reason: both are things the page
+	// cannot work out for itself, and both decide what the first paint looks
+	// like. See chromeProps().
+	if (entry) send(entry, 'zgSetChrome', chromeProps(win));
 
 	// content -> chrome. event.detail is a JSON string (a primitive), so there is
 	// nothing to unwrap.
@@ -544,6 +549,19 @@ async function ready(win, tabID, cw, collection) {
 		}
 		handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
 	});
+}
+
+/**
+ * A message from the pane rather than from the page.
+ *
+ * The gap list's rows raise exactly two things -- add-item, and the isolate the
+ * page answers -- and both already have a case below. So they re-enter the same
+ * switch rather than taking a path of their own: two ways into 'add-item' is
+ * two places to fix the day it changes, and the row's + and the ghost's context
+ * menu are meant to end in the same dialog.
+ */
+function fromPane(win, tabID, collection) {
+	return msg => handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
 }
 
 async function handleMessage(win, tabID, collection, msg) {
@@ -574,6 +592,40 @@ async function handleMessage(win, tabID, collection, msg) {
 		case 'add-item':
 			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi, msg.title);
 			break;
+		// The gap list, in the pane beside the graph. Chrome's to draw for the
+		// same reason as the item pane it shares a deck with: it is a XUL
+		// element in the main window. The RANKING is not chrome's and does not
+		// move -- it reads four things that live only in the page -- so what
+		// crosses is rows, not a request for them. See lib/gapsPane.js.
+		case 'gaps-open': {
+			let entry = open_.get(tabID);
+			if (entry) gapsPane.open(entry, on => send(entry, 'zgGapsShowing', { showing: on }));
+			break;
+		}
+		case 'gaps-rows': {
+			let entry = open_.get(tabID);
+			if (entry) gapsPane.rows(entry, msg, fromPane(win, tabID, collection));
+			break;
+		}
+		case 'gaps-close': {
+			let entry = open_.get(tabID);
+			if (entry) gapsPane.close(entry);
+			break;
+		}
+		// A row clicked. The citers travel with the click rather than being
+		// looked up on the page: chrome is holding the ranked rows, and a
+		// second copy over there could only come to disagree with the one
+		// actually clicked.
+		case 'gaps-isolate': {
+			let entry = open_.get(tabID);
+			if (entry) {
+				send(entry, 'zgGapsIsolate', JSON.stringify({
+					citers: msg.citers || [],
+					key: msg.key || null,
+				}));
+			}
+			break;
+		}
 		// The graph page runs with a content principal and cannot open a browser
 		// itself. Only http(s) is passed on: a held item's URL comes from the
 		// Zotero `url` field, which is free text and routinely holds a local
@@ -1261,6 +1313,94 @@ function toWireExternal(x, m) {
 	return out;
 }
 
+/**
+ * What Zotero's own windows look like, for a page that cannot see it.
+ *
+ * Three things, and the page is wrong about all three on its own:
+ *
+ *   scheme     Zotero's View > Color Scheme forces light or dark regardless of
+ *              the OS. A content document's matchMedia only ever reports the
+ *              OS, so a forced scheme is invisible from there -- but the MAIN
+ *              window's matchMedia does reflect the override, which is what
+ *              makes reading it here the whole of the answer.
+ *   fontSize   core's root is 13px scaled by this pref.
+ *   density    'compact' or 'comfortable', which core's own rules key off.
+ *
+ * Core pushes all three onto documents it owns through
+ * Zotero.UIProperties.registerRoot(), which cannot reach across the privilege
+ * boundary. So this reads the same values and hands them over, and the page
+ * sets the same three things registerRoot() would have.
+ *
+ * Every one of them is optional on the far side: a page that is never told
+ * keeps following the OS, which is what it did before this existed.
+ */
+function chromeProps(win) {
+	let props = {};
+	try {
+		props.scheme = win.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+	}
+	catch (e) { /* a window with no matchMedia is a window we let follow the OS */ }
+	try {
+		props.fontSize = Zotero.Prefs.get('fontSize');
+		props.density = Zotero.Prefs.get('uiDensity');
+	}
+	catch (e) { /* likewise for a Zotero that has renamed either pref */ }
+	return props;
+}
+
+/** Tell every open tab in this window what its chrome looks like now. */
+function pushChrome(win) {
+	for (let [, entry] of open_) {
+		if (!win || entry.win === win) send(entry, 'zgSetChrome', chromeProps(entry.win));
+	}
+}
+
+/**
+ * Watch the three for changes.
+ *
+ * Per window for the media query -- it is the window's own -- and once for the
+ * two prefs, which are global. Both are registered from main.js's per-window
+ * setup and handed back a function that undoes them, because a listener on a
+ * window that has gone is a leak and an observer that outlives the plugin is
+ * worse.
+ *
+ * All of it is guarded. Following the scheme live is a nicety; losing the whole
+ * per-window setup because a Zotero renamed a pref would not be.
+ */
+function watchChrome(win) {
+	let undo = [];
+
+	try {
+		let mq = win.matchMedia('(prefers-color-scheme: dark)');
+		let onScheme = () => pushChrome(win);
+		mq.addEventListener('change', onScheme);
+		undo.push(() => mq.removeEventListener('change', onScheme));
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+
+	for (let pref of ['fontSize', 'uiDensity']) {
+		try {
+			let id = Zotero.Prefs.registerObserver(pref, () => pushChrome(null));
+			undo.push(() => Zotero.Prefs.unregisterObserver(id));
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
+
+	return () => {
+		for (let fn of undo) {
+			try {
+				fn();
+			}
+			catch (e) { /* going away anyway */ }
+		}
+		undo = [];
+	};
+}
+
 function send(entry, fn, value) {
 	let cw = entry.browser.contentWindow;
 	if (!cw || !cw.wrappedJSObject[fn]) return;
@@ -1344,6 +1484,7 @@ function forgetAll() {
 
 module.exports = {
 	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
+	watchChrome,
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection, selectItems,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
