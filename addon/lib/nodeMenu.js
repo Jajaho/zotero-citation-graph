@@ -14,18 +14,19 @@
  * thinner version of an entry that already existed, and a thinner version
  * drifts -- it misses what core adds and keeps what core drops. Asking for
  * core's menu also gets the Locate section for free, which is what this plugin
- * already went to the trouble of teaching about graph tabs; see lib/locate.js.
+ * already went to the trouble of teaching about graph tabs; see lib/tabContext.js.
  *
- * WHAT IS SELECTED. Core's builder, and nearly every command it wires up, reads
- * ZoteroPane.getSelectedItems() -- which lib/locate.js has already taught to
- * answer with the graph tab's own selection. So the caller records the node
- * clicked as that selection before asking for a menu, and the whole menu is
- * then about that node.
+ * WHAT THE MENU IS ABOUT. Nothing here tells core which paper, which collection
+ * or which library it is building for: lib/tabContext.js has already given the
+ * window a graph tab's answer to all three, and core's builder asks it the same
+ * questions it asks in the library window. All this does is record the node
+ * clicked as the tab's selection first, which is what those answers are read
+ * from.
  *
- * The exception is the handful of commands that reach past getSelectedItems()
- * into the LIBRARY tab's item tree, which is still showing whatever it was
- * showing when the graph tab was opened. Those are taken off rather than left
- * to act on the wrong papers; see LIBRARY_BOUND.
+ * The exception is the handful of commands that reach past ZoteroPane
+ * altogether, into the LIBRARY tab's item tree -- which is still showing
+ * whatever it was showing when the graph tab was opened. Those are taken off
+ * rather than left to act on the wrong papers; see LIBRARY_BOUND.
  */
 
 const POPUP_ID = 'zotero-itemmenu';
@@ -85,8 +86,9 @@ let gen_ = 0;
 /**
  * Build Zotero's item menu for one node, add this plugin's entries, and show it.
  *
- * @param {Object}   entry  graphTab's record for the tab; win and collection
- *                          are what is read
+ * @param {Object}   entry  graphTab's record for the tab; only its window is
+ *                          read here -- the collection reaches core through
+ *                          lib/tabContext.js
  * @param {Object}   msg    the page's 'node-menu' message: screen x and y, and
  *                          the entries to add at the bottom
  * @param {Function} reply  (fnName, value) back to the page; graphTab's send()
@@ -106,7 +108,7 @@ async function open(entry, msg, reply) {
 	close(win);
 	sweep(popup);
 
-	await buildFor(pane, entry.collection);
+	await pane.buildItemContextMenu();
 
 	for (let name of LIBRARY_BOUND) {
 		let el = popup.querySelector('.' + name);
@@ -167,41 +169,6 @@ function close(win) {
 	}
 	catch (e) {
 		Zotero.logError(e);
-	}
-}
-
-/**
- * ZoteroPane's own builder, run against the collection the graph is OF.
- *
- * Left alone it reads ZoteroPane.getCollectionTreeRows(), which answers with
- * whatever the library tab has selected -- a different collection, or the trash,
- * or nothing at all if the tree has no selection, which throws on the first
- * `collectionTreeRows[0]`. None of those is the scope the graph is of, and the
- * row decides real things: whether the library is editable, whether its files
- * are, and half the labels.
- *
- * So the row is built here, out of the collection the tab was opened on, and put
- * in front of core's for exactly as long as the build takes. A wrapper left
- * installed would be the wrong shape: this is one question asked at one moment,
- * not a standing fact about the window the way lib/locate.js's two are.
- */
-async function buildFor(pane, collection) {
-	let rows = null;
-	try {
-		rows = [new Zotero.CollectionTreeRow(pane.collectionsView, 'collection', collection)];
-	}
-	catch (e) {
-		// Core's own answer is a poorer menu than the right row would give, and
-		// a much better one than no menu at all.
-		Zotero.logError(e);
-	}
-	let original = pane.getCollectionTreeRows;
-	if (rows) pane.getCollectionTreeRows = () => rows;
-	try {
-		await pane.buildItemContextMenu();
-	}
-	finally {
-		if (rows) pane.getCollectionTreeRows = original;
 	}
 }
 

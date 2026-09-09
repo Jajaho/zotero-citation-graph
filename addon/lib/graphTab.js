@@ -70,7 +70,7 @@ const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: fals
 // names in place; `building` says whether a build owns the tab, since a
 // lookup must not push over one.
 // `selection` is what the tab answers when Zotero asks which items are
-// selected -- see lib/locate.js.
+// selected -- see lib/tabContext.js.
 let open_ = new Map();
 
 // Session entries already turned into a real tab, by whichever of the two
@@ -157,7 +157,7 @@ function stripSummary(win) {
 
 /**
  * Which items a graph tab has selected, for the Zotero that is asking --
- * lib/locate.js, standing in for the case core's
+ * lib/tabContext.js, standing in for the case core's
  * ZoteroPane.getSelectedItems() has no room for.
  *
  * A tab id rather than an entry, because the caller is a patched core
@@ -168,6 +168,20 @@ function stripSummary(win) {
 function selectedItemIDs(tabID) {
 	let entry = open_.get(tabID);
 	return (entry && entry.selection) || [];
+}
+
+/**
+ * The collection a graph tab is a view of, for the same asker -- which is what
+ * lets core answer "which collection is open", "which library" and "can this be
+ * edited" for a tab it has never heard of. See lib/tabContext.js.
+ *
+ * Null rather than a guess for a tab id with no graph behind it: one closed, or
+ * restored and never selected. Core's own answer is better than an invented
+ * collection.
+ */
+function selectedCollection(tabID) {
+	let entry = open_.get(tabID);
+	return (entry && entry.collection) || null;
 }
 
 /**
@@ -1305,7 +1319,7 @@ function forgetAll() {
 
 module.exports = {
 	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
-	forgetWindow, forgetAll, stripSummary, selectedItemIDs,
+	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.

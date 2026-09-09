@@ -6,7 +6,7 @@
  */
 
 let graphTab = require('./graphTab.js');
-let locate = require('./locate.js');
+let tabContext = require('./tabContext.js');
 let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
@@ -68,7 +68,7 @@ module.exports = {
 		for (let win of Zotero.getMainWindows()) {
 			if (!win.ZoteroPane) continue;
 			addTabIconStyle(win);
-			addLocate(win);
+			addTabContext(win);
 			graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
 		}
 
@@ -135,7 +135,7 @@ module.exports = {
 
 		addTabIconStyle(win);
 		addTabHooks(win);
-		addLocate(win);
+		addTabContext(win);
 		// Was the session carrying a graph tab, and had restore already run by
 		// the time this plugin got here? Those two answers together say whether
 		// a lost tab was lost on the way out or on the way back in.
@@ -244,18 +244,22 @@ function addTabHooks(win) {
 }
 
 /**
- * Teach this window what a graph tab has selected, and what kind of context
- * is asking, so that core's Locate menu acts on the node the user clicked
- * instead of on nothing at all. See lib/locate.js for why both are wrappers.
+ * Teach this window what a graph tab IS -- what it has selected, which
+ * collection it is a view of, and whether that collection can be written to --
+ * so that core's menus act on the node the user clicked rather than on nothing
+ * at all. See lib/tabContext.js for why every one of them is a wrapper.
  */
-function addLocate(win) {
-	locate.install(win, graphTab.selectedItemIDs);
+function addTabContext(win) {
+	tabContext.install(win, {
+		itemIDs: graphTab.selectedItemIDs,
+		collection: graphTab.selectedCollection,
+	});
 }
 
 /** Everything this plugin put into one main window, taken back out. Shared by
  *  the window closing and by the plugin going away under a window that is not. */
 function removeWindowIntegration(win) {
-	locate.uninstall(win);
+	tabContext.uninstall(win);
 	// A node menu still up is this plugin's markup on core's popup. Taking it
 	// down is what sweeps that markup off again -- see lib/nodeMenu.js -- and a
 	// plugin going away under a window that is staying must not leave it there.

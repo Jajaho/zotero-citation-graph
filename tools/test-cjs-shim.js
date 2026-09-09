@@ -3181,21 +3181,42 @@ check('with no translator a keyword is the facet name, so the rest of these hold
 	if (F.toInput(F.parse('author: soc')) !== 'author: soc') throw new Error('the English round trip moved');
 });
 
-check('a graph tab answers ZoteroPane when Locate asks what is selected', () => {
-	const locate = require_('./lib/locate.js');
+check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
+	const tabContext = require_('./lib/tabContext.js');
 	const graphTab = require_('./lib/graphTab.js');
 
 	// Core's own answer, and the one every call outside a graph tab must keep
 	// getting back untouched.
 	const inLibrary = [{ id: 1, parentItem: false }];
+	// The collection tree's own selection: the trash, in a library nothing may
+	// be written to. Every one of the four below reads it, and none of them is
+	// an answer about the graph.
+	const libraryRows = [{ isTrash: () => true, editable: false, filesEditable: false }];
 	let sawArgs = null;
 	const pane = {
+		collectionsView: { id: 'the tree' },
 		getSelectedItems(asIDs, options) {
 			sawArgs = { asIDs, options, self: this };
 			return asIDs ? inLibrary.map(i => i.id) : inLibrary;
 		},
+		getCollectionTreeRows: () => libraryRows,
+		getSelectedLibraryIDs: () => [99],
+		getSelectedCollections: asID => (asID ? [55] : [{ id: 55 }]),
+		canEdit: () => libraryRows[0].editable,
+		canEditFiles: () => libraryRows[0].filesEditable,
 	};
 	const original = pane.getSelectedItems;
+	const coreRows = pane.getCollectionTreeRows;
+
+	// Core's own row, with the two getters the item menu turns on.
+	Zotero.CollectionTreeRow = function (view, type, ref) {
+		this.view = view;
+		this.type = type;
+		this.ref = ref;
+		this.editable = !!ref.editable;
+		this.filesEditable = !!ref.filesEditable;
+	};
+	const collection = { id: 3, libraryID: 7, editable: true, filesEditable: true };
 
 	// The sidenav hands buildLocateMenu a locateMode worked out from the
 	// tab type. 'tab' is what a graph tab produces, and it is the value that
@@ -3222,9 +3243,13 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 
 	let asked = [];
 	let graphSelection = [7];
-	locate.install(win, (tabID) => {
-		asked.push(tabID);
-		return graphSelection;
+	let graphCollection = collection;
+	tabContext.install(win, {
+		itemIDs: (tabID) => {
+			asked.push(tabID);
+			return graphSelection;
+		},
+		collection: () => graphCollection,
 	});
 
 	// A library tab is core's business start to finish -- same items, and the
@@ -3236,6 +3261,10 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	if (asked.length) throw new Error('a library tab asked the graph');
 	locateMenu.buildLocateMenu({}, { locateMode: 'library' });
 	if (sawMode !== 'library') throw new Error('a library tab lost its locateMode');
+	if (pane.getCollectionTreeRows() !== libraryRows) throw new Error('a library tab lost its own rows');
+	if (pane.getSelectedLibraryIDs()[0] !== 99) throw new Error('a library tab lost its own library');
+	if (pane.getSelectedCollections()[0].id !== 55) throw new Error('a library tab lost its own collection');
+	if (pane.canEdit() || pane.canEditFiles()) throw new Error('a read-only trash became editable');
 
 	// The tab type core has no case for, which is the whole point.
 	win.Zotero_Tabs.selectedType = 'graph';
@@ -3243,6 +3272,29 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	if (got.length !== 1 || got[0].id !== 7) throw new Error('the graph tab answered ' + JSON.stringify(got));
 	if (asked[0] !== 'tab-1') throw new Error('asked about ' + asked[0] + ', not the selected tab');
 	if (JSON.stringify(pane.getSelectedItems(true)) !== '[7]') throw new Error('asIDs was not honoured');
+
+	// The other three questions core asks about a selected tab, and the reason
+	// they matter: taken from the tree, the item menu is built for the trash,
+	// files a new note in library 99, and answers "you cannot make changes to
+	// the currently selected collection" to everything that writes.
+	const rows = pane.getCollectionTreeRows();
+	if (rows.length !== 1 || rows[0].ref !== collection || rows[0].type !== 'collection') {
+		throw new Error('the graph tab answered with something other than its collection');
+	}
+	if (rows[0].view !== pane.collectionsView) throw new Error('the row was built without its tree');
+	if (pane.getSelectedLibraryIDs()[0] !== 7) throw new Error('a note would be filed in the wrong library');
+	// What "Add to Collection -> New Collection" hangs the new one under. As an
+	// id or as the collection itself, the way core asks for it in both places.
+	if (pane.getSelectedCollections()[0] !== collection) throw new Error('a new collection would go elsewhere');
+	if (pane.getSelectedCollections(true)[0] !== 3) throw new Error('asID was not honoured');
+	if (!pane.canEdit()) throw new Error('an editable collection could not be written to');
+	if (!pane.canEditFiles()) throw new Error('an attachment could not be added to it');
+
+	// A read-only group is read-only in the graph too -- the answer is the
+	// collection's, not a blanket yes.
+	graphCollection = { id: 4, libraryID: 8, editable: false, filesEditable: false };
+	if (pane.canEdit() || pane.canEditFiles()) throw new Error('a read-only collection said yes');
+	graphCollection = collection;
 
 	// A graph tab is not the tab already showing this PDF, so the entry that
 	// opens it in one is not redundant and must not be dropped. The mode is
@@ -3269,24 +3321,31 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	if (pane.getSelectedItems().length) throw new Error('a stale id survived');
 
 	// A tab id with no graph behind it -- closed, or restored and never
-	// selected -- is not an error, it is an empty selection.
+	// selected -- is not an error, it is an empty selection and core's own
+	// answer to everything else.
 	if (graphTab.selectedItemIDs('tab-nothing').length) throw new Error('an unknown tab claimed a selection');
+	if (graphTab.selectedCollection('tab-nothing')) throw new Error('an unknown tab claimed a collection');
+	graphCollection = null;
+	if (pane.getCollectionTreeRows() !== libraryRows) throw new Error('a graph with no collection invented one');
+	if (pane.canEdit()) throw new Error('a graph with no collection answered for the trash');
+	graphCollection = collection;
 
-	locate.uninstall(win);
+	tabContext.uninstall(win);
 	if (pane.getSelectedItems !== original) throw new Error('uninstall did not give the window its own back');
+	if (pane.getCollectionTreeRows !== coreRows) throw new Error('uninstall left the rows wrapped');
 	if (locateMenu.buildLocateMenu !== coreBuild) throw new Error('uninstall left the menu wrapped');
 
 	// Someone else wrapping on top owns the property now. Writing core's
 	// function back over their wrapper would silently uninstall it, so ours
 	// stays where it is and goes inert instead.
-	locate.install(win, () => [7]);
+	tabContext.install(win, { itemIDs: () => [7], collection: () => collection });
 	const ours = pane.getSelectedItems;
 	let outerCalls = 0;
 	pane.getSelectedItems = function (...args) {
 		outerCalls++;
 		return ours.apply(this, args);
 	};
-	locate.uninstall(win);
+	tabContext.uninstall(win);
 	if (pane.getSelectedItems === original) throw new Error("uninstall clobbered another plugin's wrapper");
 	const after = pane.getSelectedItems();
 	if (!outerCalls) throw new Error('the outer wrapper stopped being called');
@@ -3311,33 +3370,19 @@ function fakeItemMenu(element) {
 	return popup;
 }
 
-check("a node menu is Zotero's own, built for the graph's own collection", async () => {
+check("a node menu is Zotero's own, with the graph's entries under it", async () => {
 	const nodeMenu = require_('./lib/nodeMenu.js');
 	const { win, element } = fakeWindow();
 	const popup = fakeItemMenu(element);
 
-	// What the LIBRARY tab has selected while the graph is on screen. Nothing
-	// about the graph, and in this case not even a collection -- which is the
-	// case that decides half the menu and, with an empty selection, throws.
-	const libraryRows = [{ isTrash: () => true }];
-	let sawRows = null;
 	let built = 0;
 	const pane = {
 		itemsView: {},
-		collectionsView: { id: 'the tree' },
-		getCollectionTreeRows: () => libraryRows,
 		async buildItemContextMenu() {
 			built++;
-			sawRows = pane.getCollectionTreeRows();
 		},
 	};
-	const coreRows = pane.getCollectionTreeRows;
 	win.ZoteroPane = pane;
-	Zotero.CollectionTreeRow = function (view, type, ref) {
-		this.view = view;
-		this.type = type;
-		this.ref = ref;
-	};
 
 	const collection = { id: 3, key: 'ABCD1234' };
 	const said = [];
@@ -3353,15 +3398,10 @@ check("a node menu is Zotero's own, built for the graph's own collection", async
 		],
 	}, reply);
 
-	// Core's builder ran, and it ran against the collection the graph is of --
-	// not the trash the library tab happens to be showing.
+	// Core's own builder, asked once and told nothing: which paper, which
+	// collection and which library it builds for are all questions it puts to
+	// ZoteroPane, and lib/tabContext.js has already answered them.
 	if (built !== 1) throw new Error('core built the menu ' + built + ' times');
-	if (sawRows.length !== 1 || sawRows[0].ref !== collection || sawRows[0].type !== 'collection') {
-		throw new Error('the menu was built for something other than the graph collection');
-	}
-	if (sawRows[0].view !== pane.collectionsView) throw new Error('the row was built without its tree');
-	// One question asked at one moment: the window has its own function back.
-	if (pane.getCollectionTreeRows !== coreRows) throw new Error('the swap was left installed');
 
 	// The three that end at itemsView.deleteSelection() -- the library tree's
 	// selection, which a graph tab has no part in. "Move to Trash" over a node
