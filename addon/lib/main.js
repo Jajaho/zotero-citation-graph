@@ -253,6 +253,7 @@ function addTabContext(win) {
 	tabContext.install(win, {
 		itemIDs: graphTab.selectedItemIDs,
 		collection: graphTab.selectedCollection,
+		select: graphTab.selectItems,
 	});
 }
 

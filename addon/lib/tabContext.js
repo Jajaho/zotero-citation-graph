@@ -47,6 +47,16 @@
  * Collection -> New Collection" hangs the new one under -- which, taken from
  * the tree, can be a collection in a library the new one is not in.
  *
+ * WHAT "SELECT THIS ITEM" DOES. selectItems() is how core shows the user
+ * something it has just made or been asked for -- a note written by Add Note, a
+ * related paper clicked in the item pane, a citation followed out of a note. In
+ * the library tab it selects the row and switches to that tab, and its default
+ * for every other tab is to switch to the library tab anyway. A graph tab has
+ * somewhere of its own to put it: the item pane beside the graph, which is the
+ * same pane the note would have been shown in over there. So it stays put and
+ * the pane answers -- except when the caller asked to BE in the library, which
+ * is what core's own "Show in Library" says by passing inLibraryRoot.
+ *
  * WHETHER IT CAN BE EDITED. canEdit() and canEditFiles() have a `library` case
  * reading the tree row's `editable` / `filesEditable`, a `reader` case reading
  * the open item's library, and a default of `false` -- taken literally, "a
@@ -84,9 +94,10 @@ let installed_ = new WeakMap();
 /**
  * @param {Window} win
  * @param {Object} graph  what the tab strip's graph tabs can be asked, by id:
- *        `itemIDs(tabID)` is the selection, newest click last, and
- *        `collection(tabID)` the collection the tab is a view of. See
- *        graphTab.selectedItemIDs() and graphTab.selectedCollection().
+ *        `itemIDs(tabID)` is the selection, newest click last,
+ *        `collection(tabID)` the collection the tab is a view of, and
+ *        `select(tabID, itemIDs)` shows one of them in the tab's own pane.
+ *        See graphTab.selectedItemIDs(), selectedCollection() and selectItems().
  */
 function install(win, graph) {
 	if (installed_.has(win)) return;
@@ -142,6 +153,18 @@ function install(win, graph) {
 		(original, win_) => function (row) {
 			let g = graphRow(win_, record);
 			return g ? g.filesEditable : original.call(this, row);
+		});
+
+	wrap(record, win, pane, 'selectItems',
+		(original, win_) => function (itemIDs, options = {}) {
+			// Core still accepts the old boolean in this argument and warns
+			// about it. Read it the same way -- but hand on what was actually
+			// passed, so the call core sees is the call that was made.
+			let asked = typeof options === 'boolean' ? { inLibraryRoot: options } : (options || {});
+			if (!asked.inLibraryRoot && isGraphTab(win_, record)) {
+				return record.graph.select(win_.Zotero_Tabs.selectedID, itemIDs || []);
+			}
+			return original.call(this, itemIDs, options);
 		});
 
 	// Removed rather than set to 'library'. The suppression is keyed on two

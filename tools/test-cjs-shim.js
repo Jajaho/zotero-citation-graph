@@ -802,6 +802,15 @@ class FakeElement {
 		return c;
 	}
 
+	insertBefore(c, before) {
+		if (c.parent) c.remove();
+		c.parent = this;
+		let i = this.children.indexOf(before);
+		if (i < 0) this.children.push(c);
+		else this.children.splice(i, 0, c);
+		return c;
+	}
+
 	remove() {
 		if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this);
 		this.parent = null;
@@ -1018,7 +1027,11 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	const entry = fakeEntry(win, element, 'tab-7');
 	// Set immediately before the call: show() reads Zotero.Items synchronously,
 	// and the checks in this file share one Zotero stub.
-	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	const fakeItems = {
+		11: { id: 11, libraryID: 1, parentItem: false, deleted: false, isNote: () => false },
+		12: { id: 12, libraryID: 1, parentItem: { id: 11 }, deleted: false, isNote: () => true },
+	};
+	Zotero.Items = { getAsync: async id => fakeItems[id] };
 	Zotero.Libraries = { get: () => ({ editable: true }) };
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 	await itemPane.show(entry, 11);
@@ -1062,7 +1075,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// A click on a node while the pane is collapsed must NOT put it back --
 	// collapsing it was a decision -- and must not spend a render nobody can
 	// see either. It is recorded, and drawn on the way back out.
-	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false }) };
 	await itemPane.show(entry, 12);
 	if (!entry.pane.box.getAttribute('collapsed')) throw new Error('a click reopened a collapsed pane');
 	if (details.item.id !== 11) throw new Error('a collapsed pane rendered anyway');
@@ -1073,6 +1086,38 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// so let it land.
 	await new Promise(r => setTimeout(r, 0));
 	if (details.item.id !== 12) throw new Error('coming back did not land on the paper last clicked');
+
+	// A note is not a paper with sections: core answers a selected note with its
+	// own editor, and so does this. The paper it hangs off is NOT put in front
+	// of it -- that substitution is for attachments, and a note is the thing
+	// being opened.
+	Zotero.Items = { getAsync: async id => fakeItems[id] };
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	await itemPane.show(entry, 12, { expand: true });
+	const note = made.find(el => el.localName === 'note-editor');
+	if (!note) throw new Error('a note did not open an editor');
+	if (note.item !== fakeItems[12]) throw new Error('the editor was handed something else');
+	if (note.mode !== 'edit') throw new Error('an editable note came out read-only');
+	if (note.hidden) throw new Error('the editor was built and left hidden');
+	if (!details.hidden) throw new Error('the item pane is still on screen behind it');
+	// EditorInstance closes the tab a note belongs to when the note is deleted.
+	// The tab this one sits in is the graph.
+	if (note.tabID !== undefined) throw new Error('a deleted note would close the graph tab');
+	// Section buttons mean nothing beside an editor -- core's own rule.
+	if (sidenav.defaultStatus !== true) throw new Error('the sidenav still offers sections');
+
+	// And back to a paper, which puts the pane in front again.
+	await itemPane.show(entry, 11, { expand: true });
+	if (details.hidden) throw new Error('the paper did not come back');
+	if (!note.hidden) throw new Error('the editor was left over the pane');
+	if (sidenav.defaultStatus !== false) throw new Error('the sidenav was left greyed out');
+
+	// An explicit request to look at something -- unlike a click on a node --
+	// opens the pane that was put away, and draws what it was asked for.
+	details._collapsed = true;
+	await itemPane.show(entry, 12, { expand: true });
+	if (entry.pane.box.getAttribute('collapsed')) throw new Error('select did not reopen the pane');
+	if (note.item !== fakeItems[12]) throw new Error('the pane came back on the wrong thing');
 
 	const box = entry.pane.box;
 	const row = made.find(el => el.className === 'zg-item-row');
@@ -1102,7 +1147,7 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 		await held;
 	});
 	const entry = fakeEntry(win, element, 'tab-8');
-	const items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
+	const items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false }) };
 	Zotero.Libraries = { get: () => ({ editable: true }) };
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 
@@ -3181,7 +3226,7 @@ check('with no translator a keyword is the facet name, so the rest of these hold
 	if (F.toInput(F.parse('author: soc')) !== 'author: soc') throw new Error('the English round trip moved');
 });
 
-check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
+check('a graph tab answers ZoteroPane what a tab of core’s own would', async () => {
 	const tabContext = require_('./lib/tabContext.js');
 	const graphTab = require_('./lib/graphTab.js');
 
@@ -3202,6 +3247,10 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
 		getCollectionTreeRows: () => libraryRows,
 		getSelectedLibraryIDs: () => [99],
 		getSelectedCollections: asID => (asID ? [55] : [{ id: 55 }]),
+		selectItems: async (ids, options) => {
+			switched.push({ ids, options });
+			return true;
+		},
 		canEdit: () => libraryRows[0].editable,
 		canEditFiles: () => libraryRows[0].filesEditable,
 	};
@@ -3242,9 +3291,15 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
 	Zotero.Items = { get: id => items[id] || false };
 
 	let asked = [];
+	let switched = [];
+	let shown = [];
 	let graphSelection = [7];
 	let graphCollection = collection;
 	tabContext.install(win, {
+		select: async (tabID, ids) => {
+			shown.push({ tabID, ids });
+			return true;
+		},
 		itemIDs: (tabID) => {
 			asked.push(tabID);
 			return graphSelection;
@@ -3264,6 +3319,8 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
 	if (pane.getCollectionTreeRows() !== libraryRows) throw new Error('a library tab lost its own rows');
 	if (pane.getSelectedLibraryIDs()[0] !== 99) throw new Error('a library tab lost its own library');
 	if (pane.getSelectedCollections()[0].id !== 55) throw new Error('a library tab lost its own collection');
+	await pane.selectItems([1]);
+	if (switched.length !== 1 || shown.length) throw new Error('a library tab stopped selecting its own rows');
 	if (pane.canEdit() || pane.canEditFiles()) throw new Error('a read-only trash became editable');
 
 	// The tab type core has no case for, which is the whole point.
@@ -3289,6 +3346,26 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
 	if (pane.getSelectedCollections(true)[0] !== 3) throw new Error('asID was not honoured');
 	if (!pane.canEdit()) throw new Error('an editable collection could not be written to');
 	if (!pane.canEditFiles()) throw new Error('an attachment could not be added to it');
+
+	// "Select this item" is core showing the user something -- a note it has
+	// just written, a row clicked in the pane. A graph tab has its own pane to
+	// put it in, so nothing switches tabs.
+	switched.length = 0;
+	if (await pane.selectItems([31]) !== true) throw new Error('the graph tab refused to select');
+	if (switched.length) throw new Error('the graph tab was left behind for the library');
+	if (shown.length !== 1 || shown[0].ids[0] !== 31) throw new Error('the pane was not shown ' + JSON.stringify(shown));
+	if (shown[0].tabID !== 'tab-1') throw new Error('shown in ' + shown[0].tabID);
+
+	// Except "Show in Library", whose whole point is to leave the tab you are
+	// in. It is the one caller that passes inLibraryRoot, and core still takes
+	// it as a bare boolean.
+	shown.length = 0;
+	await pane.selectItems([31], true);
+	if (shown.length) throw new Error('Show in Library stayed in the graph');
+	if (switched.length !== 1) throw new Error('Show in Library did not reach core');
+	if (switched[0].options !== true) throw new Error('core saw ' + JSON.stringify(switched[0].options));
+	await pane.selectItems([31], { inLibraryRoot: true });
+	if (switched.length !== 2) throw new Error('the object form was not honoured');
 
 	// A read-only group is read-only in the graph too -- the answer is the
 	// collection's, not a blanket yes.
@@ -3338,7 +3415,11 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', () => {
 	// Someone else wrapping on top owns the property now. Writing core's
 	// function back over their wrapper would silently uninstall it, so ours
 	// stays where it is and goes inert instead.
-	tabContext.install(win, { itemIDs: () => [7], collection: () => collection });
+	tabContext.install(win, {
+		itemIDs: () => [7],
+		collection: () => collection,
+		select: async () => true,
+	});
 	const ours = pane.getSelectedItems;
 	let outerCalls = 0;
 	pane.getSelectedItems = function (...args) {

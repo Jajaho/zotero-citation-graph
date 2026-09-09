@@ -185,6 +185,31 @@ function selectedCollection(tabID) {
 }
 
 /**
+ * Show `itemIDs` in this tab -- what "select this item" means where the tab is
+ * a graph rather than a list. See lib/tabContext.js.
+ *
+ * Core's own answer is the library's item tree plus a switch to that tab, which
+ * is the wrong half of the point: the thing being selected is a note just
+ * written on the paper under the pointer, or a row clicked in the pane, and all
+ * of it belongs beside the graph it came from.
+ *
+ * The pane is opened if it was put away, unlike a click on a node: everything
+ * that reaches here is an explicit request to look at one thing.
+ */
+async function selectItems(tabID, itemIDs) {
+	let entry = open_.get(tabID);
+	if (!entry || !itemIDs || !itemIDs.length) return false;
+	// The tab's selection, the same way a click on a node sets it -- core has
+	// just told us what the user is looking at.
+	entry.selection = [...itemIDs];
+	await itemPane.show(entry, itemIDs[0], {
+		status: t => send(entry, 'zgSetStatus', t),
+		expand: true,
+	});
+	return true;
+}
+
+/**
  * Teardown for a tab that is going away. The container is about to be destroyed
  * anyway, but what is in the side panel is not just markup: an item pane holds
  * observers registered with Zotero.Notifier, and taking it out of the document
@@ -1319,7 +1344,7 @@ function forgetAll() {
 
 module.exports = {
 	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
-	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
+	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection, selectItems,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.

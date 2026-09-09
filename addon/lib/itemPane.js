@@ -78,10 +78,11 @@ const PANE_CSS = `
  * ever drawn -- the ones passed over in between are dropped.
  *
  * @param {Object}   entry      the graphTab record for this tab
- * @param {Number}   itemID     a regular item, or one of its children
+ * @param {Number}   itemID     a regular item, one of its children, or a note
  * @param {Function} [status]   text back to the graph page
+ * @param {Boolean}  [expand]   open the pane if it was put away
  */
-async function show(entry, itemID, { status = () => {} } = {}) {
+async function show(entry, itemID, { status = () => {}, expand = false } = {}) {
 	if (!entry || !entry.split) return;
 
 	let item = await Zotero.Items.getAsync(itemID);
@@ -89,7 +90,11 @@ async function show(entry, itemID, { status = () => {} } = {}) {
 	// The library shows the parent's pane when you select an attachment, and so
 	// does the context pane. Nodes are regular items today, but that is a fact
 	// about the payload, not about this.
-	let target = item.parentItem || item;
+	//
+	// A note is the exception, and for the same reason the library makes it one:
+	// a note is not a fact about its paper, it is a document, and selecting one
+	// means opening it. See showNote().
+	let target = item.isNote() ? item : (item.parentItem || item);
 
 	// Everything below the first line of this is core's element, on core's
 	// terms. If a Zotero this plugin has not seen builds it differently, say so
@@ -104,6 +109,19 @@ async function show(entry, itemID, { status = () => {} } = {}) {
 		return;
 	}
 	pane.wanted = target;
+
+	// An explicit request to look at one thing opens the pane: a note just
+	// written, a related item clicked in the pane, a citation followed out of a
+	// note. All of those come through core's own selectItems(), whose whole
+	// purpose is to put something in front of the user -- see
+	// graphTab.selectItems() and lib/tabContext.js.
+	if (expand && splitPane.collapsed(entry)) {
+		splitPane.setCollapsed(entry, false);
+		// Nothing is drawn while the pane is collapsed, so what is behind the
+		// strip of icons is whatever was there when it was put away. Forgetting
+		// it is what sends the loop back over it; same reason as redraw().
+		pane.shown = null;
+	}
 
 	// Someone who collapsed the pane is not asking for it back every time they
 	// click a node. What they clicked is still recorded, and drawn the moment
@@ -125,9 +143,8 @@ async function draw(entry, pane) {
 		while (entry.itemPane === pane && pane.wanted && pane.wanted !== pane.shown) {
 			let next = pane.wanted;
 			pane.shown = next;
-			pane.details.editable = editable(next);
-			pane.details.item = next;
-			await pane.details.render();
+			if (next.isNote()) showNote(entry, pane, next);
+			else await showDetails(pane, next);
 		}
 	}
 	catch (e) {
@@ -136,6 +153,106 @@ async function draw(entry, pane) {
 	finally {
 		pane.rendering = false;
 	}
+}
+
+/**
+ * The paper's own pane: every section core registers, editable exactly as in the
+ * library.
+ */
+async function showDetails(pane, item) {
+	pane.details.editable = editable(item);
+	pane.details.item = item;
+	face(pane, pane.details);
+	await pane.details.render();
+}
+
+/**
+ * A note, in core's own editor.
+ *
+ * The library window answers a selected note with a <note-editor> rather than an
+ * item pane -- itemPane.js renderNoteEditor(), and the three lines below are its
+ * three lines. A note has no sections to show and nothing to describe; it is the
+ * document, and "select this note" means "open it".
+ *
+ * Deliberately NOT given a tabID, though everything else in this file carries
+ * one. EditorInstance reads a tabID as "this note has a tab of its own" and
+ * closes that tab when the note is deleted (editorInstance.js notify()). The tab
+ * this editor sits in is the graph, so a note thrown away in the pane would take
+ * the whole graph off screen with it. The library's own note editor has no tabID
+ * either, for the same reason.
+ */
+function showNote(entry, pane, item) {
+	let note = ensureNote(entry, pane);
+	if (!note) return;
+	note.mode = editable(item) ? 'edit' : 'view';
+	note.viewMode = 'library';
+	note.item = item;
+	face(pane, note);
+	// A note is opened in order to be written in, and core agrees: newNote()
+	// focuses its own editor the moment the note is selected. That call lands on
+	// the LIBRARY's editor, which is not on screen, so the caret has to be put
+	// here instead.
+	//
+	// Not awaited -- focus() waits on the editor's iframe, and nothing in the
+	// render loop should wait with it -- and its failures are swallowed, because
+	// a note on screen with no caret in it is a far better outcome than a draw
+	// that threw.
+	if (typeof note.focus === 'function') {
+		Promise.resolve(note.focus()).catch(() => {});
+	}
+}
+
+/**
+ * Which of the two is on screen, and what the sidenav makes of it.
+ *
+ * Core switches a deck; this hides the one not wanted, which comes to the same
+ * thing and leaves the pane the shape contextPane.js gave it -- the sizing class
+ * is on the element itself here, not on a container around it.
+ *
+ * The strip of icons is core's rule verbatim (itemPane.js
+ * _handleViewTypeChange): section buttons mean nothing beside a note editor, so
+ * they go back to their default greyed state, and coming back to the paper
+ * re-reads which sections it has.
+ */
+function face(pane, wanted) {
+	if (pane.facing === wanted) return;
+	pane.facing = wanted;
+	pane.details.hidden = wanted !== pane.details;
+	if (pane.note) pane.note.hidden = wanted !== pane.note;
+	let onItem = wanted === pane.details;
+	if (typeof pane.sidenav.toggleDefaultStatus === 'function') {
+		pane.sidenav.toggleDefaultStatus(!onItem);
+	}
+	if (onItem && typeof pane.details.forceUpdateSideNav === 'function') {
+		pane.details.forceUpdateSideNav();
+	}
+}
+
+/**
+ * The editor, built the first time a note is asked for.
+ *
+ * Not alongside the rest of the pane: a <note-editor> loads an editor iframe
+ * from its connectedCallback, and most graphs are read without a note ever being
+ * opened.
+ */
+function ensureNote(entry, pane) {
+	if (pane.note) return pane.note;
+	try {
+		let note = entry.win.document.createXULElement('note-editor');
+		// `notitle` is read out of the attribute on connect, so it has to be
+		// there before the element is in the document.
+		note.setAttribute('notitle', '1');
+		note.setAttribute('flex', '1');
+		note.className = 'zotero-item-pane-content';
+		note.hidden = true;
+		pane.row.insertBefore(note, pane.sidenav);
+		pane.note = note;
+	}
+	catch (e) {
+		// A pane that cannot show notes is still a pane that shows papers.
+		Zotero.logError(e);
+	}
+	return pane.note;
 }
 
 /**
@@ -270,6 +387,8 @@ function ensurePane(entry) {
 		row,
 		details,
 		sidenav,
+		note: null,        // the note editor, built on the first note (ensureNote)
+		facing: details,   // whichever of the two is not hidden
 		shown: null,       // the item drawn
 		wanted: null,      // the item most recently clicked
 		rendering: false,
