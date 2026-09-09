@@ -105,8 +105,21 @@ const PANE_CSS = `
 	 * cancels itself. The line you see is the sidenav's border-inline-start --
 	 * which is the same line, from the same element, that the library shows
 	 * beside ITS collapsed item pane.
+	 *
+	 * The selector is core's own, qualified. It has to be: the rule being
+	 * overridden is
+	 *
+	 *     splitter:not([orient=vertical])[substate=after][state=collapsed]
+	 *
+	 * which is three attributes -- :not() contributes its argument's -- plus a
+	 * type selector, so (0,3,1). This was written as
+	 * .zg-pane-splitter[state="collapsed"], which is (0,2,0), and lost: every
+	 * declaration below was dead, and the only one that ever applied was
+	 * pointer-events, because core sets no such property on a splitter. Adding
+	 * the class to core's own selector makes it (0,4,1), which wins on
+	 * specificity rather than on which stylesheet happens to be appended last.
 	 */
-	.zg-pane-splitter[state="collapsed"] {
+	splitter.zg-pane-splitter:not([orient="vertical"])[substate="after"][state="collapsed"] {
 		border: 0;
 		margin-left: calc(1px - var(--draggable-size));
 		margin-right: -1px;

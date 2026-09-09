@@ -2603,14 +2603,55 @@ check('a Zotero border variable is used as the shorthand it is', () => {
  * margins that cancel --draggable-size off the same variable core uses, so the
  * density bump on a collapsed splitter cancels itself too.
  */
+/**
+ * CSS specificity, as the cascade counts it: [ids, classes+attributes+pseudos,
+ * types]. `:not(X)` contributes X's own specificity rather than any of its own,
+ * which is exactly the part that was miscounted here -- so it is expanded in
+ * place before counting.
+ */
+function specificity(sel) {
+	let flat = sel;
+	// :not(...) / :is(...) contribute their argument's specificity.
+	while (/:(?:not|is)\(/.test(flat)) {
+		flat = flat.replace(/:(?:not|is)\(([^()]*)\)/g, '$1');
+	}
+	const ids = (flat.match(/#[\w-]+/g) || []).length;
+	const classes = (flat.match(/\.[\w-]+/g) || []).length
+		+ (flat.match(/\[[^\]]*\]/g) || []).length
+		+ (flat.match(/:[\w-]+/g) || []).length;
+	// Type selectors: bare identifiers not preceded by . # : [ or -
+	const types = (flat.replace(/\[[^\]]*\]/g, ' ').match(/(^|[\s>+~])[a-zA-Z][\w-]*/g) || []).length;
+	return [ids, classes, types];
+}
+
+function outranks(mine, theirs) {
+	for (let i = 0; i < 3; i++) {
+		if (mine[i] !== theirs[i]) return mine[i] > theirs[i];
+	}
+	return false;
+}
+
 check('a collapsed pane edge is drawn once, by the sidenav', () => {
 	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
-	const rule = /\.zg-pane-splitter\[state="collapsed"\]\s*\{([^}]*)\}/.exec(src);
+	const rule = /\n\t([^\n{]*\[state="collapsed"\][^\n{]*)\{([^}]*)\}/.exec(src);
 	if (!rule) throw new Error('nothing styles the splitter of a collapsed pane');
-	const body = rule[1].replace(/\/\*[\s\S]*?\*\//g, '');
+	const selector = rule[1].trim();
+	const body = rule[2].replace(/\/\*[\s\S]*?\*\//g, '');
 
-	// Core's [state=collapsed] rule sets border-left, and it is the more
-	// specific selector -- so leaving it to win is the doubled edge.
+	// The rule this one exists to beat, verbatim from Zotero's stylesheet. It
+	// sets border-left and drops the negative margins, which is the doubled
+	// edge and the protruding strip respectively.
+	const CORE = 'splitter:not([orient=vertical])[substate=after][state=collapsed]';
+	const mine = specificity(selector);
+	const theirs = specificity(CORE);
+	if (!outranks(mine, theirs)) {
+		throw new Error('core\'s rule outranks this one, so every declaration in it is dead: '
+			+ selector + ' is ' + mine.join(',') + ' against ' + theirs.join(',')
+			+ '. The :not() argument counts toward the middle column, which is what was missed.');
+	}
+
+	// Core's [state=collapsed] rule sets border-left; the sidenav is drawing
+	// that edge now, so the splitter must draw nothing.
 	if (!/\bborder\s*:\s*0\b/.test(body)) {
 		throw new Error('the splitter still draws a line at the edge the sidenav draws: ' + body.trim());
 	}
