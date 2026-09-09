@@ -1,7 +1,7 @@
 # Third-party notices
 
-Zotero Citation Graph is distributed under the GNU Affero General Public License
-v3.0 or later; see `LICENSE` beside this file.
+Citation Graph for Zotero is distributed under the GNU Affero General Public
+License v3.0 or later; see `LICENSE` beside this file.
 
 It bundles and reuses the material below. Each entry names what is included,
 where it came from, and the notice its licence requires be carried with it.

@@ -1,4 +1,4 @@
-# Zotero Citation Graph -- deutsche Übersetzung.
+# Citation Graph for Zotero -- deutsche Übersetzung.
 #
 # Siehe locale/en-US/zotero-graph.ftl für die Quelle und für die Regeln: eine
 # Nachricht pro Zeile, Variablen als { $name }, Plurale als Selektor. Deutsch

@@ -1,4 +1,4 @@
-# Zotero Citation Graph -- user-facing strings.
+# Citation Graph for Zotero -- user-facing strings.
 #
 # Every id is prefixed `zotero-graph-`, because Zotero loads a plugin's .ftl
 # into the main window's own bundle, alongside core's strings and every other

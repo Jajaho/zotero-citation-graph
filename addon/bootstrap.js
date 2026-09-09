@@ -2,7 +2,7 @@
 /* global Zotero, Services, Components, Cc, Ci, Cu, IOUtils, PathUtils, ChromeWorker, fetch */
 
 /**
- * Zotero Citation Graph -- plugin entry point.
+ * Citation Graph for Zotero -- plugin entry point.
  *
  * Copyright (C) 2026 Jakob Holz
  * SPDX-License-Identifier: AGPL-3.0-or-later
