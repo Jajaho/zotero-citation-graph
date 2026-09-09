@@ -257,6 +257,30 @@
 		renderGaps();
 	};
 
+	/**
+	 * The native node menu has gone away, whatever took it away. This is the
+	 * hold's one way out on that path -- Escape, a click elsewhere, the window
+	 * losing focus and picking an entry all end here -- so it is where the node
+	 * carried into the menu is given back to the layout.
+	 */
+	window.zgMenuClosed = function () {
+		nativeOpen = false;
+		release();
+	};
+
+	/**
+	 * One of this plugin's own entries was picked out of the native menu.
+	 *
+	 * Sent after zgMenuClosed, never before: "Pin node here" fixes the node
+	 * where the hold is keeping it, and a release arriving afterwards would
+	 * undo the pin it had just asked for. That is the same order this page's
+	 * own menu rows run in.
+	 */
+	window.zgMenuPicked = function (id) {
+		let run = nativeRuns.get(id);
+		if (run) run();
+	};
+
 	// --- item helpers -----------------------------------------------------
 
 	function year(item) {
@@ -3017,20 +3041,72 @@
 	// --- the node context menu --------------------------------------------
 
 	/**
-	 * Built fresh per node rather than shown and hidden, because what it offers
-	 * differs between the two populations: a held item can be selected in the
-	 * library and opened at its own URL, an outside reference can only be
-	 * resolved through its identifier or added.
+	 * Which of the two menus a node gets, and it turns on what the node IS.
+	 *
+	 * A held node is a Zotero item, and the menu for a Zotero item already
+	 * exists: the one the library window opens over a row. Everything this page
+	 * used to offer a held item was a thinner copy of an entry in that menu --
+	 * select it, open its file, open its URL -- and a thinner copy is the worst
+	 * kind, because it drifts. So a held node asks chrome for the real thing;
+	 * see openNativeMenu() and lib/nodeMenu.js.
+	 *
+	 * An outside reference is not an item and has no such menu to ask for. It
+	 * keeps this page's own, which is where its two entries live: resolving the
+	 * identifier, and adding the paper the library does not hold.
+	 *
+	 * Both end with the same questions about the picture rather than the paper
+	 * -- what this node is next to, and where it sits -- because a reference
+	 * outside the collection has both as much as a held item does.
 	 */
 	function showMenu(n, event) {
-		let entries = n.ghost ? ghostMenu(n) : itemMenu(n);
-		// Last, and shared by both populations, because these are the entries
-		// about the picture rather than the paper: what a node is next to and
-		// where it sits are facts about this layout, and an outside reference
-		// has both as much as a held item does.
+		if (!n.ghost) {
+			openNativeMenu(n, event);
+			return;
+		}
+		let entries = ghostMenu(n);
 		for (let entry of isolateEntries(n)) entries.push(entry);
 		entries.push(pinEntry(n));
 		openMenu(entries, event);
+	}
+
+	/**
+	 * Zotero's own item context menu, opened over the graph.
+	 *
+	 * It has to be built and opened in chrome: it is a XUL <menupopup> in the
+	 * main window, and this page is content. So the entries this plugin adds to
+	 * the bottom of it cross the bridge as data -- an icon name, a label, a
+	 * hint -- and what each one DOES stays here, in a run() kept against the id
+	 * chrome hands back when that entry is picked.
+	 *
+	 * Screen coordinates rather than client ones: the popup is placed by a
+	 * window that knows nothing of this document's offset inside it, and
+	 * screenX/screenY is what core's own reader hands across for the same
+	 * reason.
+	 */
+	let nativeRuns = new Map();
+	let nativeOpen = false;
+
+	function openNativeMenu(n, event) {
+		// Dismisses whatever was open -- this page's own menu, or a native one
+		// still up -- and with it the hold that menu was carrying.
+		hideMenu();
+		hideAction();
+		nativeRuns.clear();
+		let entries = isolateEntries(n);
+		entries.push(pinEntry(n));
+		let wire = entries.map((entry, i) => {
+			let id = 'e' + i;
+			nativeRuns.set(id, entry.run);
+			return { id, icon: entry.icon, label: entry.label, hint: entry.hint || null };
+		});
+		nativeOpen = true;
+		emit({
+			type: 'node-menu',
+			itemID: n.itemID,
+			x: event ? event.screenX : 0,
+			y: event ? event.screenY : 0,
+			entries: wire,
+		});
 	}
 
 	/**
@@ -3088,11 +3164,20 @@
 
 	function hideMenu() {
 		elMenu.hidden = true;
-		// Every way out of the menu comes through here -- Escape, a click on
-		// the canvas, picking an entry, a rebuild landing -- so this is the one
-		// place the hold has to be given up. Picking "Pin node here" releases
-		// and then re-fixes the node at coordinates nothing has had a chance to
-		// change, which is the same spot.
+		// A native menu is chrome's to take down, and chrome answers by saying
+		// so -- see zgMenuClosed, which is where the hold is given up in that
+		// case. Releasing here as well would hand the node back to the layout
+		// while the popup asking whether to pin it was still on screen.
+		if (nativeOpen) {
+			nativeOpen = false;
+			emit({ type: 'node-menu-close' });
+			return;
+		}
+		// Every way out of this page's own menu comes through here -- Escape, a
+		// click on the canvas, picking an entry, a rebuild landing -- so this is
+		// the one place the hold has to be given up. Picking "Pin node here"
+		// releases and then re-fixes the node at coordinates nothing has had a
+		// chance to change, which is the same spot.
 		release();
 	}
 
@@ -3194,37 +3279,6 @@
 				hint: n.name,
 				disabled: x.ns !== 'doi',
 				run: () => emit({ type: 'add-item', doi: n.name, title: x.title || null }),
-			},
-		];
-	}
-
-	function itemMenu(n) {
-		let url = Links.itemUrl(n);
-		return [
-			{
-				icon: 'show-item',
-				label: t('menu-select-in-zotero'),
-				disabled: !n.itemID,
-				run: () => emit({ type: 'open-item', itemID: n.itemID }),
-			},
-			{
-				// The full reader, in a tab of its own. Whether the item HAS a
-				// readable attachment is not knowable here -- the payload
-				// carries items, not their files -- so this is always offered,
-				// and chrome says so on the status line when there is nothing
-				// to open.
-				icon: 'new-tab',
-				label: t('menu-open-pdf-tab'),
-				hint: t('menu-open-pdf-tab-hint'),
-				disabled: !n.itemID,
-				run: () => emit({ type: 'open-pdf-tab', itemID: n.itemID }),
-			},
-			{
-				icon: 'open-link',
-				label: t('menu-open-in-browser'),
-				hint: url || t('menu-open-in-browser-no-url'),
-				disabled: !url,
-				run: () => emit({ type: 'open-url', url }),
 			},
 		];
 	}

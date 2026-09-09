@@ -20,7 +20,9 @@
  * reader tab, so the shape of the fix is core's own -- a graph tab needs its
  * case. Note the reach: several other core menus route through this function
  * too, and they now see the clicked node as well, which is the same deal a
- * reader tab gets.
+ * reader tab gets. Chief among them is the item context menu, which lib/
+ * nodeMenu.js opens over a node: every command on it asks this question, and
+ * the Locate rows at the top of it ask it through _getSelectedItems().
  *
  * WHAT KIND OF CONTEXT IS ASKING. The sidenav's Locate button computes a
  * `locateMode` from container.tabType (itemPaneSidenav.js): `library` for the
@@ -29,9 +31,10 @@
  * "open in the same type of the current context" -- so a `"tab"` context is
  * offered View in Window and not View in Tab. That is right for a reader tab,
  * which is already showing the file. A graph tab is showing a graph: opening
- * the PDF in a tab is a real move there, and the graph's own node menu has
- * offered it all along. So the mode is taken off the options entirely on the
- * way past -- see below for why removed rather than set to something.
+ * the PDF in a tab is a real move there, and it is what the node menu's own
+ * Locate rows offer, since buildContextMenu() passes no mode at all. So the
+ * mode is taken off the options entirely on the way past -- see below for why
+ * removed rather than set to something.
  *
  * Installed and removed per window, beside the tab hooks in main.js, because
  * both objects are per window and a plugin being upgraded must not leave a

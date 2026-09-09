@@ -19,6 +19,7 @@ let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let addDialog = require('./addDialog.js');
 let itemPane = require('./itemPane.js');
+let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
@@ -549,20 +550,33 @@ async function handleMessage(win, tabID, collection, msg) {
 				Zotero.launchURL(msg.url);
 			}
 			break;
-		// The item's file in Zotero's own reader tab. It takes the graph off
-		// screen, which is the honest trade: reading a paper is not something
-		// to do in half a tab, and the item pane beside the graph already
-		// offers the same file under Attachments.
-		case 'open-pdf-tab': {
+		// Zotero's own item menu, over the node the user right-clicked. Chrome's
+		// to build and to open for the same reason as the item pane below: it is
+		// a XUL popup in the main window, and the graph page is content. See
+		// lib/nodeMenu.js.
+		//
+		// Like 'item-pane-show', this message carries the selection, and for the
+		// same reason: the menu is about the node clicked, and every core command
+		// on it asks ZoteroPane what is selected. Recorded before the menu is
+		// built, because that is what the builder reads.
+		//
+		// A node with no item behind it is not turned away: core answers an empty
+		// selection with the menu it gives an empty item tree, every row of it
+		// disabled, and this plugin's own two entries still mean what they say.
+		// Refusing instead would leave the page holding the node it right-clicked,
+		// waiting for a menu that never came.
+		case 'node-menu': {
 			let entry = open_.get(tabID);
-			if (!entry || !msg.itemID) break;
-			let status = t => send(entry, 'zgSetStatus', t);
-			let found = await readable(msg.itemID, status);
-			if (!found) break;
-			// No options: this is the same call, and so the same tab, that
-			// double-clicking the item in the library gets you.
-			await Zotero.Reader.open(found.att.id);
-			status('');
+			if (!entry) break;
+			entry.selection = msg.itemID ? [msg.itemID] : [];
+			await nodeMenu.open(entry, msg, (fn, value) => send(entry, fn, value));
+			break;
+		}
+		// The page dismissing a menu it no longer wants on screen -- a rebuild
+		// landing under one, or a second node asking for its own.
+		case 'node-menu-close': {
+			let entry = open_.get(tabID);
+			if (entry) nodeMenu.close(entry.win);
 			break;
 		}
 		// Zotero's own item pane, beside the graph, describing the node just
@@ -591,42 +605,6 @@ async function handleMessage(win, tabID, collection, msg) {
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
-}
-
-/**
- * The file 'Open PDF in new tab' would open for `itemID`, or null with the
- * reason already on the status line.
- *
- * The graph page cannot answer any of this for itself -- the payload carries
- * items, not their files -- so the entry is always offered and the answer comes
- * back here rather than as a greyed-out menu row that never says why.
- *
- * @param {Number}   itemID   a regular item, or an attachment
- * @param {Function} status   text back to the graph page
- * @returns {?{ item: Object, att: Object }}
- */
-async function readable(itemID, status) {
-	let item = await Zotero.Items.getAsync(itemID);
-	if (!item) return null;
-
-	let att = item.isAttachment() ? item : await item.getBestAttachment();
-	if (!att) {
-		status(l10n.t('reader-no-attachment', { title: item.getDisplayTitle() }));
-		return null;
-	}
-	// pdf | epub | snapshot. Anything else (an image, a bare link) has no reader
-	// to render it, and ReaderInstance's constructor throws on it.
-	if (!att.attachmentReaderType) {
-		status(l10n.t('reader-unsupported', { title: item.getDisplayTitle() }));
-		return null;
-	}
-	// Returns false when the row exists but the bytes do not -- the usual state
-	// of an attachment added through the local API without its file.
-	if (!await att.getFilePathAsync()) {
-		status(l10n.t('reader-missing-file', { title: item.getDisplayTitle() }));
-		return null;
-	}
-	return { item, att };
 }
 
 /**
@@ -1341,7 +1319,4 @@ module.exports = {
 	// Exported for the payload test: what a lookup pass may and may not change
 	// about the graph on screen is the whole reason it is not a rebuild.
 	pushData,
-	// Exported for the reader test: the three questions between "Open PDF in
-	// new tab" and a reader that throws on construction.
-	readable,
 };

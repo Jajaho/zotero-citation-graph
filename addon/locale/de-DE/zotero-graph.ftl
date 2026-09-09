@@ -203,11 +203,7 @@ zotero-graph-menu-unpin-hint = das Layout darf ihn wieder bewegen
 
 zotero-graph-menu-open-in-browser = Im Browser öffnen
 zotero-graph-menu-open-in-browser-no-id = kein auflösbarer Bezeichner
-zotero-graph-menu-open-in-browser-no-url = dieser Eintrag hat weder URL noch DOI
 zotero-graph-menu-add-to-zotero = Zu Zotero hinzufügen
-zotero-graph-menu-select-in-zotero = In Zotero auswählen
-zotero-graph-menu-open-pdf-tab = PDF in neuem Tab öffnen
-zotero-graph-menu-open-pdf-tab-hint = der volle Reader, mit Suche, Seitenleiste und Annotationen
 
 
 ## Die Karte für externe Referenzen.
@@ -255,12 +251,9 @@ zotero-graph-add-elsewhere = „{ $title }“ zu einer anderen Sammlung hinzugef
 zotero-graph-add-rebuilding = „{ $title }“ hinzugefügt — wird neu aufgebaut…
 
 
-## Der Tab und was er sagt, wenn es nichts zu öffnen gibt.
+## Der Tab.
 
 zotero-graph-tab-title = { $collection } — Zitationsgraph
-zotero-graph-reader-no-attachment = Kein Anhang an „{ $title }“.
-zotero-graph-reader-unsupported = „{ $title }“ hat kein PDF, EPUB oder Snapshot zum Öffnen.
-zotero-graph-reader-missing-file = Die Anhangdatei für „{ $title }“ fehlt auf der Festplatte.
 
 ## Fehlende Werke: was die Sammlung zitiert und nicht besitzt.
 

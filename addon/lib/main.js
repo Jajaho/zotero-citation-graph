@@ -7,6 +7,7 @@
 
 let graphTab = require('./graphTab.js');
 let locate = require('./locate.js');
+let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 
@@ -255,6 +256,10 @@ function addLocate(win) {
  *  the window closing and by the plugin going away under a window that is not. */
 function removeWindowIntegration(win) {
 	locate.uninstall(win);
+	// A node menu still up is this plugin's markup on core's popup. Taking it
+	// down is what sweeps that markup off again -- see lib/nodeMenu.js -- and a
+	// plugin going away under a window that is staying must not leave it there.
+	nodeMenu.close(win);
 
 	let style = win.document.getElementById(TAB_ICON_STYLE_ID);
 	if (style) style.remove();

@@ -730,6 +730,9 @@ class FakeElement {
 		this.parent = null;
 		this.removed = false;
 		this.listeners = {};
+		// data-* attributes, which is how nodeMenu.js marks the rows it added
+		// with the id the page will want back.
+		this.dataset = {};
 		if (localName === 'item-details') this.render = () => onRender(this);
 		// Core's sidenav starts disabled and is told when something is being
 		// viewed; record the telling so a check can insist it happened.
@@ -766,6 +769,18 @@ class FakeElement {
 			}
 		}
 		return null;
+	}
+
+	/** Enough of one for add(), which is all any of this reaches for. */
+	get classList() {
+		return {
+			add: (...names) => {
+				const have = String(this.className).split(/\s+/).filter(Boolean);
+				for (const n of names) if (!have.includes(n)) have.push(n);
+				this.className = have.join(' ');
+			},
+			contains: n => String(this.className).split(/\s+/).includes(n),
+		};
 	}
 
 	setAttribute(k, v) {
@@ -825,6 +840,22 @@ class FakeElement {
 		return walk(this);
 	}
 
+	/** The class half of querySelector(), for every match rather than the first.
+	 *  nodeMenu.js sweeps its own rows off a popup with it. */
+	querySelectorAll(sel) {
+		const cls = /^\.([\w-]+)$/.exec(sel);
+		if (!cls) throw new Error('unsupported selector: ' + sel);
+		const out = [];
+		const walk = (el) => {
+			for (const c of el.children) {
+				if (String(c.className).split(/\s+/).includes(cls[1])) out.push(c);
+				walk(c);
+			}
+		};
+		walk(this);
+		return out;
+	}
+
 	focus() {}
 
 	select() {}
@@ -836,11 +867,22 @@ class FakeElement {
 	}
 
 	hidePopup() {
+		this.openedAt = null;
 		this.fire('popuphidden', { target: this });
+	}
+
+	// Where a context menu is asked to appear, in screen coordinates. Recorded
+	// rather than acted on: what matters is that it is the pointer's own spot.
+	openPopupAtScreen(x, y, isContextMenu) {
+		this.openedAt = { x, y, isContextMenu };
 	}
 
 	addEventListener(type, fn) {
 		(this.listeners[type] = this.listeners[type] || []).push(fn);
+	}
+
+	removeEventListener(type, fn) {
+		this.listeners[type] = (this.listeners[type] || []).filter(f => f !== fn);
 	}
 
 	/** Press whatever the panel wired up. */
@@ -1717,57 +1759,6 @@ check('a tab whose collection is gone drops without costing the tabs after it', 
 	}
 	// The whole point of not throwing: restoreState has no per-tab catch.
 	if (after !== 1) throw new Error('the tab after the dropped ones never restored');
-});
-
-/**
- * A Zotero item just real enough for graphTab's readable(): the four things it
- * asks about a candidate attachment.
- */
-function fakeItem({ title = 'A paper', att = undefined, readerType = 'pdf', file = '/tmp/a.pdf' } = {}) {
-	const attachment = att === null ? null : {
-		id: 42,
-		attachmentReaderType: readerType,
-		getFilePathAsync: async () => file,
-		getDisplayTitle: () => title,
-		isAttachment: () => true,
-	};
-	return {
-		id: 7,
-		isAttachment: () => false,
-		getDisplayTitle: () => title,
-		getBestAttachment: async () => attachment,
-	};
-}
-
-check('readable() gates the PDF entry on three questions', async () => {
-	// Its three refusals are strings now, so the bundle has to be in.
-	await l10nReady;
-	const { readable } = require_('./lib/graphTab.js');
-	const said = [];
-	const status = t => said.push(t);
-	// The graph page cannot see attachments, so this gate is the only thing
-	// standing between "Open PDF in new tab" and a reader that throws on
-	// construction.
-	const run = async (item) => {
-		Zotero.Items = { getAsync: async () => item };
-		said.length = 0;
-		return readable(7, status);
-	};
-
-	if (await run(fakeItem({ att: null })) !== null) throw new Error('opened an item with no attachment');
-	if (!/No attachment on "A paper"/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
-
-	if (await run(fakeItem({ readerType: null })) !== null) throw new Error('opened an unreadable type');
-	if (!/no PDF, EPUB or snapshot/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
-
-	// The exact state an item added through the local API without its bytes is
-	// left in -- see the note in the project's CLAUDE.md.
-	if (await run(fakeItem({ file: false })) !== null) throw new Error('opened a file that is not there');
-	if (!/missing on disk/.test(said[0])) throw new Error('unhelpful: ' + said[0]);
-
-	const found = await run(fakeItem());
-	if (!found || found.att.id !== 42) throw new Error('refused a perfectly good PDF');
-	if (said.length) throw new Error('complained about a working attachment: ' + said[0]);
 });
 
 check('ZoteroAdapter implements the whole adapter contract', () => {
@@ -2955,14 +2946,20 @@ function loadIcons() {
  * box of the right width, so that one renamed icon cannot leave a column of
  * labels half-indented -- which means it would ship as a blank space beside one
  * entry and nothing would say so. Hence reading the entries out of the source:
- * they are object literals built in six separate places, and the one thing they
- * all have is an icon directly above a label.
+ * they are object literals built in five separate places, and the one thing
+ * they all have is an icon directly above a label.
+ *
+ * The entries a held node gets are Zotero's own menu now, so only the outside
+ * reference's two, the canvas's three, a flag's two and the three shared by
+ * both node menus are built here. The last four cross to chrome as data rather
+ * than being drawn on the page -- see lib/nodeMenu.js -- but they still name an
+ * icon, and a name nothing can draw is as blank there as it is here.
  */
 check('every menu entry names an icon that icons.js can draw', () => {
 	const src = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
 	const icons = loadIcons();
 	const entries = [...src.matchAll(/\n\t+(?:icon: (.*?),\r?\n\t+)?label: t\(/g)];
-	if (entries.length < 12) {
+	if (entries.length < 10) {
 		throw new Error('found only ' + entries.length + ' entries; the scan is broken');
 	}
 	const bad = [];
@@ -3294,6 +3291,136 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	const after = pane.getSelectedItems();
 	if (!outerCalls) throw new Error('the outer wrapper stopped being called');
 	if (after !== inLibrary) throw new Error('an uninstalled wrapper still answered for the graph');
+});
+
+/**
+ * A popup standing in for #zotero-itemmenu, carrying the four core entries this
+ * test has anything to say about. Core builds them once into zoteroPane.xhtml
+ * and addresses them by index from the front, which is why nodeMenu.js only
+ * ever appends.
+ */
+function fakeItemMenu(element) {
+	const popup = element('menupopup');
+	popup.id = 'zotero-itemmenu';
+	for (const cls of ['zotero-menuitem-show-in-library', 'zotero-menuitem-remove-items',
+		'zotero-menuitem-move-to-trash', 'zotero-menuitem-delete-from-lib']) {
+		const el = element('menuitem');
+		el.className = 'menuitem-iconic ' + cls;
+		popup.appendChild(el);
+	}
+	return popup;
+}
+
+check("a node menu is Zotero's own, built for the graph's own collection", async () => {
+	const nodeMenu = require_('./lib/nodeMenu.js');
+	const { win, element } = fakeWindow();
+	const popup = fakeItemMenu(element);
+
+	// What the LIBRARY tab has selected while the graph is on screen. Nothing
+	// about the graph, and in this case not even a collection -- which is the
+	// case that decides half the menu and, with an empty selection, throws.
+	const libraryRows = [{ isTrash: () => true }];
+	let sawRows = null;
+	let built = 0;
+	const pane = {
+		itemsView: {},
+		collectionsView: { id: 'the tree' },
+		getCollectionTreeRows: () => libraryRows,
+		async buildItemContextMenu() {
+			built++;
+			sawRows = pane.getCollectionTreeRows();
+		},
+	};
+	const coreRows = pane.getCollectionTreeRows;
+	win.ZoteroPane = pane;
+	Zotero.CollectionTreeRow = function (view, type, ref) {
+		this.view = view;
+		this.type = type;
+		this.ref = ref;
+	};
+
+	const collection = { id: 3, key: 'ABCD1234' };
+	const said = [];
+	const reply = (fn, value) => said.push(fn + (value === undefined ? '' : ':' + value));
+
+	await nodeMenu.open({ win, collection }, {
+		itemID: 7,
+		x: 640,
+		y: 480,
+		entries: [
+			{ id: 'e0', icon: 'isolate', label: 'Isolate', hint: 'dim everything but this node' },
+			{ id: 'e1', icon: 'pin', label: 'Pin node here', hint: null },
+		],
+	}, reply);
+
+	// Core's builder ran, and it ran against the collection the graph is of --
+	// not the trash the library tab happens to be showing.
+	if (built !== 1) throw new Error('core built the menu ' + built + ' times');
+	if (sawRows.length !== 1 || sawRows[0].ref !== collection || sawRows[0].type !== 'collection') {
+		throw new Error('the menu was built for something other than the graph collection');
+	}
+	if (sawRows[0].view !== pane.collectionsView) throw new Error('the row was built without its tree');
+	// One question asked at one moment: the window has its own function back.
+	if (pane.getCollectionTreeRows !== coreRows) throw new Error('the swap was left installed');
+
+	// The three that end at itemsView.deleteSelection() -- the library tree's
+	// selection, which a graph tab has no part in. "Move to Trash" over a node
+	// must not trash whatever the library was showing.
+	for (const cls of ['zotero-menuitem-remove-items', 'zotero-menuitem-move-to-trash',
+		'zotero-menuitem-delete-from-lib']) {
+		if (popup.querySelector('.' + cls).getAttribute('hidden') !== 'true') {
+			throw new Error(cls + ' was left able to act on the library tab');
+		}
+	}
+	if (popup.querySelector('.zotero-menuitem-show-in-library').getAttribute('hidden')) {
+		throw new Error('an entry that reads the selection was taken off too');
+	}
+
+	// The graph's own entries, under a rule, at the bottom.
+	const mine = popup.children.filter(c => c.classList.contains('zg-node-menuitem'));
+	if (mine.length !== 3) throw new Error('added ' + mine.length + ' things, not a rule and two rows');
+	if (mine[0].localName !== 'menuseparator') throw new Error('the graph entries run straight on');
+	if (popup.children.slice(-3).some((c, i) => c !== mine[i])) {
+		throw new Error('the graph entries are not at the bottom');
+	}
+	if (mine[1].getAttribute('label') !== 'Isolate') throw new Error('lost the label the page wrote');
+	if (mine[1].getAttribute('tooltiptext') !== 'dim everything but this node') throw new Error('lost the hint');
+	if (mine[2].getAttribute('tooltiptext')) throw new Error('invented a hint the page did not send');
+	// Zotero's own file, and the two properties without which it paints as a
+	// black shape in a menu that is not always light.
+	if (mine[2].getAttribute('image') !== 'chrome://zotero/skin/16/universal/pin.svg') {
+		throw new Error('pin drew ' + mine[2].getAttribute('image'));
+	}
+	if (mine[2].style.props.fill !== 'var(--fill-secondary)') throw new Error('the icon has no fill');
+
+	if (popup.openedAt.x !== 640 || popup.openedAt.y !== 480 || !popup.openedAt.isContextMenu) {
+		throw new Error('the menu did not open at the pointer as a context menu');
+	}
+	if (said.length) throw new Error('the page was told something while the menu was still up: ' + said);
+
+	// Picking a row. The command arrives first and the popup goes down after it,
+	// but the page hears the close FIRST: "Pin node here" fixes the node where
+	// the hold is keeping it, and a release arriving afterwards would undo it.
+	popup.fire('command', { target: mine[2] });
+	popup.hidePopup();
+	if (said.join(' ') !== 'zgMenuClosed zgMenuPicked:e1') throw new Error('the page heard ' + said.join(' '));
+	if (popup.querySelectorAll('.zg-node-menuitem').length) {
+		throw new Error("the graph's entries were left on the library's own menu");
+	}
+
+	// Dismissed without picking anything: the hold still has to come off.
+	said.length = 0;
+	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
+	popup.hidePopup();
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a dismissal said ' + said.join(' '));
+
+	// No item tree, no menu -- and the page is still holding the node it
+	// right-clicked, so it has to be told that nothing is coming.
+	said.length = 0;
+	pane.itemsView = null;
+	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a menu that never opened said ' + said.join(' '));
+	if (built !== 2) throw new Error('core was asked to build a menu with no item tree');
 });
 
 Promise.all(pending).then(() => {

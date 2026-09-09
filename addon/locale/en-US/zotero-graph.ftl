@@ -231,11 +231,7 @@ zotero-graph-menu-unpin-hint = let the layout move it again
 
 zotero-graph-menu-open-in-browser = Open in browser
 zotero-graph-menu-open-in-browser-no-id = no resolvable identifier
-zotero-graph-menu-open-in-browser-no-url = this item has neither a URL nor a DOI
 zotero-graph-menu-add-to-zotero = Add to Zotero
-zotero-graph-menu-select-in-zotero = Select in Zotero
-zotero-graph-menu-open-pdf-tab = Open PDF in new tab
-zotero-graph-menu-open-pdf-tab-hint = the whole reader, with search, sidebar and annotation
 
 
 ## The outside-reference card.
@@ -283,12 +279,9 @@ zotero-graph-add-elsewhere = Added "{ $title }" to another collection — this g
 zotero-graph-add-rebuilding = Added "{ $title }" — rebuilding…
 
 
-## The tab, and what it says when there is no file to open.
+## The tab.
 
 zotero-graph-tab-title = { $collection } — Citation Graph
-zotero-graph-reader-no-attachment = No attachment on "{ $title }".
-zotero-graph-reader-unsupported = "{ $title }" has no PDF, EPUB or snapshot to open.
-zotero-graph-reader-missing-file = The attachment file for "{ $title }" is missing on disk.
 
 ## The gap list: works the collection cites and does not hold.
 
