@@ -3039,6 +3039,92 @@ check('with no translator a keyword is the facet name, so the rest of these hold
 	if (F.toInput(F.parse('author: soc')) !== 'author: soc') throw new Error('the English round trip moved');
 });
 
+check('a graph tab answers ZoteroPane when Locate asks what is selected', () => {
+	const selection = require_('./lib/selection.js');
+	const graphTab = require_('./lib/graphTab.js');
+
+	// Core's own answer, and the one every call outside a graph tab must keep
+	// getting back untouched.
+	const inLibrary = [{ id: 1, parentItem: false }];
+	let sawArgs = null;
+	const pane = {
+		getSelectedItems(asIDs, options) {
+			sawArgs = { asIDs, options, self: this };
+			return asIDs ? inLibrary.map(i => i.id) : inLibrary;
+		},
+	};
+	const original = pane.getSelectedItems;
+	const win = { ZoteroPane: pane, Zotero_Tabs: { selectedType: 'library', selectedID: 'tab-1' } };
+
+	const items = {
+		7: { id: 7, parentItem: false },
+		8: { id: 8, parentItem: { id: 9, parentItem: false } },
+	};
+	Zotero.Items = { get: id => items[id] || false };
+
+	let asked = [];
+	let graphSelection = [7];
+	selection.install(win, (tabID) => {
+		asked.push(tabID);
+		return graphSelection;
+	});
+
+	// A library tab is core's business start to finish -- same items, and the
+	// arguments arrive as they were passed rather than reconstructed.
+	if (pane.getSelectedItems(false, { libraryTabOnly: false }) !== inLibrary) {
+		throw new Error('a library tab stopped getting its own selection');
+	}
+	if (sawArgs.self !== pane) throw new Error('the wrapper lost `this`');
+	if (asked.length) throw new Error('a library tab asked the graph');
+
+	// The tab type core has no case for, which is the whole point.
+	win.Zotero_Tabs.selectedType = 'graph';
+	const got = pane.getSelectedItems();
+	if (got.length !== 1 || got[0].id !== 7) throw new Error('the graph tab answered ' + JSON.stringify(got));
+	if (asked[0] !== 'tab-1') throw new Error('asked about ' + asked[0] + ', not the selected tab');
+	if (JSON.stringify(pane.getSelectedItems(true)) !== '[7]') throw new Error('asIDs was not honoured');
+
+	// libraryTabOnly exists so a caller can ask what the LIBRARY holds while
+	// another tab is on screen. Core checks it ahead of the tab type; so must this.
+	if (pane.getSelectedItems(false, { libraryTabOnly: true }) !== inLibrary) {
+		throw new Error('libraryTabOnly was answered by the graph');
+	}
+
+	// Locate is about the paper, not the file -- core's reader case does the
+	// same substitution.
+	graphSelection = [8];
+	if (pane.getSelectedItems()[0].id !== 9) throw new Error('an attachment was put in front of Locate');
+
+	// An item deleted out from under a graph that is still on screen. Dropping
+	// it gives the honest "0 items selected"; passing the id on would throw
+	// inside core's menu builder.
+	graphSelection = [404];
+	if (pane.getSelectedItems().length) throw new Error('a stale id survived');
+
+	// A tab id with no graph behind it -- closed, or restored and never
+	// selected -- is not an error, it is an empty selection.
+	if (graphTab.selectedItemIDs('tab-nothing').length) throw new Error('an unknown tab claimed a selection');
+
+	selection.uninstall(win);
+	if (pane.getSelectedItems !== original) throw new Error('uninstall did not give the window its own back');
+
+	// Someone else wrapping on top owns the property now. Writing core's
+	// function back over their wrapper would silently uninstall it, so ours
+	// stays where it is and goes inert instead.
+	selection.install(win, () => [7]);
+	const ours = pane.getSelectedItems;
+	let outerCalls = 0;
+	pane.getSelectedItems = function (...args) {
+		outerCalls++;
+		return ours.apply(this, args);
+	};
+	selection.uninstall(win);
+	if (pane.getSelectedItems === original) throw new Error("uninstall clobbered another plugin's wrapper");
+	const after = pane.getSelectedItems();
+	if (!outerCalls) throw new Error('the outer wrapper stopped being called');
+	if (after !== inLibrary) throw new Error('an uninstalled wrapper still answered for the graph');
+});
+
 Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);

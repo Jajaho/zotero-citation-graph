@@ -64,12 +64,14 @@ const MAX_EXTERNAL_NODES = 4000;
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
 // tabID -> { win, tabID, browser, split, pane, reader, itemPane, collection,
-//             generation, options, built, building, addTarget }
+//             generation, options, built, building, addTarget, selection }
 // `split` is the box holding the graph and, once opened, the tab's one side
 // panel; `pane` is splitPane.js's record for that panel and `reader` /
 // `itemPane` belong to whichever of the two has it. `built` is the
 // last completed derivation, which runLookup() names in place; `building`
 // says whether a build owns the tab, since a lookup must not push over one.
+// `selection` is what the tab answers when Zotero asks which items are
+// selected -- see lib/selection.js.
 let open_ = new Map();
 
 // Session entries already turned into a real tab, by whichever of the two
@@ -152,6 +154,21 @@ function stripSummary(win) {
 	catch (e) {
 		return '?';
 	}
+}
+
+/**
+ * Which items a graph tab has selected, for the Zotero that is asking --
+ * lib/selection.js, standing in for the case core's
+ * ZoteroPane.getSelectedItems() has no room for.
+ *
+ * A tab id rather than an entry, because the caller is a patched core
+ * function that has Zotero_Tabs.selectedID and nothing else. An id belonging
+ * to a closed tab, or to one restored but never selected, answers the same
+ * way an unclicked graph does: nothing is selected.
+ */
+function selectedItemIDs(tabID) {
+	let entry = open_.get(tabID);
+	return (entry && entry.selection) || [];
 }
 
 /**
@@ -435,6 +452,10 @@ function mount(win, tabID, container, collection, config, options) {
 		options,
 		built: null,
 		building: false,
+		// The nodes the user has pointed at, as item IDs. Empty until the
+		// first click, the same way a freshly opened library tab has nothing
+		// selected.
+		selection: [],
 	});
 	pending_.delete(tabID);
 
@@ -567,9 +588,19 @@ async function handleMessage(win, tabID, collection, msg) {
 		// clicked. Chrome's to open for the same reason as the reader pane:
 		// <item-details> is a XUL custom element in the main window, and the
 		// graph page is content. See itemPane.js.
+		//
+		// This is also the message that carries the selection, because a click
+		// on a held node IS both questions at once -- which paper to describe,
+		// and which paper the user means. A second message raised alongside
+		// this one could only ever come to disagree with it.
 		case 'item-pane-show': {
 			let entry = open_.get(tabID);
 			if (entry && msg.itemID) {
+				// Recorded first, and outside the pane's own guards: show()
+				// draws nothing when the panel is collapsed or the reader has
+				// it, and the click selected the paper either way. What Locate
+				// acts on must not depend on whether the pane was on screen.
+				entry.selection = [msg.itemID];
 				await itemPane.show(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
 				});
@@ -1285,7 +1316,7 @@ function forgetAll() {
 
 module.exports = {
 	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
-	forgetWindow, forgetAll, stripSummary,
+	forgetWindow, forgetAll, stripSummary, selectedItemIDs,
 	mergeEdges, toWireExternal, adoptAdded,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.
