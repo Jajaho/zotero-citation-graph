@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { crc32 } = require('./zip.js');
+const { xpiName } = require('./check-version.js');
 
 const root = path.join(__dirname, '..');
 
@@ -86,7 +87,7 @@ function main() {
 	let xpi = process.argv[2];
 	if (!xpi) {
 		const manifest = JSON.parse(fs.readFileSync(path.join(root, 'addon', 'manifest.json'), 'utf8'));
-		xpi = path.join(root, 'dist', `zotero-graph-${manifest.version}.xpi`);
+		xpi = path.join(root, 'dist', xpiName(manifest.version));
 	}
 	if (!fs.existsSync(xpi)) throw new Error(`no such file: ${xpi}`);
 
@@ -147,8 +148,11 @@ function main() {
 			if (manifest.version !== source.version) {
 				problems.push(`packed manifest is ${manifest.version}, source is ${source.version}`);
 			}
-			if (!path.basename(xpi).includes(manifest.version)) {
-				problems.push(`${path.basename(xpi)} is not named for version ${manifest.version}`);
+			// The filename travels into the release asset and the update_link, so a
+			// mismatch here is a broken download later, not a cosmetic slip.
+			const expected = xpiName(manifest.version);
+			if (path.basename(xpi) !== expected) {
+				problems.push(`${path.basename(xpi)} should be named ${expected}`);
 			}
 		} catch (e) {
 			problems.push(`packed manifest.json is unreadable: ${e.message}`);

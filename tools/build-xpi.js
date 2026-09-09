@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { zip } = require('./zip.js');
-const { readVersions } = require('./check-version.js');
+const { readVersions, xpiName } = require('./check-version.js');
 
 const root = path.join(__dirname, '..');
 const addonDir = path.join(root, 'addon');
@@ -108,7 +108,7 @@ function main() {
 	const buf = zip(entries);
 
 	fs.mkdirSync(outDir, { recursive: true });
-	const xpi = path.join(outDir, `zotero-graph-${version}.xpi`);
+	const xpi = path.join(outDir, xpiName(version));
 	fs.writeFileSync(xpi, buf);
 
 	const sha256 = crypto.createHash('sha256').update(buf).digest('hex');

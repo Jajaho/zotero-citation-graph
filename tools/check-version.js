@@ -93,4 +93,20 @@ if (require.main === module) {
 	console.log(`version ok: ${version}${tag ? ` (tag ${tag})` : ''}`);
 }
 
-module.exports = { readVersions };
+/**
+ * The distributable's filename, in one place.
+ *
+ * It is derived from package.json's name rather than written out, so the
+ * archive, the release asset and the update_link in updates.json cannot drift
+ * apart from the repository -- which is exactly what happened when the project
+ * was renamed and the XPI kept its old name.
+ *
+ * NOTE: this is not the addon id. The id in addon/manifest.json identifies an
+ * installed plugin to Zotero and cannot change without orphaning every install.
+ */
+function xpiName(version) {
+	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+	return `${pkg.name}-${version}.xpi`;
+}
+
+module.exports = { readVersions, xpiName };
