@@ -27,7 +27,7 @@
 (function (global) {
 	'use strict';
 
-	var PREFIX = 'zotero-graph-';
+	var PREFIX = 'zotero-citation-graph-';
 
 	var bundle = null;
 	var listeners = [];

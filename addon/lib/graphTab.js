@@ -40,7 +40,7 @@ const MAX_ENRICH = 500;
 // Ordered: core/enrich.js merges fill-first, so this list IS the ranking. A
 // second enricher added here is only ever asked about what the first could not
 // resolve. See docs/external-references.md part 3. Overridable by the
-// zoteroGraph.enrichers pref; see enricherList().
+// zoteroCitationGraph.enrichers pref; see enricherList().
 const ENRICHERS = ['openalex'];
 
 // External nodes are unbounded in principle -- 4,564 distinct DOIs across 127
@@ -106,7 +106,7 @@ function tabData(collection, options) {
 		// lookup it would otherwise attempt leaves the tab with no icon at all.
 		// The name lands on the tab's <span> as data-item-type, which is what the
 		// stylesheet main.js injects paints. See TAB_ICON_CSS there.
-		icon: 'zotero-graph',
+		icon: 'zotero-citation-graph',
 		options: { ...options },
 	};
 }
@@ -467,7 +467,7 @@ function mount(win, tabID, container, collection, config, options) {
 	split.className = 'zg-split';
 
 	let browser = win.document.createXULElement('browser');
-	browser.setAttribute('class', 'zotero-graph');
+	browser.setAttribute('class', 'zotero-citation-graph');
 	browser.setAttribute('flex', '1');
 	browser.setAttribute('type', 'content');
 	browser.setAttribute('transparent', 'true');
@@ -897,10 +897,10 @@ async function lookUpNames(entry, alive, built) {
 	}
 
 	pushData(entry, state, { phase: 'done', ...baseMeta, enrich: enriched.meta });
-	Zotero.debug(`[zotero-graph] enrich -> ${enriched.meta.resolved}/${enriched.meta.requested}`
+	Zotero.debug(`[zotero-citation-graph] enrich -> ${enriched.meta.resolved}/${enriched.meta.requested}`
 		+ ` named (${enriched.meta.fromCache} cached) in ${enriched.meta.ms}ms`);
 	for (let err of enriched.meta.errors) {
-		Zotero.logError(new Error(`[zotero-graph] enrich ${err.provider}: ${err.message}`));
+		Zotero.logError(new Error(`[zotero-citation-graph] enrich ${err.provider}: ${err.message}`));
 	}
 	status('');
 }
@@ -1173,7 +1173,7 @@ function saveTabData(entry) {
 /** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */
 function pref(name) {
 	try {
-		return Zotero.Prefs.get('zoteroGraph.' + name);
+		return Zotero.Prefs.get('zoteroCitationGraph.' + name);
 	}
 	catch (e) {
 		return null;
@@ -1184,7 +1184,7 @@ function pref(name) {
  *  was last told to tag with is the answer it opens with next time. */
 function setPref(name, value) {
 	try {
-		Zotero.Prefs.set('zoteroGraph.' + name, value);
+		Zotero.Prefs.set('zoteroCitationGraph.' + name, value);
 	}
 	catch (e) {
 		Zotero.logError(e);
@@ -1202,7 +1202,7 @@ function enricherList() {
 		.split(',').map(s => s.trim()).filter(Boolean);
 	let chosen = configured.filter((id) => {
 		if (known.has(id)) return true;
-		Zotero.debug(`[zotero-graph] ignoring unknown enricher '${id}' from prefs`);
+		Zotero.debug(`[zotero-citation-graph] ignoring unknown enricher '${id}' from prefs`);
 		return false;
 	});
 	return chosen.length ? chosen : ENRICHERS;
@@ -1287,9 +1287,9 @@ function logMeta(phase, result) {
 	let per = Object.entries(result.meta.perProvider)
 		.map(([id, s]) => `${id}: ${s.newEdges} edges in ${s.ms}ms`)
 		.join(', ');
-	Zotero.debug(`[zotero-graph] ${phase} -> ${per || 'nothing'}`);
+	Zotero.debug(`[zotero-citation-graph] ${phase} -> ${per || 'nothing'}`);
 	for (let err of result.meta.errors) {
-		Zotero.logError(new Error(`[zotero-graph] ${err.provider}: ${err.message}`));
+		Zotero.logError(new Error(`[zotero-citation-graph] ${err.provider}: ${err.message}`));
 	}
 }
 
@@ -1297,7 +1297,7 @@ function logMeta(phase, result) {
  * Close every graph tab in a window, mounted or not.
  *
  * This is the teardown for a plugin going away under a Zotero that is staying:
- * resource://zotero-graph/ is about to stop resolving, so a live graph page
+ * resource://zotero-citation-graph/ is about to stop resolving, so a live graph page
  * cannot survive it -- and a 'graph' entry left in session.json would meet a
  * Zotero with no restoreState.graph hook next time, which tabs.js:611 turns
  * into a thrown restore for every later tab. Unmounted tabs are swept too, for

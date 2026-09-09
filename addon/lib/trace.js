@@ -12,7 +12,7 @@
  * after it, and session restore runs before anything a user could click. A
  * breakpoint is not available and Zotero.debug() only survives if debug logging
  * happened to be switched on beforehand, so this writes to a file of its own
- * instead: <dataDir>/zotero-graph/lifecycle.log, beside the two caches.
+ * instead: <dataDir>/zotero-citation-graph/lifecycle.log, beside the two caches.
  *
  * Bounded to MAX_LINES and appended a line at a time, so it cannot grow without
  * limit. Every write is fire-and-forget and swallows its own errors: a
@@ -36,7 +36,7 @@ function start() {
 
 function path() {
 	if (!path_) {
-		path_ = PathUtils.join(Zotero.DataDirectory.dir, 'zotero-graph', 'lifecycle.log');
+		path_ = PathUtils.join(Zotero.DataDirectory.dir, 'zotero-citation-graph', 'lifecycle.log');
 	}
 	return path_;
 }
@@ -50,7 +50,7 @@ function log(line) {
 	let stamped = now.toISOString().replace('T', ' ').slice(0, 23)
 		+ (t0_ === null ? '        ' : ('  +' + String(now - t0_).padStart(5) + 'ms'))
 		+ '  ' + line;
-	Zotero.debug('[zotero-graph] ' + line);
+	Zotero.debug('[zotero-citation-graph] ' + line);
 	// Serialised behind one chain: two lines written concurrently would each
 	// read the file before the other wrote it, and one would be lost.
 	queue_ = queue_.then(() => append(stamped)).catch(() => {});

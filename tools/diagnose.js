@@ -37,7 +37,7 @@ out.push(await probe(
 ));
 out.push(await probe(
 	"packed xpi",
-	"jar:file:///C:/Users/you/Repositories/zotero-graph-plugin/dist/zotero-graph-0.1.0.xpi!/"
+	"jar:file:///C:/Users/you/Repositories/zotero-graph-plugin/dist/zotero-citation-graph-0.1.0.xpi!/"
 ));
 
 return JSON.stringify(out, null, 1);

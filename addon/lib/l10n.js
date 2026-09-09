@@ -21,8 +21,8 @@
 
 let Ftl = require('../content/ftl.js');
 
-const FILE = 'zotero-graph.ftl';
-const PREFIX = 'zotero-graph-';
+const FILE = 'zotero-citation-graph.ftl';
+const PREFIX = 'zotero-citation-graph-';
 const FALLBACK = 'en-US';
 
 /**
@@ -91,7 +91,7 @@ async function load(rootURI) {
 			return;
 		}
 		catch (e) {
-			Zotero.logError(new Error(`[zotero-graph] could not read ${locale}/${FILE}: ${e}`));
+			Zotero.logError(new Error(`[zotero-citation-graph] could not read ${locale}/${FILE}: ${e}`));
 		}
 	}
 	// Everything below still answers; t() gives back ids, which is visible and

@@ -1,7 +1,7 @@
 /**
  * A small Fluent reader, shared by both sides of the bridge.
  *
- * The plugin's strings live in addon/locale/<locale>/zotero-graph.ftl, which is
+ * The plugin's strings live in addon/locale/<locale>/zotero-citation-graph.ftl, which is
  * where Zotero already looks: plugins.js registerLocales() reads every .ftl
  * under a plugin's locale/ into a global L10nRegistry source, with a per-file
  * fallback chain (exact locale -> same language -> en-US). That machinery is
@@ -218,7 +218,7 @@
 	 *
 	 * `prefix` is prepended to every id on the way in, so call sites read
 	 * `t('legend-outside')` while the file keeps the fully qualified
-	 * `zotero-graph-legend-outside` -- ids reach a shared bundle when Zotero
+	 * `zotero-citation-graph-legend-outside` -- ids reach a shared bundle when Zotero
 	 * loads the .ftl into a window document, and a plugin has no business
 	 * claiming a bare name there.
 	 *

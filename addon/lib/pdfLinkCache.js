@@ -30,7 +30,7 @@ class PdfLinkCache {
 	}
 
 	static forProfile() {
-		return new PdfLinkCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-graph'));
+		return new PdfLinkCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-citation-graph'));
 	}
 
 	async load() {

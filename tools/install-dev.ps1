@@ -24,7 +24,7 @@
 #>
 param(
     [string]$ProfileDir = "$env:APPDATA\Zotero\Zotero\Profiles\mq6r9f4v.default",
-    [string]$AddonId    = "zotero-graph@jajaho.dev"
+    [string]$AddonId    = "zotero-citation-graph@jajaho.dev"
 )
 
 $ErrorActionPreference = "Stop"

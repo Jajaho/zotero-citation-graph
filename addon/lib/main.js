@@ -11,13 +11,13 @@ let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 
-const MENU_ID = 'zotero-graph-collection';
+const MENU_ID = 'zotero-citation-graph-collection';
 
 // plugins.js REASONS.APP_SHUTDOWN, the reason Zotero passes when it is quitting
 // rather than when the plugin alone is going away. The two want opposite
 // teardowns, and the difference is the whole of whether a graph tab comes back.
 const REASON_APP_SHUTDOWN = 2;
-const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
+const TAB_ICON_STYLE_ID = 'zotero-citation-graph-tab-icon-style';
 
 /**
  * The graph tab's icon.
@@ -25,7 +25,7 @@ const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
  * Core renders every non-library tab's icon as <span class="icon icon-css
  * icon-item-type" data-item-type="..."> and paints it entirely from CSS
  * (components/icons.js CSSItemTypeIcon, tabBar.js) -- there is no hook for a
- * plugin to hand it an image. So the tab carries data.icon = 'zotero-graph',
+ * plugin to hand it an image. So the tab carries data.icon = 'zotero-citation-graph',
  * a name no item type uses, and this rule paints that one name.
  *
  * One flat background rather than core's four theme layers: the file draws
@@ -33,7 +33,7 @@ const TAB_ICON_STYLE_ID = 'zotero-graph-tab-icon-style';
  * colour and it follows light and dark without a second file.
  */
 const TAB_ICON_CSS = resRoot => `
-	.tab-icon.icon-item-type[data-item-type="zotero-graph"] {
+	.tab-icon.icon-item-type[data-item-type="zotero-citation-graph"] {
 		background: url("resource://${resRoot}/content/icons/graph.svg")
 			no-repeat center/contain;
 		-moz-context-properties: fill;
@@ -106,7 +106,7 @@ module.exports = {
 		// would do nothing but take work off the restore.
 		//
 		// Every other reason -- disable, uninstall, upgrade -- leaves Zotero
-		// running while resource://zotero-graph/ stops resolving underneath a
+		// running while resource://zotero-citation-graph/ stops resolving underneath a
 		// live graph page. Those tabs have to go, and they have to go out of
 		// session.json with them: a 'graph' entry restored by a Zotero with no
 		// restoreState.graph hook is the throw at tabs.js:611 that aborts
@@ -127,7 +127,7 @@ module.exports = {
 		// core's menuManager.js), so the plugin has to load its own strings or
 		// the menu label renders blank.
 		try {
-			win.MozXULElement.insertFTLIfNeeded('zotero-graph.ftl');
+			win.MozXULElement.insertFTLIfNeeded('zotero-citation-graph.ftl');
 		}
 		catch (e) {
 			console.log('insertFTLIfNeeded failed, falling back to a literal label: ' + e);
@@ -164,7 +164,7 @@ module.exports = {
 			menus: [
 				{
 					menuType: 'menuitem',
-					l10nID: 'zotero-graph-view-citation-graph',
+					l10nID: 'zotero-citation-graph-view-citation-graph',
 					// The same file the manifest lists as the plugin icon. It paints
 					// itself with context-fill, which is what Zotero sets on menu
 					// images, so it follows the menu's own colour in both themes.

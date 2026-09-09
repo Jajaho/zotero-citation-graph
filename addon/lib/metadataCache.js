@@ -34,7 +34,7 @@ class MetadataCache {
 	}
 
 	static forProfile(opts) {
-		return new MetadataCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-graph'), opts);
+		return new MetadataCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-citation-graph'), opts);
 	}
 
 	async load() {

@@ -31,11 +31,11 @@ var resProto;
 var CG; // the plugin's main module
 var startupReason;
 
-const RES_ROOT = 'zotero-graph';
-const PLUGIN_ID = 'zotero-graph@jajaho.dev';
+const RES_ROOT = 'zotero-citation-graph';
+const PLUGIN_ID = 'zotero-citation-graph@jajaho.dev';
 
 function log(msg) {
-	Zotero.debug('[zotero-graph] ' + msg);
+	Zotero.debug('[zotero-citation-graph] ' + msg);
 }
 
 function install() {}
@@ -47,7 +47,7 @@ async function startup({ id, version, rootURI: uri }, reason) {
 	log('startup ' + version + ' rootURI=' + rootURI);
 	startupReason = reason;
 
-	// Serve the plugin over resource://zotero-graph/. Core loads its own content
+	// Serve the plugin over resource://zotero-citation-graph/. Core loads its own content
 	// pages the same way (resource://zotero/reader/reader.html), and this behaves
 	// identically for an unpacked directory and a packed XPI.
 	resProto = Services.io.getProtocolHandler('resource')
@@ -79,7 +79,7 @@ async function startup({ id, version, rootURI: uri }, reason) {
 	trace.log('--- startup v' + version + ' reason=' + startupReason);
 
 	CG = require('./lib/main.js');
-	Zotero.ZoteroGraph = CG;
+	Zotero.ZoteroCitationGraph = CG;
 	trace.log('modules loaded');
 	await CG.startup({ id, version, rootURI, pluginID: PLUGIN_ID, resRoot: RES_ROOT });
 	trace.log('startup returned');
@@ -120,7 +120,7 @@ async function shutdown(params, reason) {
 	catch (e) {
 		Zotero.logError(e);
 	}
-	delete Zotero.ZoteroGraph;
+	delete Zotero.ZoteroCitationGraph;
 	CG = null;
 	if (resProto) {
 		resProto.setSubstitution(RES_ROOT, null);

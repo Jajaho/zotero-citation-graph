@@ -25,7 +25,7 @@
 
 let l10n = require('./l10n.js');
 
-const PANEL_ID = 'zotero-graph-add';
+const PANEL_ID = 'zotero-citation-graph-add';
 
 // The panel's own width, and the number the opener centres it by. Stated once
 // here because CSS sizes the box and script positions the popup, and the two

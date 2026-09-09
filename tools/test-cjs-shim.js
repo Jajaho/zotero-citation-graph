@@ -1458,7 +1458,7 @@ check('a graph tab reduces to what session.json can hold, and reads back', () =>
 	if (data.libraryID !== 1) throw new Error('libraryID: ' + data.libraryID);
 	// tabs.js _update() goes looking for an item to take a type icon from when
 	// this is missing, and a graph tab has no item to find.
-	if (data.icon !== 'zotero-graph') throw new Error('icon: ' + data.icon);
+	if (data.icon !== 'zotero-citation-graph') throw new Error('icon: ' + data.icon);
 	// Nothing derived: an edge list or a layout stored here would be reread
 	// stale, and is re-derived off the two caches far more cheaply than it
 	// could be invalidated honestly.
@@ -1623,7 +1623,7 @@ function fakeMainWindow() {
 	return { made, win, element };
 }
 
-const CFG = { resRoot: 'zotero-graph', pluginID: 'zotero-graph@jajaho.dev', rootURI };
+const CFG = { resRoot: 'zotero-citation-graph', pluginID: 'zotero-citation-graph@jajaho.dev', rootURI };
 const COLLECTION = { key: 'ABCD1234', libraryID: 1, id: 7, name: 'Reading list' };
 
 /** Zotero.Collections as restore() asks about it. */
@@ -1685,7 +1685,7 @@ const t2 = check('the plugin going away takes its tabs out of the session with i
 	Zotero.getMainWindows = () => [win];
 
 	await graphTab.open(win, COLLECTION, CFG);
-	// Anything but APP_SHUTDOWN: resource://zotero-graph/ stops resolving under
+	// Anything but APP_SHUTDOWN: resource://zotero-citation-graph/ stops resolving under
 	// a live page, and a 'graph' entry left in session.json meets a Zotero with
 	// no restoreState.graph hook -- the tabs.js:611 destructure that aborts
 	// restore for every tab after it.
@@ -1706,7 +1706,7 @@ const t3 = check('a restored graph tab comes back unloaded, in place, and builds
 	const session = [
 		{ type: 'library', title: 'My Library', data: { icon: 'collection' } },
 		{ type: 'graph', title: 'Reading list — Citation Graph', selected: true,
-			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-graph',
+			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-citation-graph',
 				options: { recursive: true, includeExternal: true, enrich: false } } },
 	];
 
@@ -1748,7 +1748,7 @@ const t4 = check('a restore that ran before the plugin loaded is picked up at wi
 		{ type: 'library', title: 'My Library', data: {} },
 		{ type: 'reader', title: 'A paper', data: { itemID: 5 } },
 		{ type: 'graph', title: 'Reading list — Citation Graph',
-			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-graph' } },
+			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-citation-graph' } },
 	];
 	Zotero.Session = { state: { windows: [{ type: 'pane', tabs: entries }] } };
 	win.Zotero_Tabs.tabHooks.restoreState.reader = async () => ({ itemID: null });
@@ -2782,8 +2782,8 @@ check('the release that ends a right-clicked drag is not a click', () => {
 
 const Ftl = require(path.join(addonDir, 'content/ftl.js'));
 const localeDir = path.join(addonDir, 'locale');
-const FTL_NAME = 'zotero-graph.ftl';
-const PREFIX = 'zotero-graph-';
+const FTL_NAME = 'zotero-citation-graph.ftl';
+const PREFIX = 'zotero-citation-graph-';
 
 function readLocale(code) {
 	return fs.readFileSync(path.join(localeDir, code, FTL_NAME), 'utf8');
@@ -2949,7 +2949,7 @@ check('lib/l10n.js resolves a locale, formats, and hands the page its source', a
 	if (l10n.t('no-such-string') !== 'no-such-string') throw new Error('missing id');
 	const forPage = l10n.contentBundle();
 	if (forPage.locale !== 'en-US') throw new Error('locale: ' + forPage.locale);
-	if (!forPage.source.includes('zotero-graph-rebuild')) throw new Error('empty source');
+	if (!forPage.source.includes('zotero-citation-graph-rebuild')) throw new Error('empty source');
 });
 
 check('the page loads its string modules before anything that draws', () => {

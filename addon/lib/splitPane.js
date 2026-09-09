@@ -318,7 +318,7 @@ function saveWidth(pane) {
 	let w = Math.round(pane.box.getBoundingClientRect().width);
 	if (w < MIN_WIDTH) return;
 	try {
-		Zotero.Prefs.set('zoteroGraph.paneWidth', w);
+		Zotero.Prefs.set('zoteroCitationGraph.paneWidth', w);
 	}
 	catch (e) {
 		Zotero.logError(e);
@@ -328,7 +328,7 @@ function saveWidth(pane) {
 /** Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js. */
 function pref(name) {
 	try {
-		return Zotero.Prefs.get('zoteroGraph.' + name);
+		return Zotero.Prefs.get('zoteroCitationGraph.' + name);
 	}
 	catch (e) {
 		return null;
