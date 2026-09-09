@@ -55,9 +55,52 @@ const Zotero = {
 	File: { getResourceAsync: async url => fs.readFileSync(fileURLToPath(url), 'utf8') },
 };
 
+/**
+ * chrome://zotero/content/elements/utils/collapsiblePane.mjs, transcribed.
+ *
+ * splitPane.js does not implement collapsing -- it calls core's helpers, which
+ * write the `collapsed` attribute on the pane and `state`/`substate` on the
+ * splitter before it. Stubbing them out would leave nothing to check, so this
+ * is core's implementation, and what the checks below assert is that the
+ * attributes it wrote are the ones core's stylesheet is written against.
+ */
+const collapsiblePane = {
+	isPaneCollapsed(pane) {
+		let parent = pane.closest('splitter:not([hidden="true"]) + *');
+		if (!parent) return false;
+		return parent.getAttribute('collapsed') === 'true';
+	},
+	setPaneCollapsed(pane, collapsed) {
+		let parent = pane.closest('splitter:not([hidden="true"]) + *');
+		if (!parent) return;
+		let splitter = parent.previousElementSibling;
+		if (collapsed) {
+			parent.setAttribute('collapsed', 'true');
+			parent.removeAttribute('width');
+			parent.removeAttribute('height');
+			splitter.setAttribute('state', 'collapsed');
+			splitter.setAttribute('substate', 'after');
+		}
+		else {
+			parent.removeAttribute('collapsed');
+			splitter.setAttribute('state', '');
+			splitter.setAttribute('substate', 'after');
+		}
+	},
+};
+
+const ChromeUtils = {
+	importESModule(url) {
+		if (url === 'chrome://zotero/content/elements/utils/collapsiblePane.mjs') {
+			return collapsiblePane;
+		}
+		throw new Error('no such module: ' + url);
+	},
+};
+
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
-	Zotero,
+	Zotero, ChromeUtils,
 	IOUtils: {
 		exists: async () => false,
 		read: async () => new Uint8Array(),
@@ -704,6 +747,27 @@ class FakeElement {
 		return this.children[0] || null;
 	}
 
+	get previousElementSibling() {
+		if (!this.parent) return null;
+		const i = this.parent.children.indexOf(this);
+		return i > 0 ? this.parent.children[i - 1] : null;
+	}
+
+	/** Only the one selector core's collapse helpers use: an element sitting
+	 *  immediately after a splitter that is not hidden. */
+	closest(sel) {
+		if (sel !== 'splitter:not([hidden="true"]) + *') {
+			throw new Error('unsupported selector: ' + sel);
+		}
+		for (let el = this; el; el = el.parent) {
+			const prev = el.previousElementSibling;
+			if (prev && prev.localName === 'splitter' && prev.getAttribute('hidden') !== 'true') {
+				return el;
+			}
+		}
+		return null;
+	}
+
 	setAttribute(k, v) {
 		this.attrs[k] = String(v);
 	}
@@ -785,9 +849,10 @@ class FakeElement {
 	}
 
 	getBoundingClientRect() {
-		// Zero once collapsed, the way a width:0 box measures -- which is what
-		// stops a collapse from being remembered as a width.
-		return { width: this.getAttribute('data-zg-collapsed') ? 0 : 400 };
+		// 37px once collapsed -- the sidenav, which is the whole of the panel
+		// then. Under MIN_WIDTH, which is what stops a collapse from being
+		// remembered as a width.
+		return { width: this.getAttribute('collapsed') === 'true' ? 37 : 400 };
 	}
 }
 
@@ -870,30 +935,39 @@ check('collapsing leaves the sidenav on screen and remembers the width', () => {
 
 	splitPane.setCollapsed(entry, true);
 	if (!splitPane.collapsed(entry)) throw new Error('the panel did not collapse');
-	// Core widens a collapsed splitter (--draggable-size goes to 8-10px, its
-	// negative margins to zero) to make it the grab handle that pulls the pane
-	// back out. The way back here is the sidenav's own button, so that width
-	// would buy nothing and show as a slice of nothing beside the icons.
-	if (splitter.getAttribute('state')) {
-		throw new Error('state=collapsed pays the divider real width to be a grab handle '
-			+ 'this panel does not use');
+	// The collapse is core's, so the state is written where core's stylesheet
+	// looks for it -- not on a data- attribute of our own, which is what this
+	// shipped with and what left the rules below unmatched.
+	if (box.getAttribute('collapsed') !== 'true') throw new Error('the panel kept its width');
+	// The one that matters for how it LOOKS. Collapsed, the item pane's content
+	// is visibility: collapse, so the sidenav's own border-inline-start becomes
+	// the pane's outer edge -- and a splitter still drawing its own line there
+	// puts two hairlines side by side and a visibly darker edge than the
+	// library has. Core's [state=collapsed] rules move the splitter's line to
+	// border-left and drop the negative margins, so the edge is one line.
+	if (splitter.getAttribute('state') !== 'collapsed') {
+		throw new Error('the divider still draws the pane edge the sidenav is now drawing, '
+			+ 'which doubles the hairline: state=' + splitter.getAttribute('state'));
 	}
-	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the panel kept its width');
+	if (splitter.getAttribute('substate') !== 'after') throw new Error('the divider lost its side');
 	// Collapsed is 37px of sidenav, the way core collapses an <item-pane> --
 	// not display:none, which would take the button that collapsed it down too,
 	// and not an emptied panel, which would lose the pane's scroll position.
 	if (box.getAttribute('hidden')) throw new Error('display:none would hide the sidenav too');
 	if (inside.parent !== box) throw new Error('collapsing emptied the panel');
-	if (!splitter.getAttribute('data-zg-collapsed')) throw new Error('a collapsed panel is still draggable');
 	// Neither an inline width nor a XUL width attribute may be left behind to
-	// argue with the collapsed rule.
+	// argue with the collapsed rule. Core's helper clears the attribute; the
+	// inline width mirrored from it is ours to clear.
 	if (box.style.width) throw new Error('an inline width outranks the collapsed rule: ' + box.style.width);
 	if (box.getAttribute('width')) throw new Error('a width attribute survived the collapse');
 
 	splitPane.setCollapsed(entry, false);
-	// The attribute is what the panel comes back at, so it survives the collapse.
+	if (splitPane.collapsed(entry)) throw new Error('the panel did not come back');
+	// Core's helper takes the collapse off but restores no width -- an
+	// <item-pane> gets its own back from handleResize() and zotero-persist,
+	// neither of which a plain box has. That part is this module's.
 	if (box.style.width !== '400px') throw new Error('came back at ' + box.style.width);
-	if (splitter.getAttribute('data-zg-collapsed')) throw new Error('the divider stayed inert');
+	if (splitter.getAttribute('state')) throw new Error('the divider stayed in its collapsed shape');
 });
 
 check('the item pane is handed what <item-details> needs, and nothing more', async () => {
@@ -940,7 +1014,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	}
 
 	details._collapsed = true;
-	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the toggle did not collapse the panel');
+	if (!entry.pane.box.getAttribute('collapsed')) throw new Error('the toggle did not collapse the panel');
 	if (details._collapsed !== true) throw new Error('the toggle cannot read back what it wrote');
 
 	// A click on a node while the pane is collapsed must NOT put it back --
@@ -948,11 +1022,11 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// see either. It is recorded, and drawn on the way back out.
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
 	await itemPane.show(entry, 12);
-	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('a click reopened a collapsed pane');
+	if (!entry.pane.box.getAttribute('collapsed')) throw new Error('a click reopened a collapsed pane');
 	if (details.item.id !== 11) throw new Error('a collapsed pane rendered anyway');
 
 	details._collapsed = false;
-	if (entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the toggle did not bring it back');
+	if (entry.pane.box.getAttribute('collapsed')) throw new Error('the toggle did not bring it back');
 	// The redraw is not awaited by the setter -- core's button is not async --
 	// so let it land.
 	await new Promise(r => setTimeout(r, 0));

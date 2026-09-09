@@ -1,4 +1,4 @@
-/* global Zotero */
+/* global Zotero, ChromeUtils */
 
 'use strict';
 
@@ -6,19 +6,41 @@
  * The panel beside the graph: how wide it is, and whether it is showing at all.
  *
  * There is one thing in it -- Zotero's own item pane (itemPane.js) -- and this
- * module owns everything around that: the splitter, the remembered width, and
- * the collapsed state the pane's own sidenav button drives.
+ * module owns the panel around it: the splitter, the remembered width, and the
+ * bridge to the collapse the pane's own sidenav button drives.
  *
- * Collapsing is core's shape, not one of ours. An <item-pane> collapsed in the
- * library keeps its 37px sidenav on screen and hides only the content beside it
- * (`item-pane[collapsed=true] { max-width: 37px }`, plus `visibility: collapse`
- * on the pane content), so the strip of icons is both the way back and the
- * reminder that there is something to come back to. The panel here does the
- * same, and for the same reason: the button that collapses it lives in that
- * strip, so the strip has to outlive the collapse.
+ * Collapsing is not implemented here. It is core's, from the module core's own
+ * <item-pane> uses:
  *
- * Sizing is the part that needs care, and the reason this module exists rather
- * than a few lines inside itemPane.js.
+ *     chrome://zotero/content/elements/utils/collapsiblePane.mjs
+ *
+ * isPaneCollapsed()/setPaneCollapsed() take the element sitting immediately
+ * after a <splitter> and write the whole collapsed state across both: the
+ * `collapsed` attribute on the pane, `state` and `substate` on the splitter, and
+ * a resize event on the window. That is exactly the shape this panel already has
+ * -- [splitter][box] inside the tab's hbox -- so the helpers apply to it
+ * unchanged, and the attributes they write are the ones core's stylesheet is
+ * written against.
+ *
+ * Which matters more than it sounds, because the two hairlines either side of a
+ * collapsed pane have to be ONE line, and it is the splitter that gives way:
+ *
+ *   expanded   the sidenav's border-inline-start sits between the pane content
+ *              and the sidenav, nowhere near the splitter, and the splitter
+ *              draws the pane's outer edge with border-right plus negative
+ *              margins that cost the layout nothing.
+ *   collapsed  the content is visibility: collapse, so the sidenav's own border
+ *              IS the pane's outer edge -- and a splitter still drawing its own
+ *              line there would double it. Core's [state=collapsed] rules move
+ *              the splitter's line to border-left, drop the negative margins and
+ *              widen --draggable-size, so the one line at the pane's edge is the
+ *              sidenav's.
+ *
+ * Deciding that state by hand was the bug: a doubled, darker edge the library
+ * does not have. Nothing here decides it any more.
+ *
+ * Sizing is what is left, and the reason this module exists rather than a few
+ * lines inside itemPane.js.
  *
  * A XUL splitter resizes by writing a `width` ATTRIBUTE onto the elements
  * either side of it, so that attribute has to stay the source of truth or
@@ -37,30 +59,38 @@
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
 
-// The sidenav's width, which is the whole of the panel once it is collapsed.
-// Core's number, in core's stylesheet; repeated here because the panel is ours
-// and nothing else would size it.
-const SIDENAV_WIDTH = 37;
+/**
+ * Core's collapse, loaded on first use.
+ *
+ * Not at module scope: this file is also loaded by `npm test`, outside Zotero,
+ * where there is no ChromeUtils and no chrome:// to resolve.
+ */
+let _collapsible = null;
+function collapsible() {
+	if (!_collapsible) {
+		_collapsible = ChromeUtils.importESModule(
+			'chrome://zotero/content/elements/utils/collapsiblePane.mjs');
+	}
+	return _collapsible;
+}
 
 const PANE_CSS = `
 	/*
-	 * No styling of its own: core styles the divider, and the attribute that
-	 * asks it to is on the element itself -- see create().
-	 *
-	 * Nothing here may set one either. Both --material-panedivider and
-	 * --material-border-quarternary are border SHORTHANDS, not colours, so the
+	 * The splitter carries no rules of its own -- core styles it, keyed on the
+	 * attributes collapsiblePane.mjs writes. Nothing here may set a border on it
+	 * either: both --material-panedivider and --material-border-quarternary are
+	 * border SHORTHANDS, not colours, so the
 	 * background: var(--material-panedivider) this once carried resolved to
 	 * "1px solid #dadada" and was dropped as invalid.
 	 *
-	 * The divider stays put when the pane is collapsed -- it is what the strip of
-	 * icons sits beside -- but it has nothing left to resize. It is NOT given
-	 * core's state="collapsed" for that: core uses the collapsed splitter as the
-	 * grab handle that pulls the pane back out, and pays it real width to be one
-	 * (--draggable-size goes UP to 8-10px, the negative margins go to zero). The
-	 * way back here is the sidenav's own button, so that width would buy nothing
-	 * and show as a strip of nothing beside the icons.
+	 * The one deviation, and not something an API replaces: a collapsed splitter
+	 * here is inert. Core's stays draggable because core's markup has
+	 * collapse="after", which is what lets nsSplitterFrame un-collapse the pane
+	 * on a drag away from the edge; this panel deliberately does not have that
+	 * attribute (see create()), so a drag could only push against max-width and
+	 * feel broken. The way back is the sidenav's button.
 	 */
-	.zg-pane-splitter[data-zg-collapsed] {
+	.zg-pane-splitter[state="collapsed"] {
 		pointer-events: none;
 	}
 	.zg-pane {
@@ -72,16 +102,23 @@ const PANE_CSS = `
 		flex-shrink: 1;
 	}
 	/*
-	 * Collapsed is the sidenav and nothing else, which is exactly what
-	 * item-pane[collapsed=true] is in the library. The content beside it goes by
-	 * visibility rather than display, because that is the rule core uses and
-	 * because a flex item at visibility: collapse is laid out as though it were
-	 * not there -- so its own 320px minimum cannot argue with the 37px above it.
+	 * Core's own rule for a collapsed item pane, against the attribute core's
+	 * helper writes. From zotero.css, unchanged but for the selector:
+	 *
+	 *   item-pane[collapsed=true] {
+	 *     min-width: 37px; min-height: 37px; max-width: 37px; visibility: inherit;
+	 *   }
+	 *
+	 * 37px is the sidenav, which is the whole of the panel once it is collapsed.
+	 * The visibility is load-bearing and is core's: XUL's UA sheet gives
+	 * [collapsed="true"] a visibility of collapse, which would take the sidenav
+	 * down with everything else and leave no way back.
 	 */
-	.zg-pane[data-zg-collapsed] {
-		width: ${SIDENAV_WIDTH}px;
-		min-width: ${SIDENAV_WIDTH}px;
-		max-width: ${SIDENAV_WIDTH}px;
+	.zg-pane[collapsed="true"] {
+		min-width: 37px;
+		min-height: 37px;
+		max-width: 37px;
+		visibility: inherit;
 	}
 `;
 
@@ -98,7 +135,14 @@ function panel(entry) {
 
 /** Whether the pane's own toggle has put the panel away. */
 function collapsed(entry) {
-	return !!(entry && entry.pane && entry.pane.collapsed);
+	if (!entry || !entry.pane) return false;
+	try {
+		return collapsible().isPaneCollapsed(entry.pane.box);
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return false;
+	}
 }
 
 /**
@@ -107,12 +151,35 @@ function collapsed(entry) {
  * Collapsed, not emptied: the item pane stays exactly as it was, on its scroll
  * position, because this is a way of looking at the whole graph for a moment
  * and not a way of throwing away what you were reading.
+ *
+ * The collapse itself is core's. What is left here is the width either side of
+ * it -- core's <item-pane> restores its own from handleResize() and a
+ * zotero-persist attribute, neither of which a plain box has.
  */
 function setCollapsed(entry, val) {
 	let pane = entry && entry.pane;
-	if (!pane || pane.collapsed === !!val) return;
-	if (val) collapse(pane);
-	else expand(pane);
+	if (!pane) return;
+	val = !!val;
+	if (collapsed(entry) === val) return;
+
+	if (val) {
+		saveWidth(pane);
+		// Read before core removes it, and kept for the way back.
+		pane.width = Number(pane.box.getAttribute('width')) || pane.width;
+	}
+
+	try {
+		collapsible().setPaneCollapsed(pane.box, val);
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return;
+	}
+
+	// setPaneCollapsed clears the `width` ATTRIBUTE; the inline width mirrored
+	// from it is ours, and would outrank the max-width core's rule collapses to.
+	if (val) pane.box.style.width = '';
+	else setWidth(pane, pane.width >= MIN_WIDTH ? Math.round(pane.width) : storedWidth());
 }
 
 /** Close the panel altogether: the width is remembered, the elements go. */
@@ -125,31 +192,6 @@ function close(entry) {
 	pane.splitter.remove();
 	pane.box.remove();
 	pane.style.remove();
-}
-
-// --- showing and hiding ------------------------------------------------
-
-function collapse(pane) {
-	saveWidth(pane);
-	pane.collapsed = true;
-	// Both widths have to go, or they outrank the collapsed rule: an inline
-	// style always does, and a XUL width ATTRIBUTE maps to a presentational hint
-	// whose standing against an author rule is not worth betting a collapse on.
-	// The number is kept here instead, and it is what the panel comes back at.
-	pane.width = Number(pane.box.getAttribute('width')) || pane.width;
-	pane.box.style.width = '';
-	pane.box.removeAttribute('width');
-	pane.box.setAttribute('data-zg-collapsed', 'true');
-	// The divider itself stays: it is what the strip of icons sits beside. It
-	// just has nothing left to drag.
-	pane.splitter.setAttribute('data-zg-collapsed', 'true');
-}
-
-function expand(pane) {
-	pane.collapsed = false;
-	pane.box.removeAttribute('data-zg-collapsed');
-	pane.splitter.removeAttribute('data-zg-collapsed');
-	setWidth(pane, pane.width >= MIN_WIDTH ? Math.round(pane.width) : storedWidth());
 }
 
 // --- the panel ---------------------------------------------------------
@@ -167,31 +209,24 @@ function create(entry) {
 	splitter.className = 'zg-pane-splitter';
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
-	// The attribute every one of core's divider rules is keyed on. Without it
-	// the only rule that matches a <splitter> is
+	// The attribute core's divider rules are keyed on, for the state the panel
+	// starts in. Without one of [collapse] or [substate] the only rule that
+	// matches a <splitter> is
 	//
 	//     splitter:not([orient=vertical]) { min-width: var(--draggable-size) }
 	//
 	// which is 5-8px of TRANSPARENT, REAL layout width and no line anywhere --
 	// a strip of window between the graph and the panel, and no divider drawn.
-	// With it, core's own rule applies:
+	// With it, core's own rule applies: border-right, plus negative margins that
+	// let the divider keep its grab width by overlapping its neighbours instead
+	// of taking space from them.
 	//
-	//     border-right: var(--material-border-quarternary);
-	//     margin-left: calc(1px - var(--draggable-size)); margin-right: -1px;
-	//
-	// so the divider costs the layout nothing, paints Zotero's hairline, and
-	// keeps its full grab width by overlapping its neighbours -- which is how
-	// every other divider in the window is built.
-	//
-	// 'substate' rather than 'collapse', which core's items splitter uses and
-	// which selects the identical rule: 'collapse' is the attribute
-	// nsSplitterFrame keys its OWN drag-to-the-edge collapse off, and that
-	// writes collapsed="true" onto the panel directly. This module's collapsed
-	// state is what the sidenav's toggle reads and writes (itemPane.js
-	// _collapsed), and a second mechanism that hides the panel without telling
-	// it would leave the toggle undoing a collapse it did not make. substate is
-	// core's own marker for the same shape -- setPaneCollapsed() writes exactly
-	// this, on both branches -- and carries no behaviour.
+	// Core's markup writes collapse="after" here and gets the identical rule.
+	// This is substate, which collapsiblePane.mjs also writes, because
+	// `collapse` is the attribute nsSplitterFrame keys its OWN drag-to-the-edge
+	// collapse off: it would write collapsed="true" onto the panel directly,
+	// which is a second collapse behind the back of the one the sidenav's toggle
+	// drives. From here on the attribute is core's helper's to maintain.
 	splitter.setAttribute('substate', 'after');
 
 	let box = doc.createXULElement('vbox');
@@ -204,7 +239,6 @@ function create(entry) {
 	let pane = {
 		box, splitter, style,
 		observer: null,
-		collapsed: false,
 		// Only ever read while collapsed, when the box carries no width of its own.
 		width: 0,
 	};
@@ -233,7 +267,7 @@ function setWidth(pane, px) {
 function mirrorWidth(pane) {
 	// A collapse is not a resize: the panel is at the sidenav's width on
 	// purpose, and the attribute is only being kept for when it comes back.
-	if (pane.collapsed) return;
+	if (pane.box.getAttribute('collapsed') === 'true') return;
 	let w = Number(pane.box.getAttribute('width'));
 	if (!Number.isFinite(w) || w <= 0) return;
 	pane.box.style.width = w + 'px';

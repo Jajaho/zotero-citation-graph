@@ -60,11 +60,11 @@ const PANE_CSS = `
 		min-height: 0;
 		min-width: 0;
 	}
-	/* Collapsed, the sidenav is the whole panel -- core's own rule for a
-	   collapsed item pane, which it writes against #zotero-item-pane-content.
-	   That id belongs to the library's pane and not to ours, so the same
-	   declaration is made here against the panel's collapsed state. */
-	.zg-pane[data-zg-collapsed] .zg-item-row > .zotero-item-pane-content {
+	/* Collapsed, the sidenav is the whole panel. Core's own rule, which it
+	   writes as "item-pane[collapsed=true] #zotero-item-pane-content" -- that
+	   id belongs to the library's pane and not to ours, but the attribute is
+	   the same one, because the collapse is core's own (splitPane.js). */
+	.zg-pane[collapsed="true"] .zg-item-row > .zotero-item-pane-content {
 		visibility: collapse;
 	}
 `;
