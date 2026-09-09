@@ -649,19 +649,17 @@ check('lib/ modules load through the shim', () => {
 	if (typeof m.MetadataCache !== 'function') throw new Error('no MetadataCache');
 	const t = require_('./lib/graphTab.js');
 	if (typeof t.open !== 'function') throw new Error('no open()');
-	const r = require_('./lib/readerPane.js');
-	if (typeof r.open !== 'function' || typeof r.readable !== 'function') {
-		throw new Error('readerPane must expose open()/readable()');
-	}
 	const i = require_('./lib/itemPane.js');
-	if (typeof i.show !== 'function') throw new Error('itemPane must expose show()');
-	// Closing is the panel's, not either occupant's: one divider puts both away.
+	// Closing the panel is the item pane's: it is the only thing that goes in it.
+	for (const fn of ['show', 'close']) {
+		if (typeof i[fn] !== 'function') throw new Error('itemPane must expose ' + fn + '()');
+	}
 	const s = require_('./lib/splitPane.js');
 	// The whole surface, not a sample: the module's stylesheet is a template
 	// literal, and one stray backtick in a CSS comment ends the string, turns the
 	// rest of the file into whatever it happens to parse as, and leaves exports
 	// silently missing rather than throwing.
-	for (const fn of ['claim', 'has', 'collapsed', 'close']) {
+	for (const fn of ['panel', 'collapsed', 'setCollapsed', 'close']) {
 		if (typeof s[fn] !== 'function') throw new Error('splitPane must expose ' + fn + '()');
 	}
 	if (s.MIN_WIDTH !== 357) throw new Error('splitPane.MIN_WIDTH: ' + s.MIN_WIDTH);
@@ -674,9 +672,8 @@ check('lib/ modules load through the shim', () => {
 });
 
 /**
- * A window just real enough for splitPane.js and the two things that build into
- * it: elements that can be appended, detached and asked for their first child,
- * since handing the panel over empties it one child at a time.
+ * A window just real enough for splitPane.js and the item pane that builds into
+ * it: elements that can be appended, detached and asked for their first child.
  */
 class FakeElement {
 	constructor(localName, made, onRender) {
@@ -741,15 +738,16 @@ class FakeElement {
 		return this.localName;
 	}
 
-	/** Enough of a selector engine for the two shapes asked of it: [value="..."],
-	 *  which is how addDialog.js finds the collection the menu ticked, and a
-	 *  bare .class, which is how graphTab.load() asks whether a container it is
-	 *  about to mount into already holds a graph. */
+	/** Enough of a selector engine for the two shapes asked of it: [attr="..."],
+	 *  which is how addDialog.js finds the collection the menu ticked and how
+	 *  itemPane.js finds the sidenav's toggle, and a bare .class, which is how
+	 *  graphTab.load() asks whether a container it is about to mount into
+	 *  already holds a graph. */
 	querySelector(sel) {
 		let match;
-		const attr = /^\[value="(.*)"\]$/.exec(sel);
+		const attr = /^\[([\w-]+)="(.*)"\]$/.exec(sel);
 		const cls = /^\.([\w-]+)$/.exec(sel);
-		if (attr) match = c => c.getAttribute('value') === attr[1];
+		if (attr) match = c => c.getAttribute(attr[1]) === attr[2];
 		else if (cls) match = c => String(c.className).split(/\s+/).includes(cls[1]);
 		else throw new Error('unsupported selector: ' + sel);
 		const walk = (el) => {
@@ -781,7 +779,7 @@ class FakeElement {
 		(this.listeners[type] = this.listeners[type] || []).push(fn);
 	}
 
-	/** Press the chevron, or whatever else the panel wired up. */
+	/** Press whatever the panel wired up. */
 	fire(type, event) {
 		for (const fn of this.listeners[type] || []) fn(event);
 	}
@@ -818,113 +816,60 @@ function fakeWindow(onRender = async () => {}) {
 
 /** A graph tab with nothing in its side panel yet. */
 function fakeEntry(win, element, tabID) {
-	return { win, split: element('hbox'), tabID, pane: null, reader: null, itemPane: null };
+	return { win, split: element('hbox'), tabID, pane: null, itemPane: null };
 }
 
-check('the side panel holds one thing at a time', async () => {
+check('the side panel is built once and closes with the tab', () => {
 	const splitPane = require_('./lib/splitPane.js');
 	const { made, win, element } = fakeWindow();
 	const entry = fakeEntry(win, element, 'tab-9');
 	Zotero.Prefs = { get: () => 420, set: () => {} };
 
-	let dropped = 0;
-	let first = splitPane.claim(entry, 'reader', () => dropped++);
-	first.appendChild(element('browser'));
-	if (!splitPane.has(entry, 'reader')) throw new Error('the reader did not get the panel');
+	const box = splitPane.panel(entry);
+	box.appendChild(element('hbox'));
+	// Asking again is not a reason to rebuild: the item pane asks on every
+	// click, and a rebuilt panel would throw away the pane inside it.
+	if (splitPane.panel(entry) !== box) throw new Error('the panel was rebuilt');
+	if (box.children.length !== 1) throw new Error('a second ask emptied the panel');
 
-	// The chevron is a child of the panel, and it belongs to the panel rather
-	// than to whoever is in it -- so it is not part of any of these counts.
-	const toggle = made.find(el => el.className === 'zg-pane-toggle');
-	const occupants = box => box.children.filter(c => c !== toggle);
-
-	// The same occupant asking again keeps what it built.
-	if (splitPane.claim(entry, 'reader', () => dropped++) !== first) throw new Error('the panel was rebuilt');
-	if (dropped) throw new Error('a re-claim tore the occupant down');
-	if (occupants(first).length !== 1) throw new Error('a re-claim emptied the panel');
-
-	// Someone else asking takes it, and the reader is told before its elements go.
-	let second = splitPane.claim(entry, 'item', () => dropped++);
-	if (second !== first) throw new Error('the two occupants got different panels');
-	if (dropped !== 1) throw new Error('the displaced occupant was not told');
-	if (occupants(second).length) throw new Error('the panel was handed over still full');
-	if (toggle.parent !== second) throw new Error('the handover took the chevron with it');
-	if (splitPane.has(entry, 'reader')) throw new Error('the reader still claims the panel');
+	const splitter = made.find(el => el.className === 'zg-pane-splitter');
+	if (!splitter) throw new Error('the panel has no divider');
+	if (splitter.parent !== entry.split) throw new Error('the divider is not beside the panel');
 
 	splitPane.close(entry);
-	if (dropped !== 2) throw new Error('close() did not tell the occupant');
 	if (entry.pane) throw new Error('close() left the panel on the tab');
-	if (!second.removed) throw new Error('close() left the panel in the DOM');
+	if (!box.removed) throw new Error('close() left the panel in the DOM');
+	if (!splitter.removed) throw new Error('close() left the divider behind');
 });
 
-check('the chevron hangs off the panel and is never positioned by arithmetic', () => {
+check('collapsing leaves the sidenav on screen and remembers the width', () => {
 	const splitPane = require_('./lib/splitPane.js');
 	const { made, win, element } = fakeWindow();
 	const entry = fakeEntry(win, element, 'tab-11');
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 
-	const box = splitPane.claim(entry, 'item', () => {});
-	const toggle = made.find(el => el.className === 'zg-pane-toggle');
+	const box = splitPane.panel(entry);
 	const splitter = made.find(el => el.className === 'zg-pane-splitter');
-	// A XUL <splitter> is a leaf frame in current Gecko -- it lays out no
-	// children, so a button inside one is invisible. That is not a thing a
-	// stylesheet can rescue, hence the check.
-	if (splitter.children.length) throw new Error('the divider has children, and they never paint');
-	// Inside the panel, so that every way the panel's edge can move -- a drag, a
-	// narrower window, min-width biting -- moves the button with it. An offset
-	// computed once and stored goes stale on all three, and a stale offset puts
-	// the button off the side of the tab, which is how it kept vanishing.
-	if (toggle.parent !== box) throw new Error('the chevron must be a child of the panel');
-	if (Object.keys(entry.split.style.props).length) {
-		throw new Error('the chevron is being placed by measurement again: '
-			+ JSON.stringify(entry.split.style.props));
-	}
+	const inside = box.appendChild(element('hbox'));
 
-	// Collapsing is width, not display: a panel that is display:none takes the
-	// button down with it, and then there is no way back.
-	toggle.fire('click');
-	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the panel did not collapse');
-	if (box.getAttribute('hidden')) throw new Error('display:none would hide the chevron too');
+	splitPane.setCollapsed(entry, true);
+	if (!splitPane.collapsed(entry)) throw new Error('the panel did not collapse');
+	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the panel kept its width');
+	// Collapsed is 37px of sidenav, the way core collapses an <item-pane> --
+	// not display:none, which would take the button that collapsed it down too,
+	// and not an emptied panel, which would lose the pane's scroll position.
+	if (box.getAttribute('hidden')) throw new Error('display:none would hide the sidenav too');
+	if (inside.parent !== box) throw new Error('collapsing emptied the panel');
+	if (!splitter.getAttribute('data-zg-collapsed')) throw new Error('a collapsed panel is still draggable');
 	// Neither an inline width nor a XUL width attribute may be left behind to
-	// argue with `width: 0`.
+	// argue with the collapsed rule.
 	if (box.style.width) throw new Error('an inline width outranks the collapsed rule: ' + box.style.width);
 	if (box.getAttribute('width')) throw new Error('a width attribute survived the collapse');
-	if (toggle.parent !== box) throw new Error('collapsing detached the chevron');
+
+	splitPane.setCollapsed(entry, false);
 	// The attribute is what the panel comes back at, so it survives the collapse.
-	toggle.fire('click');
 	if (box.style.width !== '400px') throw new Error('came back at ' + box.style.width);
-});
-
-check('hiding the panel keeps what is in it, and asking again brings it back', () => {
-	const splitPane = require_('./lib/splitPane.js');
-	const { made, win, element } = fakeWindow();
-	const entry = fakeEntry(win, element, 'tab-10');
-	Zotero.Prefs = { get: () => 480, set: () => {} };
-
-	let dropped = 0;
-	let box = splitPane.claim(entry, 'reader', () => dropped++);
-	box.appendChild(element('browser'));
-	const toggle = made.find(el => el.className === 'zg-pane-toggle');
-	if (!toggle) throw new Error('the panel has no chevron');
-	const occupants = () => box.children.filter(c => c !== toggle);
-
-	toggle.fire('click');
-	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('the chevron did not hide the panel');
-	// Hidden, not emptied: a reader keeps its page and an item pane its scroll
-	// position, so the way back is instant and lands where you left.
-	if (dropped) throw new Error('hiding tore the occupant down');
-	if (occupants().length !== 1) throw new Error('hiding emptied the panel');
-	if (toggle.textContent !== '«') throw new Error('the chevron points the wrong way: ' + toggle.textContent);
-
-	// A claim that is not a request to SEE something leaves the chevron's
-	// decision alone -- that is what stops a node click reopening the panel.
-	splitPane.claim(entry, 'reader', () => dropped++, { show: false });
-	if (box.getAttribute('data-zg-collapsed') !== 'true') throw new Error('a quiet claim reopened the panel');
-
-	// "Open PDF beside the graph" is one, so it shows it again.
-	if (splitPane.claim(entry, 'reader', () => dropped++) !== box) throw new Error('the panel was rebuilt');
-	if (box.getAttribute('data-zg-collapsed')) throw new Error('claiming left the panel hidden');
-	if (toggle.textContent !== '»') throw new Error('the chevron did not flip back');
-	if (dropped) throw new Error('showing it again tore the occupant down');
+	if (splitter.getAttribute('data-zg-collapsed')) throw new Error('the divider stayed inert');
 });
 
 check('the item pane is handed what <item-details> needs, and nothing more', async () => {
@@ -961,28 +906,46 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (details.item.id !== 11) throw new Error('the item never arrived');
 	if (details.editable !== true) throw new Error('an editable library came out read-only');
 
-	// Hidden from the divider, then clicked again. The click must NOT put the
-	// panel back -- hiding it was a decision -- but the pane behind the chevron
-	// stays current, so bringing it back lands on the paper last chosen.
-	const toggle = made.find(el => el.className === 'zg-pane-toggle');
-	toggle.fire('click');
+	// The sidenav's first button is one line on top of _collapsed, and so is the
+	// expand a section icon does on the way past. ItemPaneContainerBase resolves
+	// that property through an enclosing <item-pane>, which there is none of
+	// here, so the pane must carry its own -- an own property, shadowing core's.
+	const own = Object.getOwnPropertyDescriptor(details, '_collapsed');
+	if (!own || typeof own.set !== 'function') {
+		throw new Error("core's toggle has nothing to drive: _collapsed is still the base class's");
+	}
+
+	details._collapsed = true;
+	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the toggle did not collapse the panel');
+	if (details._collapsed !== true) throw new Error('the toggle cannot read back what it wrote');
+
+	// A click on a node while the pane is collapsed must NOT put it back --
+	// collapsing it was a decision -- and must not spend a render nobody can
+	// see either. It is recorded, and drawn on the way back out.
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false }) };
 	await itemPane.show(entry, 12);
-	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('a click reopened a hidden panel');
-	if (details.item.id !== 12) throw new Error('the hidden pane did not follow the click');
-	toggle.fire('click');
-	if (entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the chevron did not bring it back');
+	if (!entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('a click reopened a collapsed pane');
+	if (details.item.id !== 11) throw new Error('a collapsed pane rendered anyway');
 
-	require_('./lib/splitPane.js').close(entry);
+	details._collapsed = false;
+	if (entry.pane.box.getAttribute('data-zg-collapsed')) throw new Error('the toggle did not bring it back');
+	// The redraw is not awaited by the setter -- core's button is not async --
+	// so let it land.
+	await new Promise(r => setTimeout(r, 0));
+	if (details.item.id !== 12) throw new Error('coming back did not land on the paper last clicked');
+
+	const box = entry.pane.box;
+	const row = made.find(el => el.className === 'zg-item-row');
+	itemPane.close(entry);
 	if (entry.itemPane) throw new Error('close() left the pane on the tab');
 	if (entry.pane) throw new Error('close() left the panel on the tab');
-	// The row is what the panel holds, and taking it out is what disconnects
-	// <item-details> -- which is the whole of the item pane's cleanup, since
-	// ItemDetails unregisters its observers from disconnectedCallback.
-	if (details.parent !== made.find(el => el.className === 'zg-item-row')) {
-		throw new Error('the pane was not left inside the row it was built in');
-	}
-	if (!details.parent.removed) throw new Error('close() left the pane in the DOM');
+	// Taking the panel out of the document is the whole of the item pane's
+	// cleanup: ItemDetails and the sidenav both unregister their observers from
+	// disconnectedCallback, so the pane has to still be inside the panel when
+	// the panel goes.
+	if (details.parent !== row) throw new Error('the pane was not left inside the row it was built in');
+	if (row.parent !== box) throw new Error('the row was taken out of the panel before it was closed');
+	if (!box.removed) throw new Error('close() left the panel in the DOM');
 });
 
 check('a pointer crossing three nodes draws the last, not all three', async () => {
@@ -1659,7 +1622,7 @@ check('a tab whose collection is gone drops without costing the tabs after it', 
 });
 
 /**
- * A Zotero item just real enough for readerPane.readable(): the four things it
+ * A Zotero item just real enough for graphTab's readable(): the four things it
  * asks about a candidate attachment.
  */
 function fakeItem({ title = 'A paper', att = undefined, readerType = 'pdf', file = '/tmp/a.pdf' } = {}) {
@@ -1678,14 +1641,15 @@ function fakeItem({ title = 'A paper', att = undefined, readerType = 'pdf', file
 	};
 }
 
-check('readable() gates both PDF entries on the same three questions', async () => {
+check('readable() gates the PDF entry on three questions', async () => {
 	// Its three refusals are strings now, so the bundle has to be in.
 	await l10nReady;
-	const { readable } = require_('./lib/readerPane.js');
+	const { readable } = require_('./lib/graphTab.js');
 	const said = [];
 	const status = t => said.push(t);
 	// The graph page cannot see attachments, so this gate is the only thing
-	// standing between "Open PDF..." and a reader that throws on construction.
+	// standing between "Open PDF in new tab" and a reader that throws on
+	// construction.
 	const run = async (item) => {
 		Zotero.Items = { getAsync: async () => item };
 		said.length = 0;
@@ -2508,7 +2472,7 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
  * screenshot. Both mistakes below shipped.
  */
 check('a Zotero border variable is used as the shorthand it is', () => {
-	for (const name of ['splitPane.js', 'readerPane.js', 'itemPane.js']) {
+	for (const name of ['splitPane.js', 'itemPane.js']) {
 		const src = fs.readFileSync(path.join(addonDir, 'lib', name), 'utf8')
 			// Comments talk about the wrong version on purpose.
 			.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -2704,7 +2668,7 @@ function referencedIds() {
 	const ids = new Set();
 	const files = [
 		'content/graph.js', 'content/nodeFilters.js',
-		'lib/graphTab.js', 'lib/readerPane.js', 'lib/itemPane.js', 'lib/splitPane.js',
+		'lib/graphTab.js', 'lib/itemPane.js', 'lib/splitPane.js',
 		'lib/addDialog.js',
 		'lib/main.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));

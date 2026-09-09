@@ -3208,22 +3208,11 @@
 				run: () => emit({ type: 'open-item', itemID: n.itemID }),
 			},
 			{
-				// Chrome answers by opening a reader beside the graph, in this same
-				// tab. Whether the item HAS a readable attachment is not knowable
-				// here -- the payload carries items, not their files -- so this is
-				// always offered, and chrome says so on the status line when there
-				// is nothing to open.
-				icon: 'open-pane',
-				label: t('menu-open-pdf-pane'),
-				hint: t('menu-open-pdf-pane-hint'),
-				disabled: !n.itemID,
-				run: () => emit({ type: 'open-pdf', itemID: n.itemID }),
-			},
-			{
-				// The full reader, in a tab of its own. Offered on the same
-				// terms as the pane above and for the same reason: whether the
-				// item has a readable file is chrome's to answer, and it says
-				// so on the status line when there is nothing to open.
+				// The full reader, in a tab of its own. Whether the item HAS a
+				// readable attachment is not knowable here -- the payload
+				// carries items, not their files -- so this is always offered,
+				// and chrome says so on the status line when there is nothing
+				// to open.
 				icon: 'new-tab',
 				label: t('menu-open-pdf-tab'),
 				hint: t('menu-open-pdf-tab-hint'),

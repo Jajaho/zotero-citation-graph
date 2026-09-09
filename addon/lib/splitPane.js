@@ -3,31 +3,22 @@
 'use strict';
 
 /**
- * The one pane beside the graph: who has it, how wide it is, and whether it is
- * showing at all.
+ * The panel beside the graph: how wide it is, and whether it is showing at all.
  *
- * Both things this plugin can put next to the graph -- a reader
- * (readerPane.js) and Zotero's item pane (itemPane.js) -- describe the paper
- * you are looking at, and they want the same screen. So there is one panel,
- * one splitter and one remembered width: claiming it empties whatever was in
- * it, and the occupant being displaced is told first, because a reader
- * instance has listeners and a docShell to flush and an item pane has
- * observers registered with Zotero.Notifier.
+ * There is one thing in it -- Zotero's own item pane (itemPane.js) -- and this
+ * module owns everything around that: the splitter, the remembered width, and
+ * the collapsed state the pane's own sidenav button drives.
  *
- * Hiding it is one gesture too: a chevron hung off the panel's outer edge, at
- * the height your eye is already at. Whatever is in the panel, that is how it
- * goes away, and clicking it again brings back exactly what was there --
- * collapsing hides the panel rather than tearing its occupant down, so a reader
- * keeps its page and an item pane its scroll position.
- *
- * A hidden panel stays hidden. Someone who put it away is not asking for it
- * back every time they click a node, so claim() only shows the panel when the
- * caller says the request was a request to SEE something -- opening a PDF is,
- * clicking a node is not (itemPane.js keeps its pane up to date behind the
- * chevron instead, so the way back lands on the paper you last chose).
+ * Collapsing is core's shape, not one of ours. An <item-pane> collapsed in the
+ * library keeps its 37px sidenav on screen and hides only the content beside it
+ * (`item-pane[collapsed=true] { max-width: 37px }`, plus `visibility: collapse`
+ * on the pane content), so the strip of icons is both the way back and the
+ * reminder that there is something to come back to. The panel here does the
+ * same, and for the same reason: the button that collapses it lives in that
+ * strip, so the strip has to outlive the collapse.
  *
  * Sizing is the part that needs care, and the reason this module exists rather
- * than a rule saying "close the other one first".
+ * than a few lines inside itemPane.js.
  *
  * A XUL splitter resizes by writing a `width` ATTRIBUTE onto the elements
  * either side of it, so that attribute has to stay the source of truth or
@@ -39,27 +30,17 @@
  *   contain: inline-size    the panel's width never depends on its contents
  *   attribute -> style      mirrored, so the width the splitter writes is the
  *                           width the panel gets
- *
- * The chevron is sized by the same problem from the other side. It was once
- * parked over the divider by measuring the panel and writing an offset, and it
- * kept disappearing: every way the panel can change width without the width
- * attribute changing -- the window narrowing, min-width biting, a drag Gecko
- * applied to the graph side instead -- left the offset stale, and a stale offset
- * puts the button past the edge of the tab. So nothing is measured now. The
- * button is a child of the panel, absolutely positioned one button-width to the
- * left of it, and it follows the panel's edge because it IS the panel's edge.
  */
 
-let l10n = require('./l10n.js');
-
-// An item pane's own 320px minimum plus its 37px sidenav -- the wider of the
-// two occupants, and the panel is one panel.
+// An item pane's own 320px minimum plus its 37px sidenav -- what core gives the
+// library's item pane, and this is the same pane.
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
 
-// Kept in step with the CSS below only as documentation -- the button's own
-// width is what pushes it off the panel's edge, in CSS, with no measuring.
-const TOGGLE_WIDTH = 18;
+// The sidenav's width, which is the whole of the panel once it is collapsed.
+// Core's number, in core's stylesheet; repeated here because the panel is ours
+// and nothing else would size it.
+const SIDENAV_WIDTH = 37;
 
 const PANE_CSS = `
 	/*
@@ -72,15 +53,13 @@ const PANE_CSS = `
 	 * SHORTHANDS, not colours, so a background of var(--material-panedivider)
 	 * resolved to "1px solid #dadada" and was dropped as invalid.
 	 *
-	 * The divider stays put when the panel is hidden -- it is what the way back
-	 * sits beside -- but it has nothing left to resize.
+	 * The divider stays put when the pane is collapsed -- it is what the strip of
+	 * icons sits beside -- but it has nothing left to resize.
 	 */
 	.zg-pane-splitter[data-zg-collapsed] {
 		pointer-events: none;
 	}
 	.zg-pane {
-		/* The chevron is positioned against THIS box: see .zg-pane-toggle. */
-		position: relative;
 		min-width: ${MIN_WIDTH}px;
 		background: var(--material-sidepane);
 		/* Nothing inside the panel gets a say in how wide it is. */
@@ -89,188 +68,84 @@ const PANE_CSS = `
 		flex-shrink: 1;
 	}
 	/*
-	 * Hidden is a panel of zero width, not a panel that is display:none, because
-	 * the chevron lives inside the panel and has to outlive its hiding. What is
-	 * IN the panel goes; the panel itself stays as the thing the button hangs
-	 * off, and slides to the edge of the window as it shrinks to nothing.
+	 * Collapsed is the sidenav and nothing else, which is exactly what
+	 * item-pane[collapsed=true] is in the library. The content beside it goes by
+	 * visibility rather than display, because that is the rule core uses and
+	 * because a flex item at visibility: collapse is laid out as though it were
+	 * not there -- so its own 320px minimum cannot argue with the 37px above it.
 	 */
 	.zg-pane[data-zg-collapsed] {
-		width: 0;
-		min-width: 0;
-	}
-	.zg-pane[data-zg-collapsed] > *:not(.zg-pane-toggle) {
-		display: none;
-	}
-	/*
-	 * Hung off the panel's outer edge: absolutely positioned against the panel
-	 * itself, one button-width to the left of it, so it covers the divider and a
-	 * little of the graph. Being absolute it takes no space, so the panel is
-	 * exactly as wide as the panel; being anchored to the panel it needs no
-	 * arithmetic -- a drag, a window resize and a collapse all move it because
-	 * they move the edge it is nailed to.
-	 *
-	 * Inside the panel rather than beside the divider, and never inside the
-	 * divider: a XUL <splitter> is a LEAF frame in current Gecko and lays out no
-	 * children at all, which is why core's own <grippy> elements inside splitters
-	 * render nothing.
-	 *
-	 * A right offset of 100% rather than a negative left one: it says "my right
-	 * edge is the panel's left edge" without depending on the button's own width,
-	 * its border or its box-sizing, all of which have been wrong here at least
-	 * once.
-	 *
-	 * The background must be OPAQUE, in both states. It is 18px of window with
-	 * three different things behind it -- the graph, the divider, the panel edge
-	 * -- and the hover fill used to be var(--fill-quinary) on its own, which is
-	 * rgba(0,0,0,.05): every seam behind the button showed through it as a grey
-	 * block glued to the button's side. Layering the same fill over the panel's
-	 * own colour gives the identical shade with nothing showing through.
-	 *
-	 * No right border and no right radius: the edge it meets is the panel's own.
-	 * A line there would be a doubled one, and a rounded corner would leave a
-	 * notch of panel showing through the tab hanging off it.
-	 */
-	.zg-pane-toggle {
-		position: absolute;
-		top: 50%;
-		right: 100%;
-		transform: translateY(-50%);
-		z-index: 2;
-		appearance: none;
-		/* An HTML <button> is content-box by default, and the offset above is a
-		   border-box promise. */
-		box-sizing: border-box;
-		width: ${TOGGLE_WIDTH}px;
-		height: 56px;
-		padding: 0;
-		/* The variable IS the shorthand -- it expands to 1px solid
-		   var(--color-panedivider). Writing "1px solid var(--material-panedivider)"
-		   nests one shorthand in another, which is invalid, and an invalid border
-		   declaration is no border at all. */
-		border: var(--material-panedivider);
-		border-right: none;
-		border-radius: 5px 0 0 5px;
-		background: var(--material-sidepane);
-		color: var(--fill-secondary);
-		font-size: 12px;
-		line-height: 1;
-	}
-	.zg-pane-toggle:hover {
-		background: linear-gradient(var(--fill-quinary), var(--fill-quinary))
-			var(--material-sidepane);
-		color: var(--fill-primary);
+		width: ${SIDENAV_WIDTH}px;
+		min-width: ${SIDENAV_WIDTH}px;
+		max-width: ${SIDENAV_WIDTH}px;
 	}
 `;
 
 /**
- * Take the panel for `kind`, building it if this is the first time, showing it
- * if it was hidden and emptying it if something else had it.
+ * The panel for this tab, built on the first ask.
  *
- * @param {Object}   entry     the graphTab record for this tab
- * @param {String}   kind      'reader' | 'item'
- * @param {Function} teardown  called when this occupant loses the panel
- * @param {Boolean}  [show]    whether this request should un-hide the panel
- * @returns {Element} the box to build into -- empty, unless it was already ours
+ * @param {Object} entry  the graphTab record for this tab
+ * @returns {Element} the box to build into
  */
-function claim(entry, kind, teardown, { show = true } = {}) {
+function panel(entry) {
 	let pane = entry.pane || create(entry);
-	if (show) expand(pane);
-	if (pane.kind !== kind) {
-		release(pane);
-		pane.kind = kind;
-	}
-	pane.teardown = teardown;
 	return pane.box;
 }
 
-/** Whether `kind` is what the panel is currently holding. */
-function has(entry, kind) {
-	return !!(entry && entry.pane && entry.pane.kind === kind);
-}
-
-/** Whether the chevron has put the panel away. */
+/** Whether the pane's own toggle has put the panel away. */
 function collapsed(entry) {
 	return !!(entry && entry.pane && entry.pane.collapsed);
 }
 
-/** Close the panel altogether: the width is remembered, the occupant told. */
+/**
+ * Collapse or expand, which is what the sidenav's first button asks for.
+ *
+ * Collapsed, not emptied: the item pane stays exactly as it was, on its scroll
+ * position, because this is a way of looking at the whole graph for a moment
+ * and not a way of throwing away what you were reading.
+ */
+function setCollapsed(entry, val) {
+	let pane = entry && entry.pane;
+	if (!pane || pane.collapsed === !!val) return;
+	if (val) collapse(pane);
+	else expand(pane);
+}
+
+/** Close the panel altogether: the width is remembered, the elements go. */
 function close(entry) {
 	let pane = entry && entry.pane;
 	if (!pane) return;
 	saveWidth(pane);
 	entry.pane = null;
-	release(pane);
 	if (pane.observer) pane.observer.disconnect();
 	pane.splitter.remove();
 	pane.box.remove();
 	pane.style.remove();
 }
 
-/**
- * Hand the panel back: the occupant flushes its own state while its elements
- * are still in the document -- a reader has to uninit() before its browser
- * goes -- and only then is the box emptied.
- *
- * Emptied of the OCCUPANT, that is. The chevron is a child of the box too, and
- * it belongs to the panel rather than to whoever is in it.
- */
-function release(pane) {
-	let teardown = pane.teardown;
-	pane.teardown = null;
-	pane.kind = null;
-	if (teardown) {
-		try {
-			teardown();
-		}
-		catch (e) {
-			Zotero.logError(e);
-		}
-	}
-	for (let child of Array.from(pane.box.children)) {
-		if (child !== pane.toggle) child.remove();
-	}
-}
-
 // --- showing and hiding ------------------------------------------------
 
-/**
- * Hidden, not emptied. The occupant stays exactly as it was -- a reader on its
- * page, an item pane on its scroll position -- because the chevron is a way of
- * looking at the graph for a moment, not of throwing away what you were
- * reading.
- */
 function collapse(pane) {
-	if (pane.collapsed) return;
 	saveWidth(pane);
 	pane.collapsed = true;
-	// Both widths have to go, or they outrank `width: 0`: an inline style always
-	// does, and a XUL width ATTRIBUTE maps to a presentational hint whose
-	// standing against an author rule is not worth betting a collapse on. The
-	// number is kept here instead, and it is what the panel comes back at.
+	// Both widths have to go, or they outrank the collapsed rule: an inline
+	// style always does, and a XUL width ATTRIBUTE maps to a presentational hint
+	// whose standing against an author rule is not worth betting a collapse on.
+	// The number is kept here instead, and it is what the panel comes back at.
 	pane.width = Number(pane.box.getAttribute('width')) || pane.width;
 	pane.box.style.width = '';
 	pane.box.removeAttribute('width');
 	pane.box.setAttribute('data-zg-collapsed', 'true');
-	// The divider itself stays: it is what the way back sits beside. It just has
-	// nothing left to drag.
+	// The divider itself stays: it is what the strip of icons sits beside. It
+	// just has nothing left to drag.
 	pane.splitter.setAttribute('data-zg-collapsed', 'true');
-	syncToggle(pane);
 }
 
 function expand(pane) {
-	if (!pane.collapsed) return;
 	pane.collapsed = false;
 	pane.box.removeAttribute('data-zg-collapsed');
 	pane.splitter.removeAttribute('data-zg-collapsed');
 	setWidth(pane, pane.width >= MIN_WIDTH ? Math.round(pane.width) : storedWidth());
-	syncToggle(pane);
-}
-
-function syncToggle(pane) {
-	// Pointing the way the panel would go: right to push it off the edge, left
-	// to pull it back out.
-	pane.toggle.textContent = pane.collapsed ? '«' : '»';
-	pane.toggle.title = l10n.t(pane.collapsed ? 'pane-show' : 'pane-hide');
 }
 
 // --- the panel ---------------------------------------------------------
@@ -278,7 +153,7 @@ function syncToggle(pane) {
 function create(entry) {
 	let doc = entry.win.document;
 
-	// Beside the box rather than inside it, so emptying the box on a handover
+	// Beside the box rather than inside it, so anything that empties the box
 	// does not take the panel's own styling with it.
 	let style = doc.createElement('style');
 	style.textContent = PANE_CSS;
@@ -289,37 +164,21 @@ function create(entry) {
 	splitter.setAttribute('resizebefore', 'closest');
 	splitter.setAttribute('resizeafter', 'closest');
 
-	// A column: the reader stacks a header over its browser, and the item pane
-	// puts its own row inside. Either way the panel is one box.
 	let box = doc.createXULElement('vbox');
 	box.className = 'zg-pane';
-
-	// The chevron hangs off the panel's outer edge, and is a child of the panel
-	// so that it moves with that edge without anyone having to work out where
-	// the edge went. Absolute, so it costs the layout nothing.
-	let toggle = doc.createElement('button');
-	toggle.className = 'zg-pane-toggle';
 
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
 	entry.split.appendChild(box);
-	box.appendChild(toggle);
 
 	let pane = {
-		box, splitter, toggle, style,
-		kind: null,
-		teardown: null,
+		box, splitter, style,
 		observer: null,
 		collapsed: false,
 		// Only ever read while collapsed, when the box carries no width of its own.
 		width: 0,
 	};
 	setWidth(pane, storedWidth());
-	syncToggle(pane);
-	toggle.addEventListener('click', () => {
-		if (pane.collapsed) expand(pane);
-		else collapse(pane);
-	});
 
 	// The splitter writes the attribute as the drag goes; this is what makes
 	// that visible whether or not the attribute is honoured by itself.
@@ -342,8 +201,8 @@ function setWidth(pane, px) {
 }
 
 function mirrorWidth(pane) {
-	// A collapse is not a resize: the panel is at zero on purpose, and the
-	// attribute is only being kept for when it comes back.
+	// A collapse is not a resize: the panel is at the sidenav's width on
+	// purpose, and the attribute is only being kept for when it comes back.
 	if (pane.collapsed) return;
 	let w = Number(pane.box.getAttribute('width'));
 	if (!Number.isFinite(w) || w <= 0) return;
@@ -351,14 +210,14 @@ function mirrorWidth(pane) {
 }
 
 function storedWidth() {
-	// paneWidth is the one panel's width. readerPaneWidth is what the reader
-	// pane remembered before there was anything else to share with, and is read
-	// here so an existing profile opens at the size its owner last chose.
+	// paneWidth is the panel's width. readerPaneWidth is what an older version
+	// of this plugin remembered for the pane it put here, and is read so an
+	// existing profile opens at the size its owner last chose.
 	let w = Number(pref('paneWidth') || pref('readerPaneWidth'));
 	return Number.isFinite(w) && w >= MIN_WIDTH ? Math.round(w) : DEFAULT_WIDTH;
 }
 
-/** A collapsed box measures zero, so a collapse can never record itself. */
+/** A collapsed box measures 37px, so a collapse can never record itself. */
 function saveWidth(pane) {
 	let w = Math.round(pane.box.getBoundingClientRect().width);
 	if (w < MIN_WIDTH) return;
@@ -380,4 +239,4 @@ function pref(name) {
 	}
 }
 
-module.exports = { claim, has, collapsed, close, MIN_WIDTH };
+module.exports = { panel, collapsed, setCollapsed, close, MIN_WIDTH };

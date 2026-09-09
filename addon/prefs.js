@@ -21,11 +21,12 @@ pref("extensions.zotero.zoteroGraph.openalex.apiKey", "");
 pref("extensions.zotero.zoteroGraph.addTag", "added by citation graph");
 pref("extensions.zotero.zoteroGraph.addTagEnabled", true);
 
-// Width of the tab's side panel, in pixels -- the one the reader and the item
-// pane share. Written back whenever the splitter is dragged, so the panel opens
-// at the size it was last left, whichever of the two is in it.
+// Width of the tab's side panel, in pixels -- the one the item pane sits in.
+// Written back whenever the splitter is dragged, so the panel opens at the size
+// it was last left.
 //
 // The old readerPaneWidth is read as a fallback (splitPane.js storedWidth) so a
-// profile that had dragged the reader pane keeps the width it chose; it has no
-// default here any more, so only a value someone actually set is ever seen.
+// profile that had dragged the PDF pane this plugin used to put here keeps the
+// width it chose; it has no default here any more, so only a value someone
+// actually set is ever seen.
 pref("extensions.zotero.zoteroGraph.paneWidth", 520);

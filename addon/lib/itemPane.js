@@ -29,16 +29,22 @@
  *              ask the library what row is selected (`inTrash`, the pinned-pane
  *              pref) take their non-library branch and never reach for a
  *              collection tree this tab does not have.
+ *   _collapsed the one property core cannot work out for itself here, and the
+ *              whole of what makes the sidenav's first button live. See below.
  *
  * The pane opens on a left click, alongside the isolation that click already
  * does: one gesture asks "what is this paper", and both halves of the answer
  * -- what it is connected to, and what it is -- arrive together.
  *
- * It shares one panel with the reader (splitPane.js) and holds it alone: both
- * describe the paper you are looking at, and giving each its own strip would
- * leave the graph a column between two panes. Hiding is the chevron on the
- * panel's edge, not anything here -- and a click never undoes it: see the guard
- * at the top of show().
+ * Putting it away is core's own Toggle Item Pane button, first in the sidenav.
+ * It collapses the pane to its 37px strip of icons exactly as it does in the
+ * library, and the same click on any section icon brings it back -- both
+ * through `_collapsed`, which ItemPaneContainerBase resolves by looking for an
+ * enclosing `<item-pane>` or `<context-pane>`. There is neither of those here,
+ * so the button was inert (and hidden) until that property was answered: the
+ * instance below shadows it with one that drives splitPane.js instead. Nothing
+ * else about the button changes -- not the icon, not the keyboard handling, not
+ * what a section click does on the way past.
  */
 
 let l10n = require('./l10n.js');
@@ -54,12 +60,12 @@ const PANE_CSS = `
 		min-height: 0;
 		min-width: 0;
 	}
-	/* The sidenav's first button collapses the pane it lives in, which it finds
-	   with closest('item-pane, context-pane') -- neither of which this is. It
-	   would be an inert button in an otherwise live strip. */
-	.zg-item-row item-pane-sidenav > toolbarbutton[data-action="toggle-pane"],
-	.zg-item-row item-pane-sidenav > toolbarbutton[data-action="toggle-pane"] + .divider {
-		display: none;
+	/* Collapsed, the sidenav is the whole panel -- core's own rule for a
+	   collapsed item pane, which it writes against #zotero-item-pane-content.
+	   That id belongs to the library's pane and not to ours, so the same
+	   declaration is made here against the panel's collapsed state. */
+	.zg-pane[data-zg-collapsed] .zg-item-row > .zotero-item-pane-content {
+		visibility: collapse;
 	}
 `;
 
@@ -77,14 +83,6 @@ const PANE_CSS = `
  */
 async function show(entry, itemID, { status = () => {} } = {}) {
 	if (!entry || !entry.split) return;
-
-	// Someone who put the panel away with the chevron is not asking for it back
-	// every time they click a node. The pane behind it is still kept current --
-	// bringing it back should land on the paper last chosen, not on whatever was
-	// there before it was hidden -- but a panel the reader is holding is left
-	// entirely alone: silently swapping a PDF for an item pane out of sight
-	// would make the way back a surprise.
-	if (splitPane.collapsed(entry) && !splitPane.has(entry, 'item')) return;
 
 	let item = await Zotero.Items.getAsync(itemID);
 	if (!item) return;
@@ -106,13 +104,25 @@ async function show(entry, itemID, { status = () => {} } = {}) {
 		return;
 	}
 	pane.wanted = target;
-	if (pane.rendering) return;
 
+	// Someone who collapsed the pane is not asking for it back every time they
+	// click a node. What they clicked is still recorded, and drawn the moment
+	// the pane is expanded again -- so the way back lands on the paper last
+	// chosen rather than on whatever was there when it was put away.
+	if (splitPane.collapsed(entry)) return;
+	await draw(entry, pane);
+}
+
+/**
+ * Draw whatever was last asked for, and keep drawing until nothing newer has
+ * arrived. Re-reads `wanted` each pass: a click that landed during the await is
+ * the one to draw next, and the ones before it are already stale.
+ */
+async function draw(entry, pane) {
+	if (pane.rendering) return;
 	pane.rendering = true;
 	try {
-		// Re-read `wanted` each pass: a click that landed during the await is
-		// the one to draw next, and the ones before it are already stale.
-		while (entry.itemPane === pane && pane.wanted !== pane.shown) {
+		while (entry.itemPane === pane && pane.wanted && pane.wanted !== pane.shown) {
 			let next = pane.wanted;
 			pane.shown = next;
 			pane.details.editable = editable(next);
@@ -143,22 +153,62 @@ function editable(item) {
 }
 
 /**
- * The panel has been taken by the reader, or closed. There is nothing to flush:
- * ItemDetails and the sidenav both unregister their observers from
- * disconnectedCallback (elements/base.js), so the panel emptying itself IS the
- * cleanup. All this has to do is stop claiming to own a pane.
+ * The tab is going away. There is nothing to flush: ItemDetails and the sidenav
+ * both unregister their observers from disconnectedCallback (elements/base.js),
+ * so closing the panel -- which takes the pane out of the document -- IS the
+ * cleanup.
  */
-function forget(entry) {
+function close(entry) {
+	if (!entry) return;
 	entry.itemPane = null;
+	splitPane.close(entry);
+}
+
+// --- collapsing --------------------------------------------------------
+
+/**
+ * `_collapsed` for an item pane that is not inside an <item-pane>.
+ *
+ * ItemPaneContainerBase reads and writes it through
+ * `closest('item-pane, context-pane')`, finds neither here, and so reports a
+ * pane that is never collapsed and swallows every attempt to collapse it. The
+ * sidenav's Toggle Item Pane button is one line on top of that property, and
+ * so is the expand a section-icon click does; answering it is all either needs.
+ */
+function defineCollapsed(entry, details) {
+	Object.defineProperty(details, '_collapsed', {
+		configurable: true,
+		get: () => splitPane.collapsed(entry),
+		set: (val) => {
+			let was = splitPane.collapsed(entry);
+			splitPane.setCollapsed(entry, !!val);
+			if (was && !val) redraw(entry);
+		},
+	});
+}
+
+/**
+ * Draw again on the way back out of a collapse.
+ *
+ * Renders are skipped while the pane is collapsed -- core skips its sections
+ * (itemDetails.js render()) and show() above does not even start -- so what is
+ * behind the strip of icons on expanding is whatever was there when it was put
+ * away. Forgetting what was drawn is what sends the loop back over it, and it
+ * is also what gets the scroll core recorded while collapsed: a section icon
+ * clicked on a collapsed pane leaves `_lastScrollPaneID` set and expects the
+ * next render to honour it.
+ */
+function redraw(entry) {
+	let pane = entry.itemPane;
+	if (!pane || !pane.wanted) return;
+	pane.shown = null;
+	draw(entry, pane).catch(e => Zotero.logError(e));
 }
 
 // --- the pane ----------------------------------------------------------
 
 function ensurePane(entry) {
-	// show: false -- a click keeps the pane current but never overrides the
-	// chevron. The guard in show() is what stops this from taking the panel off
-	// a reader while nobody can see it happen.
-	let box = splitPane.claim(entry, 'item', () => forget(entry), { show: false });
+	let box = splitPane.panel(entry);
 	if (entry.itemPane) return entry.itemPane;
 
 	let doc = entry.win.document;
@@ -193,6 +243,7 @@ function ensurePane(entry) {
 	// sections it has.
 	details.tabID = entry.tabID;
 	details.tabType = 'graph';
+	defineCollapsed(entry, details);
 	// A sidenav starts every one of its buttons disabled: init() ends with
 	// toggleDefaultStatus(true), and it waits to be told that something is
 	// actually being viewed. Core's <item-pane> tells its own from
@@ -212,6 +263,7 @@ function ensurePane(entry) {
 		sidenav.toggleDefaultStatus(false);
 	}
 	details.sidenav = sidenav;
+	nameToggleForThisPane(doc, sidenav);
 
 	entry.itemPane = {
 		box,
@@ -225,4 +277,32 @@ function ensurePane(entry) {
 	return entry.itemPane;
 }
 
-module.exports = { show };
+/**
+ * Call the toggle what it is here.
+ *
+ * The sidenav labels its first button from the selected tab's type: the
+ * library's tab gets Toggle Item Pane and every other tab gets Toggle Context
+ * Pane, because in core the only pane a non-library tab has beside it is the
+ * reader's context pane. A graph tab is the third case -- a real item pane, in
+ * a tab that is not the library -- and the tooltip is the only place that
+ * shows. It is re-set on every render of the strip, so the correction is an
+ * observer rather than one assignment; it is a tooltip either way, and a
+ * Zotero that renames the message just leaves core's own wording in place.
+ */
+function nameToggleForThisPane(doc, sidenav) {
+	const WANTED = 'toggle-item-pane';
+	let button = sidenav.querySelector('[data-action="toggle-pane"]');
+	if (!button || !doc.l10n) return;
+	let Observer = doc.defaultView && doc.defaultView.MutationObserver;
+	let fix = () => {
+		if (button.getAttribute('data-l10n-id') !== WANTED) {
+			doc.l10n.setAttributes(button, WANTED);
+		}
+	};
+	if (Observer) {
+		new Observer(fix).observe(button, { attributes: true, attributeFilter: ['data-l10n-id'] });
+	}
+	fix();
+}
+
+module.exports = { show, close };

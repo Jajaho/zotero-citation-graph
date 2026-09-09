@@ -48,8 +48,6 @@ zotero-graph-center-pull = Mittelzug
 zotero-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Aufsätze davon; höher packt den Graphen enger zusammen.
 
 zotero-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
-zotero-graph-pane-hide = Diesen Bereich ausblenden
-zotero-graph-pane-show = Diesen Bereich wieder einblenden
 
 zotero-graph-filter-placeholder = Filter — Autor:, Jahr:, …
 zotero-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
@@ -208,8 +206,6 @@ zotero-graph-menu-open-in-browser-no-id = kein auflösbarer Bezeichner
 zotero-graph-menu-open-in-browser-no-url = dieser Eintrag hat weder URL noch DOI
 zotero-graph-menu-add-to-zotero = Zu Zotero hinzufügen
 zotero-graph-menu-select-in-zotero = In Zotero auswählen
-zotero-graph-menu-open-pdf-pane = PDF neben dem Graphen öffnen
-zotero-graph-menu-open-pdf-pane-hint = hier lesen, ohne den Graphen zu verlassen
 zotero-graph-menu-open-pdf-tab = PDF in neuem Tab öffnen
 zotero-graph-menu-open-pdf-tab-hint = der volle Reader, mit Suche, Seitenleiste und Annotationen
 
@@ -259,19 +255,12 @@ zotero-graph-add-elsewhere = „{ $title }“ zu einer anderen Sammlung hinzugef
 zotero-graph-add-rebuilding = „{ $title }“ hinzugefügt — wird neu aufgebaut…
 
 
-## Der Tab und der Reader-Bereich darin.
+## Der Tab und was er sagt, wenn es nichts zu öffnen gibt.
 
 zotero-graph-tab-title = { $collection } — Zitationsgraph
-zotero-graph-reader-loading = Wird geladen…
-zotero-graph-reader-failed = Der Reader wurde nicht geladen.
-zotero-graph-reader-render-failed = Dieser Anhang konnte nicht dargestellt werden.
 zotero-graph-reader-no-attachment = Kein Anhang an „{ $title }“.
 zotero-graph-reader-unsupported = „{ $title }“ hat kein PDF, EPUB oder Snapshot zum Öffnen.
 zotero-graph-reader-missing-file = Die Anhangdatei für „{ $title }“ fehlt auf der Festplatte.
-zotero-graph-reader-prev = Vorherige Seite
-zotero-graph-reader-next = Nächste Seite
-zotero-graph-reader-open = Öffnen ↗
-zotero-graph-reader-open-hint = In einem vollen Reader-Fenster öffnen
 
 ## Fehlende Werke: was die Sammlung zitiert und nicht besitzt.
 

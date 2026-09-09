@@ -18,9 +18,7 @@ let { ZoteroAdapter, itemRecord } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let addDialog = require('./addDialog.js');
-let readerPane = require('./readerPane.js');
 let itemPane = require('./itemPane.js');
-let splitPane = require('./splitPane.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
@@ -63,13 +61,13 @@ const MAX_EXTERNAL_NODES = 4000;
 // turn on for someone silently.
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false };
 
-// tabID -> { win, tabID, browser, split, pane, reader, itemPane, collection,
+// tabID -> { win, tabID, browser, split, pane, itemPane, collection,
 //             generation, options, built, building, addTarget, selection }
-// `split` is the box holding the graph and, once opened, the tab's one side
-// panel; `pane` is splitPane.js's record for that panel and `reader` /
-// `itemPane` belong to whichever of the two has it. `built` is the
-// last completed derivation, which runLookup() names in place; `building`
-// says whether a build owns the tab, since a lookup must not push over one.
+// `split` is the box holding the graph and, once opened, the tab's side
+// panel; `pane` is splitPane.js's record for that panel and `itemPane` is
+// what is in it. `built` is the last completed derivation, which runLookup()
+// names in place; `building` says whether a build owns the tab, since a
+// lookup must not push over one.
 // `selection` is what the tab answers when Zotero asks which items are
 // selected -- see lib/locate.js.
 let open_ = new Map();
@@ -173,14 +171,14 @@ function selectedItemIDs(tabID) {
 
 /**
  * Teardown for a tab that is going away. The container is about to be destroyed
- * anyway, but whatever is in the side panel is not just markup: a reader has
- * listeners on the window and state to flush, an item pane has observers
- * registered with Zotero.Notifier. Closing the panel tells its occupant.
+ * anyway, but what is in the side panel is not just markup: an item pane holds
+ * observers registered with Zotero.Notifier, and taking it out of the document
+ * is what unregisters them.
  */
 function dropEntry(tabID) {
 	let entry = open_.get(tabID);
 	try {
-		if (entry) splitPane.close(entry);
+		if (entry) itemPane.close(entry);
 	}
 	catch (e) {
 		// Reached during window teardown as well as on a plain tab close, and
@@ -434,7 +432,7 @@ function mount(win, tabID, container, collection, config, options) {
 	browser.setAttribute('type', 'content');
 	browser.setAttribute('transparent', 'true');
 	browser.setAttribute('src', `resource://${config.resRoot}/content/graph.html`);
-	// Lets the graph give width up to the reader pane instead of pushing it off
+	// Lets the graph give width up to the side panel instead of pushing it off
 	// the right edge.
 	browser.style.minWidth = '0';
 	split.appendChild(browser);
@@ -446,7 +444,6 @@ function mount(win, tabID, container, collection, config, options) {
 		// rendering while some other tab is on screen.
 		tabID,
 		pane: null,
-		reader: null,
 		itemPane: null,
 		generation: 0,
 		options,
@@ -552,31 +549,15 @@ async function handleMessage(win, tabID, collection, msg) {
 				Zotero.launchURL(msg.url);
 			}
 			break;
-		// The item's own PDF, beside the graph rather than in place of it. Only
-		// chrome can do this: the pane is a <browser> in the tab container that
-		// core renders a reader into. See readerPane.js.
-		case 'open-pdf': {
-			let entry = open_.get(tabID);
-			if (entry && msg.itemID) {
-				// Asking to read a paper is asking for the panel, and there is
-				// one panel: this takes it off the item pane, and opens it
-				// again if the panel's chevron had hidden it.
-				await readerPane.open(entry, msg.itemID, {
-					status: t => send(entry, 'zgSetStatus', t),
-				});
-			}
-			break;
-		}
-		// The same file in Zotero's own reader tab: the full reader, with the
-		// sidebar, search and annotation the read-only pane cannot offer. It
-		// takes the graph off screen, which is exactly why both are offered
-		// rather than one -- the pane is for reading beside the graph, this is
-		// for settling into a paper.
+		// The item's file in Zotero's own reader tab. It takes the graph off
+		// screen, which is the honest trade: reading a paper is not something
+		// to do in half a tab, and the item pane beside the graph already
+		// offers the same file under Attachments.
 		case 'open-pdf-tab': {
 			let entry = open_.get(tabID);
 			if (!entry || !msg.itemID) break;
 			let status = t => send(entry, 'zgSetStatus', t);
-			let found = await readerPane.readable(msg.itemID, status);
+			let found = await readable(msg.itemID, status);
 			if (!found) break;
 			// No options: this is the same call, and so the same tab, that
 			// double-clicking the item in the library gets you.
@@ -597,9 +578,9 @@ async function handleMessage(win, tabID, collection, msg) {
 			let entry = open_.get(tabID);
 			if (entry && msg.itemID) {
 				// Recorded first, and outside the pane's own guards: show()
-				// draws nothing when the panel is collapsed or the reader has
-				// it, and the click selected the paper either way. What Locate
-				// acts on must not depend on whether the pane was on screen.
+				// draws nothing while the pane is collapsed, and the click
+				// selected the paper either way. What Locate acts on must not
+				// depend on whether the pane was on screen.
 				entry.selection = [msg.itemID];
 				await itemPane.show(entry, msg.itemID, {
 					status: t => send(entry, 'zgSetStatus', t),
@@ -610,6 +591,42 @@ async function handleMessage(win, tabID, collection, msg) {
 		default:
 			console.log('unhandled message from graph page: ' + msg.type);
 	}
+}
+
+/**
+ * The file 'Open PDF in new tab' would open for `itemID`, or null with the
+ * reason already on the status line.
+ *
+ * The graph page cannot answer any of this for itself -- the payload carries
+ * items, not their files -- so the entry is always offered and the answer comes
+ * back here rather than as a greyed-out menu row that never says why.
+ *
+ * @param {Number}   itemID   a regular item, or an attachment
+ * @param {Function} status   text back to the graph page
+ * @returns {?{ item: Object, att: Object }}
+ */
+async function readable(itemID, status) {
+	let item = await Zotero.Items.getAsync(itemID);
+	if (!item) return null;
+
+	let att = item.isAttachment() ? item : await item.getBestAttachment();
+	if (!att) {
+		status(l10n.t('reader-no-attachment', { title: item.getDisplayTitle() }));
+		return null;
+	}
+	// pdf | epub | snapshot. Anything else (an image, a bare link) has no reader
+	// to render it, and ReaderInstance's constructor throws on it.
+	if (!att.attachmentReaderType) {
+		status(l10n.t('reader-unsupported', { title: item.getDisplayTitle() }));
+		return null;
+	}
+	// Returns false when the row exists but the bytes do not -- the usual state
+	// of an attachment added through the local API without its file.
+	if (!await att.getFilePathAsync()) {
+		status(l10n.t('reader-missing-file', { title: item.getDisplayTitle() }));
+		return null;
+	}
+	return { item, att };
 }
 
 /**
@@ -1324,4 +1341,7 @@ module.exports = {
 	// Exported for the payload test: what a lookup pass may and may not change
 	// about the graph on screen is the whole reason it is not a rebuild.
 	pushData,
+	// Exported for the reader test: the three questions between "Open PDF in
+	// new tab" and a reader that throws on construction.
+	readable,
 };
