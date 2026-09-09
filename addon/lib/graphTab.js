@@ -71,7 +71,7 @@ const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: fals
 // last completed derivation, which runLookup() names in place; `building`
 // says whether a build owns the tab, since a lookup must not push over one.
 // `selection` is what the tab answers when Zotero asks which items are
-// selected -- see lib/selection.js.
+// selected -- see lib/locate.js.
 let open_ = new Map();
 
 // Session entries already turned into a real tab, by whichever of the two
@@ -158,7 +158,7 @@ function stripSummary(win) {
 
 /**
  * Which items a graph tab has selected, for the Zotero that is asking --
- * lib/selection.js, standing in for the case core's
+ * lib/locate.js, standing in for the case core's
  * ZoteroPane.getSelectedItems() has no room for.
  *
  * A tab id rather than an entry, because the caller is a patched core

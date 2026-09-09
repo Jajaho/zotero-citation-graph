@@ -3040,7 +3040,7 @@ check('with no translator a keyword is the facet name, so the rest of these hold
 });
 
 check('a graph tab answers ZoteroPane when Locate asks what is selected', () => {
-	const selection = require_('./lib/selection.js');
+	const locate = require_('./lib/locate.js');
 	const graphTab = require_('./lib/graphTab.js');
 
 	// Core's own answer, and the one every call outside a graph tab must keep
@@ -3054,7 +3054,23 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 		},
 	};
 	const original = pane.getSelectedItems;
-	const win = { ZoteroPane: pane, Zotero_Tabs: { selectedType: 'library', selectedID: 'tab-1' } };
+
+	// The sidenav hands buildLocateMenu a locateMode worked out from the
+	// tab type. 'tab' is what a graph tab produces, and it is the value that
+	// costs the menu its 'View in Tab' entry.
+	let sawMode;
+	const locateMenu = {
+		async buildLocateMenu(menu, options) {
+			sawMode = 'locateMode' in options ? options.locateMode : '(absent)';
+			return menu;
+		},
+	};
+	const coreBuild = locateMenu.buildLocateMenu;
+	const win = {
+		ZoteroPane: pane,
+		Zotero_LocateMenu: locateMenu,
+		Zotero_Tabs: { selectedType: 'library', selectedID: 'tab-1' },
+	};
 
 	const items = {
 		7: { id: 7, parentItem: false },
@@ -3064,7 +3080,7 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 
 	let asked = [];
 	let graphSelection = [7];
-	selection.install(win, (tabID) => {
+	locate.install(win, (tabID) => {
 		asked.push(tabID);
 		return graphSelection;
 	});
@@ -3076,6 +3092,8 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	}
 	if (sawArgs.self !== pane) throw new Error('the wrapper lost `this`');
 	if (asked.length) throw new Error('a library tab asked the graph');
+	locateMenu.buildLocateMenu({}, { locateMode: 'library' });
+	if (sawMode !== 'library') throw new Error('a library tab lost its locateMode');
 
 	// The tab type core has no case for, which is the whole point.
 	win.Zotero_Tabs.selectedType = 'graph';
@@ -3083,6 +3101,13 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	if (got.length !== 1 || got[0].id !== 7) throw new Error('the graph tab answered ' + JSON.stringify(got));
 	if (asked[0] !== 'tab-1') throw new Error('asked about ' + asked[0] + ', not the selected tab');
 	if (JSON.stringify(pane.getSelectedItems(true)) !== '[7]') throw new Error('asIDs was not honoured');
+
+	// A graph tab is not the tab already showing this PDF, so the entry that
+	// opens it in one is not redundant and must not be dropped. The mode is
+	// removed rather than replaced: core's own default is no mode at all, and
+	// claiming to be a library tab would assert something untrue.
+	locateMenu.buildLocateMenu({}, { locateMode: 'tab' });
+	if (sawMode !== '(absent)') throw new Error('the graph tab was still a ' + sawMode + ' context');
 
 	// libraryTabOnly exists so a caller can ask what the LIBRARY holds while
 	// another tab is on screen. Core checks it ahead of the tab type; so must this.
@@ -3105,20 +3130,21 @@ check('a graph tab answers ZoteroPane when Locate asks what is selected', () => 
 	// selected -- is not an error, it is an empty selection.
 	if (graphTab.selectedItemIDs('tab-nothing').length) throw new Error('an unknown tab claimed a selection');
 
-	selection.uninstall(win);
+	locate.uninstall(win);
 	if (pane.getSelectedItems !== original) throw new Error('uninstall did not give the window its own back');
+	if (locateMenu.buildLocateMenu !== coreBuild) throw new Error('uninstall left the menu wrapped');
 
 	// Someone else wrapping on top owns the property now. Writing core's
 	// function back over their wrapper would silently uninstall it, so ours
 	// stays where it is and goes inert instead.
-	selection.install(win, () => [7]);
+	locate.install(win, () => [7]);
 	const ours = pane.getSelectedItems;
 	let outerCalls = 0;
 	pane.getSelectedItems = function (...args) {
 		outerCalls++;
 		return ours.apply(this, args);
 	};
-	selection.uninstall(win);
+	locate.uninstall(win);
 	if (pane.getSelectedItems === original) throw new Error("uninstall clobbered another plugin's wrapper");
 	const after = pane.getSelectedItems();
 	if (!outerCalls) throw new Error('the outer wrapper stopped being called');

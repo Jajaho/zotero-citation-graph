@@ -6,7 +6,7 @@
  */
 
 let graphTab = require('./graphTab.js');
-let selection = require('./selection.js');
+let locate = require('./locate.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 
@@ -67,7 +67,7 @@ module.exports = {
 		for (let win of Zotero.getMainWindows()) {
 			if (!win.ZoteroPane) continue;
 			addTabIconStyle(win);
-			addSelection(win);
+			addLocate(win);
 			graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
 		}
 
@@ -134,7 +134,7 @@ module.exports = {
 
 		addTabIconStyle(win);
 		addTabHooks(win);
-		addSelection(win);
+		addLocate(win);
 		// Was the session carrying a graph tab, and had restore already run by
 		// the time this plugin got here? Those two answers together say whether
 		// a lost tab was lost on the way out or on the way back in.
@@ -243,19 +243,18 @@ function addTabHooks(win) {
 }
 
 /**
- * Teach this window's ZoteroPane what a graph tab has selected, so that the
- * Locate menu -- and everything else core routes through
- * ZoteroPane.getSelectedItems() -- acts on the node the user clicked rather
- * than on nothing at all. See lib/selection.js for why it is a wrapper.
+ * Teach this window what a graph tab has selected, and what kind of context
+ * is asking, so that core's Locate menu acts on the node the user clicked
+ * instead of on nothing at all. See lib/locate.js for why both are wrappers.
  */
-function addSelection(win) {
-	selection.install(win, graphTab.selectedItemIDs);
+function addLocate(win) {
+	locate.install(win, graphTab.selectedItemIDs);
 }
 
 /** Everything this plugin put into one main window, taken back out. Shared by
  *  the window closing and by the plugin going away under a window that is not. */
 function removeWindowIntegration(win) {
-	selection.uninstall(win);
+	locate.uninstall(win);
 
 	let style = win.document.getElementById(TAB_ICON_STYLE_ID);
 	if (style) style.remove();
