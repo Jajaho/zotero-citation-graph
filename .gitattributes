@@ -1,0 +1,26 @@
+# Line endings, fixed rather than guessed.
+#
+# core.autocrlf leaves the working tree CRLF on Windows and LF on Linux, so the
+# same commit packs to two different XPIs depending on who built it. That makes
+# a published checksum unverifiable: a user cannot rebuild and compare, and CI
+# cannot confirm a local build. eol=lf pins the working tree on every platform,
+# so the bytes that go into the archive depend on the commit and nothing else.
+#
+# Zotero reads all of these through its own loaders, none of which care about
+# line endings, and the PowerShell dev scripts parse LF fine.
+* text=auto eol=lf
+
+# Spelled out for everything the XPI is built from, so a future .gitattributes
+# edit cannot quietly drop one of them back to native endings.
+*.js    text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.svg   text eol=lf
+*.ftl   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.ps1   text eol=lf
+
+# Built artifacts. Not tracked today, but never diff or normalize one.
+*.xpi   binary
