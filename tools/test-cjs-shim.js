@@ -787,16 +787,42 @@ class FakeElement {
 		return null;
 	}
 
-	/** Enough of one for add(), which is all any of this reaches for. */
+	/** Enough of one for add(), remove() and the toggle the gap list marks its
+	 *  rows with. */
 	get classList() {
-		return {
-			add: (...names) => {
-				const have = String(this.className).split(/\s+/).filter(Boolean);
-				for (const n of names) if (!have.includes(n)) have.push(n);
-				this.className = have.join(' ');
-			},
-			contains: n => String(this.className).split(/\s+/).includes(n),
+		const names = () => String(this.className).split(/\s+/).filter(Boolean);
+		const set = list => {
+			this.className = list.join(' ');
 		};
+		const list = {
+			add: (...add) => {
+				const have = names();
+				for (const n of add) if (!have.includes(n)) have.push(n);
+				set(have);
+			},
+			remove: (...drop) => set(names().filter(n => !drop.includes(n))),
+			contains: n => names().includes(n),
+			toggle: (n, on) => {
+				if (on === undefined ? list.contains(n) : !on) list.remove(n);
+				else list.add(n);
+			},
+		};
+		return list;
+	}
+
+	/**
+	 * The DOM's own rule, because the gap list leans on it: assigning text
+	 * replaces every child, which is how a redraw empties the list before
+	 * building it again. A fake that only stored the string would leave the old
+	 * rows in the tree and let a check find a row that is no longer on screen.
+	 */
+	get textContent() {
+		return this._text || '';
+	}
+
+	set textContent(v) {
+		this._text = String(v);
+		for (const c of [...this.children]) c.remove();
 	}
 
 	setAttribute(k, v) {
@@ -2744,9 +2770,113 @@ check('the list is capped but says what it is not showing', () => {
 	}
 });
 
+check('a row of the gap list carries the canvas\'s four gestures', async () => {
+	const gapsPane = require_('./lib/gapsPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-21');
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+
+	let told = null;
+	gapsPane.open(entry, on => {
+		told = on;
+	});
+	const deck = made.find(el => el.localName === 'deck');
+	const box = entry.itemPane.gaps.box;
+	if (deck.selectedPanel !== box) throw new Error('opening did not show the list');
+	if (told !== true) throw new Error('the page was never told the list was up');
+
+	const sent = [];
+	gapsPane.rows(entry, {
+		rows: [
+			{ key: 'doi:a', ns: 'doi', id: '10.1/a', citedBy: 3, citers: ['HELD1', 'HELD2', 'HELD3'] },
+			{ key: 'doi:b', ns: 'doi', id: '10.1/b', citedBy: 2, citers: ['HELD1', 'HELD4'] },
+		],
+		total: 2,
+	}, msg => sent.push(msg));
+	const rows = box.querySelectorAll('.zg-gap-row');
+	if (rows.length !== 2) throw new Error('rows drawn: ' + rows.length);
+
+	// One click lights the star, two isolate it, and Ctrl (Cmd) on either adds
+	// to what is lit rather than starting again -- the canvas's own four, over a
+	// row that stands for a gap and the papers that cite it. What each MEANS is
+	// the page's; this end only says which was made, and says it with the
+	// citers, which is the copy of them the reader actually clicked.
+	rows[0].fire('click', {});
+	rows[0].fire('dblclick', { ctrlKey: true });
+	rows[1].fire('keydown', { key: 'Enter', preventDefault: () => {} });
+	if (sent.length !== 3) throw new Error('messages: ' + JSON.stringify(sent));
+	const [one, two, three] = sent;
+	if (one.type !== 'gaps-focus' || one.key !== 'doi:a' || one.isolate || one.add) {
+		throw new Error('a plain click: ' + JSON.stringify(one));
+	}
+	if (one.citers.join() !== 'HELD1,HELD2,HELD3') throw new Error('the citers did not travel');
+	if (!two.isolate || !two.add) throw new Error('Ctrl-double-click: ' + JSON.stringify(two));
+	if (three.key !== 'doi:b' || three.isolate || three.add) {
+		throw new Error('Enter is the click: ' + JSON.stringify(three));
+	}
+
+	// Which rows are lit is the page's answer, not this side's: it holds the
+	// pick, and a filter can take a citer off screen with no click made at all.
+	gapsPane.marks(entry, { keys: ['doi:b'] });
+	if (rows[0].classList.contains('lit')) throw new Error('an unlit row was marked');
+	if (!rows[1].classList.contains('lit')) throw new Error('a lit row was not marked');
+	// And the marks land again on the rows a redraw brings back.
+	gapsPane.rows(entry, {
+		rows: [{ key: 'doi:b', ns: 'doi', id: '10.1/b', citedBy: 2, citers: ['HELD1'] }],
+		total: 1,
+	}, () => {});
+	const redrawn = box.querySelectorAll('.zg-gap-row');
+	if (redrawn.length !== 1) throw new Error('a redraw left the old rows behind');
+	if (!redrawn[0].classList.contains('lit')) throw new Error('the marks went out under a redraw');
+});
+
+check('a selection made in the gap list draws behind it, not over it', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const gapsPane = require_('./lib/gapsPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-22');
+	const paper = id => ({
+		id, libraryID: 1, parentItem: false, deleted: false,
+		isNote: () => false, isRegularItem: () => true,
+	});
+	const show = (ids, opts) => {
+		Zotero.Items = { getAsync: async id => paper(id) };
+		Zotero.Libraries = { get: () => ({ editable: true }) };
+		Zotero.Prefs = { get: () => 400, set: () => {} };
+		return itemPane.show(entry, ids, opts);
+	};
+
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	gapsPane.open(entry, () => {});
+	const deck = made.find(el => el.localName === 'deck');
+	const box = entry.itemPane.gaps.box;
+
+	// Clicking a row selects the papers that cite that gap, and a selection
+	// normally takes the deck. Not this one: the list is what the click was made
+	// in, and putting it away would take the next row with it.
+	await show([11], { keepGaps: true });
+	const details = made.find(el => el.localName === 'item-details');
+	if (deck.selectedPanel !== box) throw new Error('a click in the list closed the list');
+	if (details.item.id !== 11) throw new Error('the paper was not drawn behind the list');
+
+	// Closing the list IS the request those renders held back, so what comes up
+	// is the paper they drew rather than whatever was up before the list.
+	gapsPane.close(entry);
+	if (deck.selectedPanel !== details) throw new Error('closing did not hand back the paper');
+
+	// A click on a NODE carries no such promise and does put the list away --
+	// you asked about a paper, so the paper is what the pane should show.
+	gapsPane.open(entry, () => {});
+	if (deck.selectedPanel !== box) throw new Error('the list did not come back');
+	await show([12], {});
+	if (deck.selectedPanel !== details) throw new Error('a click on a node left the list up');
+	if (details.item.id !== 12) throw new Error('the second paper never arrived');
+});
+
 /**
  * A popover shown and hidden through the `hidden` attribute is defeated by its
  * own `display:` rule: an author rule beats the UA stylesheet's
+
  * `[hidden] { display: none }`, so the element is simply always on screen and
  * the code that "hides" it sets an attribute nothing reads. #group shipped that
  * way once -- visible from the moment the tab opened, with a Done button that

@@ -613,16 +613,26 @@ async function handleMessage(win, tabID, collection, msg) {
 			if (entry) gapsPane.close(entry);
 			break;
 		}
-		// A row clicked. The citers travel with the click rather than being
-		// looked up on the page: chrome is holding the ranked rows, and a
-		// second copy over there could only come to disagree with the one
-		// actually clicked.
-		case 'gaps-isolate': {
+		// Which rows are in the pick. Worked out on the page for the same reason
+		// the ranking is: the selection lives there, and a second model of it
+		// over here could only come to disagree.
+		case 'gaps-lit': {
+			let entry = open_.get(tabID);
+			if (entry) gapsPane.marks(entry, msg);
+			break;
+		}
+		// A row clicked, and which of the canvas's four gestures it was. The
+		// citers travel with the click rather than being looked up on the page:
+		// chrome is holding the ranked rows, and a second copy over there could
+		// only come to disagree with the one actually clicked.
+		case 'gaps-focus': {
 			let entry = open_.get(tabID);
 			if (entry) {
-				send(entry, 'zgGapsIsolate', JSON.stringify({
+				send(entry, 'zgGapsFocus', JSON.stringify({
 					citers: msg.citers || [],
 					key: msg.key || null,
+					isolate: !!msg.isolate,
+					add: !!msg.add,
 				}));
 			}
 			break;
@@ -717,6 +727,10 @@ async function handleMessage(win, tabID, collection, msg) {
 				await itemPane.show(entry, entry.selection, {
 					inView: Number(msg.inView) || 0,
 					status: t => send(entry, 'zgSetStatus', t),
+					// A selection made IN the gap list, or one a rebuild
+					// changed under it, draws behind the list rather than
+					// putting it away. See lib/itemPane.js face().
+					keepGaps: !!msg.keepGaps,
 				});
 			}
 			break;

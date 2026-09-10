@@ -107,8 +107,11 @@ const PANE_CSS = `
  *                              empty-selection message; kept when not given
  * @param {Function} [status]   text back to the graph page
  * @param {Boolean}  [expand]   open the pane if it was put away
+ * @param {Boolean}  [keepGaps] draw behind the gap list rather than over it
  */
-async function show(entry, itemIDs, { inView = null, status = () => {}, expand = false } = {}) {
+async function show(entry, itemIDs, {
+	inView = null, status = () => {}, expand = false, keepGaps = false,
+} = {}) {
 	if (!entry || !entry.split) return;
 
 	let items = await resolve(itemIDs);
@@ -130,6 +133,11 @@ async function show(entry, itemIDs, { inView = null, status = () => {}, expand =
 	// selectItems() reaches here too, and it is telling us about an item rather
 	// than about the view. The last count the page gave stands in that case.
 	if (inView != null) pane.inView = inView;
+	// Whether this selection may turn the deck away from the gap list. Set per
+	// render rather than remembered, because it is a fact about the gesture
+	// that caused it and not about the pane: a click on a row keeps the list,
+	// the click on a node right after it does not. See face().
+	pane.keepGaps = !!keepGaps;
 	want(pane, items);
 
 	// An explicit request to look at one thing opens the pane: a note just
@@ -485,6 +493,19 @@ function setBatchCollapsible(pane, on) {
  */
 function face(pane, wanted) {
 	if (pane.facing === wanted) return;
+	// A click on a row of the gap list selects the papers that cite that gap,
+	// and a selection is normally the deck's cue to show them. Not from there:
+	// the list is what the click was made in, and putting it away would take
+	// the next row with it -- the reader would get one row per opening of the
+	// list. So the paper is drawn on its own page, which a deck keeps sized and
+	// laid out while it is not the one selected, and the list stays up. The
+	// page that was drawn is remembered, because closing the list is a request
+	// to see it: lib/gapsPane.js hands `behind` straight back here.
+	if (pane.keepGaps && pane.gaps && pane.facing === pane.gaps.box) {
+		pane.behind = wanted;
+		return;
+	}
+	pane.behind = null;
 	pane.facing = wanted;
 	pane.deck.selectedPanel = wanted;
 	let onItem = wanted === pane.details;
@@ -753,6 +774,8 @@ function ensurePane(entry) {
 		message: null,     // core's message pane, built on the first count
 		prompt: null,      // the batch-editing offer, built on the first pair
 		facing: details,   // the deck page on show
+		behind: null,      // the page a keepGaps render drew but did not show
+		keepGaps: false,   // this render must leave the gap list on screen
 		shownKey: null,    // key(want()) of what is drawn
 		wanted: [],        // the items most recently selected
 		wantedIDs: null,   // their ids, for noticing a change of selection

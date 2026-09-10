@@ -82,9 +82,21 @@ const GAPS_CSS = `
 		gap: 8px;
 		padding: 4px 6px;
 		border-radius: 5px;
+		/* The row answers a double click, and the default answer to one over
+		   text is to select a word of it -- so a reader isolating a gap would
+		   be left with half its title highlighted. */
+		user-select: none;
 	}
 	.zg-gap-row:hover {
 		background: var(--fill-quinary);
+	}
+	/* Which rows are in the pick. Not the pane's own answer: the page holds the
+	   selection and works out which stars are wholly in it -- see marks(). The
+	   bar is what carries it, because the fill alone is a shade off the hover
+	   and a reader moving down the list would be told nothing. */
+	.zg-gap-row.lit {
+		background: var(--fill-quarternary);
+		box-shadow: inset 2px 0 0 var(--accent-blue, #4072e5);
 	}
 	/* The local count is the number the ranking is about, so it leads the row
 	   and is the one thing in it set at the pane's full-strength colour. */
@@ -184,7 +196,10 @@ function ensure(entry) {
 	// at until face() says so. Appending re-runs the deck's own childList
 	// observer, which keeps the current page selected.
 	pane.deck.appendChild(box);
-	pane.gaps = { box: box, body: body, foot: foot };
+	// `drawn` is the rows on screen by gap key, and `lit` the ones the page says
+	// are in the pick. Both are the pane's, because a redraw rebuilds every row
+	// and the marks have to land again on whatever came back.
+	pane.gaps = { box: box, body: body, foot: foot, drawn: new Map(), lit: new Set() };
 	return pane.gaps;
 }
 
@@ -221,7 +236,13 @@ function open(entry, tell) {
 
 function close_(entry) {
 	if (!entry || !entry.itemPane || !entry.itemPane.gaps) return;
-	itemPane.face(entry.itemPane, entry.itemPane.details);
+	let pane = entry.itemPane;
+	// Closing IS the request every keepGaps render was holding back, so this is
+	// the one caller that lifts it -- and what comes up is the page those
+	// renders drew and did not show, which is the paper whose row was last
+	// clicked. See itemPane.face().
+	pane.keepGaps = false;
+	itemPane.face(pane, pane.behind || pane.details);
 }
 
 /** Whether the list is the page currently showing. */
@@ -244,6 +265,7 @@ function rows(entry, msg, send) {
 	let doc = entry.win.document;
 
 	gaps.body.textContent = '';
+	gaps.drawn.clear();
 	gaps.foot.textContent = '';
 	gaps.foot.hidden = true;
 
@@ -258,7 +280,16 @@ function rows(entry, msg, send) {
 		return;
 	}
 
-	for (let g of list) gaps.body.appendChild(row(entry, g, send));
+	for (let g of list) {
+		let el = row(entry, g, send);
+		gaps.drawn.set(g.key, el);
+		gaps.body.appendChild(el);
+	}
+	// The marks the pane was already wearing, put back on the rows that came
+	// back. The page pushes a fresh set straight after this one -- it works them
+	// out from the same pick -- but a redraw that dropped every mark for a frame
+	// would flicker the list under a reader's hand.
+	paint(gaps);
 
 	let foot = [];
 	if (msg.total > list.length) {
@@ -307,6 +338,13 @@ function row(entry, g, send) {
 	// and it is the same gate the ghost's own context menu applies.
 	add.disabled = g.ns !== 'doi';
 	add.setAttribute('tooltiptext', l10n.t(add.disabled ? 'gaps-add-no-doi' : 'gaps-add'));
+	// The `+` is its own gesture. Its `command` handler stops that event, but a
+	// command rides on a click, and the click goes on bubbling to the row -- so
+	// reaching for the button would light the star, and reaching for it twice
+	// would isolate it. Both are stopped here, at the button.
+	for (let type of ['click', 'dblclick']) {
+		add.addEventListener(type, e => e.stopPropagation());
+	}
 	add.addEventListener('command', (e) => {
 		// The row underneath means "show me who cites this", which is not what
 		// someone reaching for the button asked for.
@@ -320,18 +358,57 @@ function row(entry, g, send) {
 		send({ type: 'add-item', doi: g.id, title: g.title || null });
 	});
 
-	let lightUp = () => send({ type: 'gaps-isolate', citers: g.citers || [], key: g.key });
-	el.addEventListener('click', lightUp);
+	// The canvas's own four gestures, over a row that stands for a set of nodes
+	// -- the gap and the papers of yours that cite it, which is one star in the
+	// graph. Click lights it, double click isolates it, and Ctrl (Cmd on a Mac)
+	// on either adds to what is already lit rather than starting again, which is
+	// what lets a reader ask whether two gaps lean on the same papers without
+	// leaving the list. What each one MEANS is content/graph.js zgGapsFocus:
+	// this end only says which was made.
+	//
+	// The pair of clicks under a double click lights the star and puts it out
+	// again, exactly as the pair under a double click on a node does, and the
+	// gesture that follows sets it right -- see toggleIsolateSet() there.
+	let focus = (ev, isolate) => send({
+		type: 'gaps-focus',
+		citers: g.citers || [],
+		key: g.key,
+		isolate: isolate,
+		add: !!(ev && (ev.ctrlKey || ev.metaKey)),
+	});
+	el.addEventListener('click', ev => focus(ev, false));
+	el.addEventListener('dblclick', ev => focus(ev, true));
 	el.addEventListener('keydown', (ev) => {
 		if (ev.key !== 'Enter' && ev.key !== ' ') return;
 		ev.preventDefault();
-		lightUp();
+		focus(ev, false);
 	});
 
 	el.appendChild(count);
 	el.appendChild(main);
 	el.appendChild(add);
 	return el;
+}
+
+/**
+ * Which rows are lit, from the page.
+ *
+ * The pick is the page's and so is this: a row is lit when the star it stands
+ * for is wholly in the selection, and only the page knows both the selection
+ * and which of a row's nodes are on screen to be in it. Working it out over
+ * here from the clicks this pane sent would be a second model of the pick, and
+ * a second model is a thing that comes to disagree -- a filter that takes a
+ * citer off screen changes the answer without a click being made at all.
+ */
+function marks(entry, msg) {
+	if (!showing(entry)) return;
+	let gaps = entry.itemPane.gaps;
+	gaps.lit = new Set(Array.isArray(msg.keys) ? msg.keys : []);
+	paint(gaps);
+}
+
+function paint(gaps) {
+	for (let [key, el] of gaps.drawn) el.classList.toggle('lit', gaps.lit.has(key));
 }
 
 /** Authors, fame and which subfield is doing the citing -- the three things
@@ -360,4 +437,10 @@ function creatorList(creators) {
 	return creators.length > 2 ? names.join(', ') + ' et al.' : names.join(', ');
 }
 
-module.exports = { open: open, close: close_, rows: rows, showing: showing };
+module.exports = {
+	open: open,
+	close: close_,
+	rows: rows,
+	marks: marks,
+	showing: showing,
+};

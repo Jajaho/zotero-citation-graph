@@ -143,6 +143,17 @@
 	// pane, and a count pushed into one that does not exist would build a panel
 	// nobody asked for -- see render() and lib/itemPane.js.
 	let paneEngaged = false;
+	// Whether the selection about to be sent should leave the gap list up.
+	//
+	// The pane is a deck, and handing it a selection turns it to the page that
+	// describes one. That is right for a click on a node -- you asked about a
+	// paper, so the paper is what the pane should show -- and wrong for a click
+	// on a row of the gap list, because the list is where that click was made
+	// and putting it away would take the next row with it. A rebuild is not a
+	// gesture at all and must not close anything either. Set around the
+	// gestures that mean "keep reading the list"; read by sendSelection() and
+	// honoured in lib/itemPane.js.
+	let keepGaps = false;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -669,6 +680,13 @@
 	 */
 	let gapsOpen = false;
 
+	/**
+	 * The rows last pushed, kept so that the pick can be marked against them.
+	 * Not a second copy of the ranking -- it IS the one that was sent, and it is
+	 * only ever read to answer "which of these rows is lit".
+	 */
+	let gapRows = [];
+
 	window.zgGapsShowing = function (json) {
 		try {
 			gapsOpen = !!JSON.parse(json).showing;
@@ -698,6 +716,44 @@
 	}
 
 	/**
+	 * The nodes a row stands for: the gap itself and the papers of yours that
+	 * cite it, less whatever the filters have taken off screen.
+	 *
+	 * The gap joins its citers when it is drawn, so the star reads as a star;
+	 * with outside refs hidden it cannot, and what is left -- your own papers,
+	 * lit together -- is still the answer to "who leans on this". Nothing off
+	 * screen is included: lighting a node nobody can see says nothing, and
+	 * isolating one would dim the graph around nothing.
+	 */
+	function starOf(row, onScreen) {
+		let ids = new Set();
+		for (let key of (row.citers || [])) if (onScreen.has(key)) ids.add(key);
+		if (row.key && onScreen.has(row.key)) ids.add(row.key);
+		return ids;
+	}
+
+	/**
+	 * Which rows of the list are lit, worked out here because the pick is here.
+	 *
+	 * A row is lit when the whole of its star is in the pick, which is the same
+	 * test Ctrl-clicking it applies -- so a row reads as on exactly when
+	 * clicking it again would turn it off. Chrome draws the marks and models
+	 * nothing: a second model of the pick over there is a thing that would come
+	 * to disagree with this one, and a filter that takes a citer off screen
+	 * changes the answer with no click made at all.
+	 */
+	function markGaps() {
+		if (!gapsOpen) return;
+		let onScreen = new Set((drawnNodes || []).map(n => n.id));
+		let keys = [];
+		for (let row of gapRows) {
+			let ids = starOf(row, onScreen);
+			if (allIn(picked, ids)) keys.push(row.key);
+		}
+		emit({ type: 'gaps-lit', keys: keys });
+	}
+
+	/**
 	 * Rank, and push what came out.
 	 *
 	 * Pushed on every render, because every one of the ranking's inputs is
@@ -712,6 +768,7 @@
 		let ranked = raw
 			? Gaps.rank(believedEdges(), raw.external, { clusterOf: clusters().of })
 			: { rows: [], total: 0 };
+		gapRows = ranked.rows;
 
 		emit({
 			type: 'gaps-rows',
@@ -725,6 +782,10 @@
 			// ranking is the reason to read this list rather than the graph.
 			lookup: !!elEnrich.checked,
 		});
+		// The rows have just been replaced, so which of them is lit is a fresh
+		// question -- and the render that got here can have moved a citer off
+		// screen without the pick changing at all.
+		markGaps();
 	}
 
 	/**
@@ -748,19 +809,25 @@
 	}
 
 	/**
-	 * Light the papers that cite a gap, from a click on its row in the pane.
+	 * A row of the gap list, clicked -- the gap and the papers that cite it,
+	 * taken as the one star they draw.
 	 *
-	 * The gap itself joins them when it is drawn, so the star reads as a star;
-	 * with outside refs hidden it cannot, and what is left -- your own papers,
-	 * lit together -- is still the answer to "who leans on this". Anything the
-	 * filters have taken off screen is not isolated, because isolating a node
-	 * nobody can see would dim the graph around nothing.
+	 * The four gestures are the canvas's four, meaning here exactly what they
+	 * mean there, because a row stands for a set of nodes and nothing else:
+	 * click picks the star out, double click isolates it, and Ctrl on either
+	 * adds to what is already picked or already lit rather than starting again.
+	 * That is what lets a reader ask "do these two gaps lean on the same
+	 * papers" from the list, which is the question the list is read with.
+	 *
+	 * Which nodes the row stands for is starOf()'s answer, and the same one
+	 * markGaps() marks the row by -- so a row reads as lit exactly when
+	 * Ctrl-clicking it would put it out.
 	 *
 	 * The citers come back with the click rather than being looked up here:
 	 * chrome is holding the ranked rows, and a second copy of them on this side
 	 * could only ever come to disagree with the one being clicked.
 	 */
-	window.zgGapsIsolate = function (json) {
+	window.zgGapsFocus = function (json) {
 		let msg;
 		try {
 			msg = JSON.parse(json);
@@ -768,11 +835,24 @@
 		catch (e) {
 			return;
 		}
-		let onScreen = new Set((drawnNodes || []).map(n => n.id));
-		let ids = new Set();
-		for (let key of (msg.citers || [])) if (onScreen.has(key)) ids.add(key);
-		if (msg.key && onScreen.has(msg.key)) ids.add(msg.key);
-		if (ids.size) setIsolated(ids);
+		let ids = starOf(msg, new Set((drawnNodes || []).map(n => n.id)));
+		if (!ids.size) return;
+		paneEngaged = true;
+		// The pick this makes is still the tab's selection and still goes to
+		// the pane -- but the pane is showing the list the click was made in,
+		// and it stays showing it. See keepGaps and lib/itemPane.js.
+		keepGaps = true;
+		try {
+			if (msg.isolate) {
+				if (msg.add) addToIsolateSet(ids);
+				else toggleIsolateSet(ids);
+			}
+			else if (msg.add) togglePickSet(ids);
+			else pickOnlySet(ids);
+		}
+		finally {
+			keepGaps = false;
+		}
 	};
 
 
@@ -1438,7 +1518,13 @@
 		let was = heldOnScreen;
 		heldOnScreen = 0;
 		for (let n of nodes) if (!n.ghost) heldOnScreen++;
-		if (paneEngaged && (dropped || heldOnScreen !== was)) sendSelection();
+		if (paneEngaged && (dropped || heldOnScreen !== was)) {
+			// A rebuild is nobody's request to stop reading the gap list, so
+			// this one count leaves the deck where it is. See keepGaps.
+			keepGaps = gapsOpen;
+			sendSelection();
+			keepGaps = false;
+		}
 		// The adjacency lit() walks has just been rebuilt out of these edges.
 		litCache = null;
 		syncIsolateNote();
@@ -2134,6 +2220,9 @@
 		picked = next;
 		repaint();
 		sendSelection();
+		// The gap list marks the rows whose stars are in the pick, and this is
+		// the only place the pick changes. See markGaps().
+		markGaps();
 	}
 
 	function same(a, b) {
@@ -2150,8 +2239,19 @@
 	 *  way, and clicking the picked node again puts it back -- which is the
 	 *  only way out of a pick that does not involve clicking the canvas. */
 	function pickOnly(id) {
-		if (picked.size === 1 && picked.has(id)) clearPicked();
-		else setPicked(new Set([id]));
+		pickOnlySet(new Set([id]));
+	}
+
+	/**
+	 * The same click, made on something that stands for several nodes at once:
+	 * a row of the gap list is one work and the handful of your papers that
+	 * cite it, and clicking it means "those, together". One node is the case
+	 * pickOnly() names, and it is this with a set of one -- the rule about
+	 * clicking the same thing twice included.
+	 */
+	function pickOnlySet(ids) {
+		if (same(picked, ids)) clearPicked();
+		else setPicked(new Set(ids));
 	}
 
 	/**
@@ -2165,9 +2265,31 @@
 	 * makes the paper you started from the one you go on reading.
 	 */
 	function togglePick(id) {
+		togglePickSet(new Set([id]));
+	}
+
+	/**
+	 * The same modifier over a group. A group is in the pick or it is not, and
+	 * a half-picked one counts as out: Ctrl-clicking it then means "all of
+	 * these", which is what the gesture reads as, and a second Ctrl-click on a
+	 * group now wholly in takes the whole of it back out again.
+	 */
+	function togglePickSet(ids) {
 		let next = new Set(picked);
-		if (!next.delete(id)) next.add(id);
+		let on = allIn(picked, ids);
+		for (let id of ids) {
+			if (on) next.delete(id);
+			else next.add(id);
+		}
 		setPicked(next);
+	}
+
+	/** Whether every one of `ids` is already in `set`. An empty group is not
+	 *  "already in": there is nothing to take out and nothing to put in. */
+	function allIn(set, ids) {
+		if (!ids.size) return false;
+		for (let id of ids) if (!set.has(id)) return false;
+		return true;
 	}
 
 	function isPicked(n) {
@@ -2202,7 +2324,13 @@
 	 * selection changing at all.
 	 */
 	function sendSelection() {
-		emit({ type: 'item-pane-show', itemIDs: pickedItemIDs(), inView: heldOnScreen });
+		emit({
+			type: 'item-pane-show',
+			itemIDs: pickedItemIDs(),
+			inView: heldOnScreen,
+			// Whether the deck may turn away from the gap list to say it.
+			keepGaps: keepGaps,
+		});
 	}
 
 	/** The pick as Zotero item ids, in click order, ghosts left out. */
@@ -2274,12 +2402,22 @@
 	 * last moment to stop showing the paper.
 	 */
 	function toggleIsolate(id) {
+		toggleIsolateSet(new Set([id]));
+	}
+
+	/**
+	 * The double click over something that stands for several nodes: a gap and
+	 * its citers, isolated as the one neighbourhood they are. Double-clicking
+	 * it again, with that same set still the whole focus, gives the graph back
+	 * -- the single node's rule, applied to the group.
+	 */
+	function toggleIsolateSet(ids) {
 		hideAction();
 		hideMenu();
 		paneEngaged = true;
-		setPicked(new Set([id]));
-		if (isolated.size === 1 && isolated.has(id)) clearIsolated();
-		else isolateOnly(id);
+		setPicked(new Set(ids));
+		if (same(isolated, ids)) clearIsolated();
+		else setIsolated(new Set(ids));
 	}
 
 	/**
@@ -2302,17 +2440,31 @@
 	 * double click already does with one.
 	 */
 	function addToIsolate(id) {
+		addToIsolateSet(new Set([id]));
+	}
+
+	/** The same, over a group: in or out as a whole, on the rule togglePickSet()
+	 *  applies to the pick. */
+	function addToIsolateSet(ids) {
 		hideAction();
 		hideMenu();
 		paneEngaged = true;
 		// Read before either set is touched: both branches below turn on it.
-		let on = isolated.has(id);
+		let on = allIn(isolated, ids);
 		let pick = new Set(picked);
-		if (on) pick.delete(id);
-		else pick.add(id);
+		let next = new Set(isolated);
+		for (let id of ids) {
+			if (on) {
+				pick.delete(id);
+				next.delete(id);
+			}
+			else {
+				pick.add(id);
+				next.add(id);
+			}
+		}
 		setPicked(pick);
-		if (on) dropIsolated(id);
-		else addIsolated(id);
+		if (!same(isolated, next)) setIsolated(next);
 	}
 
 	/**
