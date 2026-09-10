@@ -2,85 +2,99 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Label rendering benchmark</title>
+<title>Graph rendering benchmark</title>
 <style>
 	:root {
 		--bg: #ffffff; --fg: #1a1a1a; --muted: #6b6b6b;
-		--accent: #0a67c2; --line: #d8d8d8; --warn: #a8500a;
+		--accent: #0a67c2; --line: #d8d8d8; --warn: #a8500a; --good: #1a7f37;
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {
 			--bg: #2f2f30; --fg: #f0f0f0; --muted: #a0a0a0;
-			--accent: #6aa9e9; --line: #4a4a4c; --warn: #e0a060;
+			--accent: #6aa9e9; --line: #4a4a4c; --warn: #e0a060; --good: #5fbf7f;
 		}
 	}
+	* { box-sizing: border-box; }
 	body {
-		background: var(--bg); color: var(--fg); margin: 0; padding: 16px 20px;
+		background: var(--bg); color: var(--fg); margin: 0; padding: 14px 18px;
 		font: 13px/1.5 -apple-system, "Segoe UI", sans-serif;
 	}
 	h1 { font-size: 15px; margin: 0 0 2px; }
-	h2 { font-size: 13px; margin: 18px 0 6px; }
-	p.sub { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
-	fieldset { border: 1px solid var(--line); border-radius: 5px; padding: 8px 12px 10px; margin: 0 0 12px; }
+	h2 { font-size: 13px; margin: 16px 0 6px; }
+	p.sub { color: var(--muted); margin: 0 0 12px; max-width: 78ch; }
+	fieldset { border: 1px solid var(--line); border-radius: 5px;
+		padding: 7px 12px 9px; margin: 0 0 10px; }
 	legend { color: var(--muted); padding: 0 5px; }
 	label.f { display: inline-flex; align-items: center; gap: 5px; margin: 0 14px 4px 0; }
-	input[type=number] { width: 68px; background: var(--bg); color: var(--fg);
+	input[type=number] { width: 74px; background: var(--bg); color: var(--fg);
 		border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px; font: inherit; }
 	button { font: inherit; padding: 5px 14px; border-radius: 4px; cursor: pointer;
 		border: 1px solid var(--accent); background: var(--accent); color: #fff; }
 	button:disabled { opacity: .5; cursor: default; }
 	button.alt { background: transparent; color: var(--accent); }
-	table { border-collapse: collapse; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
-	th, td { padding: 3px 12px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
+	table { border-collapse: collapse; margin: 6px 0; font-variant-numeric: tabular-nums;
+		font-size: 12.5px; }
+	th, td { padding: 3px 11px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
 	th:first-child, td:first-child { text-align: left; }
 	th { color: var(--muted); font-weight: 600; }
 	td.hi { color: var(--warn); font-weight: 600; }
-	#env { color: var(--muted); margin: 0 0 12px; }
-	#log { white-space: pre-wrap; color: var(--muted); margin-top: 10px; }
-	canvas { border: 1px solid var(--line); border-radius: 4px; margin-top: 8px;
-		max-width: 100%; height: auto; }
+	td.ok { color: var(--good); }
+	td.name { font-weight: 600; }
+	#env, #log { color: var(--muted); margin: 0 0 10px; }
+	#stage { border: 1px solid var(--line); border-radius: 5px; overflow: hidden;
+		margin-top: 12px; background: var(--bg); }
+	#stage iframe { display: block; width: 1400px; height: 900px; border: 0;
+		transform-origin: 0 0; }
+	#stagewrap { overflow: hidden; }
 	code { background: rgba(128,128,128,.16); padding: 0 4px; border-radius: 3px; }
+	details { margin-top: 10px; }
+	summary { cursor: pointer; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<h1>Label rendering benchmark</h1>
+<h1>Graph rendering benchmark</h1>
 <p class="sub">
-	Measures what the Node-side benchmarks cannot: how long the engine actually
-	takes to rasterise haloed text on a canvas. Served over
-	<code>resource://</code> from inside the plugin, so this is Zotero's own
-	renderer, its own fonts and its own compositor — the numbers are the real
-	ones. The placement pass is the real <code>labelLayout.js</code>; the paint
-	is the exact sequence <code>drawLabel()</code> issues.
+	Drives the <strong>real</strong> graph page — <code>graph.html</code> in the
+	frame below, loaded unmodified and fed through the same
+	<code>zgSetData</code> bridge chrome uses — and times what it actually costs
+	to settle a layout, drag a node, isolate a neighbourhood, add papers, zoom
+	and pan. Nothing here re-implements the renderer, so nothing here can drift
+	away from it.
 </p>
 
 <p id="env"></p>
 
 <fieldset>
-	<legend>graph</legend>
-	<label class="f">nodes <input type="number" id="nodes" value="2000" min="10" max="200000" step="100"></label>
-	<label class="f">viewport <input type="number" id="vw" value="1400" min="200" step="20"> ×
-		<input type="number" id="vh" value="900" min="200" step="20"></label>
+	<legend>collection</legend>
+	<label class="f">items <input type="number" id="n" value="1500" min="20" max="60000" step="100"></label>
+	<label class="f">edges/item <input type="number" id="ratio" value="1.4" min="0" max="10" step="0.1"></label>
 	<label class="f">seed <input type="number" id="seed" value="7" min="0"></label>
+	<label class="f">viewport <input type="number" id="vw" value="1400" min="400" step="20"> ×
+		<input type="number" id="vh" value="900" min="300" step="20"></label>
 </fieldset>
 
 <fieldset>
 	<legend>run</legend>
-	<label class="f">frames <input type="number" id="runs" value="120" min="10" max="5000"></label>
-	<label class="f">warmup <input type="number" id="warm" value="25" min="0" max="500"></label>
-	<label class="f"><input type="checkbox" id="backdrop" checked> draw circles + edges too</label>
-	<label class="f"><input type="checkbox" id="raf"> pace with requestAnimationFrame</label>
+	<label class="f">frames/scenario <input type="number" id="frames" value="90" min="10" max="2000"></label>
+	<label class="f">warmup <input type="number" id="warm" value="15" min="0" max="200"></label>
+	<label class="f">repeats <input type="number" id="repeat" value="3" min="1" max="20"></label>
+	<label class="f"><input type="checkbox" id="ablate" checked> attribute cost per subsystem</label>
 </fieldset>
 
-<button id="run">Run benchmark</button>
-<button id="sweep" class="alt">Sweep label counts</button>
-<button id="ab" class="alt">A/B the box rule</button>
+<button id="run">Run all scenarios</button>
+<button id="quick" class="alt">Quick (settle + steady)</button>
+<button id="copy" class="alt">Copy JSON</button>
 
+<p id="log"></p>
 <div id="out"></div>
-<div id="log"></div>
-<canvas id="cv" width="700" height="450"></canvas>
 
-<script src="../labelLayout.js"></script>
+<details open>
+	<summary>the page under test</summary>
+	<div id="stagewrap"><div id="stage"><iframe id="frame" src="../graph.html"></iframe></div></div>
+</details>
+
+<script src="fixture.js"></script>
 <script src="bench.js"></script>
 </body>
 </html>

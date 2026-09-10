@@ -1,23 +1,23 @@
 #!/usr/bin/env node
-/**
- * Print how to open the rendering benchmark inside Zotero.
- *
- * There is only one place worth running it: Zotero itself, over resource://,
- * which is why the page lives under addon/content/bench/ rather than here. A
- * file:// copy opened in a browser would measure a different rasteriser at a
- * different devicePixelRatio and report it in the same table, which is worse
- * than not measuring at all.
- *
- * The first attempt at this pointed openDialog() at a file:// URL and got a
- * blank window: a chrome-privileged window will not load a top-level file://
- * document, and the CSP it carries blocks inline <script> besides. Both are
- * fixed by serving the page out of the plugin -- resource: is exactly what
- * that CSP does allow -- so the snippet below is the one that works.
- */
 'use strict';
 
-const path = require('path');
+/**
+ * Print how to open the rendering benchmark by hand.
+ *
+ * Two places, and they answer different questions. Zotero itself gives the
+ * absolute numbers, because it is the thing being tuned. Firefox gives the
+ * comparisons, because it can be driven from a script -- that is `npm run
+ * bench`, and it is the one used far more often.
+ *
+ * The first version of this pointed openDialog() at a file:// URL and got a
+ * blank window: a chrome-privileged window will not load a top-level file://
+ * document, and the CSP it carries blocks inline <script> besides. Serving the
+ * page out of the plugin fixes the first, and keeping the harness in its own
+ * file fixes the second -- resource: is exactly what that CSP allows.
+ */
+
 const fs = require('fs');
+const path = require('path');
 
 const RES_ROOT = 'zotero-citation-graph';
 const page = path.join(__dirname, '..', '..', 'addon', 'content', 'bench', 'bench.html');
@@ -28,20 +28,31 @@ if (!fs.existsSync(page)) {
 const url = `resource://${RES_ROOT}/content/bench/bench.html`;
 
 console.log(`
-Label rendering benchmark
+Graph rendering benchmark
 
-  Zotero -> Tools -> Developer -> Run JavaScript, then run:
+  Automated, in Firefox -- what you want for "did that change help?":
+
+    npm run bench                          all scenarios
+    npm run bench -- --json before.json    keep a baseline
+    npm run bench -- --baseline before.json    compare against it
+
+  By hand, in Zotero -- what you want for absolute numbers, since this is
+  the renderer being tuned. Tools -> Developer -> Run JavaScript:
 
     Zotero.getMainWindow().openDialog(
         '${url}',
-        'zg-bench', 'chrome,centerscreen,resizable,width=1150,height=950');
+        'zg-bench', 'chrome,centerscreen,resizable,width=1250,height=980');
 
-  The window should come up titled "Label rendering benchmark - ready".
-  If it is blank, the plugin build you are running does not carry the page:
+  The window should come up titled "Graph rendering benchmark - ready".
+  If it is blank, the build you are running does not carry the page:
 
     dev install   tools/install-dev.ps1 serves addon/ directly and always has it
     packed XPI    npm run build -- --with-bench
 
+  By hand, in Firefox, without the runner:
+
+    npm run bench:serve      then open the URL it prints
+
   A release XPI leaves the benchmark out on purpose -- see tools/build-xpi.js.
-  What it measures, and why the numbers can be trusted: tools/bench/README.md
+  What it measures and why the numbers can be trusted: tools/bench/README.md
 `);

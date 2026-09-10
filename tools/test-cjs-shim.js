@@ -865,37 +865,68 @@ check('label sizing shrinks to the node but never below the floor', () => {
 	if (Math.abs(long.w - long.px * 4) > 1e-9) throw new Error('width disagrees with size');
 });
 
-check('the rendering benchmark measures the constants that actually ship', () => {
-	// tools/bench/labels.html copies the label constants out of graph.js,
-	// because graph.js is one IIFE with no exports and a benchmark is not a
-	// good enough reason to carve it up. A copy that drifts turns the whole
-	// tool into a confident measurement of code nobody runs, and drift is
-	// silent -- so it is caught here instead.
-	const gjs = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
-	const bench = fs.readFileSync(
-		path.join(addonDir, 'content/bench/bench.js'), 'utf8');
-	const names = ['LABEL_MIN_PX', 'LABEL_MAX_PX', 'LABEL_PER_RADIUS', 'LABEL_FIT',
-		'LABEL_PAD', 'LABEL_INK', 'LABEL_STICKY', 'LABEL_REF_PX'];
-	for (const name of names) {
-		const inSrc = new RegExp('const\\s+' + name + '\\s*=\\s*([-\\d.]+)\\s*;').exec(gjs);
-		if (!inSrc) throw new Error('graph.js no longer declares ' + name);
-		const inBench = new RegExp('\\b' + name + '\\s*:\\s*([-\\d.]+)\\s*,').exec(bench);
-		if (!inBench) throw new Error('the benchmark does not carry ' + name);
-		if (inSrc[1] !== inBench[1]) {
-			throw new Error(name + ' is ' + inSrc[1] + ' in graph.js but '
-				+ inBench[1] + ' in the benchmark');
+check('the benchmark fixture is a payload the renderer can actually read', () => {
+	// The benchmark drives the real graph page through the real zgSetData
+	// bridge, so a fixture in the wrong shape does not fail loudly -- it draws
+	// an empty graph and reports excellent frame times for rendering nothing.
+	// These are the fields render() reads off a payload; see content/graph.js.
+	const src = fs.readFileSync(path.join(addonDir, 'content/bench/fixture.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'fixture.js' });
+	if (!ctx.ZGFixture) throw new Error('fixture.js did not publish ZGFixture');
+
+	const g = ctx.ZGFixture.collection({ n: 300, seed: 3 });
+	if (g.items.length !== 300) throw new Error('asked for 300 items, got ' + g.items.length);
+	// Counted per population, not in total: edges to outside refs are edges
+	// too, and a fixture that had lost every item-to-item citation would still
+	// pass a bare length check while laying out a graph with no structure.
+	const held = new Set(g.items.map(i => i.key));
+	const internal = g.edges.filter(e => held.has(e.from) && held.has(e.to));
+	const outward = g.edges.filter(e => !held.has(e.to));
+	if (internal.length < g.items.length / 2) {
+		throw new Error('only ' + internal.length + ' citations among held items');
+	}
+	if (!outward.length) throw new Error('no edges to outside refs — the ghost path never runs');
+	if (!g.external.length) throw new Error('no outside refs — the ghost path would never run');
+
+	const keys = new Set(g.items.map(i => i.key));
+	if (keys.size !== g.items.length) throw new Error('duplicate item keys');
+	for (const it of g.items) {
+		for (const field of ['key', 'itemType', 'title', 'creators', 'date']) {
+			if (it[field] == null) throw new Error('item is missing ' + field);
+		}
+		// year() parses this with a regex and shortLabel() builds the citekey
+		// from it; a date it cannot read gives every node the label "?" and
+		// quietly makes the label pass trivial.
+		if (!/(1[89][0-9][0-9]|20[0-9][0-9])/.test(String(it.date))) {
+			throw new Error('date ' + it.date + ' is not one year() can read');
 		}
 	}
-	// The halo width is a bare literal in drawLabel rather than a named
-	// constant, and it is half of what a label costs to paint -- so the
-	// benchmark's copy of it is worth pinning too.
-	const halo = /ctx\.lineWidth = \(px \* ([\d.]+)\) \/ globalScale;/.exec(gjs);
-	if (!halo) throw new Error('drawLabel no longer sets a halo width the bench can track');
-	const benchHalo = /HALO_RATIO = ([\d.]+)/.exec(bench);
-	if (!benchHalo || benchHalo[1] !== halo[1]) {
-		throw new Error('halo ratio is ' + halo[1] + ' in graph.js but '
-			+ (benchHalo ? benchHalo[1] : 'absent') + ' in the benchmark');
+	const ext = new Set(g.external.map(x => x.id));
+	for (const e of g.edges) {
+		if (!keys.has(e.from)) throw new Error('edge from an item that is not here: ' + e.from);
+		if (!keys.has(e.to) && !ext.has(e.to)) throw new Error('edge to nothing: ' + e.to);
+		if (!(e.confidence > 0 && e.confidence <= 1)) throw new Error('confidence ' + e.confidence);
+		if (!Array.isArray(e.via) || !e.via.length) throw new Error('edge with no strategy');
 	}
+
+	// Heavy-tailed, not uniform: a few hubs is the shape the layout, the
+	// collision force and the label ranking are all tuned against, and a flat
+	// distribution would make every one of them look easier than it is.
+	const deg = new Map();
+	for (const e of g.edges) deg.set(e.to, (deg.get(e.to) || 0) + 1);
+	const counts = [...deg.values()].sort((a, b) => b - a);
+	if (counts[0] < counts[Math.floor(counts.length / 2)] * 4) {
+		throw new Error('degrees are too flat to be a realistic collection');
+	}
+
+	// grow() is what the add-papers scenario feeds in.
+	const bigger = ctx.ZGFixture.grow(g, 30, 5);
+	if (bigger.items.length !== 330) throw new Error('grow() lost items');
+	if (bigger.edges.length <= g.edges.length) throw new Error('grow() added no edges');
+	const grown = new Set(bigger.items.map(i => i.key));
+	if (grown.size !== bigger.items.length) throw new Error('grow() collided with an existing key');
 });
 
 // --- chrome-side modules ---------------------------------------------------
