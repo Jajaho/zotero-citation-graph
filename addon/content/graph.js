@@ -2329,25 +2329,56 @@
 	 * Candidate pairs come from a uniform grid whose cell is the largest
 	 * distance at which any two nodes can touch, so only the 3x3 neighbourhood
 	 * has to be searched and the tick stays linear in node count.
+	 *
+	 * The grid is kept from tick to tick and keyed by a number, not rebuilt
+	 * as a Map of "x,y" strings. That string was built once per node and nine
+	 * more times per node for the lookups, twice a tick -- thirty-odd thousand
+	 * strings a tick at 1500 nodes, handed straight to the collector. Buckets
+	 * carry the pass that filled them, so a stale one reads as empty and
+	 * nothing is cleared between passes: the trick labelLayout.js's Pass plays,
+	 * for the same reason. The pairs visited, their order and the arithmetic
+	 * are what they were.
 	 */
 	const COLLIDE_PAD = 3; // graph units of clear space left between circles
 	const COLLIDE_PASSES = 2;
+
+	// A cell's key: its column and row, each offset to be non-negative, packed
+	// into one integer well inside 2^53. Two cells over a million apart would
+	// share a key -- which is harmless, since a bucket is only a list of pairs
+	// to TEST, and the distance check turns a far one away.
+	const CELL_OFF = 1 << 20;
+	const CELL_SPAN = 1 << 21;
+
+	function cellKey(gx, gy) {
+		return (gx + CELL_OFF) * CELL_SPAN + (gy + CELL_OFF);
+	}
 
 	function collide() {
 		let nodes = [];
 		let radii = [];
 		let cell = 1;
+		let grid = new Map();  // cell key -> { gen, items }
+		let gen = 0;           // which pass the live buckets were filled in
 
 		function force() {
 			if (nodes.length < 2) return;
+			// Cells the layout has moved out of would otherwise pile up for the
+			// life of the tab. Cheap to drop, and rare: a settled graph keeps to
+			// the cells it already has.
+			if (grid.size > 4 * nodes.length) grid = new Map();
 			for (let pass = 0; pass < COLLIDE_PASSES; pass++) {
-				let grid = new Map();
+				gen++;
 				for (let i = 0; i < nodes.length; i++) {
 					let n = nodes[i];
-					let key = Math.floor((n.x + n.vx) / cell) + ',' + Math.floor((n.y + n.vy) / cell);
-					let bucket = grid.get(key);
-					if (bucket) bucket.push(i);
-					else grid.set(key, [i]);
+					let key = cellKey(Math.floor((n.x + n.vx) / cell), Math.floor((n.y + n.vy) / cell));
+					let b = grid.get(key);
+					if (!b) grid.set(key, { gen, items: [i] });
+					else if (b.gen !== gen) {
+						b.gen = gen;
+						b.items.length = 0;
+						b.items.push(i);
+					}
+					else b.items.push(i);
 				}
 				for (let i = 0; i < nodes.length; i++) {
 					let a = nodes[i];
@@ -2356,9 +2387,11 @@
 					let cy = Math.floor((a.y + a.vy) / cell);
 					for (let gx = cx - 1; gx <= cx + 1; gx++) {
 						for (let gy = cy - 1; gy <= cy + 1; gy++) {
-							let bucket = grid.get(gx + ',' + gy);
-							if (!bucket) continue;
-							for (let j of bucket) {
+							let b = grid.get(cellKey(gx, gy));
+							if (!b || b.gen !== gen) continue;
+							let bucket = b.items;
+							for (let k = 0; k < bucket.length; k++) {
+								let j = bucket[k];
 								// Each pair is resolved once, by its lower index.
 								if (j <= i) continue;
 								let b = nodes[j];
