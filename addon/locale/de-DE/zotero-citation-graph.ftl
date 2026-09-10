@@ -60,10 +60,13 @@ zotero-citation-graph-rebuild = Neu aufbauen
 
 zotero-citation-graph-reframe-hint = Ganzen Graphen einpassen
 
-## Die obere Leiste: Seitenleisten-Schalter und Suchfeld.
+## Die obere Leiste: die beiden Bereichsschalter und das Suchfeld.
 
 zotero-citation-graph-side-toggle-hide = Seitenleiste ausblenden
 zotero-citation-graph-side-toggle-show = Seitenleiste einblenden
+
+zotero-citation-graph-pane-toggle-hide = Infobereich ausblenden
+zotero-citation-graph-pane-toggle-show = Infobereich einblenden
 
 zotero-citation-graph-search-placeholder = Suchen
 zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern. Das filtert den Graphen nicht — dafür ist das Filterfeld in der Seitenleiste da.

@@ -942,11 +942,21 @@ check('the side panel is built once and closes with the tab', () => {
 	Zotero.Prefs = { get: () => 420, set: () => {} };
 
 	const box = splitPane.panel(entry);
-	box.appendChild(element('hbox'));
+	// The panel is not empty when it is handed over: the graph page's top bar
+	// cannot paint past its own <browser>, so the last stretch of it is a strip
+	// in here, and the item pane goes under that strip rather than over it.
+	const bar = box.children[0];
+	if (!bar || bar.className !== 'zg-pane-bar') {
+		throw new Error('the panel opens straight onto the item pane, so the top bar '
+			+ 'stops at the splitter and the two sides of the window do not match');
+	}
+	const inside = box.appendChild(element('hbox'));
 	// Asking again is not a reason to rebuild: the item pane asks on every
 	// click, and a rebuilt panel would throw away the pane inside it.
 	if (splitPane.panel(entry) !== box) throw new Error('the panel was rebuilt');
-	if (box.children.length !== 1) throw new Error('a second ask emptied the panel');
+	if (box.children.length !== 2) throw new Error('a second ask emptied the panel');
+	if (box.children[0] !== bar) throw new Error('the item pane was put above the bar');
+	if (box.children[1] !== inside) throw new Error('a second ask emptied the panel');
 
 	const splitter = made.find(el => el.className === 'zg-pane-splitter');
 	if (!splitter) throw new Error('the panel has no divider');
@@ -1021,6 +1031,46 @@ check('collapsing leaves the sidenav on screen and remembers the width', () => {
 	if (splitter.getAttribute('state')) throw new Error('the divider stayed in its collapsed shape');
 });
 
+/**
+ * The bar's item pane toggle is drawn from what chrome pushes back, and chrome
+ * pushes it from one notifier rather than from each of the four gestures that
+ * move the panel -- a click on a node, "what is missing", core's own Toggle Item
+ * Pane in the sidenav, and the button itself. A gesture that stopped going
+ * through splitPane would leave the button lit over a collapsed pane, and
+ * nothing about it would throw.
+ *
+ * Reported on change and only on change: the item pane asks for the panel on
+ * every single click, and a message per click is a message per click.
+ */
+check('every gesture that moves the panel reports it', () => {
+	const splitPane = require_('./lib/splitPane.js');
+	const { win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-12');
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+
+	const seen = [];
+	// Borrowed and given back: graphTab registers the real one at require time,
+	// and the checks after this one would otherwise run without it.
+	const was = splitPane.watch(
+		e => seen.push(!e.pane ? 'gone' : (splitPane.showing(e) ? 'open' : 'shut')));
+	try {
+		splitPane.panel(entry);
+		// The item pane asks on every click. Only the first ask opens anything.
+		splitPane.panel(entry);
+		splitPane.setCollapsed(entry, true);
+		splitPane.setCollapsed(entry, true);
+		splitPane.setCollapsed(entry, false);
+		splitPane.close(entry);
+	}
+	finally {
+		splitPane.watch(was);
+	}
+
+	if (seen.join(',') !== 'open,shut,open,gone') {
+		throw new Error('the button in the top bar would be left saying something the '
+			+ 'panel is not doing: ' + (seen.join(',') || 'nothing was reported at all'));
+	}
+});
 check('the item pane is handed what <item-details> needs, and nothing more', async () => {
 	const itemPane = require_('./lib/itemPane.js');
 	const { made, win, element } = fakeWindow();
@@ -2747,6 +2797,45 @@ function outranks(mine, theirs) {
 	return false;
 }
 
+/**
+ * The top bar is drawn twice, in two documents, and has to read as one bar.
+ *
+ * content/graph.css draws it across the sidebar and the canvas, which is as far
+ * as a content page can paint; lib/splitPane.js draws the rest of it over the
+ * item pane, which is chrome and sits outside the <browser>. If the two heights
+ * drift apart the join becomes a step, and neither file mentions the other --
+ * the strip is in a different language in a different directory.
+ *
+ * The divider under the panel is held to the same number. Its line has to start
+ * below the bar or it crosses it and cuts the bar in two, which is exactly what
+ * the left-hand edge never does: #side's border is in the second grid row.
+ */
+check('the two halves of the top bar are the same height', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
+	const open = css.indexOf('#bar {');
+	if (open < 0) throw new Error('content/graph.css no longer has a #bar to match');
+	const rule = css.slice(open, css.indexOf('}', open));
+	const at = rule.indexOf('height:');
+	if (at < 0) throw new Error('#bar no longer states a height: ' + rule);
+	const page = parseInt(rule.slice(at + 'height:'.length), 10);
+
+	const splitPane = require_('./lib/splitPane.js');
+	if (!page || splitPane.BAR_HEIGHT !== page) {
+		throw new Error('the bar steps where the page stops painting it: #bar is '
+			+ page + 'px and the strip over the item pane is ' + splitPane.BAR_HEIGHT + 'px');
+	}
+
+	// Both carry a 1px bottom border, so the panel's divider starts one past it.
+	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
+	const mark = 'transparent ${';
+	const m = src.indexOf(mark);
+	if (m < 0) throw new Error('the panel divider runs the full height and crosses the bar');
+	const name = src.slice(m + mark.length, src.indexOf('}', m));
+	if (!src.includes('const ' + name + ' = BAR_HEIGHT + 1')) {
+		throw new Error('the divider under the panel starts at ' + name + ', which is not the '
+			+ 'bottom of the bar, so it either crosses the bar or leaves a gap under it');
+	}
+});
 check('a collapsed pane edge is drawn once, by the sidenav', () => {
 	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
 	const rule = /\n\t([^\n{]*\[state="collapsed"\][^\n{]*)\{([^}]*)\}/.exec(src);

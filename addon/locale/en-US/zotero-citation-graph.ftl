@@ -71,10 +71,16 @@ zotero-citation-graph-rebuild = Rebuild
 
 zotero-citation-graph-reframe-hint = Fit the whole graph in view
 
-## The top bar: the sidebar toggle, and the search field.
+## The top bar: the two pane toggles, and the search field.
 
 zotero-citation-graph-side-toggle-hide = Hide the sidebar
 zotero-citation-graph-side-toggle-show = Show the sidebar
+
+# The item pane, at the other end of the bar. Zotero's own wording for the same
+# control is "Toggle Item Pane"; this pair says which way it will go, as the
+# sidebar's does above.
+zotero-citation-graph-pane-toggle-hide = Hide the item pane
+zotero-citation-graph-pane-toggle-show = Show the item pane
 
 zotero-citation-graph-search-placeholder = Search
 zotero-citation-graph-search-hint = Find a paper on the canvas and go to it. This does not filter the graph — the filter box in the sidebar does that.

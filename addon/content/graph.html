@@ -18,7 +18,12 @@
 	     from the graph honestly and gives the rest back whole. -->
 	<div id="frame">
 		<!-- The top bar. Left: the two buttons that act on the view. Right: the
-		     search field, which is where the library's is. -->
+		     search field, which is where the library's is, and the item pane's
+		     toggle, which is where the reader's is.
+
+		     It runs the whole width of the tab. The stretch of it over the item
+		     pane is drawn in chrome (lib/splitPane.js), because a content page
+		     cannot paint past its own <browser> and the item pane is chrome. -->
 		<div id="bar">
 			<button id="side-toggle" type="button" class="on" aria-expanded="true" aria-controls="side"
 				data-zg-title="side-toggle-hide" data-zg-aria-label="side-toggle-hide"
@@ -43,6 +48,19 @@
 					data-zg-title="search-clear" data-zg-aria-label="search-clear"
 					title="Clear" aria-label="Clear"></button>
 			</div>
+			<!-- Puts the item pane away and brings it back, which is where the
+			     reader keeps the same control: last button on the toolbar, at the
+			     end nearest the pane it acts on, drawn from the same sidebar icon
+			     as the sidebar toggle at the other end and mirrored. Core's own
+			     Toggle Item Pane in the pane's sidenav still works and is still
+			     the way back out of a collapse -- the reader keeps both too.
+
+			     Starts disabled: the pane describes the node you clicked, so
+			     until a node has been clicked there is no pane to put away. -->
+			<button id="pane-toggle" type="button" disabled="disabled"
+				data-zg-title="pane-toggle-show" data-zg-aria-label="pane-toggle-show"
+				aria-expanded="false"
+				title="Show the item pane" aria-label="Show the item pane"></button>
 		</div>
 
 		<!-- The sidebar. Settings, then the legend: one changes the picture and

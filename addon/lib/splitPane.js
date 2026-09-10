@@ -6,8 +6,12 @@
  * The panel beside the graph: how wide it is, and whether it is showing at all.
  *
  * There is one thing in it -- Zotero's own item pane (itemPane.js) -- and this
- * module owns the panel around it: the splitter, the remembered width, and the
- * bridge to the collapse the pane's own sidenav button drives.
+ * module owns the panel around it: the splitter, the remembered width, the
+ * bridge to the collapse the pane's own sidenav button drives, and the strip of
+ * toolbar over the top of it that carries the graph page's bar the rest of the
+ * way to the edge of the window. The bar is drawn in a content document and so
+ * cannot reach past its own <browser>; the strip is the piece beyond it, and is
+ * paint and nothing else. See PANE_CSS.
  *
  * Collapsing is not implemented here. It is core's, from the module core's own
  * <item-pane> uses:
@@ -58,6 +62,13 @@
 // library's item pane, and this is the same pane.
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
+
+// The graph page's top bar, which this file has to know the height of because
+// the bar now runs past the browser it is drawn in -- see PANE_CSS. 41px is
+// core's own .toolbar height and the 1px is its border-bottom; graph.css states
+// both, and `npm test` holds the two files to the same pair of numbers.
+const BAR_HEIGHT = 41;
+const BAR_TOTAL = BAR_HEIGHT + 1;
 
 /**
  * Core's collapse, loaded on first use.
@@ -121,9 +132,40 @@ const PANE_CSS = `
 	 */
 	splitter.zg-pane-splitter:not([orient="vertical"])[substate="after"][state="collapsed"] {
 		border: 0;
+		background: none;
 		margin-left: calc(1px - var(--draggable-size));
 		margin-right: -1px;
 		pointer-events: none;
+	}
+	/*
+	 * Expanded, the divider now stops short of the top of the tab, because the
+	 * bar above it is one bar and not two beside each other.
+	 *
+	 * Core's rule paints the line as border-right on the splitter, which runs
+	 * the full height of the row -- and the row starts at the top of the tab, so
+	 * the line would cross the bar and cut it in two. The library never shows
+	 * that: its toolbars sit INSIDE the panes they belong to, so a divider
+	 * begins where the panes do, under them.
+	 *
+	 * The border stays, at its own width and with core's margins, so nothing
+	 * about the geometry or the grab area moves; only its colour goes, and the
+	 * line is repainted as a 1px background column in the same place. A
+	 * background is painted under the border box by default, so "the last 1px of
+	 * the element" IS the border-right, to the pixel -- and a gradient can start
+	 * it below the bar, which a border cannot.
+	 *
+	 * The same treatment as the left-hand edge, which never had to ask for it:
+	 * #side's border-right is in the graph page's second grid row, and the bar
+	 * is the first.
+	 */
+	splitter.zg-pane-splitter:not([orient="vertical"])[substate="after"] {
+		border-right-color: transparent;
+		background:
+			linear-gradient(
+				to bottom,
+				transparent ${BAR_TOTAL}px,
+				var(--fill-quarternary) ${BAR_TOTAL}px)
+			100% 0 / 1px 100% no-repeat;
 	}
 	.zg-pane {
 		min-width: ${MIN_WIDTH}px;
@@ -152,16 +194,89 @@ const PANE_CSS = `
 		max-width: 37px;
 		visibility: inherit;
 	}
+	/*
+	 * The graph page's top bar, continued across the panel.
+	 *
+	 * The bar is drawn in the content page (content/graph.html), and a content
+	 * page can only paint inside its own <browser> -- which stops at the
+	 * splitter. So the bar stopped there too, and the tab had a toolbar over
+	 * most of its width and the bare top of the item pane over the rest: the
+	 * left edge of the window and the right edge did not match.
+	 *
+	 * This is that missing piece, and it is deliberately nothing but the
+	 * toolbar's own paint -- same height, same background, same bottom border,
+	 * all three from the tokens core's own
+	 * "#zotero-layout-switcher .zotero-toolbar" rule uses, so the two halves
+	 * meet without a seam. Nothing is IN it, which is also what the library
+	 * shows above its item pane: the quick search sits at the right-hand end of
+	 * the items toolbar and not over the pane beyond it, and the page's search
+	 * field is in the same place for the same reason.
+	 *
+	 * It stays when the panel collapses, at the sidenav's 37px, so the bar
+	 * reaches the edge of the window either way.
+	 */
+	.zg-pane-bar {
+		height: ${BAR_HEIGHT}px;
+		min-height: ${BAR_HEIGHT}px;
+		background: var(--material-toolbar);
+		border-bottom: var(--material-panedivider);
+	}
 `;
+
+/**
+ * Told whenever a panel appears, collapses, expands or goes.
+ *
+ * One notifier rather than a call at each site, because the panel is opened and
+ * put away by four different gestures -- a click on a node, "what is missing",
+ * core's own Toggle Item Pane in the sidenav, and the button in the top bar --
+ * and the button has to say what the panel is doing whichever of them moved it.
+ * A fifth added later would report itself for free; a fifth that had to remember
+ * to would not.
+ *
+ * Set once, from lib/graphTab.js. Guarded, because a listener that throws must
+ * not take the collapse it is reporting down with it.
+ *
+ * Returns whatever it replaced, so a caller that borrows the slot can give it
+ * back -- which is the whole of what npm test needs to watch a panel without
+ * leaving the real listener unregistered for every check after it.
+ */
+let notify = null;
+function watch(fn) {
+	let was = notify;
+	notify = fn || null;
+	return was;
+}
+
+function changed(entry) {
+	if (!notify) return;
+	try {
+		notify(entry);
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/** Whether there is a panel, and it is not collapsed to its strip of icons. */
+function showing(entry) {
+	return !!(entry && entry.pane) && !collapsed(entry);
+}
 
 /**
  * The panel for this tab, built on the first ask.
  *
+ * The box comes with its top strip already in it (see create()), and the item
+ * pane is appended after it -- which is why .zg-item-row carries flex: 1, and
+ * why this returns the box rather than an emptied one.
+ *
  * @param {Object} entry  the graphTab record for this tab
- * @returns {Element} the box to build into
+ * @returns {Element} the box to build into, under the bar
  */
 function panel(entry) {
-	let pane = entry.pane || create(entry);
+	let existing = entry.pane;
+	let pane = existing || create(entry);
+	// A panel that has just come into being is a panel that has just opened.
+	if (!existing) changed(entry);
 	return pane.box;
 }
 
@@ -212,6 +327,8 @@ function setCollapsed(entry, val) {
 	// from it is ours, and would outrank the max-width core's rule collapses to.
 	if (val) pane.box.style.width = '';
 	else setWidth(pane, pane.width >= MIN_WIDTH ? Math.round(pane.width) : storedWidth());
+
+	changed(entry);
 }
 
 /** Close the panel altogether: the width is remembered, the elements go. */
@@ -224,6 +341,7 @@ function close(entry) {
 	pane.splitter.remove();
 	pane.box.remove();
 	pane.style.remove();
+	changed(entry);
 }
 
 // --- the panel ---------------------------------------------------------
@@ -264,12 +382,19 @@ function create(entry) {
 	let box = doc.createXULElement('vbox');
 	box.className = 'zg-pane';
 
+	// The top bar's last stretch, carried past the browser that draws the rest
+	// of it. First child and never removed, so whatever the item pane does
+	// below it happens under the bar. See PANE_CSS.
+	let bar = doc.createXULElement('hbox');
+	bar.className = 'zg-pane-bar';
+	box.appendChild(bar);
+
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
 	entry.split.appendChild(box);
 
 	let pane = {
-		box, splitter, style,
+		box, bar, splitter, style,
 		observer: null,
 		// Only ever read while collapsed, when the box carries no width of its own.
 		width: 0,
@@ -335,4 +460,4 @@ function pref(name) {
 	}
 }
 
-module.exports = { panel, collapsed, setCollapsed, close, MIN_WIDTH };
+module.exports = { panel, collapsed, setCollapsed, close, watch, showing, MIN_WIDTH, BAR_HEIGHT };

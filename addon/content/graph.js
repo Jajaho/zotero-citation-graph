@@ -160,6 +160,7 @@
 	let elSearchIcon = el('search-icon');
 	let elSearchClear = el('search-clear');
 	let elSearchSuggest = el('search-suggest');
+	let elPaneToggle = el('pane-toggle');
 	let elPanel = el('panel');
 	let elPanelToggle = el('panel-toggle');
 	let elLegend = el('legend');
@@ -278,6 +279,27 @@
 
 	window.zgSetStatus = function (text) {
 		elStatus.textContent = text || '';
+	};
+
+	/**
+	 * Whether the item pane is there, and whether it is open.
+	 *
+	 * Both are chrome's facts and neither can be worked out here: the pane is a
+	 * XUL element in the main window, and it is opened and collapsed by four
+	 * different gestures -- a click on a node, "what is missing", core's own
+	 * Toggle Item Pane in the pane's sidenav, and the button below. Pushed after
+	 * every one of them (lib/graphTab.js), so the button in the bar says what
+	 * the pane is actually doing rather than what it was last asked to do.
+	 */
+	window.zgSetPane = function (json) {
+		let state;
+		try {
+			state = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		setPaneOpen(!!state.has, !!state.open);
 	};
 
 	// An add that ended without a rebuild. The gap list disables a row's "+"
@@ -3664,6 +3686,27 @@
 		setSideOpen(elFrame.classList.contains('side-closed'));
 	});
 
+	/**
+	 * The item pane's toggle, drawn the same way as the sidebar's for the same
+	 * reason: lit while the pane is open, so the button reads as a toggle.
+	 *
+	 * It reports rather than decides. Nothing here knows whether the pane is
+	 * open -- the click goes to chrome, and what comes back is zgSetPane.
+	 */
+	function setPaneOpen(has, on) {
+		elPaneToggle.disabled = !has;
+		elPaneToggle.classList.toggle('on', has && on);
+		elPaneToggle.setAttribute('aria-expanded', has && on ? 'true' : 'false');
+		// Both ids written out at each call, as in setSideOpen: npm test reads
+		// the ids this page asks for out of the source.
+		elPaneToggle.title = t(has && on ? 'pane-toggle-hide' : 'pane-toggle-show');
+		elPaneToggle.setAttribute('aria-label', t(has && on ? 'pane-toggle-hide' : 'pane-toggle-show'));
+	}
+
+	elPaneToggle.addEventListener('click', () => {
+		emit({ type: 'item-pane-toggle' });
+	});
+
 	function setSideWidth(px) {
 		let w = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)));
 		document.documentElement.style.setProperty('--zg-side-width', w + 'px');
@@ -3716,6 +3759,8 @@
 	// than written as glyphs, for the reason that file exists: a near-miss
 	// beside the real thing is worse than either.
 	elSideToggle.appendChild(Icons.svg('open-pane'));
+	// The same icon as the sidebar's toggle, mirrored in CSS -- see graph.css.
+	elPaneToggle.appendChild(Icons.svg('open-pane'));
 	elReframe.appendChild(Icons.svg('zoom-to-fit'));
 	elSearchIcon.appendChild(Icons.svg('magnifier'));
 	elSearchClear.appendChild(Icons.svg('clear'));

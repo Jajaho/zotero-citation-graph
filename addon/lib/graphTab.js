@@ -19,6 +19,7 @@ let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
 let addDialog = require('./addDialog.js');
 let itemPane = require('./itemPane.js');
+let splitPane = require('./splitPane.js');
 let gapsPane = require('./gapsPane.js');
 let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
@@ -662,6 +663,19 @@ async function handleMessage(win, tabID, collection, msg) {
 		case 'node-menu-close': {
 			let entry = open_.get(tabID);
 			if (entry) nodeMenu.close(entry.win);
+			break;
+		}
+		// The item pane's toggle, at the far end of the page's top bar -- where
+		// the reader keeps the same control. Core's own Toggle Item Pane in the
+		// pane's sidenav still works and is still the way back from a collapsed
+		// pane; the reader carries both for the same reason.
+		//
+		// The button is disabled until there is a pane, so this is never the
+		// first thing to open one: a pane describes the node you clicked, and
+		// there is nothing to describe before a click.
+		case 'item-pane-toggle': {
+			let entry = open_.get(tabID);
+			if (entry && entry.pane) itemPane.collapse(entry, !splitPane.collapsed(entry));
 			break;
 		}
 		// Zotero's own item pane, beside the graph, describing the node just
@@ -1347,6 +1361,23 @@ function chromeProps(win) {
 	catch (e) { /* likewise for a Zotero that has renamed either pref */ }
 	return props;
 }
+
+/**
+ * The item pane's state, back to the page that carries its button.
+ *
+ * Registered once, on splitPane's own notifier, rather than pushed from the
+ * handful of places that open or collapse the panel: the button in the bar is
+ * only one of four gestures that move it, and the one thing every one of them
+ * has in common is that it goes through splitPane. See splitPane.watch().
+ *
+ * `has` and `open` are two facts, not one. A pane that has never been built is
+ * not a pane that is closed -- there is nothing in it to show, because nothing
+ * has been clicked -- and the button is disabled rather than dark.
+ */
+splitPane.watch((entry) => {
+	if (!entry || !open_.has(entry.tabID)) return;
+	send(entry, 'zgSetPane', { has: !!entry.pane, open: splitPane.showing(entry) });
+});
 
 /** Tell every open tab in this window what its chrome looks like now. */
 function pushChrome(win) {

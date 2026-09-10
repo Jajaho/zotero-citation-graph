@@ -311,12 +311,25 @@ function defineCollapsed(entry, details) {
 	Object.defineProperty(details, '_collapsed', {
 		configurable: true,
 		get: () => splitPane.collapsed(entry),
-		set: (val) => {
-			let was = splitPane.collapsed(entry);
-			splitPane.setCollapsed(entry, !!val);
-			if (was && !val) redraw(entry);
-		},
+		set: val => collapse(entry, val),
 	});
+}
+
+/**
+ * Put the pane away, or bring it back.
+ *
+ * The collapse itself is splitPane's; what belongs here is the redraw on the
+ * way back out, and that is why this is a function rather than two lines at
+ * each caller. Core's Toggle Item Pane writes _collapsed above; the button in
+ * the top bar comes through graphTab. Both have to leave the pane showing the
+ * item it was showing, and a collapse that skipped the redraw would leave
+ * whatever was drawn before it was put away.
+ */
+function collapse(entry, val) {
+	if (!entry || !entry.pane) return;
+	let was = splitPane.collapsed(entry);
+	splitPane.setCollapsed(entry, !!val);
+	if (was && !val) redraw(entry);
 }
 
 /**
@@ -457,4 +470,4 @@ function nameToggleForThisPane(doc, sidenav) {
  * second thing that can come to disagree with face() about which page is up,
  * and `facing` is what both sides read.
  */
-module.exports = { show, close, pane: ensurePane, face };
+module.exports = { show, close, collapse, pane: ensurePane, face };
