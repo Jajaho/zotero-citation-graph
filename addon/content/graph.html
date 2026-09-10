@@ -18,12 +18,14 @@
 	     from the graph honestly and gives the rest back whole. -->
 	<div id="frame">
 		<!-- The top bar. Left: the two buttons that act on the view. Right: the
-		     search field, which is where the library's is, and the item pane's
-		     toggle, which is where the reader's is.
+		     search field, which is where the library's is, and the button that
+		     brings the item pane back, which is where the reader's is.
 
-		     It runs the whole width of the tab. The stretch of it over the item
-		     pane is drawn in chrome (lib/splitPane.js), because a content page
-		     cannot paint past its own <browser> and the item pane is chrome. -->
+		     How far it runs is not this page's decision. It fills its <browser>,
+		     and the browser is as wide as the item pane leaves it: with the pane
+		     open the bar stops at the pane, and with the pane put away the pane
+		     is out of the layout altogether and the bar has the whole tab. That
+		     is the reader's tab exactly. -->
 		<div id="bar">
 			<button id="side-toggle" type="button" class="on" aria-expanded="true" aria-controls="side"
 				data-zg-title="side-toggle-hide" data-zg-aria-label="side-toggle-hide"
@@ -48,18 +50,24 @@
 					data-zg-title="search-clear" data-zg-aria-label="search-clear"
 					title="Clear" aria-label="Clear"></button>
 			</div>
-			<!-- Puts the item pane away and brings it back, which is where the
-			     reader keeps the same control: last button on the toolbar, at the
-			     end nearest the pane it acts on, drawn from the same sidebar icon
-			     as the sidebar toggle at the other end and mirrored. Core's own
-			     Toggle Item Pane in the pane's sidenav still works and is still
-			     the way back out of a collapse -- the reader keeps both too.
+			<!-- Brings the item pane back, and is only here while it is away.
 
-			     Starts disabled: the pane describes the node you clicked, so
-			     until a node has been clicked there is no pane to put away. -->
-			<button id="pane-toggle" type="button" disabled="disabled"
+			     There is one collapse control and it moves, which is the reader's
+			     behaviour: with the pane open it is the first button of the
+			     pane's own sidenav, at the top right of the tab; with the pane
+			     put away the sidenav has gone with it and this takes its place --
+			     at the end of a bar that now reaches the same edge, which is the
+			     same spot on screen. What moves between the two states is how far
+			     the bar and the pane each reach, not where the button is.
+
+			     Same icon as the sidebar's toggle at the other end, mirrored, as
+			     the reader mirrors it for .context-pane-toggle.
+
+			     Hidden until there is a pane at all: the pane describes the node
+			     you clicked, so before the first click there is nothing to put
+			     away and nothing to bring back. -->
+			<button id="pane-toggle" type="button" hidden="hidden"
 				data-zg-title="pane-toggle-show" data-zg-aria-label="pane-toggle-show"
-				aria-expanded="false"
 				title="Show the item pane" aria-label="Show the item pane"></button>
 		</div>
 

@@ -6,12 +6,13 @@
  * The panel beside the graph: how wide it is, and whether it is showing at all.
  *
  * There is one thing in it -- Zotero's own item pane (itemPane.js) -- and this
- * module owns the panel around it: the splitter, the remembered width, the
- * bridge to the collapse the pane's own sidenav button drives, and the strip of
- * toolbar over the top of it that carries the graph page's bar the rest of the
- * way to the edge of the window. The bar is drawn in a content document and so
- * cannot reach past its own <browser>; the strip is the piece beyond it, and is
- * paint and nothing else. See PANE_CSS.
+ * module owns the panel around it: the splitter, the remembered width, and the
+ * bridge to the collapse the pane's own sidenav button drives.
+ *
+ * The panel runs the full height of the tab, from the top edge down, and the
+ * graph page's top bar stops where the panel starts. That is the reader's
+ * shape, not the library's, and the difference is the whole of what a collapse
+ * means here -- see the [collapsed] rule in PANE_CSS.
  *
  * Collapsing is not implemented here. It is core's, from the module core's own
  * <item-pane> uses:
@@ -26,22 +27,18 @@
  * unchanged, and the attributes they write are the ones core's stylesheet is
  * written against.
  *
- * Which matters more than it sounds, because the two hairlines either side of a
- * collapsed pane have to be ONE line, and it is the splitter that gives way:
+ * Which matters more than it sounds, because a collapsed panel here is not a
+ * narrowed one -- it is gone, sidenav and all -- so there is nothing left for
+ * the splitter to draw an edge against:
  *
- *   expanded   the sidenav's border-inline-start sits between the pane content
- *              and the sidenav, nowhere near the splitter, and the splitter
- *              draws the pane's outer edge with border-right plus negative
- *              margins that cost the layout nothing.
- *   collapsed  the content is visibility: collapse, so the sidenav's own border
- *              IS the pane's outer edge -- and a splitter still drawing its own
- *              line there would double it. Core's [state=collapsed] rules move
- *              the splitter's line to border-left, drop the negative margins and
- *              widen --draggable-size, so the one line at the pane's edge is the
- *              sidenav's.
+ *   expanded   the splitter draws the panel's outer edge with border-right plus
+ *              negative margins that cost the layout nothing, which is core's
+ *              own rule and applies unchanged.
+ *   collapsed  the panel is out of the layout and the graph runs to the edge of
+ *              the window. A splitter still drawing a line would be a hairline
+ *              down the right of a tab with nothing on either side of it.
  *
- * Deciding that state by hand was the bug: a doubled, darker edge the library
- * does not have. Nothing here decides it any more.
+ * Deciding that state by hand was the bug. Nothing here decides it any more.
  *
  * Sizing is what is left, and the reason this module exists rather than a few
  * lines inside itemPane.js.
@@ -62,13 +59,6 @@
 // library's item pane, and this is the same pane.
 const MIN_WIDTH = 357;
 const DEFAULT_WIDTH = 520;
-
-// The graph page's top bar, which this file has to know the height of because
-// the bar now runs past the browser it is drawn in -- see PANE_CSS. 41px is
-// core's own .toolbar height and the 1px is its border-bottom; graph.css states
-// both, and `npm test` holds the two files to the same pair of numbers.
-const BAR_HEIGHT = 41;
-const BAR_TOTAL = BAR_HEIGHT + 1;
 
 /**
  * Core's collapse, loaded on first use.
@@ -91,31 +81,23 @@ const PANE_CSS = `
 	 * and costs the layout nothing, because the attributes core's rules are
 	 * keyed on are on the element (see create()).
 	 *
-	 * Collapsed, it draws nothing, and this is the one rule in this plugin that
-	 * departs from core on purpose.
+	 * Collapsed, it draws nothing and takes no width, because there is no longer
+	 * a panel for it to sit beside.
 	 *
-	 * Only ONE hairline belongs at the edge of a collapsed pane, and there are
-	 * two candidates for it: the splitter's own border, and the sidenav's
-	 * border-inline-start -- which is normally buried between the pane content
-	 * and the sidenav, but becomes the panel's outer edge the moment that
-	 * content goes visibility: collapse. Core resolves it by moving the
-	 * splitter's line to border-left and dropping the negative margins, which
-	 * parks the line at the far side of 8-10px of splitter. It can afford that
-	 * width because core's markup carries collapse="after", so the collapsed
-	 * splitter is the grab handle that pulls the pane back out.
+	 * Core's own [state=collapsed] rules move the splitter's line to border-left
+	 * and drop the negative margins, which parks a visible line at the far side
+	 * of 8-10px of splitter. That is right for the LIBRARY, where a collapsed
+	 * item pane leaves 37px of sidenav behind and the splitter is the grab
+	 * handle that pulls it back out. It is wrong here for the same reason it is
+	 * wrong for the reader's context pane: the panel is out of the layout
+	 * altogether, so core's treatment leaves a hairline and a strip of nothing
+	 * down the right-hand edge of a tab that is otherwise all graph.
 	 *
-	 * This one is not a handle -- the sidenav's button is the way back, and
-	 * collapse="after" is deliberately not set (see create()) -- so core's
-	 * treatment would leave a strip of nothing beside the icons. Both artefacts
-	 * have shipped: the doubled, darker edge from letting both lines land
-	 * together, and the strip from taking core's answer to it.
-	 *
-	 * So: the sidenav draws the edge, and the splitter gets out of the way
-	 * entirely. The margins keep it at zero layout width the same way core's own
-	 * rule does, off the same variable, so the density bump on --draggable-size
-	 * cancels itself. The line you see is the sidenav's border-inline-start --
-	 * which is the same line, from the same element, that the library shows
-	 * beside ITS collapsed item pane.
+	 * The way back is the button in the page's top bar, which is exactly where
+	 * the reader puts it, so the splitter has no job at all in this state and
+	 * gets out of the way entirely. The margins keep it at zero layout width the
+	 * same way core's own rule does, off the same variable, so the density bump
+	 * on --draggable-size cancels itself.
 	 *
 	 * The selector is core's own, qualified. It has to be: the rule being
 	 * overridden is
@@ -132,40 +114,9 @@ const PANE_CSS = `
 	 */
 	splitter.zg-pane-splitter:not([orient="vertical"])[substate="after"][state="collapsed"] {
 		border: 0;
-		background: none;
 		margin-left: calc(1px - var(--draggable-size));
 		margin-right: -1px;
 		pointer-events: none;
-	}
-	/*
-	 * Expanded, the divider now stops short of the top of the tab, because the
-	 * bar above it is one bar and not two beside each other.
-	 *
-	 * Core's rule paints the line as border-right on the splitter, which runs
-	 * the full height of the row -- and the row starts at the top of the tab, so
-	 * the line would cross the bar and cut it in two. The library never shows
-	 * that: its toolbars sit INSIDE the panes they belong to, so a divider
-	 * begins where the panes do, under them.
-	 *
-	 * The border stays, at its own width and with core's margins, so nothing
-	 * about the geometry or the grab area moves; only its colour goes, and the
-	 * line is repainted as a 1px background column in the same place. A
-	 * background is painted under the border box by default, so "the last 1px of
-	 * the element" IS the border-right, to the pixel -- and a gradient can start
-	 * it below the bar, which a border cannot.
-	 *
-	 * The same treatment as the left-hand edge, which never had to ask for it:
-	 * #side's border-right is in the graph page's second grid row, and the bar
-	 * is the first.
-	 */
-	splitter.zg-pane-splitter:not([orient="vertical"])[substate="after"] {
-		border-right-color: transparent;
-		background:
-			linear-gradient(
-				to bottom,
-				transparent ${BAR_TOTAL}px,
-				var(--fill-quarternary) ${BAR_TOTAL}px)
-			100% 0 / 1px 100% no-repeat;
 	}
 	.zg-pane {
 		min-width: ${MIN_WIDTH}px;
@@ -176,51 +127,30 @@ const PANE_CSS = `
 		flex-shrink: 1;
 	}
 	/*
-	 * Core's own rule for a collapsed item pane, against the attribute core's
-	 * helper writes. From zotero.css, unchanged but for the selector:
+	 * There is deliberately NO rule here for [collapsed="true"].
 	 *
-	 *   item-pane[collapsed=true] {
-	 *     min-width: 37px; min-height: 37px; max-width: 37px; visibility: inherit;
-	 *   }
+	 * XUL's UA sheet gives [collapsed="true"] a visibility of collapse, which
+	 * takes the panel out of the layout entirely -- sidenav and all -- and lets
+	 * the graph have the whole tab back. That is what core's reader does, and
+	 * this tab is the reader's shape:
 	 *
-	 * 37px is the sidenav, which is the whole of the panel once it is collapsed.
-	 * The visibility is load-bearing and is core's: XUL's UA sheet gives
-	 * [collapsed="true"] a visibility of collapse, which would take the sidenav
-	 * down with everything else and leave no way back.
+	 *   #zotero-context-pane   collapsed="true", nothing overriding it. The pane
+	 *                          and its <item-pane-sidenav> both go, the reader's
+	 *                          toolbar runs the full width, and the toolbar's
+	 *                          own context-pane-toggle is the way back.
+	 *   item-pane              the library's, which DOES override it:
+	 *                          min/max-width 37px and visibility: inherit, so
+	 *                          the sidenav survives as a strip of icons.
+	 *
+	 * The library's rule was copied here, and it was the wrong one of the two.
+	 * It left a 37px column of icons beside a graph in a tab whose top bar --
+	 * unlike the library's toolbars, which sit inside their own panes -- runs
+	 * across everything to its left, so the strip read as a leftover rather than
+	 * as a pane put away. Taking the rule out is the whole of the fix: the panel
+	 * collapses to nothing, the page's bar reaches the edge of the window
+	 * because its <browser> now does, and the toggle appears at the end of that
+	 * bar, in the same place on screen the sidenav's own button just left.
 	 */
-	.zg-pane[collapsed="true"] {
-		min-width: 37px;
-		min-height: 37px;
-		max-width: 37px;
-		visibility: inherit;
-	}
-	/*
-	 * The graph page's top bar, continued across the panel.
-	 *
-	 * The bar is drawn in the content page (content/graph.html), and a content
-	 * page can only paint inside its own <browser> -- which stops at the
-	 * splitter. So the bar stopped there too, and the tab had a toolbar over
-	 * most of its width and the bare top of the item pane over the rest: the
-	 * left edge of the window and the right edge did not match.
-	 *
-	 * This is that missing piece, and it is deliberately nothing but the
-	 * toolbar's own paint -- same height, same background, same bottom border,
-	 * all three from the tokens core's own
-	 * "#zotero-layout-switcher .zotero-toolbar" rule uses, so the two halves
-	 * meet without a seam. Nothing is IN it, which is also what the library
-	 * shows above its item pane: the quick search sits at the right-hand end of
-	 * the items toolbar and not over the pane beyond it, and the page's search
-	 * field is in the same place for the same reason.
-	 *
-	 * It stays when the panel collapses, at the sidenav's 37px, so the bar
-	 * reaches the edge of the window either way.
-	 */
-	.zg-pane-bar {
-		height: ${BAR_HEIGHT}px;
-		min-height: ${BAR_HEIGHT}px;
-		background: var(--material-toolbar);
-		border-bottom: var(--material-panedivider);
-	}
 `;
 
 /**
@@ -265,12 +195,8 @@ function showing(entry) {
 /**
  * The panel for this tab, built on the first ask.
  *
- * The box comes with its top strip already in it (see create()), and the item
- * pane is appended after it -- which is why .zg-item-row carries flex: 1, and
- * why this returns the box rather than an emptied one.
- *
  * @param {Object} entry  the graphTab record for this tab
- * @returns {Element} the box to build into, under the bar
+ * @returns {Element} the box to build into
  */
 function panel(entry) {
 	let existing = entry.pane;
@@ -382,19 +308,12 @@ function create(entry) {
 	let box = doc.createXULElement('vbox');
 	box.className = 'zg-pane';
 
-	// The top bar's last stretch, carried past the browser that draws the rest
-	// of it. First child and never removed, so whatever the item pane does
-	// below it happens under the bar. See PANE_CSS.
-	let bar = doc.createXULElement('hbox');
-	bar.className = 'zg-pane-bar';
-	box.appendChild(bar);
-
 	entry.split.appendChild(style);
 	entry.split.appendChild(splitter);
 	entry.split.appendChild(box);
 
 	let pane = {
-		box, bar, splitter, style,
+		box, splitter, style,
 		observer: null,
 		// Only ever read while collapsed, when the box carries no width of its own.
 		width: 0,
@@ -460,4 +379,4 @@ function pref(name) {
 	}
 }
 
-module.exports = { panel, collapsed, setCollapsed, close, watch, showing, MIN_WIDTH, BAR_HEIGHT };
+module.exports = { panel, collapsed, setCollapsed, close, watch, showing, MIN_WIDTH };

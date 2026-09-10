@@ -665,14 +665,16 @@ async function handleMessage(win, tabID, collection, msg) {
 			if (entry) nodeMenu.close(entry.win);
 			break;
 		}
-		// The item pane's toggle, at the far end of the page's top bar -- where
-		// the reader keeps the same control. Core's own Toggle Item Pane in the
-		// pane's sidenav still works and is still the way back from a collapsed
-		// pane; the reader carries both for the same reason.
+		// The button at the far end of the page's top bar, which is only on
+		// screen while the panel is away -- the panel takes its sidenav, and
+		// core's own Toggle Item Pane with it, down when it collapses. So this
+		// is the way back, and it is the reader's way back: the same control in
+		// the same place, handed from the sidenav to the toolbar as the toolbar
+		// grows into the space the pane leaves.
 		//
-		// The button is disabled until there is a pane, so this is never the
-		// first thing to open one: a pane describes the node you clicked, and
-		// there is nothing to describe before a click.
+		// Hidden until there is a panel at all, so this is never the first thing
+		// to build one: the pane describes the node you clicked, and there is
+		// nothing to describe before a click.
 		case 'item-pane-toggle': {
 			let entry = open_.get(tabID);
 			if (entry && entry.pane) itemPane.collapse(entry, !splitPane.collapsed(entry));
@@ -1371,8 +1373,9 @@ function chromeProps(win) {
  * has in common is that it goes through splitPane. See splitPane.watch().
  *
  * `has` and `open` are two facts, not one. A pane that has never been built is
- * not a pane that is closed -- there is nothing in it to show, because nothing
- * has been clicked -- and the button is disabled rather than dark.
+ * not a pane that is merely put away: there is nothing in it to show, because
+ * nothing has been clicked, so the bar carries no button at all rather than one
+ * that would open an empty pane.
  */
 splitPane.watch((entry) => {
 	if (!entry || !open_.has(entry.tabID)) return;

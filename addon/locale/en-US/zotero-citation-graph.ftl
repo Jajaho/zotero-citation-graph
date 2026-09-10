@@ -76,10 +76,10 @@ zotero-citation-graph-reframe-hint = Fit the whole graph in view
 zotero-citation-graph-side-toggle-hide = Hide the sidebar
 zotero-citation-graph-side-toggle-show = Show the sidebar
 
-# The item pane, at the other end of the bar. Zotero's own wording for the same
-# control is "Toggle Item Pane"; this pair says which way it will go, as the
-# sidebar's does above.
-zotero-citation-graph-pane-toggle-hide = Hide the item pane
+# The button that brings the item pane back, at the other end of the bar. Only
+# one string, because the button is only there while the pane is away: putting
+# it away is done from the pane's own sidenav, which is Zotero's "Toggle Item
+# Pane" and is on screen exactly when this button is not.
 zotero-citation-graph-pane-toggle-show = Show the item pane
 
 zotero-citation-graph-search-placeholder = Search

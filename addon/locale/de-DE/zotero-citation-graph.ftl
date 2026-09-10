@@ -65,7 +65,6 @@ zotero-citation-graph-reframe-hint = Ganzen Graphen einpassen
 zotero-citation-graph-side-toggle-hide = Seitenleiste ausblenden
 zotero-citation-graph-side-toggle-show = Seitenleiste einblenden
 
-zotero-citation-graph-pane-toggle-hide = Infobereich ausblenden
 zotero-citation-graph-pane-toggle-show = Infobereich einblenden
 
 zotero-citation-graph-search-placeholder = Suchen

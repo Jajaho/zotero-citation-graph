@@ -36,15 +36,20 @@
  * does: one gesture asks "what is this paper", and both halves of the answer
  * -- what it is connected to, and what it is -- arrive together.
  *
- * Putting it away is core's own Toggle Item Pane button, first in the sidenav.
- * It collapses the pane to its 37px strip of icons exactly as it does in the
- * library, and the same click on any section icon brings it back -- both
- * through `_collapsed`, which ItemPaneContainerBase resolves by looking for an
+ * Putting it away is core's own Toggle Item Pane button, first in the sidenav,
+ * through `_collapsed` -- which ItemPaneContainerBase resolves by looking for an
  * enclosing `<item-pane>` or `<context-pane>`. There is neither of those here,
  * so the button was inert (and hidden) until that property was answered: the
  * instance below shadows it with one that drives splitPane.js instead. Nothing
  * else about the button changes -- not the icon, not the keyboard handling, not
  * what a section click does on the way past.
+ *
+ * What it collapses TO is the reader's answer and not the library's: the whole
+ * panel leaves the layout, this sidenav with it, and the graph takes the tab
+ * back. So this button is a one-way door -- there is no strip of icons left to
+ * click -- and the way back is the button at the end of the graph page's top
+ * bar, which is on screen exactly when this one is not, in the same place. See
+ * splitPane.js.
  */
 
 let l10n = require('./l10n.js');
@@ -59,14 +64,6 @@ const PANE_CSS = `
 		flex: 1;
 		min-height: 0;
 		min-width: 0;
-	}
-	/* Collapsed, the sidenav is the whole panel. Core's own rule, which it
-	   writes as "item-pane[collapsed=true] #zotero-item-pane-content" -- that
-	   id belongs to the library's deck and not to ours, but it is the same
-	   element in the same place, and the attribute is the same one, because the
-	   collapse is core's own (splitPane.js). */
-	.zg-pane[collapsed="true"] .zg-item-row > .zotero-item-pane-content {
-		visibility: collapse;
 	}
 `;
 

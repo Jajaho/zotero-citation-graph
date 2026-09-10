@@ -285,11 +285,11 @@
 	 * Whether the item pane is there, and whether it is open.
 	 *
 	 * Both are chrome's facts and neither can be worked out here: the pane is a
-	 * XUL element in the main window, and it is opened and collapsed by four
+	 * XUL element in the main window, and it is opened and put away by four
 	 * different gestures -- a click on a node, "what is missing", core's own
 	 * Toggle Item Pane in the pane's sidenav, and the button below. Pushed after
-	 * every one of them (lib/graphTab.js), so the button in the bar says what
-	 * the pane is actually doing rather than what it was last asked to do.
+	 * every one of them (lib/graphTab.js), so the bar shows the button exactly
+	 * when the sidenav that would otherwise carry it is not on screen.
 	 */
 	window.zgSetPane = function (json) {
 		let state;
@@ -3687,20 +3687,21 @@
 	});
 
 	/**
-	 * The item pane's toggle, drawn the same way as the sidebar's for the same
-	 * reason: lit while the pane is open, so the button reads as a toggle.
+	 * Show the button, or take it away.
 	 *
-	 * It reports rather than decides. Nothing here knows whether the pane is
-	 * open -- the click goes to chrome, and what comes back is zgSetPane.
+	 * Deliberately NOT a toggle that stays put and lights up, which is what
+	 * #side-toggle is. There is one collapse control for the item pane and it
+	 * moves: while the pane is open it is the first button of the pane's own
+	 * sidenav, and this button would be a second one saying the same thing. When
+	 * the pane goes, the sidenav goes with it -- it is inside the pane -- and
+	 * this takes over the place on screen it just left, because the bar now
+	 * reaches that far. The reader does exactly this.
+	 *
+	 * So there is nothing to light: whenever it is visible the pane is away, and
+	 * pressing it can only mean one thing.
 	 */
 	function setPaneOpen(has, on) {
-		elPaneToggle.disabled = !has;
-		elPaneToggle.classList.toggle('on', has && on);
-		elPaneToggle.setAttribute('aria-expanded', has && on ? 'true' : 'false');
-		// Both ids written out at each call, as in setSideOpen: npm test reads
-		// the ids this page asks for out of the source.
-		elPaneToggle.title = t(has && on ? 'pane-toggle-hide' : 'pane-toggle-show');
-		elPaneToggle.setAttribute('aria-label', t(has && on ? 'pane-toggle-hide' : 'pane-toggle-show'));
+		elPaneToggle.hidden = !has || on;
 	}
 
 	elPaneToggle.addEventListener('click', () => {

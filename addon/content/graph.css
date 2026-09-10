@@ -158,13 +158,9 @@ body {
 
 /*
  * The shape of Zotero's own library tab. Two rows: the bar spans both columns,
- * and under it the sidebar sits beside the canvas -- so the bar runs from the
- * sidebar's outer edge to the far side of the canvas without a divider crossing
- * it, exactly as the library's two toolbars do.
- *
- * That is as far as this document reaches. The bar carries on over the item
- * pane, which is chrome and outside this page's <browser>; lib/splitPane.js
- * draws that stretch of it, to the same height and off the same tokens.
+ * and under it the sidebar sits beside the canvas -- which is why the bar runs
+ * from the sidebar's outer edge to the item pane's, exactly as the library's
+ * two toolbars do.
  *
  * The sidebar's width is a custom property rather than a width on #side so
  * that closing it is one value changing, and the canvas is 1fr so it takes
@@ -263,11 +259,10 @@ body {
 	transform: scaleX(-1);
 }
 
-/* reader.css .toolbar-button:disabled. There is no pane until a node has been
-   clicked, and nothing to say about one that does not exist. */
-#bar > button:disabled {
-	opacity: 0.5;
-	pointer-events: none;
+/* The button is only here while the pane is away, and #bar > button is
+   display: flex, which a bare [hidden] does not beat. */
+#bar > button[hidden] {
+	display: none;
 }
 
 /* --- The search field -------------------------------------------------- */

@@ -900,10 +900,11 @@ class FakeElement {
 	}
 
 	getBoundingClientRect() {
-		// 37px once collapsed -- the sidenav, which is the whole of the panel
-		// then. Under MIN_WIDTH, which is what stops a collapse from being
-		// remembered as a width.
-		return { width: this.getAttribute('collapsed') === 'true' ? 37 : 400 };
+		// Nothing once collapsed: the panel goes out of the layout entirely,
+		// sidenav and all, the way the reader's context pane does. Under
+		// MIN_WIDTH, which is what stops a collapse from being remembered as a
+		// width.
+		return { width: this.getAttribute('collapsed') === 'true' ? 0 : 400 };
 	}
 }
 
@@ -942,21 +943,11 @@ check('the side panel is built once and closes with the tab', () => {
 	Zotero.Prefs = { get: () => 420, set: () => {} };
 
 	const box = splitPane.panel(entry);
-	// The panel is not empty when it is handed over: the graph page's top bar
-	// cannot paint past its own <browser>, so the last stretch of it is a strip
-	// in here, and the item pane goes under that strip rather than over it.
-	const bar = box.children[0];
-	if (!bar || bar.className !== 'zg-pane-bar') {
-		throw new Error('the panel opens straight onto the item pane, so the top bar '
-			+ 'stops at the splitter and the two sides of the window do not match');
-	}
-	const inside = box.appendChild(element('hbox'));
+	box.appendChild(element('hbox'));
 	// Asking again is not a reason to rebuild: the item pane asks on every
 	// click, and a rebuilt panel would throw away the pane inside it.
 	if (splitPane.panel(entry) !== box) throw new Error('the panel was rebuilt');
-	if (box.children.length !== 2) throw new Error('a second ask emptied the panel');
-	if (box.children[0] !== bar) throw new Error('the item pane was put above the bar');
-	if (box.children[1] !== inside) throw new Error('a second ask emptied the panel');
+	if (box.children.length !== 1) throw new Error('a second ask emptied the panel');
 
 	const splitter = made.find(el => el.className === 'zg-pane-splitter');
 	if (!splitter) throw new Error('the panel has no divider');
@@ -984,7 +975,7 @@ check('the side panel is built once and closes with the tab', () => {
 	if (!splitter.removed) throw new Error('close() left the divider behind');
 });
 
-check('collapsing leaves the sidenav on screen and remembers the width', () => {
+check('collapsing takes the whole panel away, and remembers the width', () => {
 	const splitPane = require_('./lib/splitPane.js');
 	const { made, win, element } = fakeWindow();
 	const entry = fakeEntry(win, element, 'tab-11');
@@ -1000,21 +991,34 @@ check('collapsing leaves the sidenav on screen and remembers the width', () => {
 	// looks for it -- not on a data- attribute of our own, which is what this
 	// shipped with and what left the rules below unmatched.
 	if (box.getAttribute('collapsed') !== 'true') throw new Error('the panel kept its width');
-	// The one that matters for how it LOOKS. Collapsed, the item pane's content
-	// is visibility: collapse, so the sidenav's own border-inline-start becomes
-	// the pane's outer edge -- and a splitter still drawing its own line there
-	// puts two hairlines side by side and a visibly darker edge than the
-	// library has. Core's [state=collapsed] rules move the splitter's line to
-	// border-left and drop the negative margins, so the edge is one line.
+	// The one that matters for how it LOOKS: with the panel out of the layout
+	// there is nothing for the splitter to sit beside, and core's own
+	// [state=collapsed] rules would leave a hairline and a strip of splitter
+	// down the right of a tab that is otherwise all graph. PANE_CSS overrides
+	// them, and it can only do so once core's helper has written the state.
 	if (splitter.getAttribute('state') !== 'collapsed') {
-		throw new Error('the divider still draws the pane edge the sidenav is now drawing, '
-			+ 'which doubles the hairline: state=' + splitter.getAttribute('state'));
+		throw new Error('the divider keeps drawing an edge for a panel that is no longer '
+			+ 'there: state=' + splitter.getAttribute('state'));
 	}
 	if (splitter.getAttribute('substate') !== 'after') throw new Error('the divider lost its side');
-	// Collapsed is 37px of sidenav, the way core collapses an <item-pane> --
-	// not display:none, which would take the button that collapsed it down too,
-	// and not an emptied panel, which would lose the pane's scroll position.
-	if (box.getAttribute('hidden')) throw new Error('display:none would hide the sidenav too');
+
+	// This tab is the READER's shape, not the library's, and the difference is
+	// exactly here. The library keeps 37px of sidenav on screen and overrides
+	// XUL's visibility: collapse to do it (item-pane[collapsed=true]); the
+	// reader's context pane has no such override, so the pane and the sidenav
+	// inside it both go and the toolbar takes the width back. That override was
+	// copied into this plugin once, and what shipped was a column of icons
+	// beside a graph with no way to read it as a pane that had been put away.
+	const css = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
+	if (css.includes('.zg-pane[collapsed')) {
+		throw new Error('a rule overrides the collapse for .zg-pane, which is what the '
+			+ 'library does: 37px of sidenav stays behind instead of the panel going');
+	}
+
+	// Collapsed, not emptied and not hidden: collapsed is the attribute core's
+	// helper writes and core's stylesheet reads, and the pane inside has to keep
+	// its scroll position for the way back.
+	if (box.getAttribute('hidden')) throw new Error('hidden is not the attribute core writes');
 	if (inside.parent !== box) throw new Error('collapsing emptied the panel');
 	// Neither an inline width nor a XUL width attribute may be left behind to
 	// argue with the collapsed rule. Core's helper clears the attribute; the
@@ -2797,46 +2801,7 @@ function outranks(mine, theirs) {
 	return false;
 }
 
-/**
- * The top bar is drawn twice, in two documents, and has to read as one bar.
- *
- * content/graph.css draws it across the sidebar and the canvas, which is as far
- * as a content page can paint; lib/splitPane.js draws the rest of it over the
- * item pane, which is chrome and sits outside the <browser>. If the two heights
- * drift apart the join becomes a step, and neither file mentions the other --
- * the strip is in a different language in a different directory.
- *
- * The divider under the panel is held to the same number. Its line has to start
- * below the bar or it crosses it and cuts the bar in two, which is exactly what
- * the left-hand edge never does: #side's border is in the second grid row.
- */
-check('the two halves of the top bar are the same height', () => {
-	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
-	const open = css.indexOf('#bar {');
-	if (open < 0) throw new Error('content/graph.css no longer has a #bar to match');
-	const rule = css.slice(open, css.indexOf('}', open));
-	const at = rule.indexOf('height:');
-	if (at < 0) throw new Error('#bar no longer states a height: ' + rule);
-	const page = parseInt(rule.slice(at + 'height:'.length), 10);
-
-	const splitPane = require_('./lib/splitPane.js');
-	if (!page || splitPane.BAR_HEIGHT !== page) {
-		throw new Error('the bar steps where the page stops painting it: #bar is '
-			+ page + 'px and the strip over the item pane is ' + splitPane.BAR_HEIGHT + 'px');
-	}
-
-	// Both carry a 1px bottom border, so the panel's divider starts one past it.
-	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
-	const mark = 'transparent ${';
-	const m = src.indexOf(mark);
-	if (m < 0) throw new Error('the panel divider runs the full height and crosses the bar');
-	const name = src.slice(m + mark.length, src.indexOf('}', m));
-	if (!src.includes('const ' + name + ' = BAR_HEIGHT + 1')) {
-		throw new Error('the divider under the panel starts at ' + name + ', which is not the '
-			+ 'bottom of the bar, so it either crosses the bar or leaves a gap under it');
-	}
-});
-check('a collapsed pane edge is drawn once, by the sidenav', () => {
+check('a collapsed panel leaves no edge and no strip', () => {
 	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
 	const rule = /\n\t([^\n{]*\[state="collapsed"\][^\n{]*)\{([^}]*)\}/.exec(src);
 	if (!rule) throw new Error('nothing styles the splitter of a collapsed pane');
@@ -2844,8 +2809,10 @@ check('a collapsed pane edge is drawn once, by the sidenav', () => {
 	const body = rule[2].replace(/\/\*[\s\S]*?\*\//g, '');
 
 	// The rule this one exists to beat, verbatim from Zotero's stylesheet. It
-	// sets border-left and drops the negative margins, which is the doubled
-	// edge and the protruding strip respectively.
+	// sets border-left and drops the negative margins, which is a hairline and
+	// a protruding strip respectively -- both right for the library, where a
+	// collapsed item pane leaves a sidenav for them to belong to, and both
+	// wrong here, where the panel is gone and the graph runs to the edge.
 	const CORE = 'splitter:not([orient=vertical])[substate=after][state=collapsed]';
 	const mine = specificity(selector);
 	const theirs = specificity(CORE);
@@ -2855,10 +2822,10 @@ check('a collapsed pane edge is drawn once, by the sidenav', () => {
 			+ '. The :not() argument counts toward the middle column, which is what was missed.');
 	}
 
-	// Core's [state=collapsed] rule sets border-left; the sidenav is drawing
-	// that edge now, so the splitter must draw nothing.
+	// Core's [state=collapsed] rule sets border-left; there is no panel on the
+	// far side of it any more, so the splitter must draw nothing.
 	if (!/\bborder\s*:\s*0\b/.test(body)) {
-		throw new Error('the splitter still draws a line at the edge the sidenav draws: ' + body.trim());
+		throw new Error('the splitter still draws an edge for a panel that is not there: ' + body.trim());
 	}
 	// And core drops the negative margins there, which is what turns
 	// --draggable-size into real width. Both have to come back, and off the
