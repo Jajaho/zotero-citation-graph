@@ -82,9 +82,10 @@
 	const SIDE_MIN = 200;
 	const SIDE_MAX = 420;
 
-	// Published by nodeScale.js, nodeLinks.js, nodeFilters.js, graphCluster.js
-	// and graphGaps.js, which graph.html loads first.
+	// Published by nodeScale.js, labelLayout.js, nodeLinks.js, nodeFilters.js,
+	// graphCluster.js and graphGaps.js, which graph.html loads first.
 	const Scale = ZGScale;
+	const LabelLayout = ZGLabels;
 	const Links = ZGLinks;
 	const Filters = ZGFilters;
 	const Cluster = ZGCluster;
@@ -1539,7 +1540,13 @@
 				if (!isPinned(n)) hold(n);
 			});
 			fg.onNodeHover((n) => {
+				let was = hoverNode;
 				hoverNode = n;
+				// Hover used to change nothing on the canvas -- it fed the
+				// tooltip and the gestures and no more. It does now: the node
+				// under the pointer keeps its name whatever the crowding says,
+				// which is only true if a settled graph redraws to say so.
+				if (was !== n) repaint();
 			});
 			// Which node the pointer is carrying, for the guard below. Both
 			// fire on the same condition -- force-graph raises neither until
@@ -1609,6 +1616,10 @@
 					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
 				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8)
 					* (pickedLink(l) ? HL_LINK_WIDTH : 1))
+				// Before the graph, because which names fit is a question about
+				// the whole picture and drawNode is asked it one node at a
+				// time. See reserveLabels().
+				.onRenderFramePre(reserveLabels)
 				// After the graph, so a flag is never buried under the cluster
 				// it gathered.
 				.onRenderFramePost(drawGroups)
@@ -1693,6 +1704,15 @@
 		drawnStructure = structure;
 		drawnRadii = radii;
 		drawnNodes = nodes;
+		// The ranking labels are offered in reads the node set and the radii,
+		// so a render is every moment it can have changed -- and a render is
+		// rare, which is the cost the fixed order exists to avoid paying per
+		// frame. Keyed on the array rather than on the two signatures above:
+		// those compare ids, and the ranking holds the node OBJECTS. An
+		// adoption swaps one out for a fresh object under the same id, and a
+		// ranking still pointing at the old one would silently rank a node that
+		// is no longer drawn.
+		if (nodes !== labelRankedFrom) rankLabels(nodes);
 
 		// A settle fixes the graph for a frame or two; a reheat landing inside
 		// that window has to lift the freeze first, or it would lay the graph
@@ -2142,11 +2162,231 @@
 	 * whole graph. A label wider than its own circle is then shrunk to fit, but
 	 * never below the floor; past that it simply overhangs, which is what the
 	 * halo is for.
+	 *
+	 * The curve itself lives in labelLayout.js, because the frame's placement
+	 * pass has to compute exactly the same numbers this does -- a box reserved
+	 * at one size and painted at another is a box that means nothing.
 	 */
 	const LABEL_MIN_PX = 13;
 	const LABEL_MAX_PX = 28;
 	const LABEL_PER_RADIUS = 0.85; // screen px of type per px of node radius
 	const LABEL_FIT = 1.9;         // how far past its diameter a label may run
+	const LABEL_SIZING = {
+		min: LABEL_MIN_PX, max: LABEL_MAX_PX,
+		perRadius: LABEL_PER_RADIUS, fit: LABEL_FIT,
+	};
+
+	/**
+	 * Screen px of label width per px of type, measured once per name.
+	 *
+	 * Canvas advance widths are linear in font size for a fixed family, so one
+	 * measurement at a reference size answers every size that name is ever
+	 * drawn at. This is the whole reason the placement pass is affordable: a
+	 * measureText per node per frame is the only expensive thing in it, and the
+	 * cache turns that into a string compare and a multiply.
+	 *
+	 * Keyed on the label text rather than invalidated by hand -- render()
+	 * rewrites n.label whenever a looked-up name lands, and a cache that had to
+	 * be told about that is a cache that will one day not be.
+	 */
+	const LABEL_REF_PX = 100;
+
+	function labelWidthPer(node, ctx) {
+		if (node._labelMeasured !== node.label) {
+			ctx.font = LABEL_REF_PX + 'px sans-serif';
+			node._labelPer = ctx.measureText(node.label).width / LABEL_REF_PX;
+			node._labelMeasured = node.label;
+		}
+		return node._labelPer;
+	}
+
+	/** Type size and width for one node's name, both in screen px. Shared by
+	 *  the placement pass and the draw, which must agree exactly. */
+	const _labelSize = { px: 0, w: 0 };
+
+	function labelMetrics(node, ctx, globalScale) {
+		let r = nodeRadius(node) * globalScale;
+		return LabelLayout.size(r, labelWidthPer(node, ctx), LABEL_SIZING, _labelSize);
+	}
+
+	// --- which names fit --------------------------------------------------
+
+	/**
+	 * A big graph drawn one label at a time is a field of overlapping text: at
+	 * the zoom where you want to read the names, no name is readable. So the
+	 * frame decides for the whole picture at once -- see labelLayout.js for the
+	 * rule, which is greedy occlusion in a fixed order of importance.
+	 *
+	 * What is fixed about that order is the point. It is a property of the node
+	 * (what the panel is sizing by, then degree), never of where the node
+	 * happens to be sitting, so the visible names drop out from the bottom of
+	 * the ranking upward as you pull back rather than churning -- and the paper
+	 * you are most likely to be looking for keeps its name the longest.
+	 *
+	 * Above that ranking sit the names the user has asked for by hand: the node
+	 * under the pointer, the pick, the pins. Those are not ranked at all, they
+	 * are placed first and unconditionally. Hiding the name of the thing
+	 * someone just clicked to answer a question about crowding is the one
+	 * outcome this whole feature must not produce.
+	 */
+	const LABEL_PAD = 3;        // screen px of air between two reserved boxes
+	const LABEL_STICKY = 0.85;  // a shown label is tested at this of its width
+	const LABEL_FADE_MS = 140;  // in and out, so a verdict flip is not a blink
+
+	let labelOrder = [];        // drawnNodes, ranked; see rankLabels()
+	let labelRankedFrom = null; // the node array labelOrder was built from
+	let labelPass = LabelLayout.pass();
+	let labelFading = false;    // any node mid-fade, so the canvas stays dirty
+	let labelClock = 0;         // timestamp the current frame's fade steps from
+
+	/**
+	 * Rank the nodes once, not once per frame. Called from updateGraph, which
+	 * already knows when the node set or the radii moved -- and those are the
+	 * only two things this order reads.
+	 */
+	function rankLabels(nodes) {
+		labelRankedFrom = nodes;
+		labelOrder = LabelLayout.order(nodes, n => [nodeRadius(n), n.deg || 0]);
+	}
+
+	/** The names placed before any ranking is consulted. Small and volatile, so
+	 *  it is gathered per frame rather than folded into the sort. */
+	function labelForced(n) {
+		return n === hoverNode || isPicked(n) || pinnedByUser(n);
+	}
+
+	/**
+	 * The frame's placement pass, run before force-graph paints anything.
+	 *
+	 * Everything here is in SCREEN pixels: boxes from two different zoom levels
+	 * are never compared, and screen space is the space the crowding actually
+	 * happens in. drawLabel then reads the verdict off the node.
+	 */
+	function reserveLabels(ctx, globalScale) {
+		if (!fg) return;
+		let w = elGraph.clientWidth;
+		let h = elGraph.clientHeight;
+		// Screen origin in graph coordinates, so a node's position can be put
+		// into screen space with a multiply and an add rather than a call per
+		// node into force-graph's own converter.
+		let tl = fg.screen2GraphCoords(0, 0);
+		let ox = tl.x * globalScale;
+		let oy = tl.y * globalScale;
+		labelPass.begin(
+			Math.max(24, 5 * LABEL_MIN_PX),
+			LabelLayout.capacity(w, h, 2 * LABEL_MIN_PX, LABEL_MIN_PX + LABEL_PAD),
+			0, 0);
+		labelClock = now();
+		labelFading = false;
+
+		// The group flags first: they are furniture rather than data, they are
+		// drawn over everything by drawGroups, and a name that goes under one is
+		// a name that was never really shown. See FLAG_MAST and friends.
+		for (let g of groups) {
+			let x = g.x * globalScale - ox;
+			let y = g.y * globalScale - oy;
+			labelPass.claim(x - FLAG_DOT, y - FLAG_MAST - FLAG_LABEL_PX,
+				x + FLAG_FLY + 4 + flagLabelWidth(g, ctx), y + FLAG_DOT);
+		}
+
+		// Two walks over the same ranking rather than a sort that folds the
+		// forced names in: which nodes are forced changes on every hover, and
+		// re-sorting a whole graph to move three names to the front would be
+		// the one expensive thing in a pass built to avoid exactly that.
+		for (let n of labelOrder) {
+			if (labelForced(n)) placeLabel(n, ctx, globalScale, ox, oy, true);
+		}
+		for (let n of labelOrder) {
+			if (!labelForced(n)) placeLabel(n, ctx, globalScale, ox, oy, false);
+			fadeLabel(n);
+		}
+		// force-graph stops redrawing once the simulation has cooled, and a
+		// fade started on the last frame of a settle would freeze halfway
+		// through. Self-limiting: it asks for frames only while something is
+		// actually moving, which is at most LABEL_FADE_MS of them.
+		if (labelFading) repaint();
+	}
+
+	/**
+	 * Offer one node's name the room it needs, and record whether it got it.
+	 *
+	 * The node's own circle is reserved along with the text. A label is painted
+	 * ON its node, so a long name lies across whatever circles are behind it --
+	 * and those circles are carrying the colour the legend explains. Letting a
+	 * name cover them would trade one kind of legibility for another.
+	 *
+	 * A name shown last frame is tested at LABEL_STICKY of its width, so it has
+	 * to be clearly overlapped to lose its place rather than merely brushed.
+	 * Without that hysteresis a label on a boundary strobes as the layout
+	 * jitters, and a strobing label is worse than no label.
+	 */
+	function placeLabel(node, ctx, globalScale, ox, oy, force) {
+		node._labelWant = 0;
+		if (!node.label) return;
+		// Dimmed nodes lose their label entirely rather than fading it -- see
+		// drawLabel -- so they must not take up room either.
+		if (dimmed(node)) return;
+		let x = node.x * globalScale - ox;
+		let y = node.y * globalScale - oy;
+		let r = nodeRadius(node) * globalScale;
+		let m = labelMetrics(node, ctx, globalScale);
+		let half = m.w / 2 + LABEL_PAD;
+		let tall = m.px / 2 + LABEL_PAD;
+		// Off screen: no verdict at all. Not "hidden" -- a node scrolled back
+		// into view must not have to earn its name a second time by fading in.
+		let w = elGraph.clientWidth;
+		let h = elGraph.clientHeight;
+		if (x + half < 0 || x - half > w || y + tall < 0 || y - tall > h) return;
+		let box = Math.max(half, r);
+		let boxY = Math.max(tall, r);
+		if (force) {
+			labelPass.claim(x - box, y - boxY, x + box, y + boxY);
+			node._labelWant = 1;
+			return;
+		}
+		// Once the viewport holds every name it could, the rest of the ranking
+		// cannot change the answer -- and on a graph of tens of thousands it is
+		// the rest of the ranking that costs. Below the cap this never fires:
+		// the packing runs out of room long before the count does.
+		if (labelPass.full()) return;
+		let k = node._labelLit > 0 ? LABEL_STICKY : 1;
+		if (labelPass.hits(x - box * k, y - boxY * k, x + box * k, y + boxY * k)) return;
+		labelPass.claim(x - box, y - boxY, x + box, y + boxY);
+		node._labelWant = 1;
+	}
+
+	/**
+	 * Ease a node toward its verdict instead of switching.
+	 *
+	 * The pass is binary and the layout underneath it is still moving, so a
+	 * label near a boundary can flip on a single frame. Faded over
+	 * LABEL_FADE_MS that reads as the picture breathing; switched, it reads as
+	 * a bug. It is also what makes the honest caveat of greedy placement
+	 * bearable: a name CAN come back when whatever was blocking it drifts away,
+	 * and arriving gently is the difference between that being motion and being
+	 * a flash.
+	 */
+	function fadeLabel(node) {
+		let want = node._labelWant || 0;
+		let lit = node._labelLit;
+		if (lit === undefined) lit = node._labelLit = want;
+		// Stamped on every frame, settled or not. Stamping only while a fade is
+		// running leaves the mark at whenever the last one ended, so the first
+		// step of the next fade would be measured from seconds ago and land at
+		// full strength -- a fade that exists but never runs.
+		let last = node._labelAt || labelClock;
+		node._labelAt = labelClock;
+		if (lit === want) return;
+		let step = Math.max(0, labelClock - last) / LABEL_FADE_MS;
+		lit += want > lit ? step : -step;
+		node._labelLit = Math.max(0, Math.min(1, lit));
+		if (node._labelLit !== want) labelFading = true;
+	}
+
+	function now() {
+		return (window.performance && window.performance.now)
+			? window.performance.now() : Date.now();
+	}
 
 	function drawNode(node, ctx, globalScale) {
 		drawPick(node, ctx, globalScale);
@@ -2274,18 +2514,25 @@
 		// stroke is what makes a label readable over dense edges, and a faded
 		// halo over a faded label is just a smudge.
 		if (dimmed(node)) return;
+		// What the frame's placement pass decided there was room for, eased
+		// rather than switched -- see reserveLabels() and fadeLabel(). Both the
+		// halo and the ink take it, so a label on its way out thins evenly
+		// instead of the text outrunning its own backing.
+		let lit = node._labelLit;
+		if (!lit) return;
 		let theme = themeColors();
 		// Everything here is reasoned in screen pixels and divided by
 		// globalScale on the way into the canvas, which is in graph units --
 		// that is what keeps the type a constant size at any zoom.
-		let r = nodeRadius(node) * globalScale;
-		let px = Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, r * LABEL_PER_RADIUS));
+		let px = labelMetrics(node, ctx, globalScale).px;
 		ctx.font = (px / globalScale) + 'px sans-serif';
-		let fit = 2 * r * LABEL_FIT;
-		let w = ctx.measureText(node.label).width * globalScale;
-		if (w > fit) {
-			px = Math.max(LABEL_MIN_PX, px * (fit / w));
-			ctx.font = (px / globalScale) + 'px sans-serif';
+		// save/restore rather than putting the alpha back to 1 by hand: 1 is
+		// what the canvas happens to be on today, not something this function
+		// is entitled to assert. Paid only during a fade, which is at most
+		// LABEL_FADE_MS worth of frames.
+		if (lit < 1) {
+			ctx.save();
+			ctx.globalAlpha = lit;
 		}
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
@@ -2299,6 +2546,7 @@
 		ctx.strokeText(node.label, node.x, node.y);
 		ctx.fillStyle = node.ghost ? theme.muted : theme.fg;
 		ctx.fillText(node.label, node.x, node.y);
+		if (lit < 1) ctx.restore();
 	}
 
 	/** Read from the stylesheet rather than hardcoded, so light/dark both work. */
@@ -3169,6 +3417,19 @@
 			ctx.fillStyle = g.filters.length ? theme.fg : theme.muted;
 			ctx.fillText(label, x, y);
 		}
+	}
+
+	/** How much room a flag's own text takes, in screen px, for the placement
+	 *  pass to reserve. Measured through the same per-name cache the node
+	 *  labels use -- a group's text changes only when its masks do. */
+	function flagLabelWidth(g, ctx) {
+		let text = groupLabel(g);
+		if (g._labelMeasured !== text) {
+			ctx.font = LABEL_REF_PX + 'px sans-serif';
+			g._labelPer = ctx.measureText(text).width / LABEL_REF_PX;
+			g._labelMeasured = text;
+		}
+		return FLAG_LABEL_PX * g._labelPer;
 	}
 
 	/** What the flag says: the masks it pulls by, or the invitation to say. */

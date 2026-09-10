@@ -681,6 +681,161 @@ check('areaFor round-trips through force-graph own sqrt', () => {
 	}
 });
 
+// --- label placement (content/labelLayout.js) -------------------------------
+
+/** Evaluate the content-page script the same way the browser does. */
+function loadLabels() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/labelLayout.js'), 'utf8');
+	// Empty for the reason loadScale()'s is: the file falls back to globalThis
+	// when `window` is absent, and inside a vm context that IS the context.
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'labelLayout.js' });
+	if (!ctx.ZGLabels) throw new Error('labelLayout.js did not publish ZGLabels');
+	return ctx.ZGLabels;
+}
+
+/** A pass over boxes centred on points, offered in the given order. Returns the
+ *  labels that got their room, which is the whole observable behaviour. */
+function place(L, items, opts) {
+	opts = opts || {};
+	const p = L.pass();
+	p.begin(opts.cell || 40, opts.cap || 1000, 0, 0);
+	const shown = [];
+	for (const it of items) {
+		const hw = it.w / 2, hh = it.h / 2;
+		if (p.offer(it.x - hw, it.y - hh, it.x + hw, it.y + hh)) shown.push(it.id);
+	}
+	return shown;
+}
+
+check('the most important name always gets its room', () => {
+	const L = loadLabels();
+	// Ten labels stacked on one point: only the first offered can possibly fit,
+	// and which one that is must be the ranking's answer, not the geometry's.
+	const at = [];
+	for (let i = 0; i < 10; i++) at.push({ id: i, x: 100, y: 100, w: 60, h: 16 });
+	const shown = place(L, at);
+	if (shown.length !== 1 || shown[0] !== 0) throw new Error('kept ' + JSON.stringify(shown));
+});
+
+check('a low-ranked node alone in empty space keeps its name', () => {
+	const L = loadLabels();
+	// The property that makes this readable rather than merely sparse: crowding
+	// is local, so a lone node is not punished for the pile-up across the page.
+	const at = [
+		{ id: 'big', x: 0, y: 0, w: 60, h: 16 },
+		{ id: 'crowd', x: 4, y: 0, w: 60, h: 16 },
+		{ id: 'lonely', x: 900, y: 700, w: 60, h: 16 },
+	];
+	const shown = place(L, at);
+	if (shown.indexOf('crowd') !== -1) throw new Error('an overlapping name was kept');
+	if (shown.indexOf('lonely') === -1) throw new Error('an isolated name was dropped');
+});
+
+check('the ranking is total, so two renders of one graph agree', () => {
+	const L = loadLabels();
+	// Ties broken by input order rather than left to the sort. Without that,
+	// a graph where many nodes share a radius reshuffles which names show
+	// between renders -- a flicker with no cause the user can see.
+	const nodes = [];
+	for (let i = 0; i < 50; i++) nodes.push({ id: i, r: 5, deg: 1 });
+	const keys = n => [n.r, n.deg];
+	const a = L.order(nodes, keys).map(n => n.id);
+	const b = L.order(nodes, keys).map(n => n.id);
+	if (a.join() !== b.join()) throw new Error('same input ranked two ways');
+	if (a.join() !== nodes.map(n => n.id).join()) throw new Error('ties did not hold input order');
+
+	// And the keys are compared in turn, descending, rather than summed.
+	const mixed = [
+		{ id: 'small-hub', r: 1, deg: 99 },
+		{ id: 'landmark', r: 9, deg: 0 },
+		{ id: 'both', r: 9, deg: 3 },
+	];
+	const got = L.order(mixed, keys).map(n => n.id);
+	if (got.join() !== 'both,landmark,small-hub') throw new Error(got.join());
+});
+
+check('pulling back thins the names instead of reshuffling them', () => {
+	const L = loadLabels();
+	// The reason the order must not depend on position or zoom: pulling back
+	// has to THIN the names, from the bottom of the ranking upward, rather than
+	// trade one for another. A position-dependent ranking churns the whole set
+	// on every zoom step, which is the failure this design exists to avoid.
+	//
+	// Not a strict subset at every step, and deliberately not asserted as one:
+	// greedy placement is not monotone under zoom-out. A name CAN come back
+	// when whatever was blocking it is itself dropped -- below, 3 is blocked by
+	// 2 until 2 loses to 0, and then 3 fits. That is why drawLabel fades rather
+	// than switches; arriving gently is what makes it read as the picture
+	// breathing rather than as a flash. What must hold is that the set only
+	// gets smaller, and that the top of the ranking never loses.
+	const spread = [];
+	for (let i = 0; i < 40; i++) spread.push({ id: i, x: i * 30, y: (i % 5) * 30 });
+	let last = Infinity;
+	for (const zoom of [1, 0.8, 0.6, 0.45, 0.3, 0.2]) {
+		const at = spread.map(n => ({ id: n.id, x: n.x * zoom, y: n.y * zoom, w: 50, h: 14 }));
+		const shown = place(L, at, { cell: 50 * zoom });
+		if (shown.length > last) {
+			throw new Error('zoom ' + zoom + ' showed MORE names: ' + last + ' -> ' + shown.length);
+		}
+		// The one name the whole feature promises to keep.
+		if (shown[0] !== 0) throw new Error('zoom ' + zoom + ' dropped the top-ranked name');
+		last = shown.length;
+	}
+	if (last >= 40) throw new Error('the fixture never actually crowded');
+});
+
+check('a box too big to grid is still tested against everything', () => {
+	const L = loadLabels();
+	// The MAX_CELLS escape hatch is a performance shortcut on a correctness
+	// path: a node circle at a deep zoom spans hundreds of cells and goes on a
+	// linear list instead. If that list is ever skipped, the biggest node on
+	// screen silently stops blocking anything.
+	const p = L.pass();
+	p.begin(1, 1000, 0, 0);
+	if (!p.offer(0, 0, 500, 500)) throw new Error('the first box was refused');
+	if (p.offer(250, 250, 260, 260)) throw new Error('a box inside the huge one was let through');
+	if (!p.offer(600, 600, 610, 610)) throw new Error('a box clear of it was refused');
+});
+
+check('a pass reuses its buckets without leaking the last frame', () => {
+	const L = loadLabels();
+	// The generation stamp, which is what lets a frame allocate nothing. A
+	// bucket left over from the previous frame must read as empty, or every
+	// name would be blocked by where a name was one frame ago.
+	const p = L.pass();
+	p.begin(40, 1000, 0, 0);
+	if (!p.offer(0, 0, 30, 12)) throw new Error('first frame refused');
+	p.begin(40, 1000, 0, 0);
+	if (!p.offer(0, 0, 30, 12)) throw new Error('last frame is still holding the space');
+	if (p.count !== 1) throw new Error('the count carried over: ' + p.count);
+});
+
+check('the capacity ceiling never rations names on a readable graph', () => {
+	const L = loadLabels();
+	// It exists to stop a fifty-thousand-node graph testing candidates that
+	// cannot change the answer -- not to cap what a person sees. A typical pane
+	// must have room for far more names than any layout will actually pack.
+	const cap = L.capacity(1200, 800, 26, 16);
+	if (cap < 1000) throw new Error('a full-screen pane is capped at ' + cap + ' names');
+});
+
+check('label sizing shrinks to the node but never below the floor', () => {
+	const L = loadLabels();
+	const o = { min: 13, max: 28, perRadius: 0.85, fit: 1.9 };
+	// Wide type on a big node: follows the radius, up to the ceiling.
+	const big = L.size(100, 0.5, o);
+	if (big.px !== o.max) throw new Error('a landmark was not clamped: ' + big.px);
+	// A long name on a small node is shrunk toward its circle...
+	const long = L.size(6, 4, o);
+	if (long.px > 13.0001) throw new Error('a long name was not shrunk: ' + long.px);
+	// ...but never past the floor, where it simply overhangs instead.
+	if (long.px < o.min) throw new Error('shrank below the floor: ' + long.px);
+	// The width the pass reserves is the width the draw will paint.
+	if (Math.abs(long.w - long.px * 4) > 1e-9) throw new Error('width disagrees with size');
+});
+
 // --- chrome-side modules ---------------------------------------------------
 
 check('lib/ modules load through the shim', () => {
