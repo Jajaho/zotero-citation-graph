@@ -66,6 +66,12 @@ zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers i
 zotero-citation-graph-pin-pull = pin pull
 zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
 
+# What a big collection gives up in order to stay smooth. The hint names the
+# losses rather than promising a gain: what it buys back depends on the graph and
+# the machine, and only the user can see both.
+zotero-citation-graph-perf-mode = performance mode
+zotero-citation-graph-perf-hint = Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.
+
 zotero-citation-graph-item-pane-failed = Could not open Zotero's item pane here.
 
 zotero-citation-graph-filter-placeholder = filter — author:, year:, …

@@ -160,6 +160,11 @@ var recording = false;
  */
 var paintCount = 0;
 
+/** When the renderer last drew anything. What makes "how long until the graph
+ *  stopped moving" answerable to the frame rather than to the polling loop that
+ *  noticed -- see timeToQuiet(). */
+var paintAt = 0;
+
 function hookPaint() {
 	var p = proto();
 	if (p.__zgClear) return;
@@ -167,6 +172,7 @@ function hookPaint() {
 	p.__zgClear = real;
 	p.clearRect = function () {
 		paintCount++;
+		paintAt = W.performance.now();
 		return real.apply(this, arguments);
 	};
 }
@@ -362,9 +368,12 @@ var SCENARIOS = [
 			//
 			// Same size, same shape, same generator: a different draw from the
 			// same distribution, which is a fair thing to average over.
-			cx.settleSeed = (cx.settleSeed || 0) + 1;
+			// In a matrix run every variant gets the SAME fresh collection
+			// within a repeat, so two variants' cold layouts are two
+			// measurements of one graph rather than of two draws. Outside one
+			// there is nothing to line up with, so it simply moves on.
 			var fresh = ZGFixture.collection({
-				n: cx.n, seed: cx.seed + 1000 + cx.settleSeed, edgeRatio: cx.ratio,
+				n: cx.n, seed: cx.seed + 1000 + freshRound(cx), edgeRatio: cx.ratio,
 			});
 			W.zgSetData(JSON.stringify(fresh));
 			return await record(cx.frames, function () {});
@@ -483,6 +492,54 @@ var SCENARIOS = [
 	},
 ];
 
+/**
+ * How long a fresh collection takes to stop moving, in wall-clock ms.
+ *
+ * The one thing about a layout that a table of frame times cannot say. Every
+ * scenario here measures a frame, and a frame is the right unit for "does this
+ * feel smooth" -- but it is the wrong unit entirely for "how long do I look at
+ * a graph flying into place before I can read it", which is what the force
+ * engine actually costs a user opening a collection. Switching the engine off
+ * turns that from force-graph's fifteen-second cooldown into one blocking
+ * anneal and a single paint, and a frame-time benchmark scores that as a
+ * scenario that painted nothing.
+ *
+ * Timed to the last frame the RENDERER drew, not to the poll that noticed --
+ * quiesce() deliberately waits out twenty quiet frames before it believes the
+ * graph has stopped, and charging that patience to the layout would put a third
+ * of a second on every measurement.
+ *
+ * A different collection each repeat, for the reason the settle scenario uses
+ * one: re-sending an identical payload takes updateGraph's cheapest tier and
+ * measures a repaint.
+ */
+async function timeToQuiet(cx) {
+	var fresh = ZGFixture.collection({
+		n: cx.n, seed: cx.seed + 2000 + freshRound(cx), edgeRatio: cx.ratio,
+	});
+	var t0 = W.performance.now();
+	paintAt = 0;
+	W.zgSetData(JSON.stringify(fresh));
+	await quiesce();
+	// Nothing was ever drawn: no answer, rather than a wrong one.
+	return paintAt ? paintAt - t0 : null;
+}
+
+/**
+ * Which draw from the fixture's distribution a cold layout should get.
+ *
+ * A settle has to be handed a collection the renderer has not already got, or
+ * updateGraph takes its cheapest tier and the "cold layout" scenario measures a
+ * repaint -- so it cannot simply re-send. In a matrix run the round number
+ * answers it: every variant in one repeat anneals the same graph, so their cold
+ * layouts differ by the switch and not by the dice. Otherwise a counter, which
+ * is the same guarantee with nothing to line up against.
+ */
+function freshRound(cx) {
+	if (cx.round != null) return cx.round;
+	return (cx.settleSeed = (cx.settleSeed || 0) + 1);
+}
+
 /** Anneal, then wait for the engine to stop, so a scenario about a settled
  *  graph is not silently measuring the tail of the layout. */
 async function settle(cx) {
@@ -537,6 +594,218 @@ async function quiesce(maxFrames) {
 }
 
 /* ------------------------------------------------------------------ *
+ * The matrix
+ *
+ * Every performance switch measured against a baseline -- in ONE
+ * browser session, with the variants interleaved.
+ *
+ * The first version ran each variant as its own browser: a baseline,
+ * then eleven more, one after another. It reported the edge tint at
+ * -32% and the label halo at +13%, and the halo is 0.46ms of an 18.4ms
+ * frame by ablation -- so +13% is not a slow halo, it is a busy machine.
+ * Every variant after the fourth was measured on a machine progressively
+ * more loaded than the one the baseline got, and best-of-repeats cannot
+ * rescue a comparison in which every repeat of the later side is
+ * contaminated and none of the earlier side is.
+ *
+ * bench.js already had the answer one level down: repeats are
+ * interleaved rather than nested, so a machine that slows down halfway
+ * through taxes every scenario equally instead of loading the whole
+ * penalty onto whichever ran last. The variants needed the same
+ * treatment, and they can have it, because a switch is only a zgPerf
+ * call -- nothing about a variant requires a browser of its own.
+ * ------------------------------------------------------------------ */
+
+/** Every switch there is, so that a variant states its whole configuration
+ *  rather than inheriting whatever the one before it left behind. */
+var SWITCHES = ['physics', 'collide', 'arrows', 'curves', 'tint', 'labels',
+	'halo', 'fade', 'memo'];
+
+/** Everything that costs the picture something to turn off -- which is every
+ *  switch except the colour cache, whose whole point is that it costs nothing.
+ *  Turning THAT off in a variant called "everything off" would make the fastest
+ *  row slower than the ones above it. */
+var PICTURE = SWITCHES.filter(function (k) { return k !== 'memo'; });
+
+/** Scenarios that repaint a layout which is not moving -- all a drawing switch
+ *  can touch. Naming them is a claim, not a saving: a switch that changes only
+ *  what is painted cannot move what a layout costs, and running it against a
+ *  layout scenario spends fifteen seconds a repeat to measure the noise floor. */
+var MX_DRAW = ['steady', 'pan', 'zoom', 'isolate'];
+
+/** Scenarios that disturb the layout, and so pay for the engine. */
+var MX_LAYOUT = ['settle', 'drag-node', 'filter', 'add-papers'];
+
+/** A full switch set with the named ones off. */
+function offOnly() {
+	var patch = {};
+	for (var i = 0; i < SWITCHES.length; i++) patch[SWITCHES[i]] = true;
+	for (var j = 0; j < arguments.length; j++) patch[arguments[j]] = false;
+	return patch;
+}
+
+var MATRIX = [
+	// The build every other row is a delta from.
+	{ name: 'baseline', perf: offOnly(), only: null, wall: true },
+
+	// One switch at a time. Switched together they cannot be told apart, and a
+	// mode assembled out of switches nobody measured gives away parts of the
+	// picture for nothing.
+	{ name: 'no-arrows', perf: offOnly('arrows'), only: MX_DRAW },
+	{ name: 'no-curves', perf: offOnly('curves'), only: MX_DRAW },
+	{ name: 'no-tint', perf: offOnly('tint'), only: MX_DRAW },
+	{ name: 'no-labels', perf: offOnly('labels'), only: MX_DRAW },
+	{ name: 'no-halo', perf: offOnly('halo'), only: MX_DRAW },
+	{ name: 'no-fade', perf: offOnly('fade'), only: MX_DRAW },
+	// Not a feature: what the colours cost when they are worked out per node
+	// and per link per frame instead of once per change. The only row here
+	// whose switch nobody should ever turn off on purpose -- an optimisation
+	// that cannot be turned off is one that cannot be measured, and this is
+	// how it stays honest.
+	{ name: 'no-memo', perf: offOnly('memo'), only: MX_DRAW },
+	{ name: 'no-collide', perf: offOnly('collide'), only: MX_LAYOUT, wall: true },
+	{ name: 'no-physics', perf: offOnly('physics'), only: MX_LAYOUT, wall: true },
+
+	// Every drawing switch, engine untouched: what a big graph gains without
+	// giving up the physics at all.
+	{
+		name: 'draw-only',
+		perf: offOnly('arrows', 'curves', 'tint', 'labels', 'halo', 'fade'),
+		only: MX_DRAW,
+	},
+
+	// The mode as the panel's checkbox sets it -- asked of the page rather than
+	// restated here. The first version of this row named the switches itself
+	// and drifted from PERF_MODE the moment either changed: it set four of the
+	// six and published the answer as the mode's. A table about a mode has to
+	// get the mode from whatever defines it.
+	{ name: 'perf-mode', mode: true, only: null, wall: true },
+
+	// And everything that costs the picture something, for the ceiling.
+	{
+		name: 'everything-off',
+		perf: offOnly.apply(null, PICTURE),
+		only: null, wall: true,
+	},
+];
+
+/**
+ * Run the whole matrix, variants interleaved inside each repeat.
+ *
+ * Every variant once, then every variant again -- never all the repeats of one
+ * variant before starting the next, which is the nesting this exists to avoid.
+ */
+async function runMatrix(cx, p) {
+	var out = { variants: {}, order: [], errors: [] };
+	var list = MATRIX.filter(function (v) {
+		return v.name === 'baseline' || !p.only
+			|| p.only.split(',').indexOf(v.name) > -1;
+	});
+	for (var i = 0; i < list.length; i++) {
+		out.order.push(list[i].name);
+		out.variants[list[i].name] = {
+			perf: list[i].perf || null, scenarios: {},
+			_pooled: {}, _perRepeat: {}, _waits: [],
+		};
+	}
+
+	var total = p.repeat * list.length;
+	var step = 0;
+	for (var rep = 0; rep < p.repeat; rep++) {
+		cx.round = rep;
+		for (var v = 0; v < list.length; v++) {
+			var variant = list[v];
+			var slot = out.variants[variant.name];
+			step++;
+			// Everything back on first, then this variant's switches. A variant
+			// that named only what it turned off would inherit the switches of
+			// the one before it, and the last row would be measuring all the
+			// others.
+			W.zgPerf(JSON.stringify(offOnly()));
+			// zgPerf hands back what the switches ended up as, which is how the
+			// perf-mode row learns what the mode is instead of asserting it.
+			var applied = variant.mode
+				? W.zgPerf('true')
+				: W.zgPerf(JSON.stringify(variant.perf));
+			try { slot.perf = JSON.parse(applied); }
+			catch (e) { /* an older page: the declared patch is the best we have */ }
+
+			var ids = SCENARIOS.filter(function (s) {
+				return !variant.only || variant.only.indexOf(s.id) > -1;
+			});
+			for (var k = 0; k < ids.length; k++) {
+				var s = ids[k];
+				log('repeat ' + (rep + 1) + '/' + p.repeat + ' — ' + variant.name
+					+ ' — ' + s.id + '  (' + step + '/' + total + ')');
+				try {
+					var f = await s.run(cx);
+					var kept = f ? f.slice(p.warm) : [];
+					if (!kept.length) {
+						// A scenario that painted nothing is a fact about the
+						// variant rather than a failure of the run: with the
+						// engine off there is no cold layout to anneal, which is
+						// the whole point of switching it off. Noted once, and
+						// left as a gap in the table.
+						if (rep === 0) {
+							out.errors.push(variant.name + '/' + s.id
+								+ ' painted nothing — nothing there to measure');
+						}
+						continue;
+					}
+					(slot._pooled[s.id] || (slot._pooled[s.id] = []))
+						.push.apply(slot._pooled[s.id], kept);
+					(slot._perRepeat[s.id] || (slot._perRepeat[s.id] = []))
+						.push(stats(kept).p50);
+				}
+				catch (e) {
+					out.errors.push(variant.name + '/' + s.id + ' (repeat '
+						+ (rep + 1) + '): ' + (e && e.message ? e.message : String(e)));
+				}
+			}
+
+			if (variant.wall) {
+				log('repeat ' + (rep + 1) + '/' + p.repeat + ' — ' + variant.name
+					+ ' — time to a settled graph');
+				var w = await timeToQuiet(cx);
+				if (w != null) slot._waits.push(w);
+			}
+		}
+	}
+
+	// Put every switch back the way the page ships, so that whatever runs after
+	// this -- the attribution, or a person poking at the page by hand -- is
+	// looking at the real renderer.
+	W.zgPerf(JSON.stringify(offOnly()));
+
+	for (var n = 0; n < list.length; n++) {
+		var slotB = out.variants[list[n].name];
+		for (var id in slotB._pooled) {
+			var reps = slotB._perRepeat[id];
+			var lo = Math.min.apply(null, reps);
+			var hi = Math.max.apply(null, reps);
+			slotB.scenarios[id] = Object.assign(stats(slotB._pooled[id]), {
+				repeats: reps.length,
+				repeatP50s: reps,
+				best: lo,
+				spread: hi - lo,
+				spreadPct: lo > 0 ? (hi - lo) / lo : 0,
+			});
+		}
+		if (slotB._waits.length) {
+			slotB.settleWall = {
+				best: Math.min.apply(null, slotB._waits),
+				worst: Math.max.apply(null, slotB._waits),
+				repeats: slotB._waits,
+			};
+		}
+		delete slotB._pooled;
+		delete slotB._perRepeat;
+		delete slotB._waits;
+	}
+	return out;
+}
+
+/* ------------------------------------------------------------------ *
  * Running
  * ------------------------------------------------------------------ */
 
@@ -558,6 +827,20 @@ function params() {
 		repeat: Number(q.get('repeat') || (el('repeat') ? el('repeat').value : 3)),
 		ablate: q.get('ablate') != null ? q.get('ablate') !== '0' : el('ablate').checked,
 		only: q.get('only'),
+		// Every performance switch against a baseline, interleaved in one
+		// session. Replaces the scenario table rather than adding to it: the
+		// baseline variant IS that table, measured alongside its comparisons.
+		matrix: q.get('matrix') != null,
+		// The renderer's performance switches, as the JSON window.zgPerf takes.
+		// A build variant rather than a scenario: the whole run is measured
+		// with these on, so every scenario reports what they cost IT, and a
+		// --baseline comparison against the default build reads them off
+		// against each other. See PERF in graph.js.
+		perf: q.get('perf'),
+		// The settle timing replaces the graph and waits out a full anneal per
+		// repeat, which is most of a minute -- worth it for a switch that touches
+		// the layout, wasted for one that only changes what is painted.
+		wall: q.get('wall') !== '0',
 		auto: q.get('auto') != null,
 	};
 }
@@ -570,10 +853,21 @@ async function runAll(which) {
 		config: { n: p.n, ratio: p.ratio, seed: p.seed, vw: p.vw, vh: p.vh, frames: p.frames, repeat: p.repeat },
 		scenarios: {},
 		attribution: null,
+		matrix: null,
+		timings: null,
 		errors: [],
 	};
 
 	await attach(p.vw, p.vh);
+	// Before anything is measured and before the first payload, so no scenario
+	// ever straddles the switch. A page too old to have zgPerf is a real answer
+	// too -- it says the numbers describe the default build, and saying so in
+	// the notes beats reporting them as if the switches had taken.
+	if (p.perf) {
+		out.config.perf = p.perf;
+		if (W.zgPerf) W.zgPerf(p.perf);
+		else out.errors.push('page has no zgPerf — --perf was ignored');
+	}
 	hookFrames();
 	hookPaint();
 	out.env.flushCost = calibrateFlush();
@@ -590,6 +884,28 @@ async function runAll(which) {
 	await settle(cx);
 	cx.node = await findNode(p.vw, p.vh);
 	if (!cx.node) out.errors.push('no node found under the probe — drag and isolate skipped');
+
+	if (p.matrix) {
+		out.matrix = await runMatrix(cx, p);
+		out.errors = out.errors.concat(out.matrix.errors);
+		// The baseline variant is the ordinary scenario table, measured
+		// alongside everything it is a baseline FOR -- so it is published under
+		// the name the rest of the tooling already reads.
+		var b = out.matrix.variants.baseline;
+		if (b) {
+			out.scenarios = b.scenarios;
+			for (var q3 = 0; q3 < SCENARIOS.length; q3++) {
+				var sc = out.scenarios[SCENARIOS[q3].id];
+				if (sc) sc.what = SCENARIOS[q3].what;
+			}
+			if (b.settleWall) out.timings = { settleWall: b.settleWall };
+		}
+		results = out;
+		render(out);
+		busy(false);
+		if (p.auto) await report(out);
+		return out;
+	}
 
 	var list = SCENARIOS.filter(function (s) {
 		if (p.only) return p.only.split(',').indexOf(s.id) > -1;
@@ -660,6 +976,26 @@ async function runAll(which) {
 			spreadPct: lo > 0 ? (hi - lo) / lo : 0,
 		});
 	}
+
+	// Last, because it replaces the graph every repeat and leaves a different
+	// one behind. Best of the repeats for the reason every other headline here
+	// is: interference can only add time.
+	var waits = [];
+	if (p.wall) log('timing how long a fresh collection takes to settle');
+	for (var w = 0; p.wall && w < p.repeat; w++) {
+		var el0 = await timeToQuiet(cx);
+		if (el0 != null) waits.push(el0);
+	}
+	if (waits.length) {
+		out.timings = {
+			settleWall: {
+				best: Math.min.apply(null, waits),
+				worst: Math.max.apply(null, waits),
+				repeats: waits,
+			},
+		};
+	}
+	else if (p.wall) out.errors.push('the graph never painted a fresh collection — no settle time');
 
 	if (p.ablate && which !== 'quick') {
 		log('attributing cost per subsystem');

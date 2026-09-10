@@ -58,6 +58,9 @@ zotero-citation-graph-pin-pull-hint = Wie viel stärker die Kanten eines angehef
 
 zotero-citation-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
 
+zotero-citation-graph-perf-mode = Leistungsmodus
+zotero-citation-graph-perf-hint = Zeichnet einen großen Graphen schneller: das Layout wird einmal gesetzt und bleibt stehen, statt fünfzehn Sekunden lang einzuschwingen, und Kanten geben Pfeile, Krümmung und Strategiefarben auf. Namen bleiben unangetastet, und Knoten lassen sich weiterhin ziehen.
+
 zotero-citation-graph-filter-placeholder = Filter — Autor:, Jahr:, …
 zotero-citation-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
 

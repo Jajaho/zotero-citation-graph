@@ -24,8 +24,11 @@
  *     --frames <count>     measured frames per scenario (default 90)
  *     --repeat <count>     interleaved repeats, for a noise floor (default 3)
  *     --only <a,b>         run only these scenarios
+ *     --perf <json>        renderer performance switches, e.g. '{"physics":false}'
  *     --quick              settle and steady only
  *     --no-ablate          skip the per-subsystem attribution
+ *     --no-wall            skip the time-to-a-settled-graph timing
+ *     --matrix             every performance switch against a baseline, in one run
  *     --json <file>        write the full run to a file
  *     --md [file]          write a markdown report (default docs/performance.md)
  *     --baseline <file>    compare against an earlier --json and show deltas
@@ -197,6 +200,23 @@ function report(run, baseline) {
 		lines.push('');
 	}
 
+	if (run.matrix) lines.push(matrixReport(run.matrix));
+
+	const wall = run.timings && run.timings.settleWall;
+	if (wall) {
+		const bw = baseline && baseline.timings && baseline.timings.settleWall;
+		let l = '  time to a settled graph: ' + ms(wall.best) + ' ms';
+		if (bw) {
+			const pct = bw.best > 0 ? ((wall.best - bw.best) / bw.best) * 100 : 0;
+			l += '  (was ' + ms(bw.best) + ' ms, '
+				+ (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%)';
+		}
+		lines.push(l);
+		lines.push('  wall clock from the payload to the last frame drawn — the one thing');
+		lines.push('  a table of frame times cannot say.');
+		lines.push('');
+	}
+
 	if (run.attribution) {
 		lines.push('  where the time goes (steady state, by ablation)');
 		lines.push('');
@@ -319,6 +339,30 @@ function markdown(run, baseline, basePath) {
 		L.push('');
 	}
 
+	if (run.matrix) L.push.apply(L, matrixMarkdown(run.matrix));
+
+	const wall = run.timings && run.timings.settleWall;
+	if (wall) {
+		L.push('## Time to a settled graph');
+		L.push('');
+		L.push('Wall clock from handing the page a fresh collection to the last frame');
+		L.push('the renderer drew. Frame times say whether the picture is smooth; this');
+		L.push('says how long it moves before it can be read, which is the other half');
+		L.push('of what the layout costs and the half a frame cannot express.');
+		L.push('');
+		const bw = baseline && baseline.timings && baseline.timings.settleWall;
+		const row = [ms(wall.best) + ' ms', ms(wall.worst) + ' ms'];
+		const head = ['best', 'worst'];
+		if (bw) {
+			head.push('was', 'delta');
+			const pct = bw.best > 0 ? ((wall.best - bw.best) / bw.best) * 100 : 0;
+			row.push(ms(bw.best) + ' ms',
+				(pct >= 0 ? '+' : '') + pct.toFixed(1) + '%');
+		}
+		L.push(mdTable(head, [row]));
+		L.push('');
+	}
+
 	if (run.attribution) {
 		L.push('## Where the time goes');
 		L.push('');
@@ -354,6 +398,136 @@ function markdown(run, baseline, basePath) {
 }
 
 /* ------------------------------------------------------------------ *
+ * The matrix table
+ *
+ * What each performance switch bought, against a baseline measured in
+ * the same session and interleaved with it. Percentages rather than
+ * milliseconds: the absolute figures are already in the scenario table
+ * above, and what this table is for is the comparison.
+ * ------------------------------------------------------------------ */
+
+const SCEN_ORDER = ['settle', 'steady', 'drag-node', 'pan', 'zoom', 'isolate',
+	'add-papers', 'filter'];
+
+/** Shorter than the ids, because twelve rows of eight columns has to fit on a
+ *  terminal. The scenario table above says what each one means in full. */
+const SCEN_SHORT = {
+	settle: 'settl', steady: 'stead', 'drag-node': 'drag', pan: 'pan',
+	zoom: 'zoom', isolate: 'isol', 'add-papers': 'add', filter: 'filt',
+};
+
+const vBest = (s) => (s && (s.best != null ? s.best : s.p50)) || null;
+
+/** A variant's frame time against the baseline's. Negative is faster, which is
+ *  the direction a switch is for. */
+function vDelta(variant, base, id) {
+	const a = vBest((variant.scenarios || {})[id]);
+	const b = vBest((base.scenarios || {})[id]);
+	if (a == null || b == null || !b) return null;
+	return ((a - b) / b) * 100;
+}
+
+/**
+ * How a percentage reads.
+ *
+ * Inside the noise floor it reads as noise rather than as a small number,
+ * because a small number there is a claim the measurement cannot support --
+ * the same rule the verdict column uses. A gap is a scenario the variant never
+ * ran, which is a claim of its own: a switch that only changes what is painted
+ * cannot move what a layout costs.
+ */
+function vPct(v) {
+	if (v == null) return '·';
+	if (Math.abs(v) <= NOISE_PCT) return '~';
+	return (v > 0 ? '+' : '') + v.toFixed(0) + '%';
+}
+
+function vWall(variant) {
+	const w = variant.settleWall;
+	if (!w) return '·';
+	return w.best < 1000 ? Math.round(w.best) + ' ms' : (w.best / 1000).toFixed(1) + ' s';
+}
+
+/** Which switches a variant turned off, for the row that says what it was. */
+function vOff(variant) {
+	const p = variant.perf || {};
+	const out = Object.keys(p).filter((k) => !p[k]);
+	return out.length ? out.join(' ') : '—';
+}
+
+function matrixRows(m) {
+	const base = m.variants.baseline;
+	const rows = [];
+	for (const name of m.order) {
+		if (name === 'baseline') continue;
+		const v = m.variants[name];
+		if (!v) continue;
+		const row = [name];
+		for (const id of SCEN_ORDER) row.push(vPct(vDelta(v, base, id)));
+		row.push(vWall(v));
+		rows.push(row);
+	}
+	return rows;
+}
+
+function matrixReport(m) {
+	const base = m.variants.baseline;
+	if (!base) return '';
+	const lines = [];
+	lines.push('  what each performance switch bought');
+	lines.push('');
+	const head = ['variant'].concat(SCEN_ORDER.map((id) => SCEN_SHORT[id]),
+		['settled']);
+	lines.push(table(head, matrixRows(m)));
+	lines.push('');
+	lines.push('  Change in frame time against the baseline row, which is the scenario');
+	lines.push('  table above. Negative is faster. `~` is inside the ±' + NOISE_PCT
+		+ '% two runs of');
+	lines.push('  the same build drift by, so it means the switch was not measured to do');
+	lines.push('  anything; `·` is a scenario the switch cannot touch and did not run.');
+	lines.push('  Variants are interleaved with the baseline inside each repeat, so a');
+	lines.push('  machine that gets busier taxes all of them rather than the later ones.');
+	lines.push('');
+	lines.push('  "settled" is wall clock from a fresh collection to the last frame drawn.');
+	lines.push('');
+	return lines.join('\n');
+}
+
+function matrixMarkdown(m) {
+	const base = m.variants.baseline;
+	if (!base) return [];
+	const L = [];
+	L.push('## What each performance switch bought');
+	L.push('');
+	L.push('Change in frame time against the baseline — which is the scenario table');
+	L.push('above, measured in the same session and **interleaved** with every variant');
+	L.push('below it, so a machine that gets busier partway through taxes all of them');
+	L.push('equally instead of only the ones that ran late.');
+	L.push('');
+	L.push('`~` is inside the ±' + NOISE_PCT + '% two runs of the same build drift by: the switch');
+	L.push('was not measured to do anything. `·` is a scenario the switch cannot touch');
+	L.push('and did not run — a switch that changes only what is *painted* cannot move');
+	L.push('what a layout costs, and running it there would spend fifteen seconds a');
+	L.push('repeat to measure the noise floor.');
+	L.push('');
+	const head = ['variant'].concat(SCEN_ORDER, ['to settled']);
+	L.push(mdTable(head, matrixRows(m)));
+	L.push('');
+	L.push('**to settled** is wall clock from handing the page a fresh collection to the');
+	L.push('last frame the renderer drew: how long the graph moves before it can be');
+	L.push('read. The baseline is ' + vWall(base) + ', which is force-graph\'s `cooldownTime`');
+	L.push('rather than the time the layout needs — it runs the clock out whether or not');
+	L.push('it has converged.');
+	L.push('');
+	L.push('What each variant turned off:');
+	L.push('');
+	const offRows = m.order.map((n) => [n, '`' + vOff(m.variants[n]) + '`']);
+	L.push(mdTable(['variant', 'switches off'], offRows));
+	L.push('');
+	return L;
+}
+
+/* ------------------------------------------------------------------ *
  * Driving it
  * ------------------------------------------------------------------ */
 
@@ -372,8 +546,17 @@ async function main() {
 	if (opt('seed', null)) q.set('seed', opt('seed'));
 	if (opt('ratio', null)) q.set('ratio', opt('ratio'));
 	if (opt('only', null)) q.set('only', opt('only'));
+	// A build variant for the whole run: every scenario is measured with these
+	// renderer switches applied. Compare one against a --baseline taken without
+	// it and the delta column is what that switch is worth. See PERF in graph.js.
+	if (opt('perf', null)) q.set('perf', opt('perf'));
 	if (flag('quick')) q.set('quick', '1');
 	if (flag('no-ablate')) q.set('ablate', '0');
+	if (flag('no-wall')) q.set('wall', '0');
+	// Every performance switch against a baseline, interleaved inside one
+	// browser session. Not one run per variant: see the header of the matrix
+	// section in bench.js for what that measured instead.
+	if (flag('matrix')) q.set('matrix', '1');
 	const url = 'http://127.0.0.1:' + server.port + '/content/bench/bench.html?' + q;
 
 	const profile = makeProfile();

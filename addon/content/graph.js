@@ -63,6 +63,11 @@
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
+	/** And whether this screen is one that needs the graph drawn cheaply. Kept
+	 *  beside the other comfort settings rather than in a pref, for the same
+	 *  reason they are: it is a statement about this machine and this window,
+	 *  not about the collection or the library. */
+	const PERF_KEY = 'zg.perf.mode';
 	/** Whether papers nothing in the collection cites are drawn at all. It used
 	 *  to be decided for the user -- ticked by the first payload that carried
 	 *  edges, and ticked again by every rebuild that had not been argued with in
@@ -116,6 +121,277 @@
 	// what is on screen, not the maximum. Recomputed every render, because
 	// filtering the graph should rescale it.
 	let globalRef = 1;
+
+	// --- performance mode -------------------------------------------------
+
+	/**
+	 * What the picture gives up in order to go faster, one switch at a time.
+	 *
+	 * A collection of a few hundred papers draws comfortably inside a 60 Hz
+	 * frame and none of this is wanted. Several thousand does not, and then the
+	 * useful question is not "which micro-optimisation is left" but "which part
+	 * of the drawing is worth its cost on THIS graph". That is a judgement
+	 * about what is in front of the user, so it is switches rather than a
+	 * heuristic -- and named switches rather than one opaque "fast" flag,
+	 * because each is a different trade and each has to be measurable on its
+	 * own. tools/bench drives exactly these names; docs/performance.md is what
+	 * they cost.
+	 *
+	 * Every switch is TRUE in the default build, so the flags say what is ON
+	 * and a missing one can never silently degrade the picture. PERF_MODE names
+	 * the subset the panel's single checkbox turns off -- the subset that
+	 * earned its place by measuring.
+	 *
+	 * Read live from inside the accessors and the draw functions rather than
+	 * baked in when set. force-graph re-initialises its whole engine for some
+	 * props, so re-installing the accessor chain to change a colour would
+	 * reheat the layout by itself (see the note above fg.nodeId): the accessors
+	 * are closures over live state precisely so that flipping a switch costs a
+	 * repaint and nothing else.
+	 */
+	const PERF = {
+		physics: true,   // the engine keeps running; off, the layout is struck once
+		collide: true,   // hard-sphere collision, so two circles never overlap
+		arrows: true,    // an arrow head filled at the end of every edge
+		curves: true,    // edges bowed, so a mutual pair reads as two lines
+		tint: true,      // edge colour by strategy, width and alpha by confidence
+		labels: true,    // names on the canvas, and the pass that places them
+		halo: true,      // the background stroke that lifts a name off the graph
+		fade: true,      // names ease in and out instead of switching
+		// The odd one out, and deliberately so: this costs the picture NOTHING.
+		// It is a switch only because an optimisation nobody can turn off is an
+		// optimisation nobody can measure, and this one is worth keeping honest
+		// -- see colorGen. It is never in PERF_MODE; the benchmark turns it off
+		// to ask what it is worth, and nothing else ever should.
+		memo: true,      // node and edge colours worked out once, not per frame
+	};
+
+	/**
+	 * What the panel's one checkbox turns off.
+	 *
+	 * Not every switch above, and the ones missing are missing for a measured
+	 * reason. A performance mode that costs the picture something and buys
+	 * nothing back is worse than no performance mode at all, so this list is
+	 * exactly the switches the benchmark could resolve a win from -- and it is
+	 * expected to change when the renderer does, which is why the matrix asks
+	 * the page what the mode is rather than restating it.
+	 *
+	 * At 1500 items and 2699 edges (docs/performance.md):
+	 *
+	 *   tint     -36%  the biggest single win in the renderer. Its cost is a
+	 *                  colour per link per frame and, worse, a stroke batch per
+	 *                  distinct colour -- flat edges are one path for all of them.
+	 *   arrows   -27%  force-graph fills each arrow head in a path of its own,
+	 *                  after working out a Bezier length per link, per frame.
+	 *   curves   -23%  a control point per link per frame, and quadraticCurveTo
+	 *                  where a straight line would be lineTo.
+	 *   physics    ~   nothing measurable per frame -- and 15.0s to 1.4s before
+	 *                  the graph stops moving. It is in for the SECOND number.
+	 *
+	 * Left out, each for its own reason:
+	 *
+	 *   labels   -13%  real, and refused anyway. A graph whose papers have no
+	 *                  names is a cloud of dots: you cannot find the one you
+	 *                  came for, and the mode would have taken away the reason
+	 *                  to open the tab. The other four give -61% without it.
+	 *   halo       ~   under the noise floor, and 0.46ms of a 19.3ms frame by
+	 *                  ablation. It is what makes a name readable over dense
+	 *                  edges, so giving it up costs legibility for nothing.
+	 *   fade       ~   likewise unmeasurable, and it is what stops a label near
+	 *                  a placement boundary from strobing.
+	 *   collide  -14%  on the layout scenarios only, and nothing on a settled
+	 *                  graph. It buys overlapping circles, and with the engine
+	 *                  off -- which this mode does -- it barely runs anyway.
+	 */
+	const PERF_MODE = ['physics', 'arrows', 'curves', 'tint'];
+
+	/**
+	 * Ticks run without painting when the engine is off and a graph arrives.
+	 *
+	 * A static layout still has to BE a layout. force-graph's warmupTicks does
+	 * the anneal up front in one blocking burst and paints the result once,
+	 * which is the whole trade: fifteen seconds of watching the graph fly into
+	 * place become a fraction of a second of nothing, and what appears is
+	 * already readable. The count is paired with an alpha decay that actually
+	 * converges within it -- d3 cools by (1 - decay) per tick, so a count
+	 * without a matching decay anneals halfway and stops there, which looks
+	 * exactly like a layout bug.
+	 */
+	const PERF_WARMUP = 150;
+	const PERF_WARMUP_DECAY = 1 - Math.pow(0.001, 1 / PERF_WARMUP);
+
+	/** The engine's own cooling schedule, kept so that switching physics back
+	 *  on restores it rather than leaving the graph on the warmup's. */
+	let baseDecay = null;
+
+	/**
+	 * Which generation of "how this graph is coloured" the colours cached on
+	 * the nodes and links belong to.
+	 *
+	 * nodeColor and linkColor are called once per node and once per link, every
+	 * frame. Each one used to read a <select>'s value out of the DOM, scan or
+	 * hash a key, and build a colour string -- for a graph that has not changed
+	 * colour since the last frame and will not change colour until something
+	 * asks it to. On a few thousand of each that is thousands of DOM reads and
+	 * thousands of strings per frame, thrown away sixty times a second. It is
+	 * also why the edges cost what they do: force-graph GROUPS links by the
+	 * string it gets back, so the accessor is on the hot path twice over.
+	 *
+	 * So a colour is worked out once and kept on the object it belongs to,
+	 * stamped with the generation it was worked out in. Everything that can
+	 * change what colour something is bumps the generation, and every stamp
+	 * goes stale at once -- which is the cheap way to invalidate a cache spread
+	 * over ten thousand objects.
+	 *
+	 * What a colour depends on, and therefore what has to bump this:
+	 *
+	 *   a node   the colour mode, the year range, the clusters, ghostliness,
+	 *            and whether isolation has dimmed it
+	 *   a link   its via list and confidence -- both fixed on the object -- and
+	 *            whether it is picked, or dimmed
+	 *
+	 * which is render(), setIsolated(), applyIsolateDepth() and setPicked(),
+	 * the same four places litCache is emptied and for the same reason: both
+	 * are answers about the whole picture that only a change to the whole
+	 * picture can falsify. See recoloured().
+	 */
+	let colorGen = 1;
+
+	/** The two <select> values, read once per render rather than once per node
+	 *  per frame. Same reason as colorGen, one level up: a form control is
+	 *  chrome, and reading chrome is not free. */
+	let sizeMode = 'here';
+	let colorMode = 'year';
+
+	/** Everything that decides a colour may have changed. Paired with litCache
+	 *  because the dim state is one of those things. */
+	function recoloured() {
+		litCache = null;
+		colorGen++;
+	}
+
+	/** Flat edge colours, built once. The point of switching the tint off is to
+	 *  stop building a colour string per link per frame -- doing it lazily and
+	 *  keeping it would be the same work in a different place. */
+	const PERF_EDGE = '#9aa0a6';
+	const PERF_EDGE_DIM = withAlpha(PERF_EDGE, DIM_LINK_FACTOR);
+
+	/** Set some switches. Anything not named is left alone, so chrome, the
+	 *  panel and the benchmark can each speak only about the part they know. */
+	function perfSet(patch) {
+		let engine = false;
+		for (let k of Object.keys(patch)) {
+			if (!(k in PERF)) continue;
+			let on = !!patch[k];
+			if (PERF[k] === on) continue;
+			PERF[k] = on;
+			if (k === 'physics' || k === 'collide') engine = true;
+			// tint decides a colour and a width, and memo decides whether the
+			// cached ones are believed -- so either flipping makes every stamp
+			// on the graph an answer to the wrong question.
+			if (k === 'tint' || k === 'memo') colorGen++;
+		}
+		// The panel says what the mode is, so it has to be told when something
+		// else turns a switch -- chrome, or the benchmark. A partial set is
+		// reported honestly as not the mode, because it is not.
+		if (elPerf) elPerf.checked = perfModeOn();
+		if (!fg) return;
+		if (engine) perfEngine();
+		// Everything else is read by an accessor or a draw function on the next
+		// frame, so all that is missing is a next frame.
+		else repaint();
+	}
+
+	/**
+	 * Push the two switches the engine itself has to be told about.
+	 *
+	 * cooldownTicks(0) stops the simulation on the tick after any reheat, which
+	 * is what makes the layout static -- and it leaves dragging intact, because
+	 * force-graph's drag handler writes x/y onto the node directly rather than
+	 * asking the simulation to carry it there. Nodes stay movable; they simply
+	 * stop moving each other.
+	 */
+	function perfEngine() {
+		if (!fg) return;
+		if (baseDecay === null) baseDecay = fg.d3AlphaDecay();
+		// A shed in flight is holding half the graph fixed and an alpha decay
+		// to put back, and both belong to a cooling schedule the graph is about
+		// to leave. Let go of them before the new one is set, not after.
+		thaw();
+		fg.warmupTicks(PERF.physics ? 0 : PERF_WARMUP)
+			.cooldownTicks(PERF.physics ? Infinity : 0)
+			.d3AlphaDecay(PERF.physics ? baseDecay : PERF_WARMUP_DECAY);
+		fg.d3Force('collide', PERF.collide ? collide() : null);
+		// A graph handed the engine back has to be told to use it; one that has
+		// just lost it needs the frame that paints the halt.
+		if (PERF.physics) fg.d3ReheatSimulation();
+		else repaint();
+	}
+
+	/**
+	 * The benchmark's way in, and chrome's.
+	 *
+	 * A JSON string for the reason every other bridge on this page takes one:
+	 * the page runs with a content principal, and objects do not cross that
+	 * boundary -- only strings do. A bare `true` is the panel's question, which
+	 * is the whole mode at once; an object names switches.
+	 */
+	window.zgPerf = function (json) {
+		let patch;
+		try {
+			patch = JSON.parse(json);
+		}
+		catch (e) {
+			// Not a patch, so nothing to set -- but the state is still a fair
+			// thing to have asked for. zgPerf() with no argument is the query.
+			return JSON.stringify(PERF);
+		}
+		if (typeof patch === 'boolean') {
+			let all = {};
+			for (let k of PERF_MODE) all[k] = !patch;
+			perfSet(all);
+		}
+		else if (patch && typeof patch === 'object') perfSet(patch);
+		// What the switches ended up as, so that a caller which asked for "the
+		// mode" can find out what the mode WAS rather than restating it. The
+		// benchmark's matrix reads this: a table that named the mode's switches
+		// itself would drift from PERF_MODE the moment either changed, and did
+		// -- it measured four of the six and reported the answer as the mode's.
+		return JSON.stringify(PERF);
+	};
+
+	/** Whether the panel's checkbox should read as on: every switch the mode
+	 *  covers is off. */
+	function perfModeOn() {
+		return PERF_MODE.every(k => !PERF[k]);
+	}
+
+	/**
+	 * Ask the layout to rearrange itself, whichever way it currently can.
+	 *
+	 * With the engine running this is d3's own reheat: alpha back to 1, and the
+	 * graph flies to its new arrangement over the next few seconds. With the
+	 * engine off there are no ticks to fly over -- so the same rearrangement
+	 * happens in one blocking burst and is painted once, which is what static
+	 * means everywhere else in this mode too.
+	 *
+	 * That matters far more than it sounds. Every layout slider on the panel
+	 * works by nudging a force and reheating; without this, switching the
+	 * engine off would leave four sliders that visibly do nothing, and a
+	 * control that does nothing reads as a broken control rather than as a
+	 * mode. Handing force-graph its OWN arrays back is what triggers the
+	 * burst: graphData is the one prop it re-anneals for, it sets alpha to 1
+	 * itself, and the warmup ticks run inside that update.
+	 */
+	function reheat() {
+		if (!fg) return;
+		if (PERF.physics) {
+			fg.d3ReheatSimulation();
+			return;
+		}
+		let d = fg.graphData();
+		if (d) fg.graphData({ nodes: d.nodes, links: d.links });
+	}
 
 	// What force-graph is currently holding on screen. Handing it new graphData
 	// restarts its simulation, so render() compares against these to work out
@@ -178,6 +454,7 @@
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolateDepth = el('isolate-depth');
+	let elPerf = el('perf');
 	let elReframe = el('reframe');
 	let elFrame = el('frame');
 	let elSide = el('side');
@@ -460,7 +737,7 @@
 	// --- colour -----------------------------------------------------------
 
 	function colorKey(n) {
-		switch (elColorBy.value) {
+		switch (colorMode) {
 			case 'collection': return (n.collections || [])[0] || t('color-no-collection');
 			// A paper sharing no reference with any other cannot be placed in a
 			// subfield, and inventing one for it would be the one thing this
@@ -474,8 +751,10 @@
 	}
 
 	function nodeColor(n) {
+		if (PERF.memo && n._colorGen === colorGen) return n._color;
 		let c = baseColor(n);
-		return dimmed(n) ? fade(c, DIM_NODE_ALPHA) : c;
+		n._colorGen = colorGen;
+		return (n._color = dimmed(n) ? fade(c, DIM_NODE_ALPHA) : c);
 	}
 
 	function baseColor(n) {
@@ -484,7 +763,7 @@
 		if (key === null) return NO_KEY_COLOR;
 		// Year is ordinal, so a ramp says something a hash cannot: old papers
 		// read blue, recent ones orange.
-		if (elColorBy.value === 'year' && yearRange) {
+		if (colorMode === 'year' && yearRange) {
 			let [lo, hi] = yearRange;
 			return yearColor(hi > lo ? (n.year - lo) / (hi - lo) : 1);
 		}
@@ -1499,8 +1778,13 @@
 		heldOnScreen = 0;
 		for (let n of nodes) if (!n.ghost) heldOnScreen++;
 		if (paneEngaged && (dropped || heldOnScreen !== was)) sendSelection();
-		// The adjacency lit() walks has just been rebuilt out of these edges.
-		litCache = null;
+		// The two colouring controls, read here rather than per node per frame.
+		// See colorGen -- the recoloured() below is what makes the new values take.
+		sizeMode = elSizeBy.value;
+		colorMode = elColorBy.value;
+		// The adjacency lit() walks has just been rebuilt out of these edges,
+		// and every colour on the graph was decided by what render() just read.
+		recoloured();
 		// Which nodes each anchor pulls, against the set that is now on screen.
 		assignGroups();
 		syncGroupNote();
@@ -1599,9 +1883,13 @@
 				.nodeColor(nodeColor)
 				.nodeCanvasObjectMode(() => 'after')
 				.nodeCanvasObject(drawNode)
-				.linkDirectionalArrowLength(4)
+				// Both read PERF live. An arrow of length 0 is skipped before any
+				// trigonometry, and a curvature of 0 leaves the link with no control
+				// points at all -- so force-graph draws it with lineTo instead of
+				// working one out per link per frame and running quadraticCurveTo.
+				.linkDirectionalArrowLength(() => (PERF.arrows ? 4 : 0))
 				.linkDirectionalArrowRelPos(1)
-				.linkCurvature(0.08)
+				.linkCurvature(() => (PERF.curves ? 0.08 : 0))
 				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
@@ -1609,13 +1897,8 @@
 				// alpha that says how well attested they are and go to full
 				// strength: what is being asked of them is which lines touch
 				// this node, and the hue still answers the other question.
-				.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
-					(pickedLink(l)
-						? HL_LINK_ALPHA
-						: l.confidence >= ASSERTED ? 0.85 : 0.45)
-					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
-				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8)
-					* (pickedLink(l) ? HL_LINK_WIDTH : 1))
+				.linkColor(linkColor)
+				.linkWidth(linkWidth)
 				// Before the graph, because which names fit is a question about
 				// the whole picture and drawNode is asked it one node at a
 				// time. See reserveLabels().
@@ -1630,7 +1913,10 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('groupPull', groupPull());
-			fg.d3Force('collide', collide());
+			// Collision and the cooling schedule both come from PERF, which
+			// chrome may have set before there was an engine to set them on --
+			// so they are pushed here rather than assumed to be defaults.
+			perfEngine();
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
 			// endpoint resolution all belong to that force.
@@ -1728,7 +2014,15 @@
 		// field anything reads off them: identical signature, interchangeable
 		// arrays -- and the old ones have their endpoints already resolved.
 		if (movedRadii) {
-			fg.d3Force('collide', collide()).d3ReheatSimulation();
+			// Only the collision force caches radii, so with it switched off
+			// there is nothing to rebuild and nothing to reheat FOR -- a
+			// repaint is the whole of what changed.
+			if (!PERF.collide) {
+				repaint();
+				return;
+			}
+			fg.d3Force('collide', collide());
+			reheat();
 			return;
 		}
 		repaint();
@@ -1787,7 +2081,7 @@
 	 * 100-citation one, and nothing but an eye caught it.
 	 */
 	function nodeVal(n) {
-		if (elSizeBy.value === 'global') return Scale.globalVal(n.citedByGlobal, globalRef);
+		if (sizeMode === 'global') return Scale.globalVal(n.citedByGlobal, globalRef);
 		return 1 + n.inDeg * 2;
 	}
 
@@ -1795,6 +2089,55 @@
 	 *  coordinates. The label has to clear that, so it uses the same formula. */
 	function nodeRadius(n) {
 		return Math.sqrt(nodeVal(n)) * NODE_REL_SIZE;
+	}
+
+	/**
+	 * An edge's colour: which strategy backs it, and how well attested it is.
+	 *
+	 * A publisher's own DOI link reads differently from an inferred title
+	 * match, and that is the hue. A picked node's own edges give up the alpha
+	 * that says how well attested they are and go to full strength -- what is
+	 * being asked of them there is which lines touch this node, and the hue
+	 * still answers the other question.
+	 *
+	 * This is the single most-called function in a frame: force-graph asks it
+	 * once per link, every frame, and then GROUPS the links by the string it
+	 * returns so that each distinct colour can be stroked as one path. So the
+	 * cost is not only the scan and the string build -- it is also how many
+	 * buckets come out, since each bucket is a beginPath and a stroke of its
+	 * own. With the tint off there is one colour, one width, and the whole
+	 * edge set is stroked in a single path.
+	 */
+	function linkColor(l) {
+		if (PERF.memo && l._colorGen === colorGen) return l._color;
+		l._colorGen = colorGen;
+		return (l._color = linkTint(l));
+	}
+
+	function linkTint(l) {
+		if (!PERF.tint) {
+			// Pick and dim survive: they are not decoration, they are the
+			// answer to a question the user just asked the graph.
+			if (pickedLink(l)) return themeColors().accent;
+			return dimmedLink(l) ? PERF_EDGE_DIM : PERF_EDGE;
+		}
+		return withAlpha(viaColor(bestVia(l.via)),
+			(pickedLink(l)
+				? HL_LINK_ALPHA
+				: l.confidence >= ASSERTED ? 0.85 : 0.45)
+			* (dimmedLink(l) ? DIM_LINK_FACTOR : 1));
+	}
+
+	/** The other half of the bucket key, and the other thing confidence says.
+	 *  Cached alongside the colour and on the same generation: it is the same
+	 *  question about the same link, asked once per frame by the same caller. */
+	function linkWidth(l) {
+		if (PERF.memo && l._widthGen === colorGen) return l._width;
+		l._widthGen = colorGen;
+		return (l._width = !PERF.tint
+			? (pickedLink(l) ? HL_LINK_WIDTH : 1)
+			: (l.confidence >= ASSERTED ? 1.4 : 0.8)
+				* (pickedLink(l) ? HL_LINK_WIDTH : 1));
 	}
 
 	// --- layout forces ----------------------------------------------------
@@ -2109,7 +2452,7 @@
 		elPullValue.textContent = Number(elLinkPull.value).toFixed(2);
 		if (!fg) return;
 		reinstallLinkStrength();
-		fg.d3ReheatSimulation();
+		reheat();
 	}
 
 	/**
@@ -2120,7 +2463,7 @@
 	function applyCenterPull() {
 		elCenterValue.textContent = centerScale().toFixed(2);
 		if (!fg) return;
-		fg.d3ReheatSimulation();
+		reheat();
 	}
 
 	/** The pin pull prices links, so it takes the same route the edge pull
@@ -2129,7 +2472,7 @@
 		elPinPullValue.textContent = pinScale().toFixed(2);
 		if (!fg) return;
 		reinstallLinkStrength();
-		fg.d3ReheatSimulation();
+		reheat();
 	}
 
 	/**
@@ -2290,6 +2633,13 @@
 	 */
 	function reserveLabels(ctx, globalScale) {
 		if (!fg) return;
+		// Names off: no pass, and nothing left over from the last one. The list
+		// has to be emptied rather than merely skipped, or drawLabels would go
+		// on painting whatever the frame before the switch decided.
+		if (!PERF.labels) {
+			labelDraw.length = 0;
+			return;
+		}
 		let w = elGraph.clientWidth;
 		let h = elGraph.clientHeight;
 		// Screen origin in graph coordinates, so a node's position can be put
@@ -2396,6 +2746,16 @@
 	 */
 	function fadeLabel(node) {
 		let want = node._labelWant || 0;
+		// Switched rather than eased. The easing is what keeps a label near a
+		// placement boundary from strobing, so this is a real loss -- it is
+		// here because it is also the only thing in the frame that ASKS FOR
+		// FRAMES: a fade in flight marks the canvas dirty every tick, so a
+		// settled graph that would otherwise be drawing nothing keeps drawing.
+		if (!PERF.fade) {
+			node._labelLit = want;
+			node._labelAt = labelClock;
+			return;
+		}
 		let lit = node._labelLit;
 		if (lit === undefined) lit = node._labelLit = want;
 		// Stamped on every frame, settled or not. Stamping only while a fade is
@@ -2549,6 +2909,7 @@
 	 * they are above the graph: they are furniture, and you navigate by them.
 	 */
 	function drawLabels(ctx, globalScale) {
+		if (!PERF.labels) return;
 		for (let n of labelDraw) drawLabel(n, ctx, globalScale);
 	}
 
@@ -2591,10 +2952,12 @@
 		// cross it, and neither is a surface you can read type off. Painted in
 		// the page background colour so it works in Zotero's dark theme too,
 		// and joined round so the stroke does not spike off the glyphs.
-		ctx.lineJoin = 'round';
-		ctx.lineWidth = (px * 0.3) / globalScale;
-		ctx.strokeStyle = theme.halo;
-		ctx.strokeText(node.label, node.x, node.y);
+		if (PERF.halo) {
+			ctx.lineJoin = 'round';
+			ctx.lineWidth = (px * 0.3) / globalScale;
+			ctx.strokeStyle = theme.halo;
+			ctx.strokeText(node.label, node.x, node.y);
+		}
 		ctx.fillStyle = node.ghost ? theme.muted : theme.fg;
 		ctx.fillText(node.label, node.x, node.y);
 		if (lit < 1) ctx.restore();
@@ -2618,6 +2981,10 @@
 	if (window.matchMedia) {
 		window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 			_theme = null;
+			// A picked edge is drawn in the accent colour, which is read off the
+			// stylesheet -- so a cached one is the old theme's accent until
+			// something else recolours. See colorGen.
+			colorGen++;
 			repaint();
 		});
 	}
@@ -2667,6 +3034,9 @@
 	function setPicked(next) {
 		if (same(picked, next)) return;
 		picked = next;
+		// A pick lifts its own edges out of the picture, which is a colour and a
+		// width -- so the cached ones are answers to the previous question.
+		recoloured();
 		repaint();
 		sendSelection();
 		// The gap list marks the rows whose stars are in the pick, and this is
@@ -2769,7 +3139,7 @@
 	 */
 	function setIsolated(ids) {
 		isolated = ids;
-		litCache = null;
+		recoloured();
 		repaint();
 	}
 
@@ -3135,7 +3505,7 @@
 		// about the layout changed, and a settled graph should stay settled.
 		if (pinScale()) {
 			reinstallLinkStrength();
-			if (fg) fg.d3ReheatSimulation();
+			reheat();
 		}
 		trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
 	}
@@ -3230,6 +3600,11 @@
 	 */
 	function shedTo(target, freeID = null) {
 		if (!fg) return;
+		// A static layout has no motion to spend down. Freezing it would fix
+		// every node with fx/fy and then rely on an engine stop to let go
+		// again -- a whole mechanism standing in for the nothing that would
+		// otherwise happen. See perfEngine().
+		if (!PERF.physics) return;
 		thaw();
 		for (let n of drawnNodes) {
 			if (n.id === freeID) continue;
@@ -3401,7 +3776,7 @@
 		// A settle in flight has half the graph fixed in place; it would sit
 		// out exactly the rearrangement being asked for.
 		thaw();
-		fg.d3ReheatSimulation();
+		reheat();
 	}
 
 	function sameTargets(a, b) {
@@ -4297,6 +4672,27 @@
 		// costs nothing.
 		render();
 	});
+	/**
+	 * The whole mode, from one checkbox.
+	 *
+	 * Through zgPerf rather than by calling perfSet directly, so the panel goes
+	 * in by the same door chrome and the benchmark use and there is one place
+	 * where a switch can be turned. Remembered per screen: a laptop that needs
+	 * this needs it every time it opens a graph, and being asked again each
+	 * time is the whole cost of the feature paid twice.
+	 */
+	function applyPerfMode() {
+		window.zgPerf(JSON.stringify(!!elPerf.checked));
+	}
+
+	elPerf.addEventListener('change', () => {
+		try {
+			window.localStorage.setItem(PERF_KEY, elPerf.checked ? '1' : '0');
+		}
+		catch (e) { /* see setCollapsed */ }
+		applyPerfMode();
+	});
+
 	elHideIsolated.addEventListener('change', () => {
 		try {
 			window.localStorage.setItem(HIDE_ISOLATED_KEY, elHideIsolated.checked ? '1' : '0');
@@ -4319,7 +4715,7 @@
 		let typed = String(elIsolateDepth.value).trim();
 		let n = typed === '' ? 1 : Math.round(Number(typed));
 		isolateDepth = Number.isFinite(n) ? Math.min(4, Math.max(0, n)) : 1;
-		litCache = null;
+		recoloured();
 		repaint();
 	}
 
@@ -4745,7 +5141,10 @@
 		if (props.fontSize) root.style.setProperty('--zotero-font-size', props.fontSize + 'rem');
 		if (props.density) root.setAttribute('zoteroUIDensity', props.density);
 		// The canvas reads its background out of the stylesheet, so a scheme
-		// arriving after the first paint has to be painted again.
+		// arriving after the first paint has to be painted again -- and any
+		// colour cached from the old one is an answer about the old one.
+		_theme = null;
+		colorGen++;
 		if (fg) repaint();
 	};
 
@@ -4871,6 +5270,16 @@
 		if (window.localStorage.getItem(HIDE_ISOLATED_KEY) === '1') elHideIsolated.checked = true;
 	}
 	catch (e) { /* see setCollapsed */ }
+
+	try {
+		// Same rule, and it matters more here: an unreadable store must leave
+		// the picture whole rather than quietly serving a degraded one.
+		if (window.localStorage.getItem(PERF_KEY) === '1') elPerf.checked = true;
+	}
+	catch (e) { /* see setCollapsed */ }
+	// Applied before the first payload arrives, so the very first layout is
+	// struck the way the mode asks for rather than annealed and then frozen.
+	if (elPerf.checked) applyPerfMode();
 
 	syncEnabled();
 }());

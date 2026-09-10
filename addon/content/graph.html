@@ -191,6 +191,22 @@
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
 							</label>
+							<!-- What a big collection gives up to stay smooth. Beneath the
+							     layout sliders because the biggest thing it turns off is
+							     the engine those sliders drive: with it on the graph is
+							     struck once and stands still, and each of the sliders above
+							     re-strikes it rather than setting it in motion.
+
+							     A checkbox rather than a threshold that switches itself on:
+							     which of these losses is worth which gain depends on the
+							     graph and on the machine, and a mode that arrived uninvited
+							     at 2000 nodes would be a renderer that changes what it draws
+							     without being asked. What it costs, measured:
+							     docs/performance.md. -->
+							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
+								<input id="perf" type="checkbox"/>
+								<span data-zg-str="perf-mode">performance mode</span>
+							</label>
 						</div>
 
 						<!-- What the node colours mean. Rebuilt on every render, so it only
