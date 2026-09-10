@@ -2801,6 +2801,61 @@ function outranks(mine, theirs) {
 	return false;
 }
 
+/**
+ * The collapse control is one control that changes documents.
+ *
+ * Open, it is the first .btn of core's <item-pane-sidenav>, drawn in chrome at
+ * the top right of the tab. Away, the sidenav has gone with the pane and the
+ * last button of the graph page's top bar stands in the same place, drawn in
+ * content. Two stylesheets, no shared value, and a mismatch reads as the button
+ * jumping sideways as you press it -- which is exactly what shipped, 4px left,
+ * from writing the bar's padding as 8px on both ends.
+ *
+ * Core makes the two agree at 18px from the right-hand edge, and does it the
+ * same way twice: 4px of padding plus half of a 28px button.
+ *
+ *   reader.css   .toolbar { padding-inline: 8px 4px }  .toolbar-button { width: 28px }
+ *   zotero.css   item-pane-sidenav { padding: 6px 4px 0 }  .btn { width: 28px }
+ *
+ * Nothing in this repository holds the second column of that table, so the
+ * numbers are stated here as well as read.
+ */
+check('the collapse button does not move when it changes documents', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
+
+	// The declaration block of a rule, by its selector, comments stripped.
+	const rule = (sel) => {
+		const at = css.indexOf(sel + ' {');
+		if (at < 0) throw new Error('content/graph.css no longer has a ' + sel + ' rule');
+		return css.slice(at + sel.length, css.indexOf('}', at));
+	};
+	// The nth px number after a property name in a block.
+	const px = (block, prop, nth) => {
+		const at = block.indexOf(prop + ':');
+		if (at < 0) throw new Error('no ' + prop + ' in ' + block.trim());
+		const nums = block.slice(at + prop.length + 1, block.indexOf(';', at))
+			.split(' ').filter(Boolean).map(v => parseFloat(v));
+		const n = nums[nth];
+		if (!Number.isFinite(n)) throw new Error(prop + ' is not px numbers: ' + block.trim());
+		return n;
+	};
+
+	// 4px + 28/2. Core's sidenav arrives at the same 18 from the same two parts.
+	const SIDENAV_INSET = 4 + 28 / 2;
+	const end = px(rule('#bar'), 'padding-inline', 1);
+	const button = px(rule('#bar > button'), 'width', 0);
+	const inset = end + button / 2;
+	if (inset !== SIDENAV_INSET) {
+		throw new Error('the button jumps ' + (inset - SIDENAV_INSET) + 'px sideways as the pane '
+			+ 'opens: the bar puts its centre ' + inset + 'px from the edge and the sidenav it '
+			+ 'hands over to puts its own at ' + SIDENAV_INSET + 'px');
+	}
+
+	// The start is core's too, and is NOT the same number -- see reader.css.
+	if (px(rule('#bar'), 'padding-inline', 0) !== 8) {
+		throw new Error('the sidebar toggle no longer starts where a toolbar starts');
+	}
+});
 check('a collapsed panel leaves no edge and no strip', () => {
 	const src = fs.readFileSync(path.join(addonDir, 'lib', 'splitPane.js'), 'utf8');
 	const rule = /\n\t([^\n{]*\[state="collapsed"\][^\n{]*)\{([^}]*)\}/.exec(src);
