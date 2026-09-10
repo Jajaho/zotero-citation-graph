@@ -50,7 +50,7 @@
 	 * markup is the source of the order and of the titles; this list is only
 	 * what has to be wired, so a fifth section costs a name here.
 	 */
-	const SECTIONS = ['forces', 'items', 'display', 'strategies'];
+	const SECTIONS = ['items', 'strategies', 'forces', 'display'];
 
 	// Whether a section was left collapsed, remembered across openings, one
 	// answer per section: putting the forces away is not putting the strategies
@@ -59,8 +59,6 @@
 		return 'zg.section.' + name + '.collapsed';
 	}
 
-	// Same, for the legend, which folds inside the graph-display section.
-	const LEGEND_KEY = 'zg.legend.collapsed';
 	/** Layout comfort, not a view of the data: how hard the user likes their
 	 *  edges to pull. Worth remembering across windows for the same reason the
 	 *  collapsed panel is -- it is a setting about this screen, not this graph. */
@@ -489,8 +487,6 @@
 	let elPaneToggle = el('pane-toggle');
 	let elSideBody = el('side-body');
 	let elLegend = el('legend');
-	let elLegendToggle = el('legend-toggle');
-	let elLegendTitle = el('legend-title');
 	let elLegendBody = el('legend-body');
 	let elEmpty = el('empty');
 	let elEmptySub = el('empty-sub');
@@ -822,38 +818,29 @@
 	 * Rebuilt on every render, because every input to it moves: the colour
 	 * mode, the year range, and which nodes survived the filters.
 	 */
-	// The same words the panel's "colour" menu offers, so the legend's title is
-	// literally the sentence the user just made there.
-	function colorModeName(mode) {
-		return t('color-by-' + mode);
-	}
-
 	// Author and collection have long tails: a legend with two hundred rows is
 	// a wall, and each row past this one explains a single node.
 	const LEGEND_MAX = 12;
 
 	function renderLegend(nodes) {
 		// The cached mode, not the <select>: the rows are keyed by colorKey(),
-		// which reads colorMode, and a title read from anywhere else is a title
-		// that can disagree with the rows under it.
+		// which reads colorMode, and anything read from elsewhere can disagree
+		// with the rows it sits beside.
 		let mode = colorMode;
-		// Titled as the sentence the user just made in the panel -- "coloured by
-		// year" -- rather than the bare noun, so the legend says what it is a
-		// legend FOR without the panel having to be open beside it.
-		let title = t('legend-title', { mode: colorModeName(mode) });
-		elLegendTitle.textContent = title;
-		// One narrow line, and it ellipsises; the tooltip carries the rest.
-		// For the subfields it carries something else as well: how good the
-		// split actually is. Modularity under about 0.3 means the partition is
-		// mostly the algorithm's invention rather than the library's structure,
-		// and a reader colouring by it deserves to be able to find that out.
+		// No title: the legend sits directly under the colour menu, which already
+		// says what it is a legend for. What the title's tooltip used to carry
+		// for the subfields is kept on the legend itself -- how good the split
+		// actually is. Modularity under about 0.3 means the partition is mostly
+		// the algorithm's invention rather than the library's structure, and a
+		// reader colouring by it deserves to be able to find that out. A row's
+		// own tooltip wins over it, so it shows between the rows and on the ramp.
 		let quality = mode === 'cluster' && clusters().count
 			? t('legend-cluster-quality', {
 				count: clusters().count,
 				q: clusters().modularity.toFixed(2),
 			})
-			: null;
-		elLegendTitle.title = quality ? title + ' -- ' + quality : title;
+			: '';
+		elLegend.title = quality;
 		elLegendBody.textContent = '';
 
 		let held = [];
@@ -4960,7 +4947,6 @@
 	for (let name of SECTIONS) {
 		el('sec-' + name).querySelector('.section-chevron').appendChild(Icons.svg('chevron-12'));
 	}
-	el('legend-chevron').appendChild(Icons.svg('chevron-12'));
 
 	try {
 		let saved = window.localStorage.getItem(SIDE_WIDTH_KEY);
@@ -5243,27 +5229,6 @@
 		catch (e) { /* see setCollapsed */ }
 	}
 
-	// The legend collapses the same way and for the same reason: on a narrow
-	// pane a twelve-author list is more legend than graph.
-	function setLegendCollapsed(on) {
-		elLegend.classList.toggle('collapsed', on);
-		elLegendToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
-		elLegendToggle.title = t(on ? 'legend-expand' : 'legend-collapse');
-		try {
-			window.localStorage.setItem(LEGEND_KEY, on ? '1' : '0');
-		}
-		catch (e) { /* no persistence, no problem */ }
-	}
-
-	elLegendToggle.addEventListener('click', () => {
-		setLegendCollapsed(!elLegend.classList.contains('collapsed'));
-	});
-
-	try {
-		if (window.localStorage.getItem(LEGEND_KEY) === '1') setLegendCollapsed(true);
-	}
-	catch (e) { /* see setCollapsed */ }
-
 	/**
 	 * Repaint whatever was drawn before the strings landed.
 	 *
@@ -5278,7 +5243,6 @@
 	 */
 	ZGL10n.onReady(() => {
 		for (let name of SECTIONS) setCollapsed(name, isCollapsed(name));
-		setLegendCollapsed(elLegend.classList.contains('collapsed'));
 		// Same reason as the ones above: the sidebar toggle's tooltip depends on
 		// a state the markup cannot know, and a sidebar left open is the case
 		// where setSideOpen() never ran to say so in the user's language.

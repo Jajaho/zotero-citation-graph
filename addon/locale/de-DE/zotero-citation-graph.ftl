@@ -109,9 +109,6 @@ zotero-citation-graph-stats-building = wird aufgebaut…
 
 ## Die Legende.
 
-zotero-citation-graph-legend-collapse = Legende einklappen
-zotero-citation-graph-legend-expand = Legende anzeigen
-zotero-citation-graph-legend-title = Eingefärbt nach { $mode }
 zotero-citation-graph-legend-outside = externe Referenzen
 zotero-citation-graph-legend-no-date = ohne Datum
 zotero-citation-graph-legend-more = +{ $count } weitere

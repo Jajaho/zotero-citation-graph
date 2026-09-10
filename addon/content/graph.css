@@ -589,7 +589,7 @@ body {
 }
 
 /*
- * The section headers, and the legend's.
+ * The section headers.
  *
  * These are core's <collapsible-section> heads, which is what they now are: a
  * title and a twisty over a body that collapses, stacked down a side pane. The
@@ -599,8 +599,7 @@ body {
  * The whole header is the button, not just the chevron: a wide target, and
  * there is nothing else in the header to click.
  */
-.section-toggle,
-#legend-toggle {
+.section-toggle {
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
@@ -616,8 +615,7 @@ body {
 	cursor: pointer;
 }
 
-.section-toggle:hover,
-#legend-toggle:hover {
+.section-toggle:hover {
 	background: var(--color-quinary-on-sidepane);
 }
 
@@ -627,8 +625,7 @@ body {
  * caret rotated -90 when closed -- and matching it costs one rule and one
  * swapped resting state.
  */
-.section-chevron,
-#legend-chevron {
+.section-chevron {
 	flex: 0 0 auto;
 	width: 12px;
 	height: 12px;
@@ -638,8 +635,7 @@ body {
 	transition: transform 0.2s ease-in-out;
 }
 
-.section:not(.collapsed) .section-chevron,
-#legend:not(.collapsed) #legend-chevron {
+.section:not(.collapsed) .section-chevron {
 	transform: rotate(-180deg);
 }
 
@@ -938,48 +934,24 @@ body {
 	opacity: 0.75;
 }
 
-/* --- The legend section ------------------------------------------------ */
+/* --- The legend ------------------------------------------------------- */
 
 /*
- * Part of the graph-display section, sitting immediately under the colour and
- * size controls: the legend explains what those two just did, and a key several
- * groups further down is a key that is scrolled past. It keeps its own collapse
- * -- a legend for a colouring you have settled on is worth putting away without
- * putting the controls away with it -- and takes the same hairline and top
- * padding the groups around it wear, so the three read as one column.
+ * The rows under the colour menu, in the same group as it: the menu is the
+ * question and these are its answer, so they share its gap and its fold rather
+ * than wearing a header and a fold of their own. No hairline above it either --
+ * a rule between a control and the key to what it just did would split one
+ * thing in two.
  */
 #legend {
 	display: flex;
 	flex-direction: column;
-	padding-top: 8px;
-	border-top: 1px solid var(--fill-quinary);
 }
 
 /* display:flex above is an author rule and would otherwise beat the UA
    stylesheet's [hidden] { display: none }. */
 #legend[hidden] {
 	display: none;
-}
-
-#legend-title {
-	font-weight: 600;
-	flex: 1 1 auto;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/*
- * The side padding is the section body's now that the legend sits inside one,
- * and paying it twice would indent the key past every control it explains. The
- * header still spans the sidebar to hover, the way it did as a section of its
- * own: the negative margin gives back exactly what the body pays, so the text
- * lines up with the controls while the highlight reaches the edges.
- */
-#legend-toggle {
-	width: auto;
-	margin: 0 -9px;
 }
 
 #legend-body {
@@ -990,10 +962,6 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-}
-
-#legend.collapsed #legend-body {
-	display: none;
 }
 
 .legend-row {

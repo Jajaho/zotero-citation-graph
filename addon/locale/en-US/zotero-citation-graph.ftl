@@ -139,9 +139,6 @@ zotero-citation-graph-stats-building = building…
 
 ## The legend.
 
-zotero-citation-graph-legend-collapse = Collapse legend
-zotero-citation-graph-legend-expand = Show legend
-zotero-citation-graph-legend-title = Coloured by { $mode }
 zotero-citation-graph-legend-outside = outside refs
 zotero-citation-graph-legend-no-date = no date
 zotero-citation-graph-legend-more = +{ $count } more

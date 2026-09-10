@@ -117,59 +117,6 @@
 				     tooltips are set from graph.js, because which of the two a header
 				     wears depends on a state the markup cannot know. -->
 
-				<!-- Forces. Layout and nothing else: no node enters or leaves the
-				     graph when one of these moves, and none of them costs a rebuild. -->
-				<div class="section" id="sec-forces">
-					<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
-						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-forces">force adjustment</span>
-					</button>
-					<div class="section-body" id="sec-forces-body">
-						<div class="group">
-							<!-- A dense collection packs into balls because every edge pulls
-							     at full strength; slackening the edges lets charge repulsion
-							     win and the clusters open up far enough to read. -->
-							<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
-								<span data-zg-str="link-pull">edge pull</span>
-								<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
-								<span id="pull-value">1.00</span>
-							</label>
-							<!-- The other half of the same trade. This is the pull that stops a
-							     paper nothing cites from drifting off the canvas forever, so at 0
-							     the unconnected ones do exactly that; turned up, the whole graph
-							     gathers into a tighter disc. -->
-							<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
-								<span data-zg-str="center-pull">centre pull</span>
-								<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
-								<span id="center-value">1.00</span>
-							</label>
-							<!-- Every anchor's strength at once. It sat on each flag's own
-							     card once, which made one question a per-anchor one: a graph
-							     with four groups had four answers to "how hard does a group
-							     pull", and none of them was where the other layout sliders
-							     are. It is the same trade as the two above -- how far a paper
-							     may be dragged from where its citations would put it -- so it
-							     belongs beside them. At 0 every anchor names its papers and
-							     moves none of them. -->
-							<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
-								<span data-zg-str="group-pull">group pull</span>
-								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
-								<span id="group-pull-value">0.40</span>
-							</label>
-							<!-- A pin's reach, expressed the only way that keeps it about the
-							     pinned paper: the links that touch it pull harder, so the works
-							     citing or cited by it come to it and nothing else is disturbed.
-							     At 0 a pin holds only the node it is on, which is what a pin
-							     has always meant -- so that is the default. -->
-							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
-								<span data-zg-str="pin-pull">pin pull</span>
-								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
-								<span id="pin-pull-value">0.00</span>
-							</label>
-						</div>
-					</div>
-				</div>
-
 				<!-- Which items are on the canvas at all. The switches in the first
 				     group change what gets derived, so they cost a rebuild; the masks
 				     under them only narrow the graph that was built. -->
@@ -224,9 +171,86 @@
 					</div>
 				</div>
 
-				<!-- How the items that survived are drawn: what decides a node's colour
-				     and its size, which of them are labelled, and what the renderer is
-				     allowed to stop drawing. -->
+				<!-- Where the edges came from: one switch per strategy, built out of the
+				     payload, and the floor a derived edge's confidence has to clear to
+				     be drawn at all. The threshold is here rather than among the display
+				     switches because the number it filters on is the strategies' own --
+				     it is the same question as which of them to trust, asked
+				     continuously instead of one strategy at a time. -->
+				<div class="section" id="sec-strategies">
+					<button class="section-toggle" id="sec-strategies-toggle" type="button" aria-expanded="true" aria-controls="sec-strategies-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-strategies">referencing strategies</span>
+					</button>
+					<div class="section-body" id="sec-strategies-body">
+						<div id="strategies" class="group"></div>
+
+						<div class="group">
+							<label id="conf-label">
+								<span data-zg-str="min-confidence">min confidence</span>
+								<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
+								<span id="conf-value">0.00</span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<!-- Forces. Layout and nothing else: no node enters or leaves the
+				     graph when one of these moves, and none of them costs a rebuild. -->
+				<div class="section" id="sec-forces">
+					<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-forces">force adjustment</span>
+					</button>
+					<div class="section-body" id="sec-forces-body">
+						<div class="group">
+							<!-- A dense collection packs into balls because every edge pulls
+							     at full strength; slackening the edges lets charge repulsion
+							     win and the clusters open up far enough to read. -->
+							<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
+								<span data-zg-str="link-pull">edge pull</span>
+								<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
+								<span id="pull-value">1.00</span>
+							</label>
+							<!-- The other half of the same trade. This is the pull that stops a
+							     paper nothing cites from drifting off the canvas forever, so at 0
+							     the unconnected ones do exactly that; turned up, the whole graph
+							     gathers into a tighter disc. -->
+							<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
+								<span data-zg-str="center-pull">centre pull</span>
+								<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
+								<span id="center-value">1.00</span>
+							</label>
+							<!-- Every anchor's strength at once. It sat on each flag's own
+							     card once, which made one question a per-anchor one: a graph
+							     with four groups had four answers to "how hard does a group
+							     pull", and none of them was where the other layout sliders
+							     are. It is the same trade as the two above -- how far a paper
+							     may be dragged from where its citations would put it -- so it
+							     belongs beside them. At 0 every anchor names its papers and
+							     moves none of them. -->
+							<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
+								<span data-zg-str="group-pull">group pull</span>
+								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
+								<span id="group-pull-value">0.40</span>
+							</label>
+							<!-- A pin's reach, expressed the only way that keeps it about the
+							     pinned paper: the links that touch it pull harder, so the works
+							     citing or cited by it come to it and nothing else is disturbed.
+							     At 0 a pin holds only the node it is on, which is what a pin
+							     has always meant -- so that is the default. -->
+							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
+								<span data-zg-str="pin-pull">pin pull</span>
+								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
+								<span id="pin-pull-value">0.00</span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<!-- How the items that survived are drawn: which of them are drawn at
+				     all, which are labelled, how big each is and what its colour
+				     means, and what the renderer is allowed to stop drawing. -->
 				<div class="section" id="sec-display">
 					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
 						<span class="section-chevron"></span>
@@ -235,28 +259,8 @@
 					<div class="section-body" id="sec-display-body">
 						<div class="group">
 							<label>
-								<span data-zg-str="color-by">colour</span>
-								<select id="color-by">
-									<option value="year" data-zg-str="color-by-year">year</option>
-									<option value="collection" data-zg-str="color-by-collection">collection</option>
-									<option value="cluster" data-zg-str="color-by-cluster">subfield</option>
-									<option value="author" data-zg-str="color-by-author">first author</option>
-									<option value="publication" data-zg-str="color-by-publication">publication</option>
-									<option value="type" data-zg-str="color-by-type">item type</option>
-								</select>
-							</label>
-							<!-- Applies to outside refs as well as held items. "global citations"
-							     needs the counts "query node metadata" fetches, so picking it
-							     switches that on -- a section up -- and rebuilds, rather than
-							     sitting here greyed out: the user asked for the sizing, not for
-							     a lecture about a prerequisite. The lookup is still never
-							     entered on its own. -->
-							<label>
-								<span data-zg-str="size-by">size</span>
-								<select id="size-by">
-									<option value="here" data-zg-str="size-by-here">cited here</option>
-									<option value="global" data-zg-str="size-by-global">global citations</option>
-								</select>
+								<input id="hide-isolated" type="checkbox"/>
+								<span data-zg-str="hide-isolated">hide unconnected</span>
 							</label>
 							<!-- Whether the names an outside reference already has are drawn.
 							     Nothing is derived or fetched for it -- it decides which of the
@@ -270,33 +274,46 @@
 								<input id="ghost-names" type="checkbox" checked="checked"/>
 								<span data-zg-str="scope-external-names">outside names</span>
 							</label>
-						</div>
+							<!-- Applies to outside refs as well as held items. "global citations"
+							     needs the counts "query node metadata" fetches, so picking it
+							     switches that on -- in the item selection section -- and
+							     rebuilds, rather than sitting here greyed out: the user asked
+							     for the sizing, not for a lecture about a prerequisite. The
+							     lookup is still never entered on its own. -->
+							<label>
+								<span data-zg-str="size-by">size</span>
+								<select id="size-by">
+									<option value="here" data-zg-str="size-by-here">cited here</option>
+									<option value="global" data-zg-str="size-by-global">global citations</option>
+								</select>
+							</label>
+							<label>
+								<span data-zg-str="color-by">colour</span>
+								<select id="color-by">
+									<option value="year" data-zg-str="color-by-year">year</option>
+									<option value="collection" data-zg-str="color-by-collection">collection</option>
+									<option value="cluster" data-zg-str="color-by-cluster">subfield</option>
+									<option value="author" data-zg-str="color-by-author">first author</option>
+									<option value="publication" data-zg-str="color-by-publication">publication</option>
+									<option value="type" data-zg-str="color-by-type">item type</option>
+								</select>
+							</label>
+							<!-- What the node colours mean. Rebuilt on every render, so it only
+							     ever lists colours actually visible after the filters, and hidden
+							     until there is something to explain.
 
-						<!-- What the node colours mean. Rebuilt on every render, so it only
-						     ever lists colours actually visible after the filters, and hidden
-						     until there is something to explain. Directly under the control
-						     that decides them, because it is the sentence that control just
-						     started: "coloured by year" is the legend's own heading. It sat
-						     below the whole panel once -- past the filters, the strategies and
-						     the sliders, which on an ordinary sidebar is past the fold, and a
-						     key nobody finds is a graph whose colours mean nothing.
-
-						     It keeps a fold of its own inside this section's, because a key
-						     for a colouring you have settled on is worth putting away without
-						     putting the control that made it away too. -->
-						<div id="legend" hidden="hidden">
-							<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
-								<span id="legend-chevron"></span>
-								<span id="legend-title"></span>
-							</button>
-							<div id="legend-body"></div>
+							     Directly under the control that decides them, and in the same
+							     group, with no header and no fold of its own: the menu above it
+							     already says "colour: year", so a heading repeating it was the
+							     same sentence twice, and a separate fold was one more thing to
+							     open before the key could be read. It is the menu's answer, and
+							     it goes where the menu goes -- folding the section folds both. -->
+							<div id="legend" hidden="hidden">
+								<div id="legend-body"></div>
+							</div>
 						</div>
 
 						<div class="group">
-							<label>
-								<input id="hide-isolated" type="checkbox"/>
-								<span data-zg-str="hide-isolated">hide unconnected</span>
-							</label>
 							<!-- How far an isolation reaches. Always visible: it is a setting
 							     about how you read a graph, and one you want to be able to find
 							     before you have isolated anything. -->
@@ -321,30 +338,6 @@
 							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
 								<input id="perf" type="checkbox"/>
 								<span data-zg-str="perf-mode">performance mode</span>
-							</label>
-						</div>
-					</div>
-				</div>
-
-				<!-- Where the edges came from: one switch per strategy, built out of the
-				     payload, and the floor a derived edge's confidence has to clear to
-				     be drawn at all. The threshold is here rather than among the display
-				     switches because the number it filters on is the strategies' own --
-				     it is the same question as which of them to trust, asked
-				     continuously instead of one strategy at a time. -->
-				<div class="section" id="sec-strategies">
-					<button class="section-toggle" id="sec-strategies-toggle" type="button" aria-expanded="true" aria-controls="sec-strategies-body" title="Collapse this section">
-						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-strategies">referencing strategies</span>
-					</button>
-					<div class="section-body" id="sec-strategies-body">
-						<div id="strategies" class="group"></div>
-
-						<div class="group">
-							<label id="conf-label">
-								<span data-zg-str="min-confidence">min confidence</span>
-								<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
-								<span id="conf-value">0.00</span>
 							</label>
 						</div>
 					</div>
