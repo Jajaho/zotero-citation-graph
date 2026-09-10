@@ -114,7 +114,7 @@ zotero-citation-graph-tooltip-cited-here = hier von { $count } zitiert
 zotero-citation-graph-tooltip-citations-total = { $count } Zitationen insgesamt
 zotero-citation-graph-tooltip-pinned = angeheftet
 zotero-citation-graph-tooltip-et-al = { $names } u. a.
-zotero-citation-graph-tooltip-actions = Klick zum Hervorheben · Doppelklick zum Isolieren · Rechtsklick für Aktionen
+zotero-citation-graph-tooltip-actions = Klick zum Auswählen (Strg zum Hinzufügen) · Doppelklick zum Isolieren · Rechtsklick für Aktionen
 
 
 ## Filter-Chips und die Vorschlagsliste.
@@ -203,9 +203,9 @@ zotero-citation-graph-menu-isolate-hint-undim = alles wieder aufhellen
 zotero-citation-graph-menu-isolate-hint-only = alles außer diesem Knoten abdunkeln
 zotero-citation-graph-menu-isolate-hint-depth = alles abdunkeln, was mehr als { $depth -> [one] { $depth } Kante *[other] { $depth } Kanten } entfernt ist
 zotero-citation-graph-menu-add-to-isolation = Zur Isolation hinzufügen
-zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens zusätzlich aufhellen, den Rest behalten
+zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens zusätzlich aufhellen, den Rest behalten — oder Strg-Doppelklick
 zotero-citation-graph-menu-remove-from-isolation = Aus der Isolation nehmen
-zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen
+zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen — oder Strg-Doppelklick
 
 zotero-citation-graph-menu-pin = Knoten hier anheften
 zotero-citation-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen

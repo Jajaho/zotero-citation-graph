@@ -2262,11 +2262,10 @@
 	}
 
 	/**
-	 * A double click keeps its meaning whatever the focus set holds: it
-	 * isolates the node clicked, and double-clicking that same node when it is
-	 * the only thing isolated gives the whole graph back. Building a focus out
-	 * of several nodes is the context menu's job -- a gesture that cannot be
-	 * made by accident while panning.
+	 * A plain double click keeps its meaning whatever the focus set holds: it
+	 * isolates the node clicked and nothing else, and double-clicking that same
+	 * node when it is the only thing isolated gives the whole graph back. So
+	 * there is always one gesture back to a single neighbourhood.
 	 *
 	 * The pick is set here rather than left to the two clicks underneath. Those
 	 * run pickOnly() twice on the same node, which picks it and puts it back
@@ -2281,6 +2280,39 @@
 		setPicked(new Set([id]));
 		if (isolated.size === 1 && isolated.has(id)) clearIsolated();
 		else isolateOnly(id);
+	}
+
+	/**
+	 * Ctrl (Cmd on a Mac) held: light this neighbourhood beside the ones
+	 * already lit, or put it out again, leaving the rest of the focus alone.
+	 *
+	 * The same modifier the single click reads, meaning the same thing one
+	 * level up -- add to what is there rather than start again -- so the two
+	 * gestures are one rule applied to the two things a click builds: the pick
+	 * and the focus. It answers "do these two papers share anything" without
+	 * going to the menu for it, and the menu's own Add to / Remove from
+	 * isolation are the same two calls, still there for a pointer that would
+	 * rather not double-click.
+	 *
+	 * The pick follows the focus rather than the clicks underneath, which is
+	 * toggleIsolate()'s reason as well: a Ctrl-double-click runs togglePick()
+	 * twice, which cancels out and leaves the ringed set saying nothing about
+	 * the gesture just made. Following it keeps the rings and the lit
+	 * neighbourhoods describing the same set of papers, which is what the plain
+	 * double click already does with one.
+	 */
+	function addToIsolate(id) {
+		hideAction();
+		hideMenu();
+		paneEngaged = true;
+		// Read before either set is touched: both branches below turn on it.
+		let on = isolated.has(id);
+		let pick = new Set(picked);
+		if (on) pick.delete(id);
+		else pick.add(id);
+		setPicked(pick);
+		if (on) dropIsolated(id);
+		else addIsolated(id);
 	}
 
 	/**
@@ -2395,13 +2427,19 @@
 	 * whatever the pointer is over -- force-graph's own hit test already knows,
 	 * and asking it is more reliable than timing two clicks ourselves.
 	 *
-	 * The pair of clicks underneath runs pickOnly() twice, which cancels out:
-	 * the ring goes on and straight back off. toggleIsolate() puts the pick
-	 * back afterwards, because the pick is the tab's selection now and a paper
-	 * whose neighbourhood you just asked for is not one you meant to deselect.
+	 * The pair of clicks underneath runs pickOnly() -- or togglePick(), with the
+	 * modifier down -- twice, which cancels out either way: the ring goes on and
+	 * straight back off. Both functions below put the pick back afterwards,
+	 * because the pick is the tab's selection now and a paper whose
+	 * neighbourhood you just asked for is not one you meant to deselect.
+	 *
+	 * Ctrl (Cmd on a Mac) reads here exactly as it does on the single click:
+	 * add to what is there rather than start again. See addToIsolate().
 	 */
-	elGraph.addEventListener('dblclick', () => {
-		if (hoverNode) toggleIsolate(hoverNode.id);
+	elGraph.addEventListener('dblclick', (e) => {
+		if (!hoverNode) return;
+		if (e.ctrlKey || e.metaKey) addToIsolate(hoverNode.id);
+		else toggleIsolate(hoverNode.id);
 	});
 
 	// --- defending a drag in progress -------------------------------------

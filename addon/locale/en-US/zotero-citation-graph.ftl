@@ -134,7 +134,7 @@ zotero-citation-graph-tooltip-cited-here = cited by { $count } here
 zotero-citation-graph-tooltip-citations-total = { $count } citations total
 zotero-citation-graph-tooltip-pinned = pinned
 zotero-citation-graph-tooltip-et-al = { $names } et al.
-zotero-citation-graph-tooltip-actions = click to highlight · double-click to isolate · right-click for actions
+zotero-citation-graph-tooltip-actions = click to pick (Ctrl to add) · double-click to isolate · right-click for actions
 
 
 ## Filter chips and the completion list.
@@ -235,9 +235,9 @@ zotero-citation-graph-menu-isolate-hint-undim = undim everything
 zotero-citation-graph-menu-isolate-hint-only = dim everything but this node
 zotero-citation-graph-menu-isolate-hint-depth = dim everything more than { $depth -> [one] { $depth } edge *[other] { $depth } edges } away
 zotero-citation-graph-menu-add-to-isolation = Add to isolation
-zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood around this node too, keeping the rest
+zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood around this node too, keeping the rest — or Ctrl-double-click it
 zotero-citation-graph-menu-remove-from-isolation = Remove from isolation
-zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node
+zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node — or Ctrl-double-click it
 
 zotero-citation-graph-menu-pin = Pin node here
 zotero-citation-graph-menu-pin-hint = hold it at this spot; drag it to move the pin
