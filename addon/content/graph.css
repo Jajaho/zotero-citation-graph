@@ -197,12 +197,30 @@ body {
  *
  * Written as 8px both ends, the button lands 4px to the left of where the
  * sidenav's just was and the swap is visible.
+ *
+ * The 41px has the same job in the other direction, and only under border-box.
+ * reader.css opens with
+ *
+ *     *, ::before, ::after { box-sizing: border-box }
+ *
+ * so its 41px INCLUDES the border-bottom: 40px of content, and a 28px button
+ * centred in 40px starts at 6px -- which is item-pane-sidenav's padding-top,
+ * exactly. Icon boxes then start at 6 + 4 on both sides and the handover is
+ * pixel-for-pixel.
+ *
+ * This file has no such reset, and copying the number without it made the bar
+ * 42px tall and started the button at 6.5px, which Gecko resolves downwards: a
+ * bar a pixel deeper than the reader's, and an icon a pixel below the one it
+ * takes over from. So the reset is declared here, on the one rule that was
+ * written against it. It is not declared file-wide because the rest of this
+ * stylesheet was written without it and means what it says.
  */
 #bar {
 	grid-area: bar;
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	box-sizing: border-box;
 	height: 41px;
 	padding-block: 0;
 	padding-inline: 8px 4px;

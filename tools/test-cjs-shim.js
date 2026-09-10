@@ -2817,6 +2817,13 @@ function outranks(mine, theirs) {
  *   reader.css   .toolbar { padding-inline: 8px 4px }  .toolbar-button { width: 28px }
  *   zotero.css   item-pane-sidenav { padding: 6px 4px 0 }  .btn { width: 28px }
  *
+ * And at 6px from the top, which is the sidenav's padding-top outright and the
+ * toolbar's by arithmetic: a 28px button centred in 41px LESS ITS BORDER, which
+ * is 40px, starts at 6. That subtraction is the whole of what box-sizing does
+ * here -- reader.css declares border-box globally and this file does not, so a
+ * 41px copied over without it is 42px tall and starts the button at 6.5, which
+ * rounds down to a bar a pixel deep and an icon a pixel low. Both shipped.
+ *
  * Nothing in this repository holds the second column of that table, so the
  * numbers are stated here as well as read.
  */
@@ -2854,6 +2861,23 @@ check('the collapse button does not move when it changes documents', () => {
 	// The start is core's too, and is NOT the same number -- see reader.css.
 	if (px(rule('#bar'), 'padding-inline', 0) !== 8) {
 		throw new Error('the sidebar toggle no longer starts where a toolbar starts');
+	}
+
+	// Vertically. 41px is core's number, but only border-box turns it into the
+	// 40px of content that puts the button at the sidenav's 6px.
+	const SIDENAV_TOP = 6;
+	const bar = rule('#bar');
+	if (!bar.includes('box-sizing: border-box')) {
+		throw new Error('the bar is a pixel taller than the toolbar it was copied from: '
+			+ 'reader.css declares box-sizing border-box for every element and this file '
+			+ 'does not, so its 41px excludes the border-bottom instead of containing it');
+	}
+	const content = px(bar, 'height', 0) - 1;
+	const top = (content - button) / 2;
+	if (top !== SIDENAV_TOP) {
+		throw new Error('the button drops ' + (top - SIDENAV_TOP) + 'px as the pane closes: '
+			+ 'the bar starts it ' + top + 'px down and the sidenav it takes over from '
+			+ 'starts its own at ' + SIDENAV_TOP + 'px');
 	}
 });
 check('a collapsed panel leaves no edge and no strip', () => {
