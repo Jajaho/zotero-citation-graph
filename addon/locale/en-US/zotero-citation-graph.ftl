@@ -306,6 +306,7 @@ zotero-citation-graph-menu-gaps-hide = Hide what is missing
 zotero-citation-graph-menu-gaps-hint = works your papers cite that this library does not hold
 zotero-citation-graph-gaps-title = Missing works
 zotero-citation-graph-gaps-close = Close
+zotero-citation-graph-gaps-caption = The number is how many of your items cite the work.
 zotero-citation-graph-gaps-empty = Nothing is cited by two of your papers and missing.
 zotero-citation-graph-gaps-building = Still reading the collection…
 zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light them

@@ -826,16 +826,17 @@ body {
 /* --- The legend section ------------------------------------------------ */
 
 /*
- * The second section of the sidebar, under the settings. It explains the graph
- * rather than changing it, which is why it sits below the controls rather than
- * among them -- but it belongs in the same column, because both answer
- * questions about the picture and neither is worth covering the picture for.
- *
- * The hairline above it is the one core draws between two collapsible-sections.
+ * A section of the settings panel, sitting immediately under the colour and
+ * size controls: the legend explains what those two just did, and a key several
+ * groups further down is a key that is scrolled past. It keeps its own collapse
+ * -- a legend for a colouring you have settled on is worth putting away without
+ * putting the controls away with it -- and takes the same hairline and top
+ * padding the groups around it wear, so the three read as one column.
  */
 #legend {
 	display: flex;
 	flex-direction: column;
+	padding-top: 8px;
 	border-top: 1px solid var(--fill-quinary);
 }
 
@@ -854,12 +855,23 @@ body {
 	white-space: nowrap;
 }
 
+/*
+ * The side padding is #panel-body's now that the legend sits inside it, and
+ * paying it twice would indent the key past every control it explains. The
+ * header still spans the sidebar to hover, the way it did as a section of its
+ * own: the negative margin gives back exactly what the panel pays, so the text
+ * lines up with the controls while the highlight reaches the edges.
+ */
+#legend-toggle {
+	width: auto;
+	margin: 0 -9px;
+}
+
 #legend-body {
 	/* No scroller of its own: #side-body is the one, so settings and legend
 	   scroll together and a twelve-author key is reached by scrolling the pane
 	   rather than a box inside it. */
 	min-height: 0;
-	padding: 0 9px 8px;
 	display: flex;
 	flex-direction: column;
 	gap: 4px;

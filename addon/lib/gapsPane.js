@@ -63,6 +63,13 @@ const GAPS_CSS = `
 		font-weight: 600;
 		color: var(--fill-primary);
 	}
+	/* Outside the scroller, so it is still there at the bottom of a list of
+	   twenty-five. */
+	.zg-gaps-caption {
+		flex: 0 0 auto;
+		padding: 6px 10px 0;
+		color: var(--fill-secondary);
+	}
 	.zg-gaps-body {
 		flex: 1;
 		min-height: 0;
@@ -148,6 +155,15 @@ function ensure(entry) {
 	head.appendChild(title);
 	head.appendChild(close);
 
+	// What the number at the head of every row counts. It is the whole ranking
+	// and it had nothing but a tooltip saying so, which is a thing nobody hovers
+	// over a column of figures to find: the first reading of "12" against a work
+	// you do not hold is "I cited this twelve times", which is not a fact this
+	// list has, and it makes a list of gaps read as a list of your own citations.
+	let caption = doc.createElement('div');
+	caption.className = 'zg-gaps-caption';
+	caption.textContent = l10n.t('gaps-caption');
+
 	let body = doc.createElement('div');
 	body.className = 'zg-gaps-body';
 
@@ -156,6 +172,7 @@ function ensure(entry) {
 	foot.hidden = true;
 
 	box.appendChild(head);
+	box.appendChild(caption);
 	box.appendChild(body);
 	box.appendChild(foot);
 

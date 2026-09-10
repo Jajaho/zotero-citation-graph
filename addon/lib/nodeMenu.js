@@ -1,4 +1,4 @@
-/* global Zotero */
+/* global Zotero, setTimeout */
 
 /**
  * Zotero's own item context menu, opened over a node in the graph.
@@ -128,22 +128,44 @@ async function open(entry, msg, reply) {
 		let id = event.target && event.target.dataset && event.target.dataset.zgEntry;
 		if (id) record.picked = id;
 	};
+	/**
+	 * The popup is down, and which row took it down is not known yet.
+	 *
+	 * Gecko runs a picked row as nsXULMenuCommandEvent: it rolls the menu chain
+	 * up FIRST -- so that a command is free to open a dialog or another popup --
+	 * and dispatches the XUL `command` afterwards. So popuphidden arrives ahead
+	 * of the pick, always, and a menu read here reads `picked: null` however it
+	 * was closed. Sweeping the entries at this point makes it worse rather than
+	 * merely early: the command is dispatched at the menuitem, and an item
+	 * already off the popup has nothing to bubble to.
+	 *
+	 * So the whole answer waits one turn of the event loop. A macrotask and not
+	 * a microtask: microtasks run at the checkpoint after this listener returns,
+	 * which is still inside the runnable that has yet to dispatch the command.
+	 *
+	 * Nothing is lost by waiting. The page is holding the node this menu was
+	 * opened over -- fixed coordinates, no ring -- so it does not move while the
+	 * turn goes by, and it is given back below at the position it was asked
+	 * about.
+	 */
 	let onHidden = (event) => {
 		if (event.target !== popup) return;
-		popup.removeEventListener('command', onCommand);
 		popup.removeEventListener('popuphidden', onHidden);
-		// A menu opened over another node has already swept this one's entries
-		// and put its own there; they are not ours to take away.
-		let current = open_.get(win);
-		if (!current || current.gen !== record.gen) return;
-		open_.delete(win);
-		sweep(popup);
-		// Closed before picked, never the other way round: "Pin node here" fixes
-		// the node where the hold is keeping it, and a release arriving after
-		// that would undo the pin. It is the order the page's own menu rows run
-		// in, and the page depends on it.
-		reply('zgMenuClosed');
-		if (record.picked) reply('zgMenuPicked', record.picked);
+		setTimeout(() => {
+			popup.removeEventListener('command', onCommand);
+			// A menu opened over another node has already swept this one's
+			// entries and put its own there; they are not ours to take away.
+			let current = open_.get(win);
+			if (!current || current.gen !== record.gen) return;
+			open_.delete(win);
+			sweep(popup);
+			// Closed before picked, never the other way round: "Pin node here"
+			// fixes the node where the hold is keeping it, and a release
+			// arriving after that would undo the pin. It is the order the
+			// page's own menu rows run in, and the page depends on it.
+			reply('zgMenuClosed');
+			if (record.picked) reply('zgMenuPicked', record.picked);
+		}, 0);
 	};
 	popup.addEventListener('command', onCommand);
 	popup.addEventListener('popuphidden', onHidden);

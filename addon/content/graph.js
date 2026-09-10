@@ -56,6 +56,13 @@
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
+	/** Whether papers nothing in the collection cites are drawn at all. It used
+	 *  to be decided for the user -- ticked by the first payload that carried
+	 *  edges, and ticked again by every rebuild that had not been argued with in
+	 *  that tab -- which is a graph quietly leaving papers out and a checkbox
+	 *  somewhere below the fold saying so. It is the user's, and it is worth
+	 *  remembering for the same reason isolation depth is. */
+	const HIDE_ISOLATED_KEY = 'zg.hide.isolated';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
 	 *  live here beside the rest and not in a Zotero pref. */
@@ -248,7 +255,6 @@
 			elStatus.textContent = t('bad-payload', { message: e.message });
 			return;
 		}
-		let firstEdges = (!raw || !raw.edges.length) && next.edges.length;
 		let adopted = next.meta && next.meta.adopted;
 		anchorNext = adopted && placeAdopted(adopted, next.edges) ? adopted.now : null;
 		raw = next;
@@ -268,11 +274,6 @@
 		hideSuggest();
 		hoverNode = null;
 		renderStrategyToggles();
-		// Only auto-hide unconnected nodes the first time edges show up; after
-		// that the checkbox belongs to the user.
-		if (firstEdges && !elHideIsolated.dataset.touched) {
-			elHideIsolated.checked = true;
-		}
 		syncEnabled();
 		render();
 	};
@@ -1415,7 +1416,16 @@
 				toggleHighlight(n.id);
 				showItemPane(n);
 			});
-			fg.onNodeRightClick(showMenu);
+			// Held for as long as the menu is up, exactly as the drag path
+			// below holds a node it dropped: the menu offers to pin this node
+			// HERE, and a node still being carried by the layout while the
+			// question is on screen would be pinned wherever it had got to by
+			// the time it was answered. Menu first, hold second, for the reason
+			// given there -- the entry has to read "Pin node here".
+			fg.onNodeRightClick((n, event) => {
+				showMenu(n, event);
+				if (!isPinned(n)) hold(n);
+			});
 			fg.onNodeHover((n) => {
 				hoverNode = n;
 			});
@@ -2425,6 +2435,13 @@
 	let heldNode = null;
 
 	function hold(n) {
+		// Whatever was held before goes back to the layout first. A menu opened
+		// over a second node takes the first one's menu down through hideMenu(),
+		// which leaves the release to the close chrome answers with -- and that
+		// answer never comes for a menu another one replaced. Overwriting the
+		// held node instead of releasing it would leave the first fixed for
+		// good: a pin with no ring, and no entry anywhere that takes it off.
+		release();
 		heldNode = n;
 		n.fx = n.x;
 		n.fy = n.y;
@@ -3583,7 +3600,10 @@
 		render();
 	});
 	elHideIsolated.addEventListener('change', () => {
-		elHideIsolated.dataset.touched = '1';
+		try {
+			window.localStorage.setItem(HIDE_ISOLATED_KEY, elHideIsolated.checked ? '1' : '0');
+		}
+		catch (e) { /* see setCollapsed */ }
 		render();
 	});
 
@@ -4114,6 +4134,13 @@
 	// A number box keeps a stored value its own min/max would reject, so the
 	// clamp above has to be written back before it is ever read as the truth.
 	elIsolateDepth.value = String(isolateDepth);
+
+	try {
+		// Only a stored yes turns it on: an empty store is a graph that draws
+		// everything it was asked to draw.
+		if (window.localStorage.getItem(HIDE_ISOLATED_KEY) === '1') elHideIsolated.checked = true;
+	}
+	catch (e) { /* see setCollapsed */ }
 
 	syncEnabled();
 }());

@@ -25,7 +25,7 @@ zotero-citation-graph-scope-subcollections-hint = Einträge aus allen Untersamml
 zotero-citation-graph-scope-external = externe Referenzen
 zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in der Sammlung sind
 zotero-citation-graph-scope-min-cites = zitiert von ≥
-zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen Ihrer Aufsätze zitiert werden
+zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Namen nachschlagen
 zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
 
@@ -45,7 +45,7 @@ zotero-citation-graph-link-pull = Kantenzug
 zotero-citation-graph-link-pull-hint = Wie stark eine Kante ihre beiden Knoten zusammenzieht. Niedriger zieht einen dichten Graphen auseinander.
 
 zotero-citation-graph-center-pull = Mittelzug
-zotero-citation-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Aufsätze davon; höher packt den Graphen enger zusammen.
+zotero-citation-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Einträge davon; höher packt den Graphen enger zusammen.
 
 zotero-citation-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
 
@@ -169,13 +169,13 @@ zotero-citation-graph-group-drag-hint = Ziehen, um diese Karte zu verschieben
 zotero-citation-graph-group-placeholder = was hierher gehört — Autor:, Jahr:, …
 zotero-citation-graph-group-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt ein, was dieser Anker anzieht.
 zotero-citation-graph-group-pull = Zug
-zotero-citation-graph-group-pull-hint = Wie stark dieser Anker die Aufsätze anzieht, die er benennt. Bei 0 benennt er sie, ohne sie zu bewegen.
+zotero-citation-graph-group-pull-hint = Wie stark dieser Anker die Einträge anzieht, die er benennt. Bei 0 benennt er sie, ohne sie zu bewegen.
 zotero-citation-graph-group-remove = Entfernen
 zotero-citation-graph-group-done = Fertig
 zotero-citation-graph-group-empty = sagen, was hierher gehört
-zotero-citation-graph-group-pulls = zieht { $count -> [one] { $count } Aufsatz hierher *[other] { $count } Aufsätze hierher }
+zotero-citation-graph-group-pulls = zieht { $count -> [one] { $count } Eintrag hierher *[other] { $count } Einträge hierher }
 # Derselbe Anker, dessen Zug ganz heruntergedreht ist.
-zotero-citation-graph-group-names = benennt { $count -> [one] { $count } Aufsatz und bewegt ihn nicht *[other] { $count } Aufsätze und bewegt sie nicht }
+zotero-citation-graph-group-names = benennt { $count -> [one] { $count } Eintrag und bewegt ihn nicht *[other] { $count } Einträge und bewegt sie nicht }
 zotero-citation-graph-group-flag-empty = noch nichts
 
 
@@ -193,7 +193,7 @@ zotero-citation-graph-menu-zoom-to-fit-hint = den ganzen Graphen wieder ins Bild
 zotero-citation-graph-menu-edit-group = Gruppe bearbeiten
 zotero-citation-graph-menu-edit-group-hint = ändern, was dieser Anker anzieht
 zotero-citation-graph-menu-remove-group = Gruppe entfernen
-zotero-citation-graph-menu-remove-group-hint = diese Aufsätze zurück ins Layout lassen
+zotero-citation-graph-menu-remove-group-hint = diese Einträge zurück ins Layout lassen
 zotero-citation-graph-menu-group-here = Gruppe hier
 zotero-citation-graph-menu-group-here-hint = einen Anker setzen und sagen, was dazugehört
 
@@ -271,12 +271,13 @@ zotero-citation-graph-tab-title = { $collection } — Zitationsgraph
 
 zotero-citation-graph-menu-gaps = Was fehlt
 zotero-citation-graph-menu-gaps-hide = Fehlendes ausblenden
-zotero-citation-graph-menu-gaps-hint = Werke, die deine Aufsätze zitieren und die diese Bibliothek nicht hat
+zotero-citation-graph-menu-gaps-hint = Werke, die deine Einträge zitieren und die diese Bibliothek nicht hat
 zotero-citation-graph-gaps-title = Fehlende Werke
 zotero-citation-graph-gaps-close = Schließen
-zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Aufsätze zitiert und fehlt.
+zotero-citation-graph-gaps-caption = Die Zahl sagt, wie viele deiner Einträge das Werk zitieren.
+zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Einträge zitiert und fehlt.
 zotero-citation-graph-gaps-building = Die Sammlung wird noch gelesen…
-zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } deiner Aufsätze zitiert das *[other] { $count } deiner Aufsätze zitieren das } — zum Hervorheben klicken
+zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — zum Hervorheben klicken
 zotero-citation-graph-gaps-add = Zu Zotero hinzufügen
 zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe
 zotero-citation-graph-gaps-mixed = über { $count } Teilgebiete verteilt

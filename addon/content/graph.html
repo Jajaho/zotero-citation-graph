@@ -160,6 +160,22 @@
 							</label>
 						</div>
 
+						<!-- What the node colours mean. Rebuilt on every render, so it only
+						     ever lists colours actually visible after the filters, and hidden
+						     until there is something to explain. Directly under the control
+						     that decides them, because it is the sentence that control just
+						     started: "coloured by year" is the legend's own heading. It sat
+						     below the whole panel once -- past the filters, the strategies and
+						     the sliders, which on an ordinary sidebar is past the fold, and a
+						     key nobody finds is a graph whose colours mean nothing. -->
+						<div id="legend" hidden="hidden">
+							<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
+								<span id="legend-chevron"></span>
+								<span id="legend-title"></span>
+							</button>
+							<div id="legend-body"></div>
+						</div>
+
 						<!-- Filters. Each one is a mask over the held items, and they stack:
 						     every filter added narrows what is left, never widens it. The
 						     suggestions are drawn from the items that survive the filters
@@ -203,19 +219,6 @@
 							<button id="rebuild" type="button" data-zg-str="rebuild">Rebuild</button>
 						</div>
 					</div>
-				</div>
-				<!-- What the node colours mean. Rebuilt on every render, so it only ever
-				     lists colours actually visible after the filters, and hidden until
-				     there is something to explain. Under the settings rather than
-				     opposite them: it answers a question you ask while reading the
-				     graph, and the panel above answers the ones you ask while changing
-				     it -- two sections of one column, in the order they are reached. -->
-				<div id="legend" hidden="hidden">
-					<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
-						<span id="legend-chevron"></span>
-						<span id="legend-title"></span>
-					</button>
-					<div id="legend-body"></div>
 				</div>
 			</div>
 			<!-- The width handle. Laid over the pane's own right edge, so the

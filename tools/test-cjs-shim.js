@@ -3656,11 +3656,23 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	}
 	if (said.length) throw new Error('the page was told something while the menu was still up: ' + said);
 
-	// Picking a row. The command arrives first and the popup goes down after it,
-	// but the page hears the close FIRST: "Pin node here" fixes the node where
-	// the hold is keeping it, and a release arriving afterwards would undo it.
-	popup.fire('command', { target: mine[2] });
+	// Picking a row, in the order Gecko actually uses: nsXULMenuCommandEvent
+	// rolls the menu chain up and dispatches the row's command AFTERWARDS, so
+	// the popup is down before anything knows what took it down. A menu read at
+	// popuphidden therefore reads "nothing was picked" however it was closed --
+	// which is what silently un-wired every one of these entries once.
 	popup.hidePopup();
+	if (said.length) throw new Error('the page was answered before the pick could arrive: ' + said);
+	// And the entries have to still be ON the popup: the command is dispatched
+	// at the menuitem, and one already taken off has nothing to bubble to.
+	if (!popup.querySelectorAll('.zg-node-menuitem').length) {
+		throw new Error('the entries were swept before the pick could reach them');
+	}
+	popup.fire('command', { target: mine[2] });
+
+	// The page hears the close FIRST: "Pin node here" fixes the node where the
+	// hold is keeping it, and a release arriving afterwards would undo it.
+	await new Promise(r => setTimeout(r, 0));
 	if (said.join(' ') !== 'zgMenuClosed zgMenuPicked:e1') throw new Error('the page heard ' + said.join(' '));
 	if (popup.querySelectorAll('.zg-node-menuitem').length) {
 		throw new Error("the graph's entries were left on the library's own menu");
@@ -3670,6 +3682,7 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	said.length = 0;
 	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
 	popup.hidePopup();
+	await new Promise(r => setTimeout(r, 0));
 	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a dismissal said ' + said.join(' '));
 
 	// No item tree, no menu -- and the page is still holding the node it
