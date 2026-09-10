@@ -47,6 +47,15 @@ zotero-citation-graph-link-pull-hint = Wie stark eine Kante ihre beiden Knoten z
 zotero-citation-graph-center-pull = Mittelzug
 zotero-citation-graph-center-pull-hint = Wie stark die Mitte der Fläche jeden Knoten hält. Bei 0 treiben unverbundene Einträge davon; höher packt den Graphen enger zusammen.
 
+# Die Stärke aller Anker zugleich, nicht die eines einzelnen: die Fähnchen
+# stehen auf der Fläche, aber wie stark sie ziehen, ist eine Layout-Einstellung
+# wie die beiden darüber.
+zotero-citation-graph-group-pull = Gruppenzug
+zotero-citation-graph-group-pull-hint = Wie stark jeder Anker die Einträge anzieht, die er benennt. Bei 0 benennen sie sie, ohne sie zu bewegen.
+
+zotero-citation-graph-pin-pull = Nadelzug
+zotero-citation-graph-pin-pull-hint = Wie stark ein angehefteter Knoten den übrigen Graphen zu sich zieht. Bei 0 hält eine Nadel nur sich selbst.
+
 zotero-citation-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
 
 zotero-citation-graph-filter-placeholder = Filter — Autor:, Jahr:, …
@@ -168,13 +177,11 @@ zotero-citation-graph-group-existing = Gruppe
 zotero-citation-graph-group-drag-hint = Ziehen, um diese Karte zu verschieben
 zotero-citation-graph-group-placeholder = was hierher gehört — Autor:, Jahr:, …
 zotero-citation-graph-group-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt ein, was dieser Anker anzieht.
-zotero-citation-graph-group-pull = Zug
-zotero-citation-graph-group-pull-hint = Wie stark dieser Anker die Einträge anzieht, die er benennt. Bei 0 benennt er sie, ohne sie zu bewegen.
 zotero-citation-graph-group-remove = Entfernen
 zotero-citation-graph-group-done = Fertig
 zotero-citation-graph-group-empty = sagen, was hierher gehört
 zotero-citation-graph-group-pulls = zieht { $count -> [one] { $count } Eintrag hierher *[other] { $count } Einträge hierher }
-# Derselbe Anker, dessen Zug ganz heruntergedreht ist.
+# Derselbe Anker, wenn der Gruppenzug im Bedienfeld ganz heruntergedreht ist.
 zotero-citation-graph-group-names = benennt { $count -> [one] { $count } Eintrag und bewegt ihn nicht *[other] { $count } Einträge und bewegt sie nicht }
 zotero-citation-graph-group-flag-empty = noch nichts
 

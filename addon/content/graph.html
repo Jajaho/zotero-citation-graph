@@ -165,6 +165,31 @@
 								<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
 								<span id="center-value">1.00</span>
 							</label>
+							<!-- Every anchor's strength at once. It sat on each flag's own
+							     card once, which made one question a per-anchor one: a graph
+							     with four groups had four answers to "how hard does a group
+							     pull", and none of them was where the other layout sliders
+							     are. It is the same trade as the two above -- how far a paper
+							     may be dragged from where its citations would put it -- so it
+							     belongs beside them. At 0 every anchor names its papers and
+							     moves none of them. -->
+							<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
+								<span data-zg-str="group-pull">group pull</span>
+								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
+								<span id="group-pull-value">0.40</span>
+							</label>
+							<!-- A pin is a position the user placed by hand; this is how much
+							     the rest of the graph is asked to care. At 0 a pin holds only
+							     the node it is on, which is what a pin has always meant;
+							     turned up, each pin becomes a well the nodes nearest it
+							     gather into, and a handful of pins lay the graph out by hand.
+							     Off by default -- a pin should move nothing but itself until
+							     it is asked to. -->
+							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How hard a pinned node draws the rest of the graph towards it. At 0 a pin holds only itself.">
+								<span data-zg-str="pin-pull">pin pull</span>
+								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
+								<span id="pin-pull-value">0.00</span>
+							</label>
 						</div>
 
 						<!-- What the node colours mean. Rebuilt on every render, so it only
@@ -286,15 +311,6 @@
 			title="Type a term, or field:value. Filters stack: each one narrows what this anchor pulls."
 			role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
 		<div id="group-sub"></div>
-		<!-- This anchor's own strength, not the panel's: how hard THIS flag pulls
-		     is part of what the group says. At 0 it names its papers and lets the
-		     layout keep them, which is how you ask what a group would have been
-		     without moving anything. -->
-		<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard this anchor pulls the papers it names. At 0 it names them without moving them.">
-			<span data-zg-str="group-pull">pull</span>
-			<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
-			<span id="group-pull-value">0.40</span>
-		</label>
 		<div id="group-buttons">
 			<button id="group-remove" type="button" data-zg-str="group-remove">Remove</button>
 			<button id="group-close" type="button" data-zg-str="group-done">Done</button>

@@ -58,6 +58,14 @@ zotero-citation-graph-link-pull-hint = How hard a link pulls its two nodes toget
 zotero-citation-graph-center-pull = centre pull
 zotero-citation-graph-center-pull-hint = How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.
 
+# Every anchor's strength at once, not one anchor's own: the flags are planted
+# on the canvas, but how hard they pull is a layout setting like the two above.
+zotero-citation-graph-group-pull = group pull
+zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers it names. At 0 they name them without moving them.
+
+zotero-citation-graph-pin-pull = pin pull
+zotero-citation-graph-pin-pull-hint = How hard a pinned node draws the rest of the graph towards it. At 0 a pin holds only itself.
+
 zotero-citation-graph-item-pane-failed = Could not open Zotero's item pane here.
 
 zotero-citation-graph-filter-placeholder = filter — author:, year:, …
@@ -199,13 +207,11 @@ zotero-citation-graph-group-existing = Group
 zotero-citation-graph-group-drag-hint = Drag to move this card
 zotero-citation-graph-group-placeholder = what belongs here — author:, year:, …
 zotero-citation-graph-group-hint = Type a term, or field:value. Filters stack: each one narrows what this anchor pulls.
-zotero-citation-graph-group-pull = pull
-zotero-citation-graph-group-pull-hint = How hard this anchor pulls the papers it names. At 0 it names them without moving them.
 zotero-citation-graph-group-remove = Remove
 zotero-citation-graph-group-done = Done
 zotero-citation-graph-group-empty = say what belongs here
 zotero-citation-graph-group-pulls = pulls { $count -> [one] { $count } paper here *[other] { $count } papers here }
-# The same anchor with its pull turned all the way down.
+# The same anchor, with the panel's group pull turned all the way down.
 zotero-citation-graph-group-names = names { $count -> [one] { $count } paper, and moves it nowhere *[other] { $count } papers, and moves them nowhere }
 # What a flag says before anything has been said about it.
 zotero-citation-graph-group-flag-empty = nothing yet

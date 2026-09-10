@@ -172,9 +172,27 @@
 		return Object.prototype.hasOwnProperty.call(ICONS, name);
 	}
 
+	/**
+	 * The same shape as raw path data, for a caller that is not building DOM.
+	 *
+	 * The graph canvas draws a pin over every pinned node, and a canvas takes
+	 * Path2D, not <svg>. Handing out the grid alongside the paths is what lets
+	 * it scale one: the data is in the icon's own units, and only the caller
+	 * knows how many pixels it wants that box to be.
+	 *
+	 * The array is copied on the way out -- ICONS is the module's own table,
+	 * and a caller that sorted or spliced what it was given would rewrite the
+	 * icon for everybody.
+	 */
+	function paths(name) {
+		var spec = ICONS[name];
+		return spec ? { size: spec[0], d: spec[1].slice() } : null;
+	}
+
 	global.ZGIcons = {
 		names: function () { return Object.keys(ICONS); },
 		has: has,
 		svg: svg,
+		paths: paths,
 	};
 }(typeof window !== 'undefined' ? window : globalThis));

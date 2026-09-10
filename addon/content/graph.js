@@ -53,6 +53,13 @@
 	const PULL_KEY = 'zg.link.pull';
 	/** And for how hard the middle of the canvas holds on. */
 	const CENTER_KEY = 'zg.center.pull';
+	/** And for how hard an anchor pulls what it names. It was the anchor's own
+	 *  once, which meant it could not be remembered at all: anchors are planted
+	 *  per graph and thrown away with it, so the answer had to be given again
+	 *  every time one was. */
+	const GROUP_PULL_KEY = 'zg.group.pull';
+	/** And for how far a pin reaches past the node it is on. */
+	const PIN_PULL_KEY = 'zg.pin.pull';
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
@@ -162,6 +169,10 @@
 	let elPullValue = el('pull-value');
 	let elCenterPull = el('center-pull');
 	let elCenterValue = el('center-value');
+	let elGroupPull = el('group-pull');
+	let elGroupPullValue = el('group-pull-value');
+	let elPinPull = el('pin-pull');
+	let elPinPullValue = el('pin-pull-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolateDepth = el('isolate-depth');
@@ -193,8 +204,6 @@
 	let elGroupChips = el('group-chips');
 	let elGroupSub = el('group-sub');
 	let elGroupTitle = el('group-title');
-	let elGroupPull = el('group-pull');
-	let elGroupPullValue = el('group-pull-value');
 
 	/**
 	 * Put the node a just-added paper will be drawn as where the ghost it
@@ -1609,6 +1618,7 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('groupPull', groupPull());
+			fg.d3Force('pinPull', pinPull());
 			fg.d3Force('collide', collide());
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
@@ -1823,17 +1833,31 @@
 	 * is not a tendency but an instruction: the user said these papers belong
 	 * here. It still competes with the links, which is the whole interest of it
 	 * -- a group that drags a paper away from its citations stretches the edges
-	 * between them, and how far they stretch is the picture being asked for. How
-	 * hard it pulls is the group's own, set on its card, because that trade is
-	 * the thing being looked at and where it should sit differs per anchor: a
-	 * firm one states where these papers go, a slack one asks how far they are
-	 * willing to travel and lets their citations answer.
+	 * between them, and how far they stretch is the picture being asked for. A
+	 * firm setting states where these papers go; a slack one asks how far they
+	 * are willing to travel and lets their citations answer.
+	 *
+	 * One strength for every anchor, set in the panel beside the other two
+	 * layout sliders. It was each anchor's own once, kept on its card -- which
+	 * sounded like the finer control and read as the coarser one: "how hard
+	 * does a group pull" is a question about how you want to look at the graph,
+	 * and a graph with four flags had four answers to it, none of them where
+	 * the edge pull and the centre pull were.
 	 *
 	 * Pinned nodes are unaffected, since d3 stops integrating a node with fixed
 	 * coordinates at all. That is the right precedence: a pin is a position the
 	 * user placed by hand, and a mask should not overrule it.
 	 */
 	const GROUP_PULL = 0.4;
+
+	/** The panel's strength for every anchor. Read from the slider rather than
+	 *  cached, exactly as the centre pull is -- but where that force re-reads it
+	 *  per tick, this one is read by assignGroups(), which is what recomputes
+	 *  the targets when it changes. */
+	function groupScale() {
+		let v = Number(elGroupPull.value);
+		return Number.isFinite(v) ? v : GROUP_PULL;
+	}
 
 	/**
 	 * The ceiling on the pull one node can feel from every anchor holding it.
@@ -1842,7 +1866,7 @@
 	 * tick, and the engine runs at a decay of 0.3 -- so past about 1.4 the step
 	 * overshoots by more than the damping takes back and the node rings around
 	 * the flag forever instead of arriving. Capped on the sum rather than on
-	 * each slider, because it is the sum a node actually feels.
+	 * the slider, because it is the sum a node caught by several anchors feels.
 	 */
 	const GROUP_PULL_MAX = 1;
 
@@ -1855,6 +1879,81 @@
 				if (!at) continue;
 				n.vx += (at.x - n.x) * at.k * alpha;
 				n.vy += (at.y - n.y) * at.k * alpha;
+			}
+		}
+		force.initialize = ns => {
+			nodes = ns;
+		};
+		return force;
+	}
+
+	/**
+	 * Pull every free node towards the pin nearest it.
+	 *
+	 * A pin has only ever held the one node it is on: the paper stops moving
+	 * and everything else carries on around it. That is the honest minimum, and
+	 * it is off by default here for exactly that reason -- but it leaves the
+	 * gesture weaker than it looks. Someone who drags four landmark papers to
+	 * four corners and pins them has said where the graph's regions go, and the
+	 * layout answers by putting the papers wherever the links happen to send
+	 * them, which is usually back into one ball in the middle.
+	 *
+	 * Turned up, each pin becomes a well: the nearest one to a node is the one
+	 * it feels, so the pins partition the cloud into basins rather than fighting
+	 * over the same paper, and the links go on arguing with the result. Nearest
+	 * rather than all of them, because a node pulled towards every pin at once
+	 * is a node pulled towards their centroid -- the middle of the canvas by
+	 * another name, and the centre pull is already there.
+	 *
+	 * An anchored node is left alone. A group is a mask the user typed, naming
+	 * papers on purpose; a pin says nothing about any paper but its own. When
+	 * both would move the same node, the one that named it wins.
+	 *
+	 * The centre pull is NOT withheld the way it is from an anchored node. At
+	 * anything past the slider's floor this force is an order of magnitude the
+	 * stronger of the two, so the pins win where they matter, and leaving the
+	 * centre in is what still catches a node with no pin worth travelling to.
+	 */
+	const PIN_PULL = 0.25;
+
+	/** The panel's strength, read live per tick like the centre pull's. */
+	function pinScale() {
+		let v = Number(elPinPull.value);
+		return Number.isFinite(v) ? v : 0;
+	}
+
+	function pinPull() {
+		let nodes = [];
+		let pins = [];
+		function force(alpha) {
+			let scale = pinScale();
+			if (!scale) return;
+			// Rebuilt per tick rather than kept: pinning is a menu entry and a
+			// drop, both of which can land between any two ticks, and a list of
+			// pins that went stale would pull towards a node that is moving.
+			pins.length = 0;
+			for (let n of nodes) if (isPinned(n)) pins.push(n);
+			if (!pins.length) return;
+			let k = PIN_PULL * scale * alpha;
+			for (let n of nodes) {
+				// Every node d3 has stopped integrating, which is the pins
+				// themselves and anything a settle has frozen. Adding velocity
+				// to a fixed node is wasted work, not a bug -- but a pin pulled
+				// towards its own neighbour would be one.
+				if (n.fx != null || n.fy != null) continue;
+				if (groupOf.has(n.id)) continue;
+				let near = null;
+				let best = Infinity;
+				for (let p of pins) {
+					let dx = p.x - n.x;
+					let dy = p.y - n.y;
+					let d = dx * dx + dy * dy;
+					if (d >= best) continue;
+					best = d;
+					near = p;
+				}
+				n.vx += (near.x - n.x) * k;
+				n.vy += (near.y - n.y) * k;
 			}
 		}
 		force.initialize = ns => {
@@ -2005,6 +2104,32 @@
 		fg.d3ReheatSimulation();
 	}
 
+	/** Nor does the pin pull: pinPull() reads the slider on every tick too. */
+	function applyPinPull() {
+		elPinPullValue.textContent = pinScale().toFixed(2);
+		if (!fg) return;
+		fg.d3ReheatSimulation();
+	}
+
+	/**
+	 * The group pull is the one that needs more than a reheat. Its force reads
+	 * a target per node, computed when the anchors or the graph change rather
+	 * than per tick -- so the strength has to be pushed through that, which is
+	 * what groupsChanged() does, reheat included.
+	 *
+	 * Committed as the slider is dragged, the way an anchor's masks are
+	 * committed as they are picked: what a group should pull at is something
+	 * you find by watching the graph answer, and a value that only took effect
+	 * on release would make that a guessing game.
+	 */
+	function applyGroupPull() {
+		elGroupPullValue.textContent = groupScale().toFixed(2);
+		groupsChanged();
+		// An open card says what its anchor is doing, and at zero that is no
+		// longer pulling -- so the slider has to retitle it.
+		syncGroupNote();
+	}
+
 	/**
 	 * Label sizing. The name is painted ON the node, not under it, so a circle
 	 * and its name read as one object: with captions hanging below, a dense
@@ -2059,25 +2184,74 @@
 	}
 
 	/**
-	 * A pinned node wears a ring just outside its circle, in the label colour.
-	 * Drawn rather than recoloured: the fill already means whatever the panel
-	 * is colouring by, and pinning must not take a hue away from it.
+	 * A pinned node wears the pin itself, over its upper-right shoulder.
 	 *
-	 * Sized in screen pixels like the label, so the ring stays a hairline at
-	 * any zoom instead of swelling with the node.
+	 * It was a grey ring just outside the circle, which was legible and mute.
+	 * A ring says "something about this node" and leaves you to remember which
+	 * something -- and it was the third ring in the drawing, inside the pick's
+	 * and beside isolation's fade, so two grey circles around one node was a
+	 * thing you had to have been told. The pin is the same shape as the menu
+	 * entry that put it there, so the gesture and its result are one picture and
+	 * nothing has to be remembered at all.
+	 *
+	 * Sized in screen pixels like the label, so it stays a badge at any zoom
+	 * rather than swelling with the node, and haloed in the page background for
+	 * the reason the label is: it lies over the node's own fill, over whatever
+	 * neighbours crowd that shoulder and over the edges crossing it, and none of
+	 * those is a surface a small glyph reads off.
 	 */
-	const PIN_RING_GAP = 2.5;   // screen px between the node edge and the ring
-	const PIN_RING_WIDTH = 1.5; // screen px
+	const PIN_PX = 12;       // screen px, the side of the icon's box
+	const PIN_HALO_PX = 2.5; // screen px of background stroked behind it
+
+	/**
+	 * The pin, as canvas paths. Parsed once and kept: the shape never changes,
+	 * and a Path2D per pinned node per frame is work for nothing.
+	 *
+	 * False rather than null for "there is no pin to draw", so a docshell
+	 * without Path2D is asked once instead of on every repaint. The icon table
+	 * is the menu's, which is the point -- one shape, drawn twice.
+	 */
+	let _pinPaths = null;
+
+	function pinPaths() {
+		if (_pinPaths === null) {
+			let spec = window.Path2D ? ZGIcons.paths('pin') : null;
+			_pinPaths = spec ? { box: spec.size, d: spec.d.map(d => new Path2D(d)) } : false;
+		}
+		return _pinPaths;
+	}
 
 	function drawPin(node, ctx, globalScale) {
 		if (!isPinned(node)) return;
+		let pin = pinPaths();
+		if (!pin) return;
 		let theme = themeColors();
-		ctx.beginPath();
-		ctx.arc(node.x, node.y, nodeRadius(node) + PIN_RING_GAP / globalScale,
-			0, 2 * Math.PI);
-		ctx.lineWidth = PIN_RING_WIDTH / globalScale;
-		ctx.strokeStyle = dimmed(node) ? fade(theme.fg, DIM_NODE_ALPHA) : theme.fg;
-		ctx.stroke();
+		let size = PIN_PX / globalScale;
+		// The icon is drawn with its head in the top right of its own box and
+		// its needle running to the bottom left, so centring that box on the
+		// node's upper-right shoulder stands the pin outside the circle with the
+		// point going back into it.
+		let off = nodeRadius(node) * Math.SQRT1_2 - size / 2;
+		let k = size / pin.box;
+		ctx.save();
+		ctx.translate(node.x + off, node.y - off - size);
+		ctx.scale(k, k);
+		// Everything below is in the icon's own units, so a screen width has to
+		// come back through the scale: one unit is PIN_PX / box screen pixels.
+		ctx.lineWidth = PIN_HALO_PX * pin.box / PIN_PX;
+		ctx.lineJoin = 'round';
+		ctx.strokeStyle = theme.halo;
+		// Faded with the rest when isolation has dimmed it, exactly as drawPick
+		// is: a pin at full strength on a node that is otherwise a ghost would
+		// read as the isolation having lost track of itself.
+		ctx.fillStyle = dimmed(node) ? fade(theme.fg, DIM_NODE_ALPHA) : theme.fg;
+		// Halo under the whole glyph before any of it is filled -- stroking and
+		// filling one subpath at a time would lay the second one's halo over the
+		// first one's ink. Even-odd because that is the rule the SVG carries,
+		// and the pin's head is a hole.
+		for (let d of pin.d) ctx.stroke(d);
+		for (let d of pin.d) ctx.fill(d, 'evenodd');
+		ctx.restore();
 	}
 
 	function drawLabel(node, ctx, globalScale) {
@@ -2633,6 +2807,10 @@
 		n.fx = n.x;
 		n.fy = n.y;
 		repaint();
+		// With the pin pull turned up a new pin is a new well, and the nodes
+		// nearest it have somewhere to be that they did not a moment ago. At 0
+		// a pin still only holds itself, and a settled graph should stay settled.
+		if (fg && pinScale()) fg.d3ReheatSimulation();
 		trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
 	}
 
@@ -2813,7 +2991,7 @@
 	 * no author or year to be grouped by, and it follows the papers that cite
 	 * it in any case.
 	 */
-	let groups = [];             // { id, x, y, filters, pull }; x/y in GRAPH coords
+	let groups = [];             // { id, x, y, filters }; x/y in GRAPH coords
 	let groupSeq = 0;
 	let groupOf = new Map();     // node id -> { x, y, k }: where it is pulled, how hard
 	let facetCache = new Map();  // node id -> facets, for the nodes on screen
@@ -2824,32 +3002,35 @@
 	 * string comparison per facet per filter, and the force runs sixty times a
 	 * second over every node in the graph.
 	 *
-	 * A node caught by two groups is pulled to the point between them their two
-	 * strengths put it at -- the midpoint when they pull equally, nearer the
-	 * firmer one when they do not. That is both what the arithmetic falls out as
-	 * (two springs on one body are one spring at their weighted centre, pulling
-	 * as hard as the two together) and the honest picture: it belongs to both, so
-	 * it sits between them rather than picking a side.
+	 * A node caught by two groups is pulled to the point midway between them,
+	 * as hard as the two of them together. That is both what the arithmetic
+	 * falls out as (two springs on one body are one spring at their weighted
+	 * centre) and the honest picture: it belongs to both, so it sits between
+	 * them rather than picking a side. The weighting is kept even though every
+	 * anchor now pulls at the same strength -- it is what the sum below already
+	 * means, and it is the line that would have to be right again the moment an
+	 * anchor gets a weight of its own back.
 	 *
-	 * An anchor turned down to nothing is skipped outright rather than recorded
-	 * with a strength of zero, so its papers go back to feeling the centre pull
-	 * -- which centerPull() withholds from anything an anchor is holding. A
-	 * group that pulls nothing must leave nothing behind, or its papers would be
-	 * held by neither force and drift.
+	 * With the slider at nothing every anchor is skipped outright rather than
+	 * recorded with a strength of zero, so its papers go back to feeling the
+	 * centre pull -- which centerPull() withholds from anything an anchor is
+	 * holding. A group that pulls nothing must leave nothing behind, or its
+	 * papers would be held by neither force and drift.
 	 */
 	function assignGroups() {
 		let next = new Map();
+		let pull = groupScale();
 		for (let g of groups) {
-			if (!g.filters.length || !g.pull) continue;
+			if (!g.filters.length || !pull) continue;
 			for (let [id, f] of facetCache) {
 				if (!Filters.matchesAll(g.filters, f)) continue;
 				let at = next.get(id);
 				if (at) {
-					at.x += g.x * g.pull;
-					at.y += g.y * g.pull;
-					at.k += g.pull;
+					at.x += g.x * pull;
+					at.y += g.y * pull;
+					at.k += pull;
 				}
-				else next.set(id, { x: g.x * g.pull, y: g.y * g.pull, k: g.pull });
+				else next.set(id, { x: g.x * pull, y: g.y * pull, k: pull });
 			}
 		}
 		for (let at of next.values()) {
@@ -3146,7 +3327,7 @@
 	function addGroup(event) {
 		if (!fg) return;
 		let at = graphAt(event);
-		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [], pull: GROUP_PULL };
+		let g = { id: ++groupSeq, x: at.x, y: at.y, filters: [] };
 		groups.push(g);
 		openGroup(g, event);
 		repaint();
@@ -3159,10 +3340,6 @@
 		// up the card is about the group, not about the click that opened it.
 		elGroupTitle.textContent = t(g.filters.length ? 'group-existing' : 'group-here');
 		groupBox.load(g.filters);
-		// The slider belongs to the anchor, not to the card: opening a second
-		// flag must show that flag's strength, not the last one's.
-		elGroupPull.value = String(g.pull);
-		syncGroupPull();
 		syncGroupNote();
 		elGroup.hidden = false;
 		positionAt(elGroup, event);
@@ -3192,39 +3369,19 @@
 		groupsChanged();
 	}
 
-	/**
-	 * The readout beside the slider, and -- while a card is open -- the anchor's
-	 * own strength.
-	 *
-	 * Committed as it is dragged, the way the masks are committed as they are
-	 * picked: what a group pulls at is something you find by watching the graph
-	 * answer, and a value that only took effect on release would make that a
-	 * guessing game.
-	 */
-	function syncGroupPull() {
-		elGroupPullValue.textContent = Number(elGroupPull.value).toFixed(2);
-	}
-
-	function applyGroupPull() {
-		syncGroupPull();
-		if (!editingGroup) return;
-		editingGroup.pull = Number(elGroupPull.value);
-		groupsChanged();
-		// The note says what the anchor is doing, and at zero that is no longer
-		// pulling -- so the slider has to retitle it.
-		syncGroupNote();
-	}
-
-	elGroupPull.addEventListener('input', applyGroupPull);
-
 	function syncGroupNote() {
 		if (!editingGroup) return;
 		let n = groupSize(editingGroup);
+		// Read out here rather than inside the t() call: the .ftl coverage check
+		// in tools/test-cjs-shim.js scans a message call as far as its first
+		// close paren, so a call nested in the arguments hides the two ids after
+		// it and they read as strings nothing asks for.
+		let pulls = groupScale() > 0;
 		// Three things it can be saying: nothing has been named yet, these papers
 		// are being gathered, or these papers are named and left where they are.
 		elGroupSub.textContent = !editingGroup.filters.length
 			? t('group-empty')
-			: t(editingGroup.pull ? 'group-pulls' : 'group-names', { count: n });
+			: t(pulls ? 'group-pulls' : 'group-names', { count: n });
 	}
 
 	/**
@@ -3752,6 +3909,21 @@
 		applyCenterPull();
 		try {
 			window.localStorage.setItem(CENTER_KEY, elCenterPull.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
+	// And for the anchors, and for the pins.
+	elGroupPull.addEventListener('input', () => {
+		applyGroupPull();
+		try {
+			window.localStorage.setItem(GROUP_PULL_KEY, elGroupPull.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
+	elPinPull.addEventListener('input', () => {
+		applyPinPull();
+		try {
+			window.localStorage.setItem(PIN_PULL_KEY, elPinPull.value);
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
@@ -4311,6 +4483,20 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyCenterPull();
+
+	try {
+		let saved = window.localStorage.getItem(GROUP_PULL_KEY);
+		if (saved !== null) elGroupPull.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyGroupPull();
+
+	try {
+		let saved = window.localStorage.getItem(PIN_PULL_KEY);
+		if (saved !== null) elPinPull.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyPinPull();
 
 	try {
 		let saved = window.localStorage.getItem(DEPTH_KEY);

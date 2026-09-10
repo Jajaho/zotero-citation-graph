@@ -717,7 +717,9 @@ body {
    range input's default width would otherwise push the panel wider. */
 #min-conf,
 #link-pull,
-#center-pull {
+#center-pull,
+#group-pull,
+#pin-pull {
 	flex: 1 1 60px;
 	width: auto;
 	min-width: 40px;
@@ -725,7 +727,9 @@ body {
 
 #conf-value,
 #pull-value,
-#center-value {
+#center-value,
+#group-pull-value,
+#pin-pull-value {
 	font-variant-numeric: tabular-nums;
 	min-width: 3.2ch;
 }
@@ -1243,29 +1247,6 @@ body {
 
 #group-sub {
 	color: var(--muted);
-}
-
-/* The anchor's strength. Laid out like the panel's sliders -- label, track,
-   readout -- because it is the same kind of control, but written out here: the
-   card is not inside #panel and so inherits none of its rules. */
-#group-pull-label {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--muted);
-	cursor: pointer;
-}
-
-#group-pull {
-	flex: 1 1 60px;
-	width: auto;
-	min-width: 40px;
-	margin-left: auto;
-}
-
-#group-pull-value {
-	font-variant-numeric: tabular-nums;
-	min-width: 3.2ch;
 }
 
 #group-buttons {
