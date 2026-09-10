@@ -3112,12 +3112,13 @@ function outranks(mine, theirs) {
  * Nothing in this repository holds the second column of that table, so the
  * numbers are stated here as well as read.
  *
- * The sidebar's toggle, at the other end of the bar, is held to the same inset
- * from its own edge. It is the same button doing the same job in the other
- * direction, and this tab -- unlike the reader's, which has a window edge on
- * its left -- has a pane on both sides for them to be a pair about.
+ * The start is core's too and is NOT the same number. Pulling it in to 4px, so
+ * that the sidebar's toggle sat the same 18px from its edge as the item pane's
+ * sits from the other, was tried and taken out again: a toolbar's left-hand end
+ * reads as the start of a row, not as the mirror of its far end, and 8px is
+ * where the rest of the application starts one.
  */
-check('the two pane toggles are a pair, and neither of them moves', () => {
+check('the collapse button does not move when it changes documents', () => {
 	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
 
 	// The declaration block of a rule, by its selector, comments stripped.
@@ -3149,15 +3150,9 @@ check('the two pane toggles are a pair, and neither of them moves', () => {
 			+ 'hands over to puts its own at ' + SIDENAV_INSET + 'px');
 	}
 
-	// And the sidebar's toggle at the other end of the bar is the same button
-	// doing the same job in the other direction, so it is the same inset. This
-	// is the one place the bar departs from reader.css, which puts 8px at the
-	// start because a reader's toolbar has a window edge on that side and a pane
-	// only on the other. Both ends of THIS bar are a pane.
-	const start = px(rule('#bar'), 'padding-inline', 0) + button / 2;
-	if (start !== inset) {
-		throw new Error('the two pane toggles are not a pair: the sidebar’s sits ' + start
-			+ 'px from its edge and the item pane’s sits ' + inset + 'px from its own');
+	// The start is core's too, and is NOT the same number -- see reader.css.
+	if (px(rule('#bar'), 'padding-inline', 0) !== 8) {
+		throw new Error('the sidebar toggle no longer starts where a toolbar starts');
 	}
 
 	// Vertically. 41px is core's number, but only border-box turns it into the

@@ -164,7 +164,6 @@
 	let elCenterValue = el('center-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
-	let elIsolate = el('isolate-clear');
 	let elIsolateDepth = el('isolate-depth');
 	let elReframe = el('reframe');
 	let elFrame = el('frame');
@@ -1491,7 +1490,6 @@
 		if (paneEngaged && (dropped || heldOnScreen !== was)) sendSelection();
 		// The adjacency lit() walks has just been rebuilt out of these edges.
 		litCache = null;
-		syncIsolateNote();
 		// Which nodes each anchor pulls, against the set that is now on screen.
 		assignGroups();
 		syncGroupNote();
@@ -2285,7 +2283,6 @@
 	function setIsolated(ids) {
 		isolated = ids;
 		litCache = null;
-		syncIsolateNote();
 		repaint();
 	}
 
@@ -2445,30 +2442,6 @@
 		// whole test.
 		return Math.min(a, b) >= Math.max(1, isolateDepth);
 	}
-
-	/**
-	 * Isolation is otherwise invisible in the panel, and a user who does not
-	 * know that clicking the background clears it would have no way back to the
-	 * whole graph.
-	 *
-	 * A focus of several nodes names the first and counts the rest: the button
-	 * lives in a narrow panel, and the full list is one hover away in the title.
-	 */
-	function syncIsolateNote() {
-		let names = [];
-		for (let id of isolated) {
-			let n = nodeCache.get(id);
-			if (n) names.push(n.label || n.name);
-		}
-		elIsolate.hidden = !names.length;
-		if (!names.length) return;
-		elIsolate.textContent = names.length > 1
-			? t('isolate-note-more', { name: names[0], count: names.length - 1 })
-			: t('isolate-note', { name: names[0] });
-		elIsolate.title = t('isolate-note-hint', { names: names.join(', ') });
-	}
-
-	elIsolate.addEventListener('click', clearIsolated);
 
 	window.addEventListener('pointerdown', (e) => {
 		if (!elMenu.hidden && !elMenu.contains(e.target)) hideMenu();

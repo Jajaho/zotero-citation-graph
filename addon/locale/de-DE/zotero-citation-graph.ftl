@@ -179,13 +179,6 @@ zotero-citation-graph-group-names = benennt { $count -> [one] { $count } Eintrag
 zotero-citation-graph-group-flag-empty = noch nichts
 
 
-## Der Isolationshinweis im Bedienfeld.
-
-zotero-citation-graph-isolate-note = isoliert: { $name } ✕
-zotero-citation-graph-isolate-note-more = isoliert: { $name } +{ $count } ✕
-zotero-citation-graph-isolate-note-hint = { $names } — klicken, um den ganzen Graphen zu zeigen
-
-
 ## Die Kontextmenüs.
 
 zotero-citation-graph-menu-zoom-to-fit = Einpassen

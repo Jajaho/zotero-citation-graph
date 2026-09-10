@@ -198,15 +198,15 @@ body {
  * Written as 8px, the button lands 4px to the left of where the sidenav's just
  * was and the swap is visible.
  *
- * The START is 4px too, which is the one place this bar departs from the
- * reader's, and it is the same 18px read from the other end. The reader's 8px
- * is right for the reader: its toolbar has a window edge on the left and a pane
- * on the right, so its two ends are not the same kind of thing. This bar has a
- * pane on both sides -- the sidebar under its own toggle, the item pane under
- * the other -- and the two toggles are one pair, doing one job in two
- * directions. A pair that sits 22px in on the left and 18px in on the right is
- * a pair with a wonk in it, and nothing about the tab explains which side is
- * the odd one.
+ * The START is core's 8px, not the end's 4px, and the asymmetry is deliberate
+ * in reader.css. It was briefly pulled in to 4px to make the two toggles sit
+ * the same distance from their own edges -- 18px each rather than 22 and 18 --
+ * on the argument that both ends of THIS bar are a pane. The argument holds and
+ * the result did not: the left-hand end of a toolbar reads as the start of a
+ * row of controls, not as the mirror of its far end, and 8px is where every
+ * other toolbar in the application starts one. So the start is the reader's
+ * again, and what separates the sidebar's toggle from the button after it is
+ * the divider below rather than an inset.
  *
  * The 41px has the same job in the other direction, and only under border-box.
  * reader.css opens with
@@ -233,12 +233,36 @@ body {
 	box-sizing: border-box;
 	height: 41px;
 	padding-block: 0;
-	padding-inline: 4px;
+	padding-inline: 8px 4px;
 	background: var(--material-toolbar);
 	border-bottom: var(--material-panedivider);
 	/* Above the canvas, below the popovers: #action (10) and #menu (11) can be
 	   opened over the bar and have to win. */
 	z-index: 9;
+}
+
+/*
+ * reader.css ".toolbar .divider", quoted outright:
+ *
+ *     width: 1px; height: 20px; border-radius: .5px;
+ *     background: var(--fill-quinary); margin: 0 4px
+ *
+ * A hairline, not a border: it is 20px of a 40px bar, so it separates the two
+ * controls without drawing a line the full height of the toolbar. The 4px
+ * margin sits on top of this bar's own 4px gap, which is the reader's spacing
+ * exactly -- its .start group carries the same gap and its divider the same
+ * margin, so the seam is 8px of space either side of one pixel.
+ *
+ * --fill-quinary is 5% ink on the toolbar's own surface, and flips with the
+ * scheme: the token is redefined in each of the three :root blocks above.
+ */
+#bar .divider {
+	flex: 0 0 auto;
+	width: 1px;
+	height: 20px;
+	border-radius: 0.5px;
+	background: var(--fill-quinary);
+	margin: 0 4px;
 }
 
 /*
@@ -669,7 +693,6 @@ body {
 	max-width: 60%;
 }
 
-#isolate-clear,
 #rebuild {
 	font: inherit;
 	padding: 3px 8px;

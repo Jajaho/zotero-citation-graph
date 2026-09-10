@@ -30,6 +30,13 @@
 			<button id="side-toggle" type="button" class="on" aria-expanded="true" aria-controls="side"
 				data-zg-title="side-toggle-hide" data-zg-aria-label="side-toggle-hide"
 				title="Hide the sidebar" aria-label="Hide the sidebar"></button>
+			<!-- The two buttons are not the same kind of thing -- one puts a pane
+			     away, the other moves the camera -- and the reader's toolbar marks
+			     that kind of seam with a hairline rather than more space. Same
+			     element and same class as .toolbar .divider there, so the rule in
+			     graph.css is core's own. Decoration only: nothing to read out, so
+			     it stays out of the accessibility tree. -->
+			<div class="divider" role="presentation"></div>
 			<!-- Up here from the bottom-left corner it used to hold. It is one of
 			     the two things in this tab that act on the viewport rather than on
 			     the data, and the two belong together. -->
@@ -201,13 +208,9 @@
 								<input id="hide-isolated" type="checkbox"/>
 								<span data-zg-str="hide-isolated">hide unconnected</span>
 							</label>
-							<!-- Only present while a node is isolated. Isolation is otherwise
-							     invisible up here, and there would be nothing to tell a user how
-							     to get the rest of the graph back. -->
-							<button id="isolate-clear" type="button" hidden="hidden"></button>
-							<!-- How far an isolation reaches. Always visible, unlike the button
-							     above: it is a setting about how you read a graph, and one you
-							     want to be able to find before you have isolated anything. -->
+							<!-- How far an isolation reaches. Always visible: it is a setting
+							     about how you read a graph, and one you want to be able to find
+							     before you have isolated anything. -->
 							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
 								<span data-zg-str="isolate-depth">isolation depth</span>
 								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>

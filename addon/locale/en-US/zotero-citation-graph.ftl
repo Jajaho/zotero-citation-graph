@@ -211,13 +211,6 @@ zotero-citation-graph-group-names = names { $count -> [one] { $count } paper, an
 zotero-citation-graph-group-flag-empty = nothing yet
 
 
-## The isolation note in the panel.
-
-zotero-citation-graph-isolate-note = isolated: { $name } ✕
-zotero-citation-graph-isolate-note-more = isolated: { $name } +{ $count } ✕
-zotero-citation-graph-isolate-note-hint = { $names } — click to show the whole graph
-
-
 ## The context menus.
 
 zotero-citation-graph-menu-zoom-to-fit = Zoom to fit
