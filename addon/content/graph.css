@@ -532,9 +532,9 @@ body {
 	display: none;
 }
 
-/* Settings and the legend scroll as one column, so the legend is reachable
-   however long the strategy list grows -- two independent scrollers in a
-   200px-wide pane is two scrollbars and no way to see both ends at once. */
+/* Every section scrolls as one column, so the legend is reachable however long
+   the strategy list above it grows -- independent scrollers in a 200px-wide
+   pane are several scrollbars and no way to see both ends of any of them. */
 #side-body {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -570,15 +570,26 @@ body {
 	min-height: 0;
 }
 
-/* --- The settings section --------------------------------------------- */
+/* --- The settings sections -------------------------------------------- */
 
-#panel {
+/*
+ * One of the four panes down the sidebar. They stack, and the hairline between
+ * two of them is the heavier one -- core separates sections with
+ * --color-panedivider and rules within one with --fill-quinary, and these are
+ * sections. The last needs no rule under it: #panel-foot draws its own.
+ */
+.section {
 	display: flex;
 	flex-direction: column;
+	border-bottom: var(--material-panedivider);
+}
+
+.section:last-child {
+	border-bottom: 0;
 }
 
 /*
- * The two section headers.
+ * The section headers, and the legend's.
  *
  * These are core's <collapsible-section> heads, which is what they now are: a
  * title and a twisty over a body that collapses, stacked down a side pane. The
@@ -588,7 +599,7 @@ body {
  * The whole header is the button, not just the chevron: a wide target, and
  * there is nothing else in the header to click.
  */
-#panel-toggle,
+.section-toggle,
 #legend-toggle {
 	flex: 0 0 auto;
 	display: flex;
@@ -605,7 +616,7 @@ body {
 	cursor: pointer;
 }
 
-#panel-toggle:hover,
+.section-toggle:hover,
 #legend-toggle:hover {
 	background: var(--color-quinary-on-sidepane);
 }
@@ -616,7 +627,7 @@ body {
  * caret rotated -90 when closed -- and matching it costs one rule and one
  * swapped resting state.
  */
-#panel-chevron,
+.section-chevron,
 #legend-chevron {
 	flex: 0 0 auto;
 	width: 12px;
@@ -627,12 +638,12 @@ body {
 	transition: transform 0.2s ease-in-out;
 }
 
-#panel:not(.collapsed) #panel-chevron,
+.section:not(.collapsed) .section-chevron,
 #legend:not(.collapsed) #legend-chevron {
 	transform: rotate(-180deg);
 }
 
-#panel-body {
+.section-body {
 	padding: 0 9px 8px;
 	min-height: 0;
 	display: flex;
@@ -640,14 +651,16 @@ body {
 	gap: 8px;
 }
 
-#panel.collapsed #panel-body {
+.section.collapsed .section-body {
 	display: none;
 }
 
 /* Inside a section rather than between two, so the lighter hairline: core
    separates sections with --color-panedivider and rules within one with
-   --fill-quinary. */
-#panel .group {
+   --fill-quinary. The first group in a body wears none of it -- the header
+   above it is already the separation, and a rule directly under a header is
+   the section drawn twice. */
+.section .group {
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
@@ -656,13 +669,26 @@ body {
 	border-top: 1px solid var(--fill-quinary);
 }
 
+.section-body > .group:first-child {
+	padding-top: 0;
+	border-top: 0;
+}
+
 /* #strategies is empty until a graph arrives, and an empty group is just a
    stray rule across the panel. */
-#panel .group:empty {
+.section .group:empty {
 	display: none;
 }
 
-#panel label {
+/* :empty above takes #strategies out of the flow, which makes the confidence
+   slider under it the first group that is actually drawn -- and it would then
+   keep a hairline with nothing above it to separate from. */
+#strategies:empty + .group {
+	padding-top: 0;
+	border-top: 0;
+}
+
+.section label {
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -670,16 +696,16 @@ body {
 	cursor: pointer;
 }
 
-#panel label.disabled {
+.section label.disabled {
 	opacity: 0.45;
 	cursor: default;
 }
 
 /* Right-aligns the control of a "text, then control" row, so the selects and
    number fields line up down the panel instead of tracking label width. */
-#panel label > select,
-#panel label > input[type="number"],
-#panel label > input[type="range"] {
+.section label > select,
+.section label > input[type="number"],
+.section label > input[type="range"] {
 	margin-left: auto;
 }
 
@@ -691,8 +717,8 @@ body {
 #color-by,
 #size-by {
 	font: inherit;
-	/* The item-type and "needs look up names" options run long; staying inside
-	   the panel width matters more than showing every character. */
+	/* The item-type and "global citations" options run long; staying inside the
+	   panel width matters more than showing every character. */
 	max-width: 60%;
 }
 
@@ -701,11 +727,13 @@ body {
 	padding: 3px 8px;
 }
 
-#panel-title {
+.section-title {
 	font-weight: 600;
 	/* Takes the rest of the header row, so the chevron stays hard left. */
 	flex: 1 1 auto;
 	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
@@ -737,11 +765,23 @@ body {
 	min-width: 3.2ch;
 }
 
-/* The one row that stays horizontal: a count and the button that acts on it. */
+/*
+ * The one row that stays horizontal: a count and the button that acts on it.
+ *
+ * A sibling of #side-body rather than the last thing inside it, so it is at the
+ * foot of the pane rather than at the foot of the scroll. Four sections open at
+ * once are taller than any sidebar, and a Rebuild button that has to be
+ * scrolled to is a Rebuild button that is missing.
+ */
 #panel-foot {
+	flex: 0 0 auto;
+	display: flex;
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
+	gap: 6px;
+	padding: 6px 9px;
+	border-top: var(--material-panedivider);
 }
 
 #stats {
@@ -832,9 +872,9 @@ body {
 	color: var(--fg);
 }
 
-/* A sibling of #graph, not a child of the panel: #panel and #panel-body both
-   clip, so a list opened from a control halfway down the panel would be cut in
-   half. graph.js sets left/top/width/max-height against the input.
+/* A sibling of #graph, not a child of the sidebar: #side-body scrolls and
+   clips, so a list opened from a control halfway down it would be cut in half.
+   graph.js sets left/top/width/max-height against the input.
 
    Above #menu (11), because the menu cannot be open at the same time and the
    list must not end up under the panel it overhangs. */
@@ -901,7 +941,7 @@ body {
 /* --- The legend section ------------------------------------------------ */
 
 /*
- * A section of the settings panel, sitting immediately under the colour and
+ * Part of the graph-display section, sitting immediately under the colour and
  * size controls: the legend explains what those two just did, and a key several
  * groups further down is a key that is scrolled past. It keeps its own collapse
  * -- a legend for a colouring you have settled on is worth putting away without
@@ -931,10 +971,10 @@ body {
 }
 
 /*
- * The side padding is #panel-body's now that the legend sits inside it, and
- * paying it twice would indent the key past every control it explains. The
+ * The side padding is the section body's now that the legend sits inside one,
+ * and paying it twice would indent the key past every control it explains. The
  * header still spans the sidebar to hover, the way it did as a section of its
- * own: the negative margin gives back exactly what the panel pays, so the text
+ * own: the negative margin gives back exactly what the body pays, so the text
  * lines up with the controls while the highlight reaches the edges.
  */
 #legend-toggle {

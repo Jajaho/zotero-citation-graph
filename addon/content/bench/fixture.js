@@ -98,7 +98,7 @@
 				url: null,
 				publication: pick(r, WORDS) + ' letters',
 				collections: [],
-				// Heavy-tailed, and only present when "look up names" would have
+				// Heavy-tailed, and only present when "query node metadata" would have
 				// filled it in -- an un-enriched graph has no global counts at
 				// all, and the size-by-global path must be measurable both ways.
 				citedByGlobal: enriched

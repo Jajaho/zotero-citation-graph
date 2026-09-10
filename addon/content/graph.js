@@ -42,10 +42,24 @@
 	const HL_LINK_ALPHA = 1;
 	const HL_LINK_WIDTH = 2;
 
-	// Whether the control panel was left collapsed, remembered across openings.
-	const COLLAPSE_KEY = 'zg.panel.collapsed';
+	/**
+	 * The sidebar's sections, in the order they are written in graph.html.
+	 *
+	 * One name each, and every id is derived from it: #sec-<name> is the
+	 * section, #sec-<name>-toggle its header, #sec-<name>-body what folds. The
+	 * markup is the source of the order and of the titles; this list is only
+	 * what has to be wired, so a fifth section costs a name here.
+	 */
+	const SECTIONS = ['forces', 'items', 'display', 'strategies'];
 
-	// Same, for the legend.
+	// Whether a section was left collapsed, remembered across openings, one
+	// answer per section: putting the forces away is not putting the strategies
+	// away, and a single flag for the lot could not say so.
+	function sectionKey(name) {
+		return 'zg.section.' + name + '.collapsed';
+	}
+
+	// Same, for the legend, which folds inside the graph-display section.
 	const LEGEND_KEY = 'zg.legend.collapsed';
 	/** Layout comfort, not a view of the data: how hard the user likes their
 	 *  edges to pull. Worth remembering across windows for the same reason the
@@ -473,8 +487,7 @@
 	let elSearchClear = el('search-clear');
 	let elSearchSuggest = el('search-suggest');
 	let elPaneToggle = el('pane-toggle');
-	let elPanel = el('panel');
-	let elPanelToggle = el('panel-toggle');
+	let elSideBody = el('side-body');
 	let elLegend = el('legend');
 	let elLegendToggle = el('legend-toggle');
 	let elLegendTitle = el('legend-title');
@@ -682,7 +695,7 @@
 	}
 
 	/**
-	 * Ghost labels. With "look up names" on, an enriched ghost gets the same
+	 * Ghost labels. With "query node metadata" on, an enriched ghost gets the same
 	 * Surname+Year citekey as a real node, so the two read alike and the graph
 	 * becomes legible without opening a tooltip.
 	 *
@@ -820,7 +833,10 @@
 	const LEGEND_MAX = 12;
 
 	function renderLegend(nodes) {
-		let mode = elColorBy.value;
+		// The cached mode, not the <select>: the rows are keyed by colorKey(),
+		// which reads colorMode, and a title read from anywhere else is a title
+		// that can disagree with the rows under it.
+		let mode = colorMode;
 		// Titled as the sentence the user just made in the panel -- "coloured by
 		// year" -- rather than the bare noun, so the legend says what it is a
 		// legend FOR without the panel having to be open beside it.
@@ -1591,10 +1607,10 @@
 		if (rows[suggestIndex]) rows[suggestIndex].scrollIntoView({ block: 'nearest' });
 	}
 
-	// The list is positioned against the box, and the panel it sits in scrolls
+	// The list is positioned against the box, and the sidebar it sits in scrolls
 	// independently of it -- so a scroll would leave it stranded. Dismiss rather
 	// than chase: it is one keystroke away from coming back.
-	el('panel-body').addEventListener('scroll', hideSuggest);
+	elSideBody.addEventListener('scroll', hideSuggest);
 
 	// --- the panel's masks ------------------------------------------------
 
@@ -4575,7 +4591,7 @@
 
 	function syncEnabled() {
 		// "cited by ≥" is a filter over outside refs and has nothing to act on
-		// without them. "look up names" is NOT gated the same way: with ghosts
+		// without them. "query node metadata" is NOT gated the same way: with ghosts
 		// off it still resolves the held items' own DOIs, and those counts are
 		// what "global citations" sizes the whole graph by.
 		let on = elIncludeExternal.checked;
@@ -4667,11 +4683,21 @@
 		catch (e) { /* no persistence, no problem */ }
 	});
 	elMinCites.addEventListener('input', render);
-	// Paint, not data: the colour accessors read elColorBy live, so the graph
-	// only has to be redrawn and its legend retitled. Going through render()
-	// would hand force-graph the same nodes and edges back and re-anneal the
-	// layout, moving every node on screen to explain a change of hue.
+	// Paint, not data: the graph only has to be recoloured and its legend
+	// rebuilt. Going through render() would hand force-graph the same nodes and
+	// edges back and re-anneal the layout, moving every node on screen to
+	// explain a change of hue.
+	//
+	// But skipping render() skips the two things render() does for colour: it
+	// is where colorMode is read out of the <select>, and where colorGen is
+	// bumped so the memoised node colours are believed no longer. Both have to
+	// happen here as well. Without them the legend's title -- which is the one
+	// thing that read the <select> directly -- followed the menu, while every
+	// row under it went on being keyed by the old mode and every node went on
+	// wearing its old colour, until the next rebuild.
 	elColorBy.addEventListener('change', () => {
+		colorMode = elColorBy.value;
+		recoloured();
 		if (!fg) return;
 		renderLegend(drawnNodes);
 		repaint();
@@ -4931,7 +4957,9 @@
 	elReframe.appendChild(Icons.svg('zoom-to-fit'));
 	elSearchIcon.appendChild(Icons.svg('magnifier'));
 	elSearchClear.appendChild(Icons.svg('clear'));
-	el('panel-chevron').appendChild(Icons.svg('chevron-12'));
+	for (let name of SECTIONS) {
+		el('sec-' + name).querySelector('.section-chevron').appendChild(Icons.svg('chevron-12'));
+	}
 	el('legend-chevron').appendChild(Icons.svg('chevron-12'));
 
 	try {
@@ -5186,28 +5214,34 @@
 		if (fg) repaint();
 	};
 
-	// The panel is a section of the sidebar, so collapsing it does not resize
+	// Each section folds inside the sidebar, so collapsing one does not resize
 	// the graph -- the pane keeps its width and the section folds inside it.
-	function setCollapsed(on) {
-		elPanel.classList.toggle('collapsed', on);
-		elPanelToggle.setAttribute('aria-expanded', on ? 'false' : 'true');
-		elPanelToggle.title = t(on ? 'panel-expand' : 'panel-collapse');
+	function setCollapsed(name, on) {
+		el('sec-' + name).classList.toggle('collapsed', on);
+		let toggle = el('sec-' + name + '-toggle');
+		toggle.setAttribute('aria-expanded', on ? 'false' : 'true');
+		toggle.title = t(on ? 'section-expand' : 'section-collapse');
 		// Storage is a nicety, not a requirement: a resource:// page can be
 		// denied it, and the panel still works when the write throws.
 		try {
-			window.localStorage.setItem(COLLAPSE_KEY, on ? '1' : '0');
+			window.localStorage.setItem(sectionKey(name), on ? '1' : '0');
 		}
 		catch (e) { /* no persistence, no problem */ }
 	}
 
-	elPanelToggle.addEventListener('click', () => {
-		setCollapsed(!elPanel.classList.contains('collapsed'));
-	});
-
-	try {
-		if (window.localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
+	function isCollapsed(name) {
+		return el('sec-' + name).classList.contains('collapsed');
 	}
-	catch (e) { /* see setCollapsed */ }
+
+	for (let name of SECTIONS) {
+		el('sec-' + name + '-toggle').addEventListener('click', () => {
+			setCollapsed(name, !isCollapsed(name));
+		});
+		try {
+			if (window.localStorage.getItem(sectionKey(name)) === '1') setCollapsed(name, true);
+		}
+		catch (e) { /* see setCollapsed */ }
+	}
 
 	// The legend collapses the same way and for the same reason: on a narrow
 	// pane a twelve-author list is more legend than graph.
@@ -5235,7 +5269,7 @@
 	 *
 	 * Almost nothing needs this: menus, tooltips, chips and the group card are
 	 * built at the moment they are opened and ask for their strings then. What
-	 * is left is the handful of things this file paints as it loads -- the two
+	 * is left is the handful of things this file paints as it loads -- the
 	 * collapse tooltips, which depend on a state the markup cannot know -- and
 	 * anything a payload that beat the strings across has already rendered.
 	 *
@@ -5243,9 +5277,9 @@
 	 * a race either way.
 	 */
 	ZGL10n.onReady(() => {
-		setCollapsed(elPanel.classList.contains('collapsed'));
+		for (let name of SECTIONS) setCollapsed(name, isCollapsed(name));
 		setLegendCollapsed(elLegend.classList.contains('collapsed'));
-		// Same reason as the two above: the sidebar toggle's tooltip depends on
+		// Same reason as the ones above: the sidebar toggle's tooltip depends on
 		// a state the markup cannot know, and a sidebar left open is the case
 		// where setSideOpen() never ran to say so in the user's language.
 		setSideOpen(!elFrame.classList.contains('side-closed'));

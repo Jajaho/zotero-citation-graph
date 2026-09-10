@@ -25,11 +25,25 @@ zotero-citation-graph-view-citation-graph =
     .label = View Citation Graph
 
 
-## The control panel.
+## The sidebar's sections.
+#
+# The settings are four collapsible sections down the sidebar rather than one
+# panel called "settings", so a question has a section to be asked in and the
+# answer is not four scrolls away from it. The two tooltips below are shared by
+# all four: the title beside the twisty already says which one is being folded.
 
-zotero-citation-graph-panel-title = settings
-zotero-citation-graph-panel-collapse = Collapse controls
-zotero-citation-graph-panel-expand = Show controls
+zotero-citation-graph-section-collapse = Collapse this section
+zotero-citation-graph-section-expand = Show this section
+
+# What each anchor, edge and node is pulled by. Layout only: nothing enters or
+# leaves the graph when one of these moves.
+zotero-citation-graph-section-forces = force adjustment
+# Which items are on the canvas at all.
+zotero-citation-graph-section-items = item selection
+# How the items that are there are drawn.
+zotero-citation-graph-section-display = graph display
+# Where the edges between them are read from.
+zotero-citation-graph-section-strategies = referencing strategies
 
 zotero-citation-graph-scope-subcollections = subcollections
 zotero-citation-graph-scope-subcollections-hint = Include items from every subcollection
@@ -37,7 +51,7 @@ zotero-citation-graph-scope-external = outside refs
 zotero-citation-graph-scope-external-hint = Show cited works that are not in the collection
 zotero-citation-graph-scope-min-cites = cited by ≥
 zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
-zotero-citation-graph-scope-enrich = look up names
+zotero-citation-graph-scope-enrich = query node metadata
 zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
 
 # Whether the names an outside reference already has are drawn on the canvas.
@@ -239,7 +253,7 @@ zotero-citation-graph-menu-remove-group-hint = let these papers go back to the l
 zotero-citation-graph-menu-group-here = Group here
 zotero-citation-graph-menu-group-here-hint = plant an anchor, and say what belongs at it
 
-zotero-citation-graph-menu-isolate = Isolate
+zotero-citation-graph-menu-isolate = Isolate node
 zotero-citation-graph-menu-show-whole-graph = Show whole graph
 zotero-citation-graph-menu-isolate-hint-undim = undim everything
 zotero-citation-graph-menu-isolate-hint-only = dim everything but this node
@@ -249,7 +263,7 @@ zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood aroun
 zotero-citation-graph-menu-remove-from-isolation = Remove from isolation
 zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node — or Ctrl-double-click it
 
-zotero-citation-graph-menu-pin = Pin node here
+zotero-citation-graph-menu-pin = Pin node
 zotero-citation-graph-menu-pin-hint = hold it at this spot; drag it to move the pin
 zotero-citation-graph-menu-unpin = Unpin node
 zotero-citation-graph-menu-unpin-hint = let the layout move it again
@@ -325,4 +339,4 @@ zotero-citation-graph-gaps-add = Add to Zotero
 zotero-citation-graph-gaps-add-no-doi = No DOI to add this by
 zotero-citation-graph-gaps-mixed = across { $count } subfields
 zotero-citation-graph-gaps-more = +{ $count } more below the cut
-zotero-citation-graph-gaps-lookup-hint = With "look up names" on, these are ranked by how specific each one is to your library rather than by count alone.
+zotero-citation-graph-gaps-lookup-hint = With "query node metadata" on, these are ranked by how specific each one is to your library rather than by count alone.

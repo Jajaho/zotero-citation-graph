@@ -81,90 +81,54 @@
 				title="Show the item pane" aria-label="Show the item pane"></button>
 		</div>
 
-		<!-- The sidebar. Settings, then the legend: one changes the picture and
-		     the other explains it, and both are questions you ask while looking at
-		     it rather than reasons to cover it up. They share one scroller, so the
-		     legend is reached by scrolling the pane rather than a box inside it. -->
+		<!-- The sidebar. Four collapsible sections down one scroller, and a
+		     footer under them.
+
+		     It was a single section called "settings" once, with eight groups
+		     stacked inside it. Everything was in there, which meant everything
+		     was equally far away: the colour menu, the strategy list and the
+		     force sliders shared one fold and one scroll position, and the one
+		     you wanted was reliably below the edge of a 200px pane. Four
+		     sections give each question somewhere to be asked -- what pulls
+		     what, which items are here at all, how the ones that are here get
+		     drawn, and where the edges were read from -- and each remembers its
+		     own fold, so the forces you have settled can be put away without
+		     taking the strategies you are still arguing with down with them.
+
+		     One scroller for all four, #side-body, so a long strategy list is
+		     reached by scrolling the pane rather than a box inside it. The
+		     footer is outside it and outside every section: the count and the
+		     Rebuild button speak about the whole graph, not about any one
+		     section, and a Rebuild that can be folded away or scrolled off the
+		     bottom is a Rebuild that is missing exactly when it is wanted. -->
 		<div id="side">
 			<div id="side-body">
-				<div id="panel">
-					<!-- The whole header toggles, not just the chevron: it is a wide, easy
-					     target, and there is nothing else in the header to click. -->
-					<!-- The literal text on every control below is the fallback, not the
-					     source: l10n.js overwrites anything carrying a data-zg-* id as soon
-					     as chrome hands the page its strings. It is left in the markup so
-					     that a page whose strings never arrive is still a usable panel
-					     rather than a column of message names. -->
-					<button id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-body" title="Collapse controls">
-						<span id="panel-chevron"></span>
-						<span id="panel-title" data-zg-str="panel-title">settings</span>
+				<!-- The literal text on every control below is the fallback, not the
+				     source: l10n.js overwrites anything carrying a data-zg-* id as soon
+				     as chrome hands the page its strings. It is left in the markup so
+				     that a page whose strings never arrive is still a usable panel
+				     rather than a column of message names.
+
+				     Every section is the same three elements -- header button, chevron,
+				     body -- and graph.js wires all four from one list, so a fifth costs
+				     markup and a message and no code. The whole header toggles, not just
+				     the chevron: it is a wide, easy target, and there is nothing else in
+				     the header to click. The titles carry a data-zg-str; the collapse
+				     tooltips are set from graph.js, because which of the two a header
+				     wears depends on a state the markup cannot know. -->
+
+				<!-- Forces. Layout and nothing else: no node enters or leaves the
+				     graph when one of these moves, and none of them costs a rebuild. -->
+				<div class="section" id="sec-forces">
+					<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-forces">force adjustment</span>
 					</button>
-
-					<div id="panel-body">
-						<!-- Scope. Both of these change what gets derived, so they cost a
-						     rebuild; everything after them only filters the built graph. -->
+					<div class="section-body" id="sec-forces-body">
 						<div class="group">
-							<label data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
-								<input id="recursive" type="checkbox"/>
-								<span data-zg-str="scope-subcollections">subcollections</span>
-							</label>
-							<label data-zg-title="scope-external-hint" title="Show cited works that are not in the collection">
-								<input id="include-external" type="checkbox"/>
-								<span data-zg-str="scope-external">outside refs</span>
-							</label>
-							<label id="min-cites-label" data-zg-title="scope-min-cites-hint" title="Hide outside works cited by fewer than this many of your papers">
-								<span data-zg-str="scope-min-cites">cited by ≥</span>
-								<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
-							</label>
-							<!-- The only control that reaches the network. Off by default,
-							     and independent of "outside refs": with ghosts off it still
-							     has the held items' own DOIs to look up, which is where the
-							     global citation counts come from. -->
-							<label id="enrich-label" data-zg-title="scope-enrich-hint" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
-								<input id="enrich" type="checkbox"/>
-								<span data-zg-str="scope-enrich">look up names</span>
-							</label>
-							<!-- Whether those names are drawn. Nothing is derived or fetched for
-							     it -- it decides which of the names the graph already has get
-							     asked for room in the label pass, so it is paint and costs a
-							     repaint. On by default: a ghost with no name is a grey dot
-							     whose only way of saying what it is is the tooltip. Off is for
-							     a graph with more outside references than papers, where the
-							     DOI tails they fall back to are noise over the collection. -->
-							<label id="ghost-names-label" data-zg-title="scope-external-names-hint" title="Draw a name on every outside reference. Off leaves them as unlabelled dots.">
-								<input id="ghost-names" type="checkbox" checked="checked"/>
-								<span data-zg-str="scope-external-names">outside names</span>
-							</label>
-						</div>
-
-						<div class="group">
-							<label>
-								<span data-zg-str="color-by">colour</span>
-								<select id="color-by">
-									<option value="year" data-zg-str="color-by-year">year</option>
-									<option value="collection" data-zg-str="color-by-collection">collection</option>
-									<option value="cluster" data-zg-str="color-by-cluster">subfield</option>
-									<option value="author" data-zg-str="color-by-author">first author</option>
-									<option value="publication" data-zg-str="color-by-publication">publication</option>
-									<option value="type" data-zg-str="color-by-type">item type</option>
-								</select>
-							</label>
-							<!-- Applies to outside refs as well as held items. "global citations"
-							     needs the counts "look up names" fetches, so picking it switches
-							     that on and rebuilds rather than sitting there greyed out: the
-							     user asked for the sizing, not for a lecture about a prerequisite.
-							     The lookup is still never entered on its own. -->
-							<label>
-								<span data-zg-str="size-by">size</span>
-								<select id="size-by">
-									<option value="here" data-zg-str="size-by-here">cited here</option>
-									<option value="global" data-zg-str="size-by-global">global citations</option>
-								</select>
-							</label>
-							<!-- Layout, not a filter: nothing enters or leaves the graph. A
-							     dense collection packs into balls because every edge pulls at
-							     full strength; slackening the edges lets charge repulsion win
-							     and the clusters open up far enough to read. -->
+							<!-- A dense collection packs into balls because every edge pulls
+							     at full strength; slackening the edges lets charge repulsion
+							     win and the clusters open up far enough to read. -->
 							<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
 								<span data-zg-str="link-pull">edge pull</span>
 								<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
@@ -202,11 +166,151 @@
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
 							</label>
-							<!-- What a big collection gives up to stay smooth. Beneath the
-							     layout sliders because the biggest thing it turns off is
-							     the engine those sliders drive: with it on the graph is
-							     struck once and stands still, and each of the sliders above
-							     re-strikes it rather than setting it in motion.
+						</div>
+					</div>
+				</div>
+
+				<!-- Which items are on the canvas at all. The switches in the first
+				     group change what gets derived, so they cost a rebuild; the masks
+				     under them only narrow the graph that was built. -->
+				<div class="section" id="sec-items">
+					<button class="section-toggle" id="sec-items-toggle" type="button" aria-expanded="true" aria-controls="sec-items-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-items">item selection</span>
+					</button>
+					<div class="section-body" id="sec-items-body">
+						<div class="group">
+							<label data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
+								<input id="recursive" type="checkbox"/>
+								<span data-zg-str="scope-subcollections">subcollections</span>
+							</label>
+							<label data-zg-title="scope-external-hint" title="Show cited works that are not in the collection">
+								<input id="include-external" type="checkbox"/>
+								<span data-zg-str="scope-external">outside refs</span>
+							</label>
+							<label id="min-cites-label" data-zg-title="scope-min-cites-hint" title="Hide outside works cited by fewer than this many of your papers">
+								<span data-zg-str="scope-min-cites">cited by ≥</span>
+								<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
+							</label>
+							<!-- The only control that reaches the network. Off by default,
+							     and independent of "outside refs": with ghosts off it still
+							     has the held items' own DOIs to look up, which is where the
+							     global citation counts come from. Here rather than under
+							     graph display because what it fetches is what a node IS --
+							     its title, its authors, its global count -- and half the
+							     graph has no name to draw until it has run. -->
+							<label id="enrich-label" data-zg-title="scope-enrich-hint" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
+								<input id="enrich" type="checkbox"/>
+								<span data-zg-str="scope-enrich">query node metadata</span>
+							</label>
+						</div>
+
+						<!-- Filters. Each one is a mask over the held items, and they stack:
+						     every filter added narrows what is left, never widens it. The
+						     suggestions are drawn from the items that survive the filters
+						     already applied, so an offered value can never empty the graph.
+
+						     In this section because a mask IS a selection: "which items am
+						     I looking at" is the question the whole section answers, and the
+						     switches above are the coarse half of the same answer. -->
+						<div class="group" id="filter-group">
+							<div id="filter-chips"></div>
+							<input id="filter-input" type="text" autocomplete="off" spellcheck="false"
+								data-zg-placeholder="filter-placeholder" placeholder="filter — author:, year:, …"
+								data-zg-title="filter-hint"
+								title="Type a term, or field:value. Filters stack: each one narrows what is left."
+								role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
+						</div>
+					</div>
+				</div>
+
+				<!-- How the items that survived are drawn: what decides a node's colour
+				     and its size, which of them are labelled, and what the renderer is
+				     allowed to stop drawing. -->
+				<div class="section" id="sec-display">
+					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-display">graph display</span>
+					</button>
+					<div class="section-body" id="sec-display-body">
+						<div class="group">
+							<label>
+								<span data-zg-str="color-by">colour</span>
+								<select id="color-by">
+									<option value="year" data-zg-str="color-by-year">year</option>
+									<option value="collection" data-zg-str="color-by-collection">collection</option>
+									<option value="cluster" data-zg-str="color-by-cluster">subfield</option>
+									<option value="author" data-zg-str="color-by-author">first author</option>
+									<option value="publication" data-zg-str="color-by-publication">publication</option>
+									<option value="type" data-zg-str="color-by-type">item type</option>
+								</select>
+							</label>
+							<!-- Applies to outside refs as well as held items. "global citations"
+							     needs the counts "query node metadata" fetches, so picking it
+							     switches that on -- a section up -- and rebuilds, rather than
+							     sitting here greyed out: the user asked for the sizing, not for
+							     a lecture about a prerequisite. The lookup is still never
+							     entered on its own. -->
+							<label>
+								<span data-zg-str="size-by">size</span>
+								<select id="size-by">
+									<option value="here" data-zg-str="size-by-here">cited here</option>
+									<option value="global" data-zg-str="size-by-global">global citations</option>
+								</select>
+							</label>
+							<!-- Whether the names an outside reference already has are drawn.
+							     Nothing is derived or fetched for it -- it decides which of the
+							     names the graph already has get asked for room in the label
+							     pass, so it is paint and costs a repaint. On by default: a
+							     ghost with no name is a grey dot whose only way of saying what
+							     it is is the tooltip. Off is for a graph with more outside
+							     references than papers, where the DOI tails they fall back to
+							     are noise over the collection. -->
+							<label id="ghost-names-label" data-zg-title="scope-external-names-hint" title="Draw a name on every outside reference. Off leaves them as unlabelled dots.">
+								<input id="ghost-names" type="checkbox" checked="checked"/>
+								<span data-zg-str="scope-external-names">outside names</span>
+							</label>
+						</div>
+
+						<!-- What the node colours mean. Rebuilt on every render, so it only
+						     ever lists colours actually visible after the filters, and hidden
+						     until there is something to explain. Directly under the control
+						     that decides them, because it is the sentence that control just
+						     started: "coloured by year" is the legend's own heading. It sat
+						     below the whole panel once -- past the filters, the strategies and
+						     the sliders, which on an ordinary sidebar is past the fold, and a
+						     key nobody finds is a graph whose colours mean nothing.
+
+						     It keeps a fold of its own inside this section's, because a key
+						     for a colouring you have settled on is worth putting away without
+						     putting the control that made it away too. -->
+						<div id="legend" hidden="hidden">
+							<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
+								<span id="legend-chevron"></span>
+								<span id="legend-title"></span>
+							</button>
+							<div id="legend-body"></div>
+						</div>
+
+						<div class="group">
+							<label>
+								<input id="hide-isolated" type="checkbox"/>
+								<span data-zg-str="hide-isolated">hide unconnected</span>
+							</label>
+							<!-- How far an isolation reaches. Always visible: it is a setting
+							     about how you read a graph, and one you want to be able to find
+							     before you have isolated anything. -->
+							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
+								<span data-zg-str="isolate-depth">isolation depth</span>
+								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
+							</label>
+							<!-- What a big collection gives up to stay smooth. Last in this
+							     section because it is the widest switch in it: it decides how
+							     much of everything above it the renderer still bothers with,
+							     and the first thing it turns off is the engine the force
+							     sliders drive -- with it on the graph is struck once and stands
+							     still, and each of those sliders re-strikes it rather than
+							     setting it in motion.
 
 							     A checkbox rather than a threshold that switches itself on:
 							     which of these losses is worth which gain depends on the
@@ -219,36 +323,21 @@
 								<span data-zg-str="perf-mode">performance mode</span>
 							</label>
 						</div>
+					</div>
+				</div>
 
-						<!-- What the node colours mean. Rebuilt on every render, so it only
-						     ever lists colours actually visible after the filters, and hidden
-						     until there is something to explain. Directly under the control
-						     that decides them, because it is the sentence that control just
-						     started: "coloured by year" is the legend's own heading. It sat
-						     below the whole panel once -- past the filters, the strategies and
-						     the sliders, which on an ordinary sidebar is past the fold, and a
-						     key nobody finds is a graph whose colours mean nothing. -->
-						<div id="legend" hidden="hidden">
-							<button id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body" title="Collapse legend">
-								<span id="legend-chevron"></span>
-								<span id="legend-title"></span>
-							</button>
-							<div id="legend-body"></div>
-						</div>
-
-						<!-- Filters. Each one is a mask over the held items, and they stack:
-						     every filter added narrows what is left, never widens it. The
-						     suggestions are drawn from the items that survive the filters
-						     already applied, so an offered value can never empty the graph. -->
-						<div class="group" id="filter-group">
-							<div id="filter-chips"></div>
-							<input id="filter-input" type="text" autocomplete="off" spellcheck="false"
-								data-zg-placeholder="filter-placeholder" placeholder="filter — author:, year:, …"
-								data-zg-title="filter-hint"
-								title="Type a term, or field:value. Filters stack: each one narrows what is left."
-								role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
-						</div>
-
+				<!-- Where the edges came from: one switch per strategy, built out of the
+				     payload, and the floor a derived edge's confidence has to clear to
+				     be drawn at all. The threshold is here rather than among the display
+				     switches because the number it filters on is the strategies' own --
+				     it is the same question as which of them to trust, asked
+				     continuously instead of one strategy at a time. -->
+				<div class="section" id="sec-strategies">
+					<button class="section-toggle" id="sec-strategies-toggle" type="button" aria-expanded="true" aria-controls="sec-strategies-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-strategies">referencing strategies</span>
+					</button>
+					<div class="section-body" id="sec-strategies-body">
 						<div id="strategies" class="group"></div>
 
 						<div class="group">
@@ -257,26 +346,19 @@
 								<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="conf-value">0.00</span>
 							</label>
-							<label>
-								<input id="hide-isolated" type="checkbox"/>
-								<span data-zg-str="hide-isolated">hide unconnected</span>
-							</label>
-							<!-- How far an isolation reaches. Always visible: it is a setting
-							     about how you read a graph, and one you want to be able to find
-							     before you have isolated anything. -->
-							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
-								<span data-zg-str="isolate-depth">isolation depth</span>
-								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
-							</label>
-						</div>
-
-						<div class="group" id="panel-foot">
-							<span id="stats"></span>
-							<button id="rebuild" type="button" data-zg-str="rebuild">Rebuild</button>
 						</div>
 					</div>
 				</div>
 			</div>
+
+			<!-- What the graph came to, and the button that asks for it again.
+			     Outside the scroller, so it is where it was left however far down
+			     the sections you are. -->
+			<div id="panel-foot">
+				<span id="stats"></span>
+				<button id="rebuild" type="button" data-zg-str="rebuild">Rebuild</button>
+			</div>
+
 			<!-- The width handle. Laid over the pane's own right edge, so the
 			     hairline you grab is the border that is already drawn there. -->
 			<div id="side-grip"></div>

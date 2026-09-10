@@ -14,11 +14,15 @@ zotero-citation-graph-view-citation-graph =
     .label = Zitationsgraph anzeigen
 
 
-## Das Bedienfeld.
+## Die Abschnitte der Seitenleiste.
 
-zotero-citation-graph-panel-title = Einstellungen
-zotero-citation-graph-panel-collapse = Bedienfeld einklappen
-zotero-citation-graph-panel-expand = Bedienfeld anzeigen
+zotero-citation-graph-section-collapse = Abschnitt einklappen
+zotero-citation-graph-section-expand = Abschnitt anzeigen
+
+zotero-citation-graph-section-forces = Kräfte anpassen
+zotero-citation-graph-section-items = Eintragsauswahl
+zotero-citation-graph-section-display = Graphdarstellung
+zotero-citation-graph-section-strategies = Referenzstrategien
 
 zotero-citation-graph-scope-subcollections = Untersammlungen
 zotero-citation-graph-scope-subcollections-hint = Einträge aus allen Untersammlungen einbeziehen
@@ -26,7 +30,7 @@ zotero-citation-graph-scope-external = externe Referenzen
 zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in der Sammlung sind
 zotero-citation-graph-scope-min-cites = zitiert von ≥
 zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
-zotero-citation-graph-scope-enrich = Namen nachschlagen
+zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
 zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
 
 zotero-citation-graph-scope-external-names = externe Namen
@@ -203,7 +207,7 @@ zotero-citation-graph-menu-remove-group-hint = diese Einträge zurück ins Layou
 zotero-citation-graph-menu-group-here = Gruppe hier
 zotero-citation-graph-menu-group-here-hint = einen Anker setzen und sagen, was dazugehört
 
-zotero-citation-graph-menu-isolate = Isolieren
+zotero-citation-graph-menu-isolate = Knoten isolieren
 zotero-citation-graph-menu-show-whole-graph = Ganzen Graphen zeigen
 zotero-citation-graph-menu-isolate-hint-undim = alles wieder aufhellen
 zotero-citation-graph-menu-isolate-hint-only = alles außer diesem Knoten abdunkeln
@@ -213,7 +217,7 @@ zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens z
 zotero-citation-graph-menu-remove-from-isolation = Aus der Isolation nehmen
 zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen — oder Strg-Doppelklick
 
-zotero-citation-graph-menu-pin = Knoten hier anheften
+zotero-citation-graph-menu-pin = Knoten anheften
 zotero-citation-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen
 zotero-citation-graph-menu-unpin = Knoten lösen
 zotero-citation-graph-menu-unpin-hint = das Layout darf ihn wieder bewegen
@@ -289,4 +293,4 @@ zotero-citation-graph-gaps-add = Zu Zotero hinzufügen
 zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe
 zotero-citation-graph-gaps-mixed = über { $count } Teilgebiete verteilt
 zotero-citation-graph-gaps-more = +{ $count } weitere unterhalb der Grenze
-zotero-citation-graph-gaps-lookup-hint = Mit „Namen nachschlagen“ werden diese danach sortiert, wie spezifisch sie für deine Bibliothek sind, statt nur nach Anzahl.
+zotero-citation-graph-gaps-lookup-hint = Mit „Knotenmetadaten abfragen“ werden diese danach sortiert, wie spezifisch sie für deine Bibliothek sind, statt nur nach Anzahl.
