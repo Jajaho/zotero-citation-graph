@@ -238,6 +238,27 @@
 	const PERF_WARMUP = 150;
 	const PERF_WARMUP_DECAY = 1 - Math.pow(0.001, 1 / PERF_WARMUP);
 
+	/**
+	 * The alpha below which a layout counts as cooled, and the engine stops.
+	 *
+	 * d3's own figure, and the one SPENT_ALPHA's shed is aimed under. force-graph
+	 * ships 0 -- no such stop at all -- so the only thing that ever ended a
+	 * layout was cooldownTime: fifteen seconds of frames whether the graph had
+	 * come to rest in five or not, the tail of it moving nothing anyone could
+	 * see and keeping the canvas redrawing all the same. cooldownTime stays as
+	 * the ceiling; this is the floor it was missing.
+	 *
+	 * Held at 0 while the collision force is still pulling circles apart -- see
+	 * holdForCollide(). That force is not scaled by alpha, so a cooled layout
+	 * can still have overlaps to resolve, and stopping on alpha alone would
+	 * leave them there.
+	 */
+	const ALPHA_MIN = 0.001;
+
+	/** What d3AlphaMin was last set to, so a tick only tells force-graph when
+	 *  the answer changes. */
+	let alphaMinNow = null;
+
 	/** The engine's own cooling schedule, kept so that switching physics back
 	 *  on restores it rather than leaving the graph on the warmup's. */
 	let baseDecay = null;
@@ -338,7 +359,9 @@
 		thaw();
 		fg.warmupTicks(PERF.physics ? 0 : PERF_WARMUP)
 			.cooldownTicks(PERF.physics ? Infinity : 0)
-			.d3AlphaDecay(PERF.physics ? baseDecay : PERF_WARMUP_DECAY);
+			.d3AlphaDecay(PERF.physics ? baseDecay : PERF_WARMUP_DECAY)
+			.d3AlphaMin(ALPHA_MIN);
+		alphaMinNow = ALPHA_MIN;
 		fg.d3Force('collide', PERF.collide ? collide() : null);
 		// A graph handed the engine back has to be told to use it; one that has
 		// just lost it needs the frame that paints the halt.
@@ -2349,6 +2372,15 @@
 	const CELL_OFF = 1 << 20;
 	const CELL_SPAN = 1 << 21;
 
+	// Depth, in graph units, past which an overlap still counts as work to do.
+	// Under a pixel at any zoom a paper is read at, and well inside COLLIDE_PAD:
+	// two circles this close still have clear space between them.
+	const COLLIDE_SLOP = 0.5;
+
+	/** Whether the last tick of the collision force pushed any pair apart by
+	 *  more than COLLIDE_SLOP. Read by holdForCollide(). */
+	let collideBusy = false;
+
 	function cellKey(gx, gy) {
 		return (gx + CELL_OFF) * CELL_SPAN + (gy + CELL_OFF);
 	}
@@ -2361,6 +2393,7 @@
 		let gen = 0;           // which pass the live buckets were filled in
 
 		function force() {
+			collideBusy = false;
 			if (nodes.length < 2) return;
 			// Cells the layout has moved out of would otherwise pile up for the
 			// life of the tab. Cheap to drop, and rare: a settled graph keeps to
@@ -2409,6 +2442,7 @@
 									l2 = dx * dx + dy * dy;
 								}
 								let l = Math.sqrt(l2);
+								if (r - l > COLLIDE_SLOP) collideBusy = true;
 								let push = (r - l) / l;
 								dx *= push;
 								dy *= push;
@@ -2428,6 +2462,7 @@
 
 		force.initialize = ns => {
 			nodes = ns;
+			collideBusy = false;
 			radii = nodes.map(nodeRadius);
 			let maxR = 0;
 			for (let r of radii) if (r > maxR) maxR = r;
@@ -3700,8 +3735,27 @@
 	 * 0.3-ish to nothing over the engine's ordinary cooldown, every node free.
 	 */
 	function shed() {
+		holdForCollide();
 		if (!shedLeft || --shedLeft > 0) return;
 		thaw();
+	}
+
+	/**
+	 * Keep the engine running while circles are still being pulled apart.
+	 *
+	 * Per tick, from the engine's own tick hook, and cheap: d3AlphaMin is one
+	 * of the props force-graph reads live without re-running anything, and it
+	 * is only set when the answer changes. A graph whose overlaps never quite
+	 * resolve runs to cooldownTime exactly as every graph did before ALPHA_MIN,
+	 * so this can make a layout stop later than alpha alone would say, and
+	 * never later than it used to.
+	 */
+	function holdForCollide() {
+		if (!fg) return;
+		let want = PERF.collide && collideBusy ? 0 : ALPHA_MIN;
+		if (want === alphaMinNow) return;
+		alphaMinNow = want;
+		fg.d3AlphaMin(want);
 	}
 
 	/** Give the graph its freedom back, and its cooling schedule. Idempotent,
