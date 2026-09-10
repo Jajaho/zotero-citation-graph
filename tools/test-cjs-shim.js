@@ -2826,8 +2826,13 @@ function outranks(mine, theirs) {
  *
  * Nothing in this repository holds the second column of that table, so the
  * numbers are stated here as well as read.
+ *
+ * The sidebar's toggle, at the other end of the bar, is held to the same inset
+ * from its own edge. It is the same button doing the same job in the other
+ * direction, and this tab -- unlike the reader's, which has a window edge on
+ * its left -- has a pane on both sides for them to be a pair about.
  */
-check('the collapse button does not move when it changes documents', () => {
+check('the two pane toggles are a pair, and neither of them moves', () => {
 	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
 
 	// The declaration block of a rule, by its selector, comments stripped.
@@ -2842,7 +2847,8 @@ check('the collapse button does not move when it changes documents', () => {
 		if (at < 0) throw new Error('no ' + prop + ' in ' + block.trim());
 		const nums = block.slice(at + prop.length + 1, block.indexOf(';', at))
 			.split(' ').filter(Boolean).map(v => parseFloat(v));
-		const n = nums[nth];
+		// One value in a padding shorthand is both ends.
+		const n = nth < nums.length ? nums[nth] : nums[0];
 		if (!Number.isFinite(n)) throw new Error(prop + ' is not px numbers: ' + block.trim());
 		return n;
 	};
@@ -2858,9 +2864,15 @@ check('the collapse button does not move when it changes documents', () => {
 			+ 'hands over to puts its own at ' + SIDENAV_INSET + 'px');
 	}
 
-	// The start is core's too, and is NOT the same number -- see reader.css.
-	if (px(rule('#bar'), 'padding-inline', 0) !== 8) {
-		throw new Error('the sidebar toggle no longer starts where a toolbar starts');
+	// And the sidebar's toggle at the other end of the bar is the same button
+	// doing the same job in the other direction, so it is the same inset. This
+	// is the one place the bar departs from reader.css, which puts 8px at the
+	// start because a reader's toolbar has a window edge on that side and a pane
+	// only on the other. Both ends of THIS bar are a pane.
+	const start = px(rule('#bar'), 'padding-inline', 0) + button / 2;
+	if (start !== inset) {
+		throw new Error('the two pane toggles are not a pair: the sidebar’s sits ' + start
+			+ 'px from its edge and the item pane’s sits ' + inset + 'px from its own');
 	}
 
 	// Vertically. 41px is core's number, but only border-box turns it into the
@@ -3736,32 +3748,37 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	if (said.length) throw new Error('the page was told something while the menu was still up: ' + said);
 
 	// Picking a row, in the order Gecko actually uses: nsXULMenuCommandEvent
-	// rolls the menu chain up and dispatches the row's command AFTERWARDS, so
-	// the popup is down before anything knows what took it down. A menu read at
-	// popuphidden therefore reads "nothing was picked" however it was closed --
-	// which is what silently un-wired every one of these entries once.
+	// rolls the menu chain up and dispatches the picked row's command
+	// afterwards -- later than the turn the hide happened in. So the close is
+	// answered at once and does not wait for a pick that may never come...
 	popup.hidePopup();
-	if (said.length) throw new Error('the page was answered before the pick could arrive: ' + said);
-	// And the entries have to still be ON the popup: the command is dispatched
-	// at the menuitem, and one already taken off has nothing to bubble to.
-	if (!popup.querySelectorAll('.zg-node-menuitem').length) {
-		throw new Error('the entries were swept before the pick could reach them');
-	}
-	popup.fire('command', { target: mine[2] });
-
-	// The page hears the close FIRST: "Pin node here" fixes the node where the
-	// hold is keeping it, and a release arriving afterwards would undo it.
-	await new Promise(r => setTimeout(r, 0));
-	if (said.join(' ') !== 'zgMenuClosed zgMenuPicked:e1') throw new Error('the page heard ' + said.join(' '));
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a hidden menu said ' + said.join(' '));
+	// ...and by then the rows are back off Zotero's own menu, which is where a
+	// listener on the POPUP loses the pick: the command bubbles into nothing.
 	if (popup.querySelectorAll('.zg-node-menuitem').length) {
 		throw new Error("the graph's entries were left on the library's own menu");
 	}
+	// The row is detached, exactly as it is when the command finally lands, and
+	// it still has to be heard -- so the listener is on the row.
+	mine[2].fire('command', { target: mine[2], currentTarget: mine[2] });
+	if (said.join(' ') !== 'zgMenuClosed zgMenuPicked:e1') throw new Error('the page heard ' + said.join(' '));
+
+	// The other order, which is what a platform that dispatches the command
+	// before it takes the popup down would give: the pick still says the menu
+	// is gone first, and the hide behind it adds nothing.
+	said.length = 0;
+	await nodeMenu.open({ win, collection }, {
+		itemID: 7, x: 1, y: 2, entries: [{ id: 'e0', icon: 'pin', label: 'Pin node here' }],
+	}, reply);
+	const row = popup.children.filter(c => c.classList.contains('zg-node-menuitem')).pop();
+	row.fire('command', { target: row, currentTarget: row });
+	popup.hidePopup();
+	if (said.join(' ') !== 'zgMenuClosed zgMenuPicked:e0') throw new Error('a pick before the hide said ' + said.join(' '));
 
 	// Dismissed without picking anything: the hold still has to come off.
 	said.length = 0;
 	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
 	popup.hidePopup();
-	await new Promise(r => setTimeout(r, 0));
 	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a dismissal said ' + said.join(' '));
 
 	// No item tree, no menu -- and the page is still holding the node it
@@ -3770,7 +3787,7 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	pane.itemsView = null;
 	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
 	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a menu that never opened said ' + said.join(' '));
-	if (built !== 2) throw new Error('core was asked to build a menu with no item tree');
+	if (built !== 3) throw new Error('core was asked to build a menu with no item tree');
 });
 
 Promise.all(pending).then(() => {

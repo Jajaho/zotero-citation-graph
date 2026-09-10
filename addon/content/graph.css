@@ -185,18 +185,28 @@ body {
  * a variable, and is duplicated into zoteroPane.js's layout constraints for the
  * same reason.
  *
- * The padding is asymmetric and that is load-bearing, not a typo in the file it
- * was copied from: 8px at the start, 4px at the end. It is what puts the last
- * button of a toolbar in the same place on screen as the first button of an
- * item pane's sidenav, which is what the two states of this tab hand back and
- * forth. Both arrive at 18px from the right-hand edge:
+ * The END padding is core's and load-bearing, not a typo in the file it was
+ * copied from. reader.css writes "padding-inline: 8px 4px", and the 4px is what
+ * puts the last button of a toolbar in the same place on screen as the first
+ * button of an item pane's sidenav -- which is what the two states of this tab
+ * hand back and forth. Both arrive at 18px from the right-hand edge:
  *
  *   toolbar   padding-inline-end 4px + half of a 28px .toolbar-button
  *   sidenav   padding-inline     4px + half of a 28px .btn   (item-pane-sidenav
  *                                     is "padding: 6px 4px 0", width 37px)
  *
- * Written as 8px both ends, the button lands 4px to the left of where the
- * sidenav's just was and the swap is visible.
+ * Written as 8px, the button lands 4px to the left of where the sidenav's just
+ * was and the swap is visible.
+ *
+ * The START is 4px too, which is the one place this bar departs from the
+ * reader's, and it is the same 18px read from the other end. The reader's 8px
+ * is right for the reader: its toolbar has a window edge on the left and a pane
+ * on the right, so its two ends are not the same kind of thing. This bar has a
+ * pane on both sides -- the sidebar under its own toggle, the item pane under
+ * the other -- and the two toggles are one pair, doing one job in two
+ * directions. A pair that sits 22px in on the left and 18px in on the right is
+ * a pair with a wonk in it, and nothing about the tab explains which side is
+ * the odd one.
  *
  * The 41px has the same job in the other direction, and only under border-box.
  * reader.css opens with
@@ -223,7 +233,7 @@ body {
 	box-sizing: border-box;
 	height: 41px;
 	padding-block: 0;
-	padding-inline: 8px 4px;
+	padding-inline: 4px;
 	background: var(--material-toolbar);
 	border-bottom: var(--material-panedivider);
 	/* Above the canvas, below the popovers: #action (10) and #menu (11) can be
