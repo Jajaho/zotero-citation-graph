@@ -18,10 +18,18 @@
  * limit. Every write is fire-and-forget and swallows its own errors: a
  * diagnostic that can break the thing it is diagnosing is worse than none.
  *
+ * OFF unless someone switches it on -- see on(). A line costs a read and a
+ * rewrite of the whole file, and the node menu alone spends nine of them on one
+ * right-click and a pick, which is not a bill to hand a profile that is not
+ * being debugged.
+ *
  * TEMPORARY. This exists to find one bug and should come out with it.
  */
 
 const MAX_LINES = 300;
+
+// Zotero.Prefs auto-prefixes 'extensions.zotero.'; see addon/prefs.js.
+const PREF = 'zoteroCitationGraph.trace';
 
 let queue_ = Promise.resolve();
 let path_ = null;
@@ -32,6 +40,26 @@ let t0_ = null;
  *  question that matters about restore latency: how much of it is ours. */
 function start() {
 	t0_ = Date.now();
+}
+
+/**
+ * Is the trail being kept?
+ *
+ * Asked per line rather than once at load, because a switch on a diagnostic is
+ * only worth having if it can be thrown while the thing being diagnosed is
+ * going on -- a value read at startup could only be changed by a restart, which
+ * is the very event most of these lines are about. The read itself is a lookup
+ * in a branch Zotero holds in memory, and an absent default (this file's own
+ * prefs.js not loaded yet, which is possible at the very first line bootstrap
+ * writes) reads as off, which is what it should be.
+ */
+function on() {
+	try {
+		return Zotero.Prefs.get(PREF) === true;
+	}
+	catch (e) {
+		return false;
+	}
 }
 
 function path() {
@@ -46,6 +74,10 @@ function path() {
  * can wait for it -- see flush().
  */
 function log(line) {
+	// Nothing at all when it is off: no file, no Zotero.debug, no work beyond
+	// the string the caller has already built. The queue is still what comes
+	// back, so a caller that waits on a line waits on the same thing either way.
+	if (!on()) return queue_;
 	let now = new Date();
 	let stamped = now.toISOString().replace('T', ' ').slice(0, 23)
 		+ (t0_ === null ? '        ' : ('  +' + String(now - t0_).padStart(5) + 'ms'))

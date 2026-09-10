@@ -98,6 +98,10 @@ const ChromeUtils = {
 	},
 };
 
+// Every line lib/trace.js has put on disk, in order. Empty is the answer a
+// profile nobody is debugging should be getting.
+const traceWrites = [];
+
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
 	Zotero, ChromeUtils,
@@ -108,6 +112,13 @@ const require_ = shim.makeRequire(rootURI, {
 		readJSON: async () => { throw new Error('no cache'); },
 		writeJSON: async () => {},
 		makeDirectory: async () => {},
+		// lib/trace.js's own file, which is the one thing here that is written
+		// for its own sake. Recorded rather than written, so a check can ask
+		// what the trail actually cost.
+		readUTF8: async () => { throw new Error('no log yet'); },
+		writeUTF8: async (p, text) => {
+			traceWrites.push(text);
+		},
 	},
 	PathUtils: { join: (...p) => p.join('/'), parent: p => p.slice(0, p.lastIndexOf('/')) },
 	setTimeout, clearTimeout,
@@ -4367,6 +4378,29 @@ check('a menu replaced by the next one says nothing about the node it left behin
 	if (said.join(' ') !== 'zgMenuClosed') throw new Error('the menu on screen said ' + said.join(' '));
 	if (popup.querySelectorAll('.zg-node-menuitem').length) {
 		throw new Error("the graph's entries were left on the library's own menu");
+	}
+});
+
+check('the lifecycle trail costs nothing until it is switched on', async () => {
+	const trace = require_('./lib/trace.js');
+
+	// Both lines inside one synchronous run, so nothing else can put its own
+	// Zotero.Prefs in between: log() asks the pref at the moment it is called,
+	// and the answer to that question is meant to be the whole difference
+	// between a line on disk and no line at all.
+	const prefs = Zotero.Prefs;
+	Zotero.Prefs = { get: () => undefined, set: () => {} };
+	trace.log('trail-off-marker');
+	Zotero.Prefs = { get: name => name === 'zoteroCitationGraph.trace', set: () => {} };
+	trace.log('trail-on-marker');
+	Zotero.Prefs = prefs;
+
+	await trace.flush();
+	if (traceWrites.some(t => t.includes('trail-off-marker'))) {
+		throw new Error('a trail nobody switched on read and rewrote its file anyway');
+	}
+	if (!traceWrites.some(t => t.includes('trail-on-marker'))) {
+		throw new Error('a trail that was switched on wrote nothing');
 	}
 });
 

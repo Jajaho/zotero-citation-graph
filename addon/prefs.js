@@ -30,3 +30,11 @@ pref("extensions.zotero.zoteroCitationGraph.addTagEnabled", true);
 // width it chose; it has no default here any more, so only a value someone
 // actually set is ever seen.
 pref("extensions.zotero.zoteroCitationGraph.paneWidth", 520);
+
+// The lifecycle trail (lib/trace.js), which is off. Switching it on writes
+// <dataDir>/zotero-citation-graph/lifecycle.log: a line for every plugin
+// lifecycle event and every node menu, at a read and a rewrite of the whole
+// file each. It answers what becomes of a graph tab across a restart, which is
+// not a question a profile that is not being debugged should be paying to have
+// answered. Set it true, do the thing that goes wrong, read the file.
+pref("extensions.zotero.zoteroCitationGraph.trace", false);
