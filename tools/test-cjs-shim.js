@@ -915,6 +915,12 @@ class FakeElement {
 
 	select() {}
 
+	/** Recorded rather than acted on: what matters is that the row the pick
+	 *  just marked was the one brought into view. */
+	scrollIntoView(opts) {
+		this.scrolledIntoView = opts || true;
+	}
+
 	// A XUL popup announces both edges of its life, and addDialog.js hangs the
 	// focus on one and the answer on the other.
 	openPopup() {
@@ -2796,11 +2802,12 @@ check('a row of the gap list carries the canvas\'s four gestures', async () => {
 	const rows = box.querySelectorAll('.zg-gap-row');
 	if (rows.length !== 2) throw new Error('rows drawn: ' + rows.length);
 
-	// One click lights the star, two isolate it, and Ctrl (Cmd) on either adds
-	// to what is lit rather than starting again -- the canvas's own four, over a
-	// row that stands for a gap and the papers that cite it. What each MEANS is
-	// the page's; this end only says which was made, and says it with the
-	// citers, which is the copy of them the reader actually clicked.
+	// One click lights the row's ghost, two isolate it, and Ctrl (Cmd) on
+	// either adds to what is lit rather than starting again -- the canvas's own
+	// four, over the one node the row stands for. What each MEANS is the
+	// page's; this end says which was made and which row made it, and nothing
+	// else: the citers are the ghost's own neighbours and lighting them is what
+	// isolating already does.
 	rows[0].fire('click', {});
 	rows[0].fire('dblclick', { ctrlKey: true });
 	rows[1].fire('keydown', { key: 'Enter', preventDefault: () => {} });
@@ -2809,17 +2816,25 @@ check('a row of the gap list carries the canvas\'s four gestures', async () => {
 	if (one.type !== 'gaps-focus' || one.key !== 'doi:a' || one.isolate || one.add) {
 		throw new Error('a plain click: ' + JSON.stringify(one));
 	}
-	if (one.citers.join() !== 'HELD1,HELD2,HELD3') throw new Error('the citers did not travel');
+	if ('citers' in one) throw new Error('a row is one node, not a set of them');
 	if (!two.isolate || !two.add) throw new Error('Ctrl-double-click: ' + JSON.stringify(two));
 	if (three.key !== 'doi:b' || three.isolate || three.add) {
 		throw new Error('Enter is the click: ' + JSON.stringify(three));
 	}
 
 	// Which rows are lit is the page's answer, not this side's: it holds the
-	// pick, and a filter can take a citer off screen with no click made at all.
+	// pick, and a ghost picked on the canvas lights its row from that end with
+	// no click made in the list at all.
 	gapsPane.marks(entry, { keys: ['doi:b'] });
 	if (rows[0].classList.contains('lit')) throw new Error('an unlit row was marked');
 	if (!rows[1].classList.contains('lit')) throw new Error('a lit row was not marked');
+	// And a mark that has just appeared is scrolled to, since the row it lands
+	// on can be below the fold of a list of twenty-five.
+	if (!rows[1].scrolledIntoView) throw new Error('a newly marked row was left off screen');
+	// A mark that was already there is not: nothing moved for the reader.
+	rows[1].scrolledIntoView = null;
+	gapsPane.marks(entry, { keys: ['doi:b'] });
+	if (rows[1].scrolledIntoView) throw new Error('a standing mark scrolled the list again');
 	// And the marks land again on the rows a redraw brings back.
 	gapsPane.rows(entry, {
 		rows: [{ key: 'doi:b', ns: 'doi', id: '10.1/b', citedBy: 2, citers: ['HELD1'] }],
@@ -2830,7 +2845,7 @@ check('a row of the gap list carries the canvas\'s four gestures', async () => {
 	if (!redrawn[0].classList.contains('lit')) throw new Error('the marks went out under a redraw');
 });
 
-check('a selection made in the gap list draws behind it, not over it', async () => {
+check('nothing a selection does takes the deck out from under the gap list', async () => {
 	const itemPane = require_('./lib/itemPane.js');
 	const gapsPane = require_('./lib/gapsPane.js');
 	const { made, win, element } = fakeWindow();
@@ -2851,25 +2866,29 @@ check('a selection made in the gap list draws behind it, not over it', async () 
 	const deck = made.find(el => el.localName === 'deck');
 	const box = entry.itemPane.gaps.box;
 
-	// Clicking a row selects the papers that cite that gap, and a selection
-	// normally takes the deck. Not this one: the list is what the click was made
-	// in, and putting it away would take the next row with it.
-	await show([11], { keepGaps: true });
+	// Every gesture made while this list is up moves the selection -- a row
+	// picks its ghost, the same ghost clicked on the canvas picks it from the
+	// other end, empty canvas clears the pick, a rebuild restates the count --
+	// and unpinned, each of them would close the list. So none of them may.
+	await show([11], {});
 	const details = made.find(el => el.localName === 'item-details');
-	if (deck.selectedPanel !== box) throw new Error('a click in the list closed the list');
+	if (deck.selectedPanel !== box) throw new Error('a selected paper closed the list');
 	if (details.item.id !== 11) throw new Error('the paper was not drawn behind the list');
 
-	// Closing the list IS the request those renders held back, so what comes up
-	// is the paper they drew rather than whatever was up before the list.
-	gapsPane.close(entry);
-	if (deck.selectedPanel !== details) throw new Error('closing did not hand back the paper');
+	// Including the empty selection a click on the canvas makes, which is the
+	// one that closed the list every time the graph was given back.
+	await show([], 27);
+	const message = made.find(el => el.localName === 'item-message-pane');
+	if (deck.selectedPanel !== box) throw new Error('clearing the selection closed the list');
 
-	// A click on a NODE carries no such promise and does put the list away --
-	// you asked about a paper, so the paper is what the pane should show.
-	gapsPane.open(entry, () => {});
-	if (deck.selectedPanel !== box) throw new Error('the list did not come back');
+	// Closing the list is what the pin was holding out for, and what comes up
+	// is whatever the selection last became underneath it.
+	gapsPane.close(entry);
+	if (deck.selectedPanel !== message) throw new Error('closing did not hand back the selection');
+
+	// Unpinned, the deck is core's again: a selection takes it as it always did.
 	await show([12], {});
-	if (deck.selectedPanel !== details) throw new Error('a click on a node left the list up');
+	if (deck.selectedPanel !== details) throw new Error('a closed list still holds the deck');
 	if (details.item.id !== 12) throw new Error('the second paper never arrived');
 });
 

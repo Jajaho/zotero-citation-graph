@@ -278,6 +278,7 @@ zotero-citation-graph-gaps-caption = Die Zahl sagt, wie viele deiner Einträge d
 zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Einträge zitiert und fehlt.
 zotero-citation-graph-gaps-building = Die Sammlung wird noch gelesen…
 zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — klicken zum Hervorheben, doppelklicken zum Isolieren, Strg zum Hinzufügen
+zotero-citation-graph-gaps-off-screen = Dieses Werk ist nicht im Graphen — ein Filter blendet es aus.
 zotero-citation-graph-gaps-add = Zu Zotero hinzufügen
 zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe
 zotero-citation-graph-gaps-mixed = über { $count } Teilgebiete verteilt

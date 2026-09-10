@@ -225,10 +225,17 @@ function open(entry, tell) {
 
 	// Which page of the deck is up is CHROME's fact, not the page's, and this is
 	// what says so. The graph's canvas menu reads it -- "what is missing" or
-	// "hide the list" -- and the deck can be turned away from this list by a
-	// click on a node as readily as by the close button, so a page that
-	// remembered its own answer would be wrong every time that happened.
+	// "hide the list" -- and there are two ways down from here, the close button
+	// and that menu entry, so a page that remembered its own answer would be
+	// wrong whenever the other one was used.
 	entry.itemPane.onFace = wanted => tell(wanted === gaps.box);
+
+	// Pinned, so that a selection cannot take the deck out from under it. Every
+	// gesture made while reading this list moves the selection -- a row picks
+	// its ghost, the same ghost clicked on the canvas picks it from the other
+	// end, empty canvas clears the pick, a rebuild restates the count -- and
+	// each of those would otherwise close the list. See itemPane.face().
+	entry.itemPane.pinned = gaps.box;
 
 	if (splitPane.collapsed(entry)) splitPane.setCollapsed(entry, false);
 	itemPane.face(entry.itemPane, gaps.box);
@@ -237,11 +244,11 @@ function open(entry, tell) {
 function close_(entry) {
 	if (!entry || !entry.itemPane || !entry.itemPane.gaps) return;
 	let pane = entry.itemPane;
-	// Closing IS the request every keepGaps render was holding back, so this is
-	// the one caller that lifts it -- and what comes up is the page those
-	// renders drew and did not show, which is the paper whose row was last
-	// clicked. See itemPane.face().
-	pane.keepGaps = false;
+	// Closing is what the pin was holding out for, so this is the one caller
+	// that lifts it -- and what comes up is the page the renders underneath
+	// drew and could not show, which is whatever the selection last became
+	// while the list was up.
+	pane.pinned = null;
 	itemPane.face(pane, pane.behind || pane.details);
 }
 
@@ -358,20 +365,20 @@ function row(entry, g, send) {
 		send({ type: 'add-item', doi: g.id, title: g.title || null });
 	});
 
-	// The canvas's own four gestures, over a row that stands for a set of nodes
-	// -- the gap and the papers of yours that cite it, which is one star in the
-	// graph. Click lights it, double click isolates it, and Ctrl (Cmd on a Mac)
-	// on either adds to what is already lit rather than starting again, which is
-	// what lets a reader ask whether two gaps lean on the same papers without
-	// leaving the list. What each one MEANS is content/graph.js zgGapsFocus:
-	// this end only says which was made.
+	// The canvas's own four gestures, over the one node this row stands for:
+	// the ghost for the work the library does not hold. Click lights it, double
+	// click isolates it -- which is what lights the papers citing it, at the
+	// depth the reader set -- and Ctrl (Cmd on a Mac) on either adds to what is
+	// already picked or already lit rather than starting again. What each one
+	// MEANS is content/graph.js zgGapsFocus, which answers them with the same
+	// four functions the canvas calls; this end only says which was made, and
+	// which row made it.
 	//
-	// The pair of clicks under a double click lights the star and puts it out
-	// again, exactly as the pair under a double click on a node does, and the
-	// gesture that follows sets it right -- see toggleIsolateSet() there.
+	// The pair of clicks under a double click lights the ghost and puts it out
+	// again, exactly as the pair under a double click on the ghost itself does,
+	// and the gesture that follows sets it right -- see toggleIsolate() there.
 	let focus = (ev, isolate) => send({
 		type: 'gaps-focus',
-		citers: g.citers || [],
 		key: g.key,
 		isolate: isolate,
 		add: !!(ev && (ev.ctrlKey || ev.metaKey)),
@@ -403,8 +410,24 @@ function row(entry, g, send) {
 function marks(entry, msg) {
 	if (!showing(entry)) return;
 	let gaps = entry.itemPane.gaps;
-	gaps.lit = new Set(Array.isArray(msg.keys) ? msg.keys : []);
+	let next = new Set(Array.isArray(msg.keys) ? msg.keys : []);
+	// A ghost picked on the CANVAS marks its row over here, and twenty-five
+	// rows are taller than the pane -- so a mark that has just appeared is
+	// scrolled to, or the answer would be off the bottom of a list the reader
+	// is looking straight at. Only a newly marked row, and only the first of
+	// them: a gesture that lights several has no one row to go to.
+	let fresh = null;
+	for (let key of next) {
+		if (!gaps.lit.has(key)) {
+			fresh = gaps.drawn.get(key);
+			break;
+		}
+	}
+	gaps.lit = next;
 	paint(gaps);
+	// `nearest`, so a row already on screen is not scrolled to the middle of
+	// the pane for no reason.
+	if (fresh) fresh.scrollIntoView({ block: 'nearest' });
 }
 
 function paint(gaps) {
