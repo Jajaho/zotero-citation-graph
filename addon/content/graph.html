@@ -70,10 +70,13 @@
 			     Same icon as the sidebar's toggle at the other end, mirrored, as
 			     the reader mirrors it for .context-pane-toggle.
 
-			     Hidden until there is a pane at all: the pane describes the node
-			     you clicked, so before the first click there is nothing to put
-			     away and nothing to bring back. -->
-			<button id="pane-toggle" type="button" hidden="hidden"
+			     On screen from the moment the tab opens, before anything has been
+			     clicked, because that is what the library tab does: its item
+			     pane's sidenav is there with nothing selected, and the toggle on
+			     it opens a pane that says how many items are in the view. This
+			     button asks for the same pane and gets the same answer -- see
+			     lib/graphTab.js. -->
+			<button id="pane-toggle" type="button"
 				data-zg-title="pane-toggle-show" data-zg-aria-label="pane-toggle-show"
 				title="Show the item pane" aria-label="Show the item pane"></button>
 		</div>

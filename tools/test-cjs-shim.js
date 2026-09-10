@@ -3453,6 +3453,46 @@ check('lib/l10n.js resolves a locale, formats, and hands the page its source', a
 	if (!forPage.source.includes('zotero-citation-graph-rebuild')) throw new Error('empty source');
 });
 
+/**
+ * The item pane's toggle is on the bar before anything has been clicked.
+ *
+ * It shipped hidden until the panel existed, on the reasoning that the pane
+ * describes the node you clicked -- which left a freshly opened graph tab with
+ * no way to ask for the pane at all, where the library tab has its item pane
+ * beside the list from the start. The pane has an answer for an empty pick
+ * (core's "N items in this view"), so the press means the same thing before the
+ * first click as after it, and it carries the pick so that chrome can build the
+ * panel from it. Three parts, and the button is useless without any one of them.
+ */
+check('the bar offers the item pane before a node has been clicked', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const chrome = fs.readFileSync(path.join(addonDir, 'lib/graphTab.js'), 'utf8');
+
+	const button = html.match(/<button id="pane-toggle"[^>]*>/);
+	if (!button) throw new Error('#pane-toggle is not in the bar at all');
+	if (button[0].includes('hidden')) throw new Error('#pane-toggle starts hidden again');
+
+	// Hidden by exactly one fact -- the panel being on screen. Whether the panel
+	// had ever been built used to be the other half of it.
+	const setter = js.match(/function setPaneOpen\([^)]*\) \{([^}]*)\}/);
+	if (!setter) throw new Error('setPaneOpen has been renamed; this check is stale');
+	if (!/elPaneToggle\.hidden = on;/.test(setter[1])) {
+		throw new Error('the toggle is hidden by something other than the pane being open');
+	}
+
+	// The press carries the pick, because it may be what builds the pane.
+	if (!/type: 'item-pane-toggle', itemIDs:/.test(js)) {
+		throw new Error('the press does not carry the selection to build the pane from');
+	}
+	// And chrome builds one when there is none, rather than dropping the press.
+	const handler = chrome.match(/case 'item-pane-toggle': \{[\s\S]*?\n\t\t\}/);
+	if (!handler) throw new Error('no item-pane-toggle case; this check is stale');
+	if (!/itemPane\.show\(/.test(handler[0])) {
+		throw new Error('a press with no panel yet has nothing to build one');
+	}
+});
+
 check('the page loads its string modules before anything that draws', () => {
 	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
 	const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);

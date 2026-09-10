@@ -146,9 +146,10 @@
 	// "27 items in this view" is a fact about what is drawn, which is a fact
 	// only this side has. Ghosts are not items and are not counted.
 	let heldOnScreen = 0;
-	// Whether a click has ever asked for the pane. Until one has there is no
-	// pane, and a count pushed into one that does not exist would build a panel
-	// nobody asked for -- see render() and lib/itemPane.js.
+	// Whether anything has asked for the pane yet -- a click on a node, or the
+	// bar's own toggle. Until something has there is no pane, and a count pushed
+	// into one that does not exist would build a panel nobody asked for -- see
+	// render() and lib/itemPane.js.
 	let paneEngaged = false;
 
 	let el = id => document.getElementById(id);
@@ -308,10 +309,10 @@
 	};
 
 	/**
-	 * Whether the item pane is there, and whether it is open.
+	 * Whether the item pane is open.
 	 *
-	 * Both are chrome's facts and neither can be worked out here: the pane is a
-	 * XUL element in the main window, and it is opened and put away by four
+	 * Chrome's fact, and one that cannot be worked out here: the pane is a XUL
+	 * element in the main window, and it is opened and put away by four
 	 * different gestures -- a click on a node, "what is missing", core's own
 	 * Toggle Item Pane in the pane's sidenav, and the button below. Pushed after
 	 * every one of them (lib/graphTab.js), so the bar shows the button exactly
@@ -325,7 +326,7 @@
 		catch (e) {
 			return;
 		}
-		setPaneOpen(!!state.has, !!state.open);
+		setPaneOpen(!!state.open);
 	};
 
 	// An add that ended without a rebuild. The gap list disables a row's "+"
@@ -1490,9 +1491,9 @@
 		// The other half of what the pane is told, and it moves under a filter
 		// with the selection untouched: pulling the confidence slider changes
 		// "27 items in this view" and nothing else. Told after the count is
-		// taken, and only once anything has asked for the pane at all -- there
-		// is no pane before the first click, and building one to write a count
-		// into would put a panel on screen nobody asked for.
+		// taken, and only once anything has asked for the pane at all -- until
+		// something has there is no pane, and building one to write a count into
+		// would put a panel on screen nobody asked for.
 		let was = heldOnScreen;
 		heldOnScreen = 0;
 		for (let n of nodes) if (!n.ghost) heldOnScreen++;
@@ -4074,13 +4075,27 @@
 	 *
 	 * So there is nothing to light: whenever it is visible the pane is away, and
 	 * pressing it can only mean one thing.
+	 *
+	 * Whether the pane has ever been BUILT is not part of it, which it once was.
+	 * A tab that has just opened has no pane yet, and hiding the button until
+	 * one existed left the tab with no way to ask for it -- unlike the library
+	 * tab, whose item pane is beside the list before a row is picked. The pane
+	 * has an answer for an empty selection ("N items in this view", core's own
+	 * message pane), so the button means the same thing on the first press as on
+	 * every one after it.
 	 */
-	function setPaneOpen(has, on) {
-		elPaneToggle.hidden = !has || on;
+	function setPaneOpen(on) {
+		elPaneToggle.hidden = on;
 	}
 
+	// The pick travels with the press, because this may be what builds the pane:
+	// before the first click on a node nothing has told chrome what is selected
+	// or how much is on screen, and an empty pick is exactly the case whose
+	// answer is the count. From here on the count is kept up to date, which is
+	// what paneEngaged asks for -- see render().
 	elPaneToggle.addEventListener('click', () => {
-		emit({ type: 'item-pane-toggle' });
+		paneEngaged = true;
+		emit({ type: 'item-pane-toggle', itemIDs: pickedItemIDs(), inView: heldOnScreen });
 	});
 
 	function setSideWidth(px) {

@@ -537,6 +537,13 @@ async function ready(win, tabID, cw, collection) {
 	// cannot work out for itself, and both decide what the first paint looks
 	// like. See chromeProps().
 	if (entry) send(entry, 'zgSetChrome', chromeProps(win));
+	// And the third of those. The bar's toggle is on screen while the panel is
+	// not, and a page that has just loaded is drawn from its own markup until
+	// something says otherwise -- which is right for a tab opening, where there
+	// is no panel yet, and wrong for any page load that ever happens beside one.
+	// splitPane's notifier only fires when the panel MOVES, so this is the state
+	// it never reports. See splitPane.watch() below.
+	if (entry) send(entry, 'zgSetPane', { open: splitPane.showing(entry) });
 
 	// content -> chrome. event.detail is a JSON string (a primitive), so there is
 	// nothing to unwrap.
@@ -690,12 +697,28 @@ async function handleMessage(win, tabID, collection, msg) {
 		// the same place, handed from the sidenav to the toolbar as the toolbar
 		// grows into the space the pane leaves.
 		//
-		// Hidden until there is a panel at all, so this is never the first thing
-		// to build one: the pane describes the node you clicked, and there is
-		// nothing to describe before a click.
+		// It is also the way IN. A tab that has just opened has no panel yet,
+		// and the button used to be hidden until one existed -- which left a
+		// fresh graph tab with no way to ask for the pane at all, where the
+		// library tab has its item pane beside the list from the start. So a
+		// press with no panel builds one, and it carries the pick to build it
+		// from: an empty pick is not an empty pane, it is core's own "N items in
+		// this view", which is exactly what the library shows with nothing
+		// selected. Hence `expand`, the same request selectItems() makes -- a
+		// press of this button is an explicit ask to see the pane.
 		case 'item-pane-toggle': {
 			let entry = open_.get(tabID);
-			if (entry && entry.pane) itemPane.collapse(entry, !splitPane.collapsed(entry));
+			if (!entry) break;
+			if (entry.pane) {
+				itemPane.collapse(entry, !splitPane.collapsed(entry));
+				break;
+			}
+			entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
+			await itemPane.show(entry, entry.selection, {
+				inView: Number(msg.inView) || 0,
+				expand: true,
+				status: t => send(entry, 'zgSetStatus', t),
+			});
 			break;
 		}
 		// Zotero's own item pane, beside the graph, describing what is picked.
@@ -1398,14 +1421,15 @@ function chromeProps(win) {
  * only one of four gestures that move it, and the one thing every one of them
  * has in common is that it goes through splitPane. See splitPane.watch().
  *
- * `has` and `open` are two facts, not one. A pane that has never been built is
- * not a pane that is merely put away: there is nothing in it to show, because
- * nothing has been clicked, so the bar carries no button at all rather than one
- * that would open an empty pane.
+ * One fact, not two: whether the panel is on screen. Whether it has ever been
+ * built used to travel with it, so that the bar could hide the button until
+ * there was something to bring back -- but a pane with nothing picked has
+ * something to say, and a tab whose pane has never been built is exactly the
+ * tab that most needs the button. See the 'item-pane-toggle' case above.
  */
 splitPane.watch((entry) => {
 	if (!entry || !open_.has(entry.tabID)) return;
-	send(entry, 'zgSetPane', { has: !!entry.pane, open: splitPane.showing(entry) });
+	send(entry, 'zgSetPane', { open: splitPane.showing(entry) });
 });
 
 /** Tell every open tab in this window what its chrome looks like now. */
