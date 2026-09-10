@@ -1620,9 +1620,9 @@
 				// the whole picture and drawNode is asked it one node at a
 				// time. See reserveLabels().
 				.onRenderFramePre(reserveLabels)
-				// After the graph, so a flag is never buried under the cluster
-				// it gathered.
-				.onRenderFramePost(drawGroups)
+				// After the graph: the names so no circle can bury one, then
+				// the flags so no name can bury those. See drawLabels().
+				.onRenderFramePost(drawOver)
 				.d3VelocityDecay(0.3);
 
 			// d3 re-initialises every registered force whenever the node array
@@ -2217,11 +2217,19 @@
 	 * frame decides for the whole picture at once -- see labelLayout.js for the
 	 * rule, which is greedy occlusion in a fixed order of importance.
 	 *
-	 * What is fixed about that order is the point. It is a property of the node
-	 * (what the panel is sizing by, then degree), never of where the node
-	 * happens to be sitting, so the visible names drop out from the bottom of
-	 * the ranking upward as you pull back rather than churning -- and the paper
-	 * you are most likely to be looking for keeps its name the longest.
+	 * The ranking is how often a paper is cited BY THIS COLLECTION, and only
+	 * then how big it is drawn. Local citations rather than the node's size,
+	 * because size answers whatever the panel is currently sizing by -- and
+	 * with that set to global citations, ranking by size would hand the names
+	 * to whatever the literature at large cites most, over the papers this
+	 * library is actually built around. In the default mode the two agree, so
+	 * this changes nothing there; it is the global mode it exists for.
+	 *
+	 * What is fixed about that order is the point. It is a property of the node,
+	 * never of where the node happens to be sitting, so the visible names drop
+	 * out from the bottom of the ranking upward as you pull back rather than
+	 * churning -- and the paper you are most likely to be looking for keeps its
+	 * name the longest.
 	 *
 	 * Above that ranking sit the names the user has asked for by hand: the node
 	 * under the pointer, the pick, the pins. Those are not ranked at all, they
@@ -2229,12 +2237,30 @@
 	 * someone just clicked to answer a question about crowding is the one
 	 * outcome this whole feature must not produce.
 	 */
-	const LABEL_PAD = 3;        // screen px of air between two reserved boxes
+	/**
+	 * What a name reserves is the name, and nothing else.
+	 *
+	 * It reserved the node's circle too, on the reasoning that a name lying
+	 * across a neighbour hides the colour the legend explains. That hid far too
+	 * much: a big circle is drawn twenty-odd pixels across at any zoom, so one
+	 * well-cited paper silently suppressed every name near it -- names were
+	 * disappearing over proximity rather than over collision, which is not what
+	 * the crowding problem was. Names now yield to names alone; a name over a
+	 * circle is legible, and drawing every name above every circle is what
+	 * makes it so. See drawLabels().
+	 *
+	 * The box is the glyphs rather than the em: a font's em box carries
+	 * ascender and descender room that a citekey never fills, and reserving it
+	 * kept two names apart that had a clear gap between them.
+	 */
+	const LABEL_PAD = 1;        // screen px of air between two names
+	const LABEL_INK = 0.72;     // glyph height as a fraction of the type size
 	const LABEL_STICKY = 0.85;  // a shown label is tested at this of its width
 	const LABEL_FADE_MS = 140;  // in and out, so a verdict flip is not a blink
 
 	let labelOrder = [];        // drawnNodes, ranked; see rankLabels()
 	let labelRankedFrom = null; // the node array labelOrder was built from
+	let labelDraw = [];         // this frame's winners, for drawLabels()
 	let labelPass = LabelLayout.pass();
 	let labelFading = false;    // any node mid-fade, so the canvas stays dirty
 	let labelClock = 0;         // timestamp the current frame's fade steps from
@@ -2246,7 +2272,7 @@
 	 */
 	function rankLabels(nodes) {
 		labelRankedFrom = nodes;
-		labelOrder = LabelLayout.order(nodes, n => [nodeRadius(n), n.deg || 0]);
+		labelOrder = LabelLayout.order(nodes, n => [n.inDeg || 0, nodeRadius(n)]);
 	}
 
 	/** The names placed before any ranking is consulted. Small and volatile, so
@@ -2296,9 +2322,14 @@
 		for (let n of labelOrder) {
 			if (labelForced(n)) placeLabel(n, ctx, globalScale, ox, oy, true);
 		}
+		labelDraw.length = 0;
 		for (let n of labelOrder) {
 			if (!labelForced(n)) placeLabel(n, ctx, globalScale, ox, oy, false);
 			fadeLabel(n);
+			// Gathered here rather than walked for again at paint time: this
+			// loop is over the whole graph, and the list it builds is the few
+			// hundred names a viewport can hold.
+			if (n._labelLit > 0) labelDraw.push(n);
 		}
 		// force-graph stops redrawing once the simulation has cooled, and a
 		// fade started on the last frame of a settle would freeze halfway
@@ -2326,19 +2357,16 @@
 		// Dimmed nodes lose their label entirely rather than fading it -- see
 		// drawLabel -- so they must not take up room either.
 		if (dimmed(node)) return;
+		let m = labelMetrics(node, ctx, globalScale);
 		let x = node.x * globalScale - ox;
 		let y = node.y * globalScale - oy;
-		let r = nodeRadius(node) * globalScale;
-		let m = labelMetrics(node, ctx, globalScale);
-		let half = m.w / 2 + LABEL_PAD;
-		let tall = m.px / 2 + LABEL_PAD;
+		let box = m.w / 2 + LABEL_PAD;
+		let boxY = m.px * LABEL_INK / 2 + LABEL_PAD;
 		// Off screen: no verdict at all. Not "hidden" -- a node scrolled back
 		// into view must not have to earn its name a second time by fading in.
 		let w = elGraph.clientWidth;
 		let h = elGraph.clientHeight;
-		if (x + half < 0 || x - half > w || y + tall < 0 || y - tall > h) return;
-		let box = Math.max(half, r);
-		let boxY = Math.max(tall, r);
+		if (x + box < 0 || x - box > w || y + boxY < 0 || y - boxY > h) return;
 		if (force) {
 			labelPass.claim(x - box, y - boxY, x + box, y + boxY);
 			node._labelWant = 1;
@@ -2391,7 +2419,6 @@
 	function drawNode(node, ctx, globalScale) {
 		drawPick(node, ctx, globalScale);
 		drawPin(node, ctx);
-		drawLabel(node, ctx, globalScale);
 	}
 
 	/**
@@ -2506,6 +2533,30 @@
 		for (let d of pin.d) ctx.stroke(d);
 		for (let d of pin.d) ctx.fill(d, 'evenodd');
 		ctx.restore();
+	}
+
+	/**
+	 * Every name this frame kept, painted after every circle and every edge.
+	 *
+	 * Labels used to be drawn inside force-graph's per-node callback, which
+	 * paints one node completely before starting the next -- so a name was
+	 * buried under whatever circle happened to be drawn after it. That was
+	 * survivable only while a name also RESERVED the circles around it; now
+	 * that names yield to names alone (see LABEL_PAD), a name lying over a
+	 * neighbour is the ordinary case, and it has to be the thing on top.
+	 *
+	 * Before drawGroups, which keeps the flags above the names for the reason
+	 * they are above the graph: they are furniture, and you navigate by them.
+	 */
+	function drawLabels(ctx, globalScale) {
+		for (let n of labelDraw) drawLabel(n, ctx, globalScale);
+	}
+
+	/** Everything that goes over the graph rather than in it, in the order it
+	 *  has to go on. force-graph takes one post-frame hook, not a list. */
+	function drawOver(ctx, globalScale) {
+		drawLabels(ctx, globalScale);
+		drawGroups(ctx, globalScale);
 	}
 
 	function drawLabel(node, ctx, globalScale) {

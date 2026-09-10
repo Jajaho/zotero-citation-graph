@@ -756,6 +756,24 @@ check('the ranking is total, so two renders of one graph agree', () => {
 	if (got.join() !== 'both,landmark,small-hub') throw new Error(got.join());
 });
 
+check('names go to what this collection cites, not to what the world cites', () => {
+	const L = loadLabels();
+	// graph.js ranks by [inDeg, radius]. With the panel sizing by global
+	// citations, radius says how often the LITERATURE cites a paper -- so
+	// ranking by size would hand the names to famous papers nobody here cites,
+	// over the ones this library is actually built around.
+	const key = n => [n.inDeg || 0, n.r];
+	const nodes = [
+		{ id: 'famous-elsewhere', inDeg: 1, r: 28 },   // 41k citations, cited here once
+		{ id: 'local-backbone', inDeg: 12, r: 5 },     // barely cited outside, central here
+		{ id: 'local-second', inDeg: 12, r: 3 },       // as central, drawn smaller
+	];
+	const got = L.order(nodes, key).map(n => n.id);
+	if (got[0] !== 'local-backbone') throw new Error('the collection lost to the literature: ' + got.join());
+	// Size still breaks a tie between two equally-cited papers.
+	if (got[1] !== 'local-second') throw new Error(got.join());
+});
+
 check('pulling back thins the names instead of reshuffling them', () => {
 	const L = loadLabels();
 	// The reason the order must not depend on position or zoom: pulling back
