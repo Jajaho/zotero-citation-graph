@@ -936,6 +936,9 @@ class FakeElement {
 		this.parent = null;
 		this.removed = false;
 		this.listeners = {};
+		// Where a XUL popup is in its life: 'closed', 'open' or 'hiding'. The
+		// third is the one worth modelling -- see hidePopup().
+		this.state = 'closed';
 		// data-* attributes, which is how nodeMenu.js marks the rows it added
 		// with the id the page will want back.
 		this.dataset = {};
@@ -1130,17 +1133,26 @@ class FakeElement {
 	// A XUL popup announces both edges of its life, and addDialog.js hangs the
 	// focus on one and the answer on the other.
 	openPopup() {
+		this.state = 'open';
 		this.fire('popupshown', { target: this });
 	}
 
 	hidePopup() {
 		this.openedAt = null;
+		this.state = 'hiding';
+		// Gecko raises popuphidden from a runnable of its own, later than the
+		// turn the hide was asked for, and what a menu's listeners do in the
+		// meantime is the whole question in nodeMenu.js. `deferHide` is a check
+		// saying so: the event waits to be fired by hand.
+		if (this.deferHide) return;
+		this.state = 'closed';
 		this.fire('popuphidden', { target: this });
 	}
 
 	// Where a context menu is asked to appear, in screen coordinates. Recorded
 	// rather than acted on: what matters is that it is the pointer's own spot.
 	openPopupAtScreen(x, y, isContextMenu) {
+		this.state = 'open';
 		this.openedAt = { x, y, isContextMenu };
 	}
 
@@ -4314,6 +4326,48 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	await nodeMenu.open({ win, collection }, { itemID: 7, x: 1, y: 2, entries: [] }, reply);
 	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a menu that never opened said ' + said.join(' '));
 	if (built !== 3) throw new Error('core was asked to build a menu with no item tree');
+});
+
+check('a menu replaced by the next one says nothing about the node it left behind', async () => {
+	const nodeMenu = require_('./lib/nodeMenu.js');
+	const { win, element } = fakeWindow();
+	const popup = fakeItemMenu(element);
+	win.ZoteroPane = { itemsView: {}, async buildItemContextMenu() {} };
+
+	const said = [];
+	const reply = (fn, value) => said.push(fn + (value === undefined ? '' : ':' + value));
+	const entry = { win, collection: { id: 3, key: 'ABCD1234' } };
+	const rows = [{ id: 'e0', icon: 'pin', label: 'Pin node here' }];
+
+	// The menu over one node...
+	await nodeMenu.open(entry, { itemID: 7, x: 1, y: 2, entries: rows }, reply);
+
+	// ...and a right click on the next one while it is still up. The page has
+	// asked for the first to close and the second to open, in that order, and
+	// is already holding the second node against the menu it is expecting.
+	popup.deferHide = true;
+	const opening = nodeMenu.open(entry, { itemID: 8, x: 3, y: 4, entries: rows }, reply);
+	if (popup.openedAt) throw new Error('a menu went up over a popup that was still hiding');
+	if (said.length) throw new Error('the page was told something before either menu was settled: ' + said.join(' '));
+
+	// The first menu's popuphidden, arriving the turn after it was asked for,
+	// which is the only way Gecko sends one. It is the FIRST menu's news and
+	// that menu is gone -- and the page hearing 'closed' now would let go of
+	// the node the second one is being opened over, leaving "Pin node here" to
+	// pin it wherever the layout had since carried it.
+	popup.deferHide = false;
+	popup.state = 'closed';
+	popup.fire('popuphidden', { target: popup });
+	await opening;
+	if (said.length) throw new Error('a replaced menu spoke for the one that replaced it: ' + said.join(' '));
+
+	// The menu that is actually on screen is the one the page hears about.
+	if (!popup.openedAt || popup.openedAt.x !== 3) throw new Error('the replacing menu never opened');
+	popup.hidePopup();
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('the menu on screen said ' + said.join(' '));
+	if (popup.querySelectorAll('.zg-node-menuitem').length) {
+		throw new Error("the graph's entries were left on the library's own menu");
+	}
 });
 
 Promise.all(pending).then(() => {

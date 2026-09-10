@@ -1,5 +1,9 @@
 /* global Zotero, setTimeout */
 
+// TEMPORARY, with the page-side trace() in content/graph.js: what the popup did
+// and in which order. Comes out with the bug it was added for.
+let trace = require('./trace.js');
+
 /**
  * Zotero's own item context menu, opened over a node in the graph.
  *
@@ -77,11 +81,18 @@ const LIBRARY_BOUND = [
 ];
 
 // The menu one window has open, keyed by window, so a second window's graph
-// cannot take down the first one's popup. `gen` is what a listener checks
-// before acting: a menu replaced while its predecessor's popuphidden is still
-// in flight must not have its entries swept by that older listener.
+// cannot take down the first one's popup. `superseded` is what a listener
+// checks before acting: a menu replaced by the next one has nothing left to
+// report, and reporting it anyway would be heard as being about the menu that
+// replaced it.
 let open_ = new WeakMap();
-let gen_ = 0;
+
+// How long a popup asked to close is given to say that it has. Only reached if
+// the hide raises no popuphidden at all, which is not a reason to withhold the
+// menu the user asked for -- a quarter second is over the threshold where a
+// menu reads as a menu rather than as a delay, and well under any wait a user
+// would sit through twice.
+const HIDE_WAIT_MS = 250;
 
 /**
  * Build Zotero's item menu for one node, add this plugin's entries, and show it.
@@ -105,8 +116,21 @@ async function open(entry, msg, reply) {
 		return;
 	}
 
+	// The menu this one replaces, retired before it is taken down. Its own
+	// hidePopup() raises popuphidden a turn or more from now -- by which time
+	// the page has let go of the node THAT menu was opened over and is holding
+	// the node THIS one is for -- and a closure reported that late would be
+	// heard as this menu's, handing back a node with a popup still over it.
+	let prev = open_.get(win);
+	if (prev) prev.superseded = true;
 	close(win);
 	sweep(popup);
+
+	// And down before the next one goes up. A menupopup opens from the closed
+	// state and from no other, so a menu opened over one still hiding is a menu
+	// that never appears -- leaving the page holding a node for a popup that is
+	// not there, with no popuphidden ever coming to say so.
+	if (prev) await hidden(popup);
 
 	await pane.buildItemContextMenu();
 
@@ -118,61 +142,84 @@ async function open(entry, msg, reply) {
 	// A rule of its own, so that what this plugin adds reads as an addition to
 	// Zotero's menu rather than as two more of its own entries. Core separates
 	// plugin menus the same way; see menuManager.js _groupMenus().
-	popup.appendChild(separator(win.document));
-	for (let e of msg.entries || []) popup.appendChild(item(win.document, e));
-
-	let record = { gen: ++gen_, popup, picked: null };
+	let record = { popup, settled: false, superseded: false };
 	open_.set(win, record);
 
-	let onCommand = (event) => {
-		let id = event.target && event.target.dataset && event.target.dataset.zgEntry;
-		if (id) record.picked = id;
-	};
 	/**
-	 * The popup is down, and which row took it down is not known yet.
+	 * The menu is over, and this is the one place that says so.
 	 *
-	 * Gecko runs a picked row as nsXULMenuCommandEvent: it rolls the menu chain
-	 * up FIRST -- so that a command is free to open a dialog or another popup --
-	 * and dispatches the XUL `command` afterwards. So popuphidden arrives ahead
-	 * of the pick, always, and a menu read here reads `picked: null` however it
-	 * was closed. Sweeping the entries at this point makes it worse rather than
-	 * merely early: the command is dispatched at the menuitem, and an item
-	 * already off the popup has nothing to bubble to.
+	 * Called from both ends -- the row that was picked, and the popup coming
+	 * down -- because which of the two happens first is not knowable from here,
+	 * and because ONE of them may be all that ever arrives. Whichever gets here
+	 * first tells the page the menu is gone; a pick tells it what was picked.
 	 *
-	 * So the whole answer waits one turn of the event loop. A macrotask and not
-	 * a microtask: microtasks run at the checkpoint after this listener returns,
-	 * which is still inside the runnable that has yet to dispatch the command.
-	 *
-	 * Nothing is lost by waiting. The page is holding the node this menu was
-	 * opened over -- fixed coordinates, no ring -- so it does not move while the
-	 * turn goes by, and it is given back below at the position it was asked
-	 * about.
+	 * `settled` rather than a removed listener: a picked row is dispatched at
+	 * the row, and the popup's own hide follows it, so both fire on any normal
+	 * pick and the second must come to nothing.
 	 */
-	let onHidden = (event) => {
-		if (event.target !== popup) return;
-		popup.removeEventListener('popuphidden', onHidden);
-		setTimeout(() => {
-			popup.removeEventListener('command', onCommand);
+	let settle = (pickedID) => {
+		trace.log('menu settle  picked=' + pickedID + '  first=' + !record.settled
+			+ '  superseded=' + record.superseded
+			+ '  stillOurs=' + (open_.get(win) === record));
+		// Replaced, and so no longer anybody's news. Whatever this is reporting
+		// happened to a menu that is off the screen and out of the page's mind;
+		// the page is holding a node for the menu that took its place, and every
+		// word of this would be taken as being about that one.
+		if (record.superseded) return;
+		if (!record.settled) {
+			record.settled = true;
 			// A menu opened over another node has already swept this one's
 			// entries and put its own there; they are not ours to take away.
-			let current = open_.get(win);
-			if (!current || current.gen !== record.gen) return;
-			open_.delete(win);
-			sweep(popup);
+			if (open_.get(win) === record) {
+				open_.delete(win);
+				sweep(popup);
+			}
 			// Closed before picked, never the other way round: "Pin node here"
 			// fixes the node where the hold is keeping it, and a release
 			// arriving after that would undo the pin. It is the order the
-			// page's own menu rows run in, and the page depends on it.
+			// page's own menu rows run in.
 			reply('zgMenuClosed');
-			if (record.picked) reply('zgMenuPicked', record.picked);
-		}, 0);
+		}
+		if (pickedID) reply('zgMenuPicked', pickedID);
 	};
-	popup.addEventListener('command', onCommand);
+
+	/**
+	 * A row of ours was picked. The listener is on the ROW, and that is the
+	 * whole point.
+	 *
+	 * Gecko runs a picked row as nsXULMenuCommandEvent: it rolls the menu chain
+	 * up first -- so a command is free to open a dialog or a second popup --
+	 * and dispatches the XUL `command` afterwards, later than the same turn of
+	 * the event loop. A listener on the POPUP hears that only by bubbling, and
+	 * by then this module has taken the row off the popup to leave Zotero's own
+	 * menu as it found it, so the event bubbles into nothing and the pick is
+	 * lost. Every entry this plugin adds was dead for exactly that reason.
+	 *
+	 * A listener on the row itself fires at the target. It does not care what
+	 * the row is still attached to, or how much later the command arrives.
+	 */
+	let onPick = (event) => {
+		let id = event.currentTarget && event.currentTarget.dataset
+			&& event.currentTarget.dataset.zgEntry;
+		trace.log('menu command  label=' + (event.currentTarget && event.currentTarget.getAttribute('label')) + '  id=' + id);
+		settle(id || null);
+	};
+
+	popup.appendChild(separator(win.document));
+	for (let e of msg.entries || []) popup.appendChild(item(win.document, e, onPick));
+
+	let onHidden = (event) => {
+		trace.log('menu popuphidden  mine=' + (event.target === popup) + '  settled=' + record.settled);
+		if (event.target !== popup) return;
+		popup.removeEventListener('popuphidden', onHidden);
+		settle(null);
+	};
 	popup.addEventListener('popuphidden', onHidden);
 
 	// Screen coordinates out of the content event, which is what core's own
 	// reader hands its popups for the same reason: the popup is placed by a
 	// window that knows nothing of where this page sits inside it.
+	trace.log('menu open  entries=' + (msg.entries || []).length + '  rows=' + popup.querySelectorAll('.' + CLASS).length);
 	popup.openPopupAtScreen(msg.x, msg.y, true);
 }
 
@@ -195,6 +242,29 @@ function close(win) {
 }
 
 /**
+ * The popup is down -- already, or as soon as it says so.
+ *
+ * `state` is the only honest answer to whether the hide has happened yet:
+ * hidePopup() raises popuphidden from a runnable of its own, so a popup asked
+ * to close is still 'hiding' for the rest of this turn, and one that came down
+ * earlier has had its event and gone. Waiting on the event alone would wait for
+ * ever in the second case, which is what the state check is for; the timeout is
+ * for the first case going wrong -- a hide that raises nothing must cost a
+ * quarter second, not the menu.
+ */
+function hidden(popup) {
+	if (popup.state === 'closed') return Promise.resolve();
+	return new Promise((resolve) => {
+		let done = () => {
+			popup.removeEventListener('popuphidden', done);
+			resolve();
+		};
+		popup.addEventListener('popuphidden', done);
+		setTimeout(done, HIDE_WAIT_MS);
+	});
+}
+
+/**
  * Everything this module put on the popup, off it again.
  *
  * Core addresses its own entries by index from the front of the popup, so what
@@ -211,7 +281,7 @@ function separator(doc) {
 	return el;
 }
 
-function item(doc, e) {
+function item(doc, e, onPick) {
 	let el = doc.createXULElement('menuitem');
 	// menuitem-iconic even for a name this module has no file for: the class is
 	// what reserves the icon column, and a label starting at the edge beside
@@ -230,6 +300,8 @@ function item(doc, e) {
 		el.style.setProperty('fill', 'var(--fill-secondary)');
 	}
 	el.dataset.zgEntry = e.id;
+	// On the row, not on the popup it is about to be taken off. See onPick.
+	if (onPick) el.addEventListener('command', onPick);
 	return el;
 }
 

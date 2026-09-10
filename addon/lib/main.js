@@ -260,6 +260,14 @@ function addTabHooks(win) {
  * to take back out.
  */
 function addChromeWatch(win) {
+	// Once per window, however many times it is asked for. startup() runs this
+	// for every window already open and onMainWindowLoad runs it again for the
+	// same ones, and a second watch would overwrite the closure that takes the
+	// first one back out -- leaving a pair of pref observers that nothing can
+	// unregister, still calling pushChrome() long after this plugin is gone.
+	// Its neighbours in that pair carry their own guard; this is the one for
+	// this one.
+	if (_chromeWatch.has(win)) return;
 	_chromeWatch.set(win, graphTab.watchChrome(win));
 }
 
