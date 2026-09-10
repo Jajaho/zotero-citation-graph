@@ -719,7 +719,7 @@ check('lib/ modules load through the shim', () => {
  * it: elements that can be appended, detached and asked for their first child.
  */
 class FakeElement {
-	constructor(localName, made, onRender) {
+	constructor(localName, made, onRender, doc = () => null) {
 		this.localName = localName;
 		this.children = [];
 		this.attrs = {};
@@ -733,7 +733,23 @@ class FakeElement {
 		// data-* attributes, which is how nodeMenu.js marks the rows it added
 		// with the id the page will want back.
 		this.dataset = {};
-		if (localName === 'item-details') this.render = () => onRender(this);
+		if (localName === 'item-details') {
+			this.render = () => onRender(this);
+			// The head of the pane, which core fills through a callback handed
+			// a document and an append. Batch editing is the only thing that
+			// puts anything there; recorded so a check can read it back.
+			this.head = [];
+			this.renderCustomHead = (cb) => {
+				this.head = [];
+				if (cb) cb({ doc: doc(), append: (...els) => this.head.push(...els) });
+			};
+		}
+		// Core's message pane, whose whole API is render({ l10nId, l10nArgs }).
+		if (localName === 'item-message-pane') {
+			this.render = (content) => {
+				this.rendered = content;
+			};
+		}
 		// Core's sidenav starts disabled and is told when something is being
 		// viewed; record the telling so a check can insist it happened.
 		if (localName === 'item-pane-sidenav') {
@@ -826,16 +842,20 @@ class FakeElement {
 		return this.localName;
 	}
 
-	/** Enough of a selector engine for the two shapes asked of it: [attr="..."],
+	/** Enough of a selector engine for the shapes asked of it: [attr="..."],
 	 *  which is how addDialog.js finds the collection the menu ticked and how
-	 *  itemPane.js finds the sidenav's toggle, and a bare .class, which is how
-	 *  graphTab.load() asks whether a container it is about to mount into
-	 *  already holds a graph. */
+	 *  itemPane.js finds the sidenav's toggle; the same with a tag in front of
+	 *  it, which is how itemPane.js reaches core's info section to pin it open
+	 *  for batch editing; and a bare .class, which is how graphTab.load() asks
+	 *  whether a container it is about to mount into already holds a graph. */
 	querySelector(sel) {
 		let match;
-		const attr = /^\[([\w-]+)="(.*)"\]$/.exec(sel);
+		const attr = /^([\w-]*)\[([\w-]+)="(.*)"\]$/.exec(sel);
 		const cls = /^\.([\w-]+)$/.exec(sel);
-		if (attr) match = c => c.getAttribute(attr[1]) === attr[2];
+		if (attr) {
+			match = c => (!attr[1] || c.localName === attr[1])
+				&& c.getAttribute(attr[2]) === attr[3];
+		}
 		else if (cls) match = c => String(c.className).split(/\s+/).includes(cls[1]);
 		else throw new Error('unsupported selector: ' + sel);
 		const walk = (el) => {
@@ -910,16 +930,27 @@ class FakeElement {
 
 function fakeWindow(onRender = async () => {}) {
 	const made = [];
-	const element = localName => new FakeElement(localName, made, onRender);
-	const win = {
-		document: {
-			createElement: element,
-			createXULElement: element,
-			// A dialog is appended to the window itself and looked up by id,
-			// which is how a second one displaces the first.
-			documentElement: element('window'),
-			getElementById: id => made.find(el => el.id === id && !el.removed) || null,
+	let doc;
+	const element = localName => new FakeElement(localName, made, onRender, () => doc);
+	doc = {
+		createElement: element,
+		createXULElement: element,
+		// A dialog is appended to the window itself and looked up by id,
+		// which is how a second one displaces the first.
+		documentElement: element('window'),
+		getElementById: id => made.find(el => el.id === id && !el.removed) || null,
+		// Core's strings, which is how every count in the pane is worded --
+		// the message, the batch-editing prompt and its head. Recorded rather
+		// than formatted: what matters is which string and which count.
+		l10n: {
+			setAttributes(el, id, args) {
+				el.l10nID = id;
+				el.l10nArgs = args || null;
+			},
 		},
+	};
+	const win = {
+		document: doc,
 		// splitPane mirrors the splitter's width attribute through one of these.
 		MutationObserver: class {
 			observe() {}
@@ -1088,7 +1119,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	Zotero.Items = { getAsync: async id => fakeItems[id] };
 	Zotero.Libraries = { get: () => ({ editable: true }) };
 	Zotero.Prefs = { get: () => 400, set: () => {} };
-	await itemPane.show(entry, 11);
+	await itemPane.show(entry, [11]);
 
 	const details = made.find(el => el.localName === 'item-details');
 	const sidenav = made.find(el => el.localName === 'item-pane-sidenav');
@@ -1130,7 +1161,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// collapsing it was a decision -- and must not spend a render nobody can
 	// see either. It is recorded, and drawn on the way back out.
 	Zotero.Items = { getAsync: async id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false }) };
-	await itemPane.show(entry, 12);
+	await itemPane.show(entry, [13]);
 	if (!entry.pane.box.getAttribute('collapsed')) throw new Error('a click reopened a collapsed pane');
 	if (details.item.id !== 11) throw new Error('a collapsed pane rendered anyway');
 
@@ -1139,7 +1170,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// The redraw is not awaited by the setter -- core's button is not async --
 	// so let it land.
 	await new Promise(r => setTimeout(r, 0));
-	if (details.item.id !== 12) throw new Error('coming back did not land on the paper last clicked');
+	if (details.item.id !== 13) throw new Error('coming back did not land on the paper last clicked');
 
 	// A note is not a paper with sections: core answers a selected note with its
 	// own editor, and so does this. The paper it hangs off is NOT put in front
@@ -1147,7 +1178,7 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	// being opened.
 	Zotero.Items = { getAsync: async id => fakeItems[id] };
 	Zotero.Libraries = { get: () => ({ editable: true }) };
-	await itemPane.show(entry, 12, { expand: true });
+	await itemPane.show(entry, [12], { expand: true });
 	const note = made.find(el => el.localName === 'note-editor');
 	const deck = made.find(el => el.localName === 'deck');
 	if (!note) throw new Error('a note did not open an editor');
@@ -1167,14 +1198,14 @@ check('the item pane is handed what <item-details> needs, and nothing more', asy
 	if (sidenav.defaultStatus !== true) throw new Error('the sidenav still offers sections');
 
 	// And back to a paper, which puts the pane in front again.
-	await itemPane.show(entry, 11, { expand: true });
+	await itemPane.show(entry, [11], { expand: true });
 	if (deck.selectedPanel !== details) throw new Error('the paper did not come back');
 	if (sidenav.defaultStatus !== false) throw new Error('the sidenav was left greyed out');
 
 	// An explicit request to look at something -- unlike a click on a node --
 	// opens the pane that was put away, and draws what it was asked for.
 	details._collapsed = true;
-	await itemPane.show(entry, 12, { expand: true });
+	await itemPane.show(entry, [12], { expand: true });
 	if (entry.pane.box.getAttribute('collapsed')) throw new Error('select did not reopen the pane');
 	if (note.item !== fakeItems[12]) throw new Error('the pane came back on the wrong thing');
 
@@ -1213,11 +1244,11 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 	Zotero.Prefs = { get: () => 400, set: () => {} };
 
 	Zotero.Items = items;
-	const first = itemPane.show(entry, 1);
+	const first = itemPane.show(entry, [1]);
 	Zotero.Items = items;
-	const second = itemPane.show(entry, 2);
+	const second = itemPane.show(entry, [2]);
 	Zotero.Items = items;
-	const third = itemPane.show(entry, 3);
+	const third = itemPane.show(entry, [3]);
 	// Let all three past their item lookups before the held render lets go.
 	await new Promise(r => setTimeout(r, 0));
 	release();
@@ -1226,6 +1257,111 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 	// 2 was passed over while 1 was still drawing, and drawing it would have
 	// cost a full render of a pane nobody was going to look at.
 	if (drawn.join(',') !== '1,3') throw new Error('drew ' + drawn.join(','));
+});
+
+/**
+ * The three answers core's item pane gives a selection, given to the same three
+ * selections here -- ItemPane.render(), and the strings are core's own.
+ *
+ * The counting one is the reason the pane is never blank: a graph with nothing
+ * picked is a collection with no row selected, and the library says how many
+ * rows there are rather than nothing at all.
+ */
+check('the pane answers a selection of none, one and several the way the library does', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-13');
+	const paper = id => ({
+		id, libraryID: 1, parentItem: false, deleted: false,
+		isNote: () => false, isRegularItem: () => true,
+	});
+	// Every check in this file shares one Zotero stub and they run
+	// interleaved, so the stubs are put back immediately before each call --
+	// show() reads Zotero.Items on its first line and Zotero.Libraries on the
+	// far side of an await.
+	const show = (ids, inView) => {
+		Zotero.Items = { getAsync: async id => paper(id) };
+		Zotero.Libraries = { get: () => ({ editable: true }) };
+		Zotero.Prefs = { get: () => 400, set: () => {} };
+		return itemPane.show(entry, ids, { inView });
+	};
+
+	// Nothing picked, and twenty-seven nodes on screen.
+	await show([], 27);
+	const message = made.find(el => el.localName === 'item-message-pane');
+	const deck = made.find(el => el.localName === 'deck');
+	const details = made.find(el => el.localName === 'item-details');
+	const sidenav = made.find(el => el.localName === 'item-pane-sidenav');
+	if (!message) throw new Error('an empty selection left the pane blank');
+	if (deck.selectedPanel !== message) throw new Error('the deck is not showing the message');
+	if (message.rendered.l10nId !== 'item-pane-message-unselected'
+		|| message.rendered.l10nArgs.count !== 27) {
+		throw new Error('wrong message: ' + JSON.stringify(message.rendered));
+	}
+	// Section buttons mean nothing beside a count -- core's own rule, the same
+	// one that greys them beside a note.
+	if (sidenav.defaultStatus !== true) throw new Error('the sidenav still offers sections');
+	// A filter that takes nodes off screen restates the count. Nothing else
+	// about the pane has changed, so nothing else may be redrawn for it -- and
+	// in particular the deck must stay where it is. The gap list is a page of
+	// this same deck, and the count moves with every pixel of a slider drag, so
+	// a count that took the deck would close that list and go on closing it.
+	deck.selectedPanel = details;
+	await show([], 4);
+	if (message.rendered.l10nArgs.count !== 4) throw new Error('the count went stale under a filter');
+	if (deck.selectedPanel !== details) throw new Error('a restated count took the deck');
+	// But a real change of selection back to nothing does take it -- clicking
+	// the canvas is how the whole graph is given back, and the pane has to say
+	// so.
+	await show([11], 27);
+	await show([], 27);
+	if (deck.selectedPanel !== message) throw new Error('clearing the selection left the paper up');
+
+	// One picked: the paper's own sections, as it always was.
+	await show([11], 27);
+	if (deck.selectedPanel !== details) throw new Error('one paper did not open the item pane');
+	if (details.item.id !== 11) throw new Error('the item never arrived');
+	if (details.extraItems.length) throw new Error('one paper was drawn as several');
+	if (details.head.length) throw new Error('a single paper was given a batch-editing head');
+
+	// Several: the count, and the offer -- never the multi-item box unasked.
+	// Editing every selected paper at once is not something to walk into by
+	// clicking a second node.
+	await show([11, 12, 13], 27);
+	const prompt = made.find(el => String(el.className).includes('zg-batch-prompt'));
+	if (!prompt) throw new Error('several papers did not raise the batch-editing offer');
+	if (deck.selectedPanel !== prompt) throw new Error('the deck is not showing the offer');
+	const promptMessage = prompt.querySelector('.zg-batch-prompt-message');
+	if (promptMessage.l10nID !== 'item-pane-message-items-selected'
+		|| promptMessage.l10nArgs.count !== 3) {
+		throw new Error('the offer does not say what is selected');
+	}
+	if (details.extraItems.length) throw new Error('the multi-item box was filled unasked');
+
+	// Taking the offer up: core's own multi-item pane, and a head that says so
+	// with a way back out of it.
+	prompt.children.find(c => c.localName === 'button').fire('command', {});
+	await new Promise(r => setTimeout(r, 0));
+	if (deck.selectedPanel !== details) throw new Error('the offer did not open the pane');
+	if (details.item.id !== 11) throw new Error('the first paper is not the one described');
+	if (details.extraItems.map(i => i.id).join(',') !== '12,13') {
+		throw new Error('the rest were not handed over as extraItems');
+	}
+	const head = details.head.find(el => el.l10nID === 'item-pane-batch-editing-header');
+	if (!head || head.l10nArgs.count !== 3) throw new Error('the head does not say what is being edited');
+
+	// Done: back to the offer, with the same three still selected.
+	details.head.find(el => el.l10nID === 'item-pane-batch-editing-done').fire('command', {});
+	await new Promise(r => setTimeout(r, 0));
+	if (deck.selectedPanel !== prompt) throw new Error('Done did not put the offer back');
+
+	// And a different selection asks again rather than carrying the opt-in over
+	// -- core drops it on every change of selection, for the same reason it is
+	// an opt-in at all.
+	prompt.children.find(c => c.localName === 'button').fire('command', {});
+	await new Promise(r => setTimeout(r, 0));
+	await show([11, 12], 27);
+	if (deck.selectedPanel !== prompt) throw new Error('a new selection inherited the last one\'s opt-in');
 });
 
 /**

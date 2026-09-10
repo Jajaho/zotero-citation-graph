@@ -34,8 +34,8 @@
 	const DIM_NODE_ALPHA = 0.1;
 	const DIM_LINK_FACTOR = 0.15;
 
-	// How far a highlighted node's own edges are lifted out of the picture.
-	// Lifted, where isolation dims: a highlight answers "which lines touch this
+	// How far a picked node's own edges are lifted out of the picture.
+	// Lifted, where isolation dims: a pick answers "which lines touch this
 	// one", and that only reads against the lines it is being picked out from.
 	// The two are meant to be legible at the same time, so they must not both
 	// work by taking colour away.
@@ -129,11 +129,20 @@
 	let adjacency = new Map();    // node id -> Set of ids one edge away
 	let hoverNode = null;         // whatever force-graph's hit test is over
 
-	// View state for the highlight, kept apart from isolation because they are
-	// different questions asked with different gestures. One id and not a set:
-	// a highlight is "this one, and the lines out of it", which is only ever
-	// about a single node -- see setHighlight().
-	let highlighted = null;       // node id picked out, or null for none
+	// View state for the pick, kept apart from isolation because they are
+	// different questions asked with different gestures. A set, in click order,
+	// because a pick is a SELECTION: one node is the common case and the one
+	// every ring and every full-strength edge is drawn for, and Ctrl-click
+	// builds it up the way every list on the desktop does -- see setPicked().
+	let picked = new Set();       // node ids picked out; empty means none
+	// What the pane is told alongside the selection, and only chrome reads it:
+	// "27 items in this view" is a fact about what is drawn, which is a fact
+	// only this side has. Ghosts are not items and are not counted.
+	let heldOnScreen = 0;
+	// Whether a click has ever asked for the pane. Until one has there is no
+	// pane, and a count pushed into one that does not exist would build a panel
+	// nobody asked for -- see render() and lib/itemPane.js.
+	let paneEngaged = false;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -244,6 +253,14 @@
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
 	}
 
+	// TEMPORARY. One line into lib/trace.js's log, which is the only way to see
+	// what this page did: it is content, its console goes nowhere anyone reads,
+	// and the question is about the order two chrome messages arrive in. Comes
+	// out with the bug it was added for.
+	function trace(text) {
+		emit({ type: 'trace', text: String(text) });
+	}
+
 	// --- chrome -> content ------------------------------------------------
 
 	window.zgSetData = function (json) {
@@ -317,6 +334,7 @@
 	 * carried into the menu is given back to the layout.
 	 */
 	window.zgMenuClosed = function () {
+		trace('zgMenuClosed  held=' + (heldNode ? heldNode.id : 'none'));
 		nativeOpen = false;
 		release();
 	};
@@ -331,6 +349,16 @@
 	 */
 	window.zgMenuPicked = function (id) {
 		let run = nativeRuns.get(id);
+		trace('zgMenuPicked  id=' + id + '  known=' + !!run + '  held=' + (heldNode ? heldNode.id : 'none'));
+		// The hold ends HERE, whether or not the close has already ended it.
+		// Which of the two arrives first is chrome's business and depends on how
+		// Gecko sequences a menu's teardown against the command of the row that
+		// took it down -- but a release landing AFTER a pin deletes the
+		// coordinates the pin just wrote, and the node goes back to the layout
+		// as if the row had never been picked. Doing it first costs nothing when
+		// the close got there already: release() on a spent hold is a no-op, and
+		// pin() reads x/y, which the hold has been keeping still all along.
+		release();
 		if (run) run();
 	};
 
@@ -1385,15 +1413,32 @@
 		for (let n of nodes) if (n.citedByGlobal != null) counts.push(n.citedByGlobal);
 		globalRef = Scale.referenceCount(counts);
 
-		// A filter change or a rebuild can take a focused or highlighted node
-		// off screen. A focus on a node that is not drawn would dim the graph
-		// around nothing, and a highlight on one would leave a handful of edges
-		// lit with nothing at the end of them.
-		if (isolated.size || highlighted != null) {
+		// A filter change or a rebuild can take a focused or picked node off
+		// screen. A focus on a node that is not drawn would dim the graph
+		// around nothing, and a pick on one would leave a handful of edges lit
+		// with nothing at the end of them -- and would go on answering "what is
+		// selected" with a paper nobody can see.
+		let dropped = false;
+		if (isolated.size || picked.size) {
 			let onScreen = new Set(nodes.map(n => n.id));
 			for (let id of isolated) if (!onScreen.has(id)) isolated.delete(id);
-			if (highlighted != null && !onScreen.has(highlighted)) highlighted = null;
+			for (let id of picked) {
+				if (onScreen.has(id)) continue;
+				picked.delete(id);
+				dropped = true;
+			}
 		}
+
+		// The other half of what the pane is told, and it moves under a filter
+		// with the selection untouched: pulling the confidence slider changes
+		// "27 items in this view" and nothing else. Told after the count is
+		// taken, and only once anything has asked for the pane at all -- there
+		// is no pane before the first click, and building one to write a count
+		// into would put a panel on screen nobody asked for.
+		let was = heldOnScreen;
+		heldOnScreen = 0;
+		for (let n of nodes) if (!n.ghost) heldOnScreen++;
+		if (paneEngaged && (dropped || heldOnScreen !== was)) sendSelection();
 		// The adjacency lit() walks has just been rebuilt out of these edges.
 		litCache = null;
 		syncIsolateNote();
@@ -1411,10 +1456,19 @@
 			// else on screen changes, so a stray click while panning costs a
 			// ring rather than a graph you have to undim. Isolating, which does
 			// change the whole picture, is the double click.
-			fg.onNodeClick((n) => {
+			//
+			// Ctrl (Cmd on a Mac) adds to the pick instead of replacing it,
+			// which is the gesture every list on the desktop makes, Zotero's
+			// own item tree included -- and the pane answers a pick of several
+			// exactly as the library does, with a count and an offer to edit
+			// them together. Both modifiers are read: Ctrl is the paradigm
+			// everywhere, and a Mac raises a context menu from Ctrl-click, so
+			// Cmd is the one that can actually be pressed there.
+			fg.onNodeClick((n, event) => {
 				if (spentPress()) return;
-				toggleHighlight(n.id);
-				showItemPane(n);
+				paneEngaged = true;
+				if (event && (event.ctrlKey || event.metaKey)) togglePick(n.id);
+				else pickOnly(n.id);
 			});
 			// Held for as long as the menu is up, exactly as the drag path
 			// below holds a node it dropped: the menu offers to pin this node
@@ -1457,7 +1511,7 @@
 				if (spentPress()) return;
 				hideAction();
 				hideMenu();
-				clearHighlight();
+				clearPicked();
 				clearIsolated();
 			});
 			fg.onBackgroundRightClick(showCanvasMenu);
@@ -1486,17 +1540,17 @@
 				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
-				// title match. A highlighted node's own edges give up the
+				// title match. A picked node's own edges give up the
 				// alpha that says how well attested they are and go to full
 				// strength: what is being asked of them is which lines touch
 				// this node, and the hue still answers the other question.
 				.linkColor(l => withAlpha(viaColor(bestVia(l.via)),
-					(highlightedLink(l)
+					(pickedLink(l)
 						? HL_LINK_ALPHA
 						: l.confidence >= ASSERTED ? 0.85 : 0.45)
 					* (dimmedLink(l) ? DIM_LINK_FACTOR : 1)))
 				.linkWidth(l => (l.confidence >= ASSERTED ? 1.4 : 0.8)
-					* (highlightedLink(l) ? HL_LINK_WIDTH : 1))
+					* (pickedLink(l) ? HL_LINK_WIDTH : 1))
 				// After the graph, so a flag is never buried under the cluster
 				// it gathered.
 				.onRenderFramePost(drawGroups)
@@ -1921,30 +1975,32 @@
 	const LABEL_FIT = 1.9;         // how far past its diameter a label may run
 
 	function drawNode(node, ctx, globalScale) {
-		drawHighlight(node, ctx, globalScale);
+		drawPick(node, ctx, globalScale);
 		drawPin(node, ctx, globalScale);
 		drawLabel(node, ctx, globalScale);
 	}
 
 	/**
-	 * The highlighted node wears a ring in the accent colour, outside where a
-	 * pin's ring goes so that a node which is both still reads as both.
+	 * A picked node wears a ring in the accent colour, outside where a pin's
+	 * ring goes so that a node which is both still reads as both. Every node in
+	 * the pick wears one, which is what a Ctrl-click looks like: the selection
+	 * is on the canvas, and the pane beside it counts the same rings.
 	 *
 	 * A ring rather than a recoloured fill, for the reason the pin's is: the
-	 * fill already means whatever the panel is colouring by, and a highlight
-	 * must not take that hue away from the one node you are looking hardest at.
+	 * fill already means whatever the panel is colouring by, and picking must
+	 * not take that hue away from the one node you are looking hardest at.
 	 *
 	 * Faded with the rest when isolation has dimmed it, exactly as drawPin is.
-	 * Highlighting a node outside the isolated neighbourhood is a fair thing to
-	 * do -- it is how you check whether something over there connects in -- and
-	 * a ring at full strength on a node that is otherwise a ghost would read as
+	 * Picking a node outside the isolated neighbourhood is a fair thing to do
+	 * -- it is how you check whether something over there connects in -- and a
+	 * ring at full strength on a node that is otherwise a ghost would read as
 	 * the isolation having lost track of itself.
 	 */
 	const HL_RING_GAP = 5.5;   // screen px between the node edge and the ring
 	const HL_RING_WIDTH = 2;   // screen px
 
-	function drawHighlight(node, ctx, globalScale) {
-		if (!isHighlighted(node)) return;
+	function drawPick(node, ctx, globalScale) {
+		if (!isPicked(node)) return;
 		let theme = themeColors();
 		ctx.beginPath();
 		ctx.arc(node.x, node.y, nodeRadius(node) + HL_RING_GAP / globalScale,
@@ -2049,10 +2105,10 @@
 			c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 	}
 
-	// --- highlight --------------------------------------------------------
+	// --- the pick, which is the selection ---------------------------------
 
 	/**
-	 * Pick one node and the edges out of it out of the picture: the node gets a
+	 * Pick nodes and the edges out of them out of the picture: each gets a
 	 * ring, its own edges are drawn at full strength, and nothing else on
 	 * screen changes at all.
 	 *
@@ -2065,36 +2121,98 @@
 	 * Like isolation, it touches nothing but the repaint: no filtering, no
 	 * graphData, so the layout never resettles and the node stays where your
 	 * eye left it.
+	 *
+	 * It is also the tab's SELECTION, and the only one there is. Everything
+	 * core asks a graph tab about what the user has chosen -- Locate, the item
+	 * menu, "add to collection" -- is answered out of this set, and so is the
+	 * pane beside the graph. So every change to it is told to chrome, which is
+	 * what sendSelection() below is for; going through this one function is
+	 * what stops the two sides from ever disagreeing about it.
 	 */
-	function setHighlight(id) {
-		if (highlighted === id) return;
-		highlighted = id;
+	function setPicked(next) {
+		if (same(picked, next)) return;
+		picked = next;
 		repaint();
+		sendSelection();
 	}
 
-	function clearHighlight() {
-		if (highlighted != null) setHighlight(null);
+	function same(a, b) {
+		if (a.size !== b.size) return false;
+		for (let id of a) if (!b.has(id)) return false;
+		return true;
 	}
 
-	/** Clicking the highlighted node again puts it back, which is the only way
-	 *  out of a highlight that does not involve clicking the canvas. */
-	function toggleHighlight(id) {
-		setHighlight(highlighted === id ? null : id);
+	function clearPicked() {
+		if (picked.size) setPicked(new Set());
 	}
 
-	function isHighlighted(n) {
-		return highlighted != null && n.id === highlighted;
+	/** Start over on one node: the click every list on the desktop answers this
+	 *  way, and clicking the picked node again puts it back -- which is the
+	 *  only way out of a pick that does not involve clicking the canvas. */
+	function pickOnly(id) {
+		if (picked.size === 1 && picked.has(id)) clearPicked();
+		else setPicked(new Set([id]));
 	}
 
 	/**
-	 * Only the edges incident to the highlighted node, and not the ones among
-	 * its neighbours. "This node and its edges" is a question about one node;
+	 * Ctrl-click: add this node to the pick, or take it out again, leaving the
+	 * rest of it alone. The paradigm every file manager and every item tree
+	 * uses, including Zotero's own -- and the reason the pane below can be
+	 * handed more than one paper at a time.
+	 *
+	 * Insertion order is click order, and the set is iterated in it: the pane
+	 * describes the first node picked and edits the rest alongside it, which
+	 * makes the paper you started from the one you go on reading.
+	 */
+	function togglePick(id) {
+		let next = new Set(picked);
+		if (!next.delete(id)) next.add(id);
+		setPicked(next);
+	}
+
+	function isPicked(n) {
+		return picked.has(n.id);
+	}
+
+	/**
+	 * Only the edges incident to a picked node, and not the ones among its
+	 * neighbours. "This node and its edges" is a question about one node;
 	 * lighting the rungs between its neighbours would answer a question about
 	 * its neighbourhood, which is what isolation is for.
 	 */
-	function highlightedLink(l) {
-		if (highlighted == null) return false;
-		return endId(l.source) === highlighted || endId(l.target) === highlighted;
+	function pickedLink(l) {
+		if (!picked.size) return false;
+		return picked.has(endId(l.source)) || picked.has(endId(l.target));
+	}
+
+	/**
+	 * Tell chrome what is selected, so that the pane beside the graph can say
+	 * it -- one paper's own sections, several papers to edit together, or the
+	 * count of what is on screen when nothing is picked at all. See
+	 * lib/itemPane.js, which is Zotero's own item pane answering exactly as it
+	 * does for the collection view's list.
+	 *
+	 * Ghosts carry no item and so contribute nothing to the list. A pick made
+	 * only of them is an empty selection, which is honest: there is no item to
+	 * describe, and the ghost's own card, on its context menu, is what answers
+	 * that one.
+	 *
+	 * `inView` travels with every one of these because it is the other half of
+	 * the "nothing selected" message and it changes under a filter without the
+	 * selection changing at all.
+	 */
+	function sendSelection() {
+		emit({ type: 'item-pane-show', itemIDs: pickedItemIDs(), inView: heldOnScreen });
+	}
+
+	/** The pick as Zotero item ids, in click order, ghosts left out. */
+	function pickedItemIDs() {
+		let itemIDs = [];
+		for (let id of picked) {
+			let n = nodeCache.get(id);
+			if (n && !n.ghost && n.itemID) itemIDs.push(n.itemID);
+		}
+		return itemIDs;
 	}
 
 	// --- isolation --------------------------------------------------------
@@ -2149,10 +2267,18 @@
 	 * the only thing isolated gives the whole graph back. Building a focus out
 	 * of several nodes is the context menu's job -- a gesture that cannot be
 	 * made by accident while panning.
+	 *
+	 * The pick is set here rather than left to the two clicks underneath. Those
+	 * run pickOnly() twice on the same node, which picks it and puts it back
+	 * -- fine while a pick was only a ring, and wrong now that it is also what
+	 * the pane describes, because asking to see a paper's neighbourhood is the
+	 * last moment to stop showing the paper.
 	 */
 	function toggleIsolate(id) {
 		hideAction();
 		hideMenu();
+		paneEngaged = true;
+		setPicked(new Set([id]));
 		if (isolated.size === 1 && isolated.has(id)) clearIsolated();
 		else isolateOnly(id);
 	}
@@ -2269,34 +2395,14 @@
 	 * whatever the pointer is over -- force-graph's own hit test already knows,
 	 * and asking it is more reliable than timing two clicks ourselves.
 	 *
-	 * The pair of clicks underneath still runs toggleHighlight twice, which
-	 * cancels out: the highlight goes on and straight back off, and a double
-	 * click ends with the neighbourhood isolated and no ring left over. That is
-	 * the right end state -- isolation already says which node was asked about,
-	 * far louder than a ring would.
+	 * The pair of clicks underneath runs pickOnly() twice, which cancels out:
+	 * the ring goes on and straight back off. toggleIsolate() puts the pick
+	 * back afterwards, because the pick is the tab's selection now and a paper
+	 * whose neighbourhood you just asked for is not one you meant to deselect.
 	 */
 	elGraph.addEventListener('dblclick', () => {
 		if (hoverNode) toggleIsolate(hoverNode.id);
 	});
-
-	/**
-	 * Ask chrome to describe this node in Zotero's own item pane beside the
-	 * graph. Chrome builds the pane on the first such request and opens the
-	 * panel again if the divider's chevron had hidden it; see lib/itemPane.js.
-	 *
-	 * Sent on every click, including a second click on the paper already shown:
-	 * clicking a node is how you ask to see it, and asking again after hiding
-	 * the panel has to bring it back.
-	 *
-	 * An outside reference does not replace what is shown. There is no item to
-	 * describe, and no metadata beyond the DOI already on the tooltip; the
-	 * ghost's own card, on its context menu, is what answers this for one of
-	 * those.
-	 */
-	function showItemPane(n) {
-		if (!n || n.ghost || !n.itemID) return;
-		emit({ type: 'item-pane-show', itemID: n.itemID });
-	}
 
 	// --- defending a drag in progress -------------------------------------
 
@@ -2463,6 +2569,7 @@
 		n.fx = n.x;
 		n.fy = n.y;
 		repaint();
+		trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
 	}
 
 	function unpin(n) {
@@ -3200,6 +3307,14 @@
 		hideMenu();
 		hideAction();
 		nativeRuns.clear();
+		// A right click inside the pick acts on the whole pick; one outside it
+		// takes the pick with it first. That is what every item tree does,
+		// Zotero's included, and it is the only reading that makes "Add to
+		// Collection" over four ringed nodes mean the four of them.
+		if (!isPicked(n)) {
+			paneEngaged = true;
+			setPicked(new Set([n.id]));
+		}
 		let entries = isolateEntries(n);
 		entries.push(pinEntry(n));
 		let wire = entries.map((entry, i) => {
@@ -3208,9 +3323,13 @@
 			return { id, icon: entry.icon, label: entry.label, hint: entry.hint || null };
 		});
 		nativeOpen = true;
+		trace('openNativeMenu  node=' + n.id + '  entries=' + wire.length + '  pinnedNow=' + isPinned(n));
 		emit({
 			type: 'node-menu',
-			itemID: n.itemID,
+			// The pick, which the line above has just made sure this node is
+			// part of -- so a menu over one of four ringed nodes is a menu
+			// about all four, exactly as it is in the library.
+			itemIDs: pickedItemIDs(),
 			x: event ? event.screenX : 0,
 			y: event ? event.screenY : 0,
 			entries: wire,
@@ -3492,7 +3611,7 @@
 		// After the isolation, not before it: a highlight takes nothing away,
 		// so the graph an Escape is most likely asking for back is the undimmed
 		// one. Both come off in two presses either way.
-		else if (highlighted != null) clearHighlight();
+		else if (picked.size) clearPicked();
 		else if (gapsOpen) closeGaps();
 	});
 
@@ -3939,7 +4058,11 @@
 		if (!n || !fg) return;
 		if (Number.isFinite(n.x) && Number.isFinite(n.y)) fg.centerAt(n.x, n.y, REFRAME_MS);
 		setIsolated(new Set([n.id]));
-		showItemPane(n);
+		// The pick, not a toggle of it: a row chosen out of the search results
+		// is "show me this one", and a second visit to the same paper must not
+		// answer by deselecting it.
+		paneEngaged = true;
+		setPicked(new Set([n.id]));
 		hideSearch();
 		elSearch.blur();
 	}

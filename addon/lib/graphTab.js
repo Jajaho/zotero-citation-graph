@@ -204,7 +204,7 @@ async function selectItems(tabID, itemIDs) {
 	// The tab's selection, the same way a click on a node sets it -- core has
 	// just told us what the user is looking at.
 	entry.selection = [...itemIDs];
-	await itemPane.show(entry, itemIDs[0], {
+	await itemPane.show(entry, entry.selection, {
 		status: t => send(entry, 'zgSetStatus', t),
 		expand: true,
 	});
@@ -642,19 +642,29 @@ async function handleMessage(win, tabID, collection, msg) {
 		// lib/nodeMenu.js.
 		//
 		// Like 'item-pane-show', this message carries the selection, and for the
-		// same reason: the menu is about the node clicked, and every core command
+		// same reason: the menu is about what is picked, and every core command
 		// on it asks ZoteroPane what is selected. Recorded before the menu is
 		// built, because that is what the builder reads.
+		//
+		// It is a list, not one id: a right click inside a Ctrl-picked set is a
+		// menu about the whole set, which is what makes "Add to Collection" over
+		// four ringed nodes file the four of them. The page has already made
+		// sure the node clicked is in that set -- see openNativeMenu().
 		//
 		// A node with no item behind it is not turned away: core answers an empty
 		// selection with the menu it gives an empty item tree, every row of it
 		// disabled, and this plugin's own two entries still mean what they say.
 		// Refusing instead would leave the page holding the node it right-clicked,
 		// waiting for a menu that never came.
+		// TEMPORARY, with content/graph.js's trace(): the page has no log of its
+		// own, and the question is what reaches it and in which order.
+		case 'trace':
+			trace.log('page: ' + msg.text);
+			break;
 		case 'node-menu': {
 			let entry = open_.get(tabID);
 			if (!entry) break;
-			entry.selection = msg.itemID ? [msg.itemID] : [];
+			entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
 			await nodeMenu.open(entry, msg, (fn, value) => send(entry, fn, value));
 			break;
 		}
@@ -680,8 +690,8 @@ async function handleMessage(win, tabID, collection, msg) {
 			if (entry && entry.pane) itemPane.collapse(entry, !splitPane.collapsed(entry));
 			break;
 		}
-		// Zotero's own item pane, beside the graph, describing the node just
-		// clicked. Chrome's to open for the same reason as the reader pane:
+		// Zotero's own item pane, beside the graph, describing what is picked.
+		// Chrome's to open for the same reason as the reader pane:
 		// <item-details> is a XUL custom element in the main window, and the
 		// graph page is content. See itemPane.js.
 		//
@@ -689,15 +699,23 @@ async function handleMessage(win, tabID, collection, msg) {
 		// on a held node IS both questions at once -- which paper to describe,
 		// and which paper the user means. A second message raised alongside
 		// this one could only ever come to disagree with it.
+		//
+		// It carries the WHOLE pick, empty sets included, because the pane has
+		// something to say about every one of them: one paper's sections,
+		// several papers and an offer to edit them together, or -- for an empty
+		// pick -- how many items are in the view, which is why `inView` travels
+		// with it. That is the library's own item pane, answering as it does
+		// for a collection with nothing selected in it.
 		case 'item-pane-show': {
 			let entry = open_.get(tabID);
-			if (entry && msg.itemID) {
+			if (entry) {
 				// Recorded first, and outside the pane's own guards: show()
 				// draws nothing while the pane is collapsed, and the click
 				// selected the paper either way. What Locate acts on must not
 				// depend on whether the pane was on screen.
-				entry.selection = [msg.itemID];
-				await itemPane.show(entry, msg.itemID, {
+				entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
+				await itemPane.show(entry, entry.selection, {
+					inView: Number(msg.inView) || 0,
 					status: t => send(entry, 'zgSetStatus', t),
 				});
 			}

@@ -65,34 +65,53 @@ const PANE_CSS = `
 		min-height: 0;
 		min-width: 0;
 	}
+	/* What core's own <groupbox pack="center" align="center"> does for this
+	   prompt in the library window, said in CSS. See ensureBatchPrompt(). */
+	.zg-batch-prompt {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		border-width: 0;
+	}
+	/* core: item-pane #batch-edit-prompt-message */
+	.zg-batch-prompt-message {
+		padding: 3px 8px;
+	}
 `;
 
 /**
- * Describe `itemID` in the pane, creating the pane if this is the first time.
+ * Say what is selected, creating the pane if this is the first time.
+ *
+ * The whole selection, and not one item, because the pane has a different
+ * answer for each size of it -- and they are the library's answers, out of
+ * core's own ItemPane.render() (elements/itemPane.js):
+ *
+ *   nothing   the count of what is in the view: "27 items in this view". The
+ *             pane is never blank in Zotero, and a graph with nothing picked
+ *             is the same state as a collection with no row selected.
+ *   one       that paper's sections, or the note's editor. As it always was.
+ *   several   the count, and an offer to edit them together -- core's own
+ *             opt-in prompt, and behind it core's own multi-item info box.
  *
  * Renders are serialised rather than fired per message: a render walks every
  * section of the pane and awaits the slow ones, and a run of clicks across a
- * cluster can land three before the first is drawn. Only the latest item is
- * ever drawn -- the ones passed over in between are dropped.
+ * cluster can land three before the first is drawn. Only the latest selection
+ * is ever drawn -- the ones passed over in between are dropped.
  *
  * @param {Object}   entry      the graphTab record for this tab
- * @param {Number}   itemID     a regular item, one of its children, or a note
+ * @param {Number[]} itemIDs    regular items, their children, or notes
+ * @param {Number}   [inView]   how many items the graph is drawing, for the
+ *                              empty-selection message; kept when not given
  * @param {Function} [status]   text back to the graph page
  * @param {Boolean}  [expand]   open the pane if it was put away
  */
-async function show(entry, itemID, { status = () => {}, expand = false } = {}) {
+async function show(entry, itemIDs, { inView = null, status = () => {}, expand = false } = {}) {
 	if (!entry || !entry.split) return;
 
-	let item = await Zotero.Items.getAsync(itemID);
-	if (!item) return;
-	// The library shows the parent's pane when you select an attachment, and so
-	// does the context pane. Nodes are regular items today, but that is a fact
-	// about the payload, not about this.
-	//
-	// A note is the exception, and for the same reason the library makes it one:
-	// a note is not a fact about its paper, it is a document, and selecting one
-	// means opening it. See showNote().
-	let target = item.isNote() ? item : (item.parentItem || item);
+	let items = await resolve(itemIDs);
 
 	// Everything below the first line of this is core's element, on core's
 	// terms. If a Zotero this plugin has not seen builds it differently, say so
@@ -106,7 +125,12 @@ async function show(entry, itemID, { status = () => {}, expand = false } = {}) {
 		status(l10n.t('item-pane-failed'));
 		return;
 	}
-	pane.wanted = target;
+
+	// Only the page knows this, and only some messages carry it: core's own
+	// selectItems() reaches here too, and it is telling us about an item rather
+	// than about the view. The last count the page gave stands in that case.
+	if (inView != null) pane.inView = inView;
+	want(pane, items);
 
 	// An explicit request to look at one thing opens the pane: a note just
 	// written, a related item clicked in the pane, a citation followed out of a
@@ -118,7 +142,7 @@ async function show(entry, itemID, { status = () => {}, expand = false } = {}) {
 		// Nothing is drawn while the pane is collapsed, so what is behind the
 		// strip of icons is whatever was there when it was put away. Forgetting
 		// it is what sends the loop back over it; same reason as redraw().
-		pane.shown = null;
+		pane.shownKey = null;
 	}
 
 	// Someone who collapsed the pane is not asking for it back every time they
@@ -130,6 +154,66 @@ async function show(entry, itemID, { status = () => {}, expand = false } = {}) {
 }
 
 /**
+ * The selection as items to draw.
+ *
+ * The library shows the parent's pane when you select an attachment, and so
+ * does the context pane. Nodes are regular items today, but that is a fact
+ * about the payload, not about this.
+ *
+ * A note is the exception, and for the same reason the library makes it one:
+ * a note is not a fact about its paper, it is a document, and selecting one
+ * means opening it. See showNote().
+ *
+ * Two children of one paper are one selection of one paper, which is why the
+ * duplicates are dropped after that substitution rather than before it.
+ */
+async function resolve(itemIDs) {
+	let items = [];
+	let seen = new Set();
+	for (let id of itemIDs || []) {
+		let item = await Zotero.Items.getAsync(id);
+		if (!item) continue;
+		let target = item.isNote() ? item : (item.parentItem || item);
+		if (seen.has(target.id)) continue;
+		seen.add(target.id);
+		items.push(target);
+	}
+	return items;
+}
+
+/**
+ * Record what to draw, and work out whether it differs from what is drawn.
+ *
+ * The key is what the render loop compares, and what goes into it is exactly
+ * what changes the picture. The view count is in it ONLY for an empty
+ * selection: it moves every time a filter does, and a pane showing a paper must
+ * not be torn down and rebuilt because a slider went past a node.
+ *
+ * The batch-editing opt-in is dropped whenever the set of papers changes, which
+ * is core's own rule (ItemPane.render()): a different selection is a different
+ * question, and it should be put again rather than answered by a choice the
+ * last one left behind.
+ */
+function want(pane, items) {
+	let ids = items.map(i => i.id).join(',');
+	// Whether this is a fresh answer to "what is selected" or the same answer
+	// with a new number in it. A filter moving the count of the view is the
+	// second kind, and it must not take the deck away from the gap list the
+	// user is reading down -- see showMessage(). `wantedIDs` starts null rather
+	// than empty so that the first empty selection is a change like any other.
+	pane.quiet = ids === pane.wantedIDs;
+	if (!pane.quiet) {
+		if (pane.batch) setBatchCollapsible(pane, false);
+		pane.batch = false;
+		pane.wantedIDs = ids;
+	}
+	pane.wanted = items;
+	pane.wantedKey = items.length
+		? ids + (pane.batch ? '|batch' : '')
+		: '|view:' + pane.inView;
+}
+
+/**
  * Draw whatever was last asked for, and keep drawing until nothing newer has
  * arrived. Re-reads `wanted` each pass: a click that landed during the await is
  * the one to draw next, and the ones before it are already stale.
@@ -138,11 +222,9 @@ async function draw(entry, pane) {
 	if (pane.rendering) return;
 	pane.rendering = true;
 	try {
-		while (entry.itemPane === pane && pane.wanted && pane.wanted !== pane.shown) {
-			let next = pane.wanted;
-			pane.shown = next;
-			if (next.isNote()) showNote(entry, pane, next);
-			else await showDetails(pane, next);
+		while (entry.itemPane === pane && pane.wantedKey !== pane.shownKey) {
+			pane.shownKey = pane.wantedKey;
+			await drawOnce(entry, pane, pane.wanted);
 		}
 	}
 	catch (e) {
@@ -154,13 +236,55 @@ async function draw(entry, pane) {
 }
 
 /**
+ * One selection, drawn.
+ *
+ * The order of the tests is core's own (ItemPane.render()), and so is every
+ * branch of it bar the duplicates pane, which a graph tab cannot be showing.
+ */
+async function drawOnce(entry, pane, items) {
+	if (!items.length) {
+		// The count of the view rather than "0 items selected", which is core's
+		// choice too: a pane saying how much there is to click on is more use
+		// than one saying you have not clicked yet.
+		showMessage(entry, pane, 'item-pane-message-unselected', pane.inView);
+		return;
+	}
+	if (items.length === 1) {
+		if (items[0].isNote()) showNote(entry, pane, items[0]);
+		else await showDetails(entry, pane, items);
+		return;
+	}
+	// Several. Only regular items can be edited side by side -- core's own test
+	// -- and a selection with a note or a standalone attachment in it gets the
+	// count and nothing else, exactly as the library gives it.
+	if (!items.every(i => i.isRegularItem())) {
+		showMessage(entry, pane, 'item-pane-message-items-selected', items.length);
+		return;
+	}
+	if (!pane.batch) {
+		showBatchPrompt(entry, pane, items.length);
+		return;
+	}
+	await showDetails(entry, pane, items);
+}
+
+/**
  * The paper's own pane: every section core registers, editable exactly as in the
  * library.
+ *
+ * Several papers is the same element with `extraItems` set, which is how core
+ * does it and where all of the multi-item editing lives: the info box reads
+ * that list, shows "Multiple" wherever the papers disagree, and writes a change
+ * to every one of them. Everything below the info section hides itself while it
+ * is set (ItemDetails.render()), because there is no one abstract and no one
+ * set of attachments to show.
  */
-async function showDetails(pane, item) {
-	pane.details.editable = editable(item);
-	pane.details.item = item;
+async function showDetails(entry, pane, items) {
+	pane.details.editable = items.every(editable);
+	pane.details.item = items[0];
+	pane.details.extraItems = items.slice(1);
 	face(pane, pane.details);
+	batchHead(entry, pane, items.length);
 	await pane.details.render();
 }
 
@@ -197,6 +321,145 @@ function showNote(entry, pane, item) {
 	// that threw.
 	if (typeof note.focus === 'function') {
 		Promise.resolve(note.focus()).catch(() => {});
+	}
+}
+
+// --- what the pane says when it is not describing a paper ---------------
+
+/**
+ * A count in the middle of the pane, in core's own <item-message-pane>.
+ *
+ * The element, and not a box of our own with the same words in it, for the
+ * reason the rest of this file uses core's elements: `render({ l10nId,
+ * l10nArgs })` is its whole API, the strings are the ones the library window
+ * puts on screen -- plurals, translations and all -- and it is styled by
+ * Zotero's own stylesheet under its element name, so it looks like the library
+ * without a line of CSS from us.
+ *
+ * The ids inside its template are core's, and there is now a second element in
+ * this window carrying them. Nothing looks them up: ItemPane reaches its own
+ * with querySelector, and the one stylesheet rule keyed on one of them is an
+ * id SELECTOR, which matches ours just as happily. See ensureMessage().
+ *
+ * @param {String} id     a core message string: which count this is
+ * @param {Number} count  what it counts
+ */
+function showMessage(entry, pane, id, count) {
+	let message = ensureMessage(entry, pane);
+	if (!message) return;
+	message.render({ l10nId: id, l10nArgs: { count: Number(count) || 0 } });
+	// A restated count is not a reason to change what the pane is showing. The
+	// count moves every time a filter does, and the gap list is a page of this
+	// same deck -- so a slider dragged while that list was open would close it,
+	// and would go on closing it every few pixels. See want().
+	if (!pane.quiet) face(pane, message);
+}
+
+/**
+ * The offer to edit several papers at once.
+ *
+ * Core does not put multiple items into the info box unasked -- ItemPane.render()
+ * shows this prompt instead and waits for the button, because the multi-item box
+ * writes every edit to every selected paper and that is not a thing to walk into
+ * by clicking a second node. So the prompt is copied rather than skipped: the
+ * count, and the button that means it.
+ *
+ * Answering it is the other half of core's: the info section is forced open and
+ * held there while batch editing is on (setBatchCollapsible), and the head of
+ * the pane says what is being edited with a way out (batchHead).
+ */
+function showBatchPrompt(entry, pane, count) {
+	let prompt = ensureBatchPrompt(entry, pane);
+	if (!prompt) {
+		// Nothing to opt in with is no reason to show nothing at all.
+		showMessage(entry, pane, 'item-pane-message-items-selected', count);
+		return;
+	}
+	entry.win.document.l10n.setAttributes(prompt.message,
+		'item-pane-message-items-selected', { count });
+	face(pane, prompt.box);
+}
+
+/**
+ * Turn batch editing on, and draw the pane it asks for.
+ *
+ * The order is core's: the info section is pinned open BEFORE the render, so
+ * that the one section a multi-item pane has is the one it opens on.
+ */
+function enableBatch(entry, pane) {
+	pane.batch = true;
+	setBatchCollapsible(pane, true);
+	want(pane, pane.wanted);
+	draw(entry, pane).catch(e => Zotero.logError(e));
+}
+
+/** Done: back to the count and the offer, with the same selection still made.
+ *  Core's own Done button, and the same three lines behind it. */
+function disableBatch(entry, pane) {
+	setBatchCollapsible(pane, false);
+	pane.batch = false;
+	want(pane, pane.wanted);
+	draw(entry, pane).catch(e => Zotero.logError(e));
+}
+
+/**
+ * The head of the pane while several papers are being edited: what is being
+ * edited, and the button that stops.
+ *
+ * core's renderBatchEditHead(), through the same renderCustomHead() hook -- so
+ * the icon beside it is core's, drawn by a stylesheet rule keyed on the
+ * `batch-edit` class <item-pane-header> puts on itself the moment extraItems is
+ * set. Cleared for a single paper, because a head left over from the last
+ * selection would sit above a pane that is no longer editing anything.
+ */
+function batchHead(entry, pane, count) {
+	let details = pane.details;
+	if (typeof details.renderCustomHead !== 'function') return;
+	if (count < 2) {
+		details.renderCustomHead();
+		return;
+	}
+	details.renderCustomHead(({ doc, append }) => {
+		let icon = doc.createElement('span');
+		icon.className = 'batch-edit-head-icon';
+		let description = doc.createXULElement('description');
+		doc.l10n.setAttributes(description, 'item-pane-batch-editing-header', { count });
+		let done = doc.createXULElement('button');
+		done.setAttribute('default', 'true');
+		doc.l10n.setAttributes(done, 'item-pane-batch-editing-done');
+		done.addEventListener('command', () => disableBatch(entry, pane));
+		append(icon, description, done);
+	});
+}
+
+/**
+ * Hold the info section open, or give it back.
+ *
+ * Verbatim from core's _setBatchEditCollapsible(), including the reason for
+ * `_skipSaveOpenState`: forcing the section open must not become the state the
+ * pane remembers for every paper afterwards. Guarded at every step -- this is
+ * reaching into the private shape of a core element, and a Zotero that has
+ * moved it should cost the pinning and not the pane.
+ */
+function setBatchCollapsible(pane, on) {
+	try {
+		let section = pane.details.querySelector('collapsible-section[data-pane="info"]');
+		if (!section) return;
+		if (on) {
+			section._skipSaveOpenState = true;
+			section.open = true;
+			section._skipSaveOpenState = false;
+			section.collapsible = false;
+			section.showContextMenu = false;
+		}
+		else {
+			section.collapsible = true;
+			section.showContextMenu = true;
+			if (typeof section._restoreOpenState === 'function') section._restoreOpenState();
+		}
+	}
+	catch (e) {
+		Zotero.logError(e);
 	}
 }
 
@@ -237,6 +500,69 @@ function face(pane, wanted) {
 	// list's own close button -- so chrome tells, rather than the page
 	// remembering something it does not decide. See lib/gapsPane.js.
 	if (typeof pane.onFace === 'function') pane.onFace(wanted);
+}
+
+/**
+ * Core's message pane, built the first time there is a count to say.
+ *
+ * Late like the note editor, and for the same reason: a graph is opened on a
+ * click that picks one node, so the first thing this deck ever shows is a
+ * paper. The empty selection comes later, if it comes at all.
+ */
+function ensureMessage(entry, pane) {
+	if (pane.message) return pane.message;
+	try {
+		let message = entry.win.document.createXULElement('item-message-pane');
+		// Into the deck, where it is another page and the one nothing is
+		// looking at until face() says so. Appending re-runs the deck's own
+		// childList observer, which keeps the current page selected.
+		pane.deck.appendChild(message);
+		pane.message = message;
+	}
+	catch (e) {
+		// A pane that cannot say "27 items in this view" is still a pane that
+		// shows papers.
+		Zotero.logError(e);
+	}
+	return pane.message;
+}
+
+/**
+ * The batch-editing prompt, built the first time two nodes are picked.
+ *
+ * Core's markup (ItemPane's content template) with core's two strings, in a box
+ * of our own rather than in a `<groupbox pack="center" align="center">`: those
+ * two attributes are what centre it over there, and this file does not assume
+ * which XUL attributes a given Zotero still maps -- PANE_CSS says the same
+ * thing in CSS. The ids are left off for the same reason ensureMessage() notes
+ * they are harmless there and no better: nothing needs them, and core's one
+ * rule for the message is keyed on an <item-pane>, which this panel is not.
+ */
+function ensureBatchPrompt(entry, pane) {
+	if (pane.prompt) return pane.prompt;
+	try {
+		let doc = entry.win.document;
+		let box = doc.createXULElement('groupbox');
+		box.className = 'zg-batch-prompt';
+		doc.l10n.setAttributes(box, 'item-pane-batch-editing-prompt');
+
+		let message = doc.createXULElement('description');
+		message.className = 'zg-batch-prompt-message';
+
+		let button = doc.createXULElement('button');
+		doc.l10n.setAttributes(button, 'item-pane-batch-editing-enable');
+		button.addEventListener('command', () => enableBatch(entry, pane));
+
+		box.appendChild(message);
+		box.appendChild(button);
+		pane.deck.appendChild(box);
+		pane.prompt = { box, message };
+	}
+	catch (e) {
+		// Caller falls back to the count on its own -- see showBatchPrompt().
+		Zotero.logError(e);
+	}
+	return pane.prompt;
 }
 
 /**
@@ -342,8 +668,8 @@ function collapse(entry, val) {
  */
 function redraw(entry) {
 	let pane = entry.itemPane;
-	if (!pane || !pane.wanted) return;
-	pane.shown = null;
+	if (!pane || pane.wantedKey == null) return;
+	pane.shownKey = null;
 	draw(entry, pane).catch(e => Zotero.logError(e));
 }
 
@@ -424,9 +750,15 @@ function ensurePane(entry) {
 		details,
 		sidenav,
 		note: null,        // the note editor, built on the first note (ensureNote)
+		message: null,     // core's message pane, built on the first count
+		prompt: null,      // the batch-editing offer, built on the first pair
 		facing: details,   // the deck page on show
-		shown: null,       // the item drawn
-		wanted: null,      // the item most recently clicked
+		shownKey: null,    // key(want()) of what is drawn
+		wanted: [],        // the items most recently selected
+		wantedIDs: null,   // their ids, for noticing a change of selection
+		wantedKey: null,   // and the key those and the batch flag make
+		batch: false,      // several papers, and the offer taken up
+		inView: 0,         // items the graph is drawing, from the page
 		rendering: false,
 	};
 	return entry.itemPane;
