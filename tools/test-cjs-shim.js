@@ -3283,21 +3283,33 @@ check('the icon notices name exactly the icons that ship', () => {
 	for (const m of md.matchAll(/^\| `([\w-]+)` \| `(\d+\/universal\/[\w-]+\.svg)` \|$/gm)) {
 		listed.add(m[1]);
 	}
+	// And the table under those, for the ones drawn here rather than copied.
+	// Every icon has to be in one or the other: which of the two it is in is the
+	// licence question, and an icon in neither is a shape with nothing on the
+	// record about where it came from.
+	const own = new Set();
+	for (const m of md.matchAll(/^\| `([\w-]+)` \| original to this plugin \|$/gm)) {
+		own.add(m[1]);
+	}
+	for (const n of own) {
+		if (listed.has(n)) throw new Error(n + ' is claimed by both tables');
+	}
 
-	const missing = [...icons].filter(n => !listed.has(n)).sort();
+	const missing = [...icons].filter(n => !listed.has(n) && !own.has(n)).sort();
 	if (missing.length) throw new Error('shipped but not attributed: ' + missing.join(', '));
-	const stale = [...listed].filter(n => !icons.has(n)).sort();
+	const stale = [...listed, ...own].filter(n => !icons.has(n)).sort();
 	if (stale.length) throw new Error('attributed but not shipped: ' + stale.join(', '));
 
-	// The prose says how many there are, in words, and that has to be the
-	// number of rows under it.
+	// The prose says how many were COPIED, in words, and that has to be the
+	// number of rows in the first table. The ones drawn here are copied from
+	// nothing and are counted by neither.
 	const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 		'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
 		'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 	const said = md.match(/path data of (\w+) icons/);
 	if (!said) throw new Error('the notices no longer say how many icons there are');
-	if (WORDS[icons.size] !== said[1]) {
-		throw new Error('the notices say ' + said[1] + ' icons; ' + icons.size + ' ship');
+	if (WORDS[listed.size] !== said[1]) {
+		throw new Error('the notices say ' + said[1] + ' icons; ' + listed.size + ' are copied');
 	}
 });
 
@@ -4277,7 +4289,7 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 	const said = [];
 	const reply = (fn, value) => said.push(fn + (value === undefined ? '' : ':' + value));
 
-	await nodeMenu.open({ win, collection }, {
+	await nodeMenu.open({ win, collection, resRoot: 'zotero-citation-graph' }, {
 		itemID: 7,
 		x: 640,
 		y: 480,
@@ -4321,6 +4333,13 @@ check("a node menu is Zotero's own, with the graph's entries under it", async ()
 		throw new Error('pin drew ' + mine[2].getAttribute('image'));
 	}
 	if (mine[2].style.props.fill !== 'var(--fill-secondary)') throw new Error('the icon has no fill');
+	// And the one icon Zotero has no file of, addressed through the tab's own
+	// resource root. A name that fell out of this plugin's table would land on
+	// `undefined` in the URL and draw nothing, which is a blank row in a menu
+	// rather than an error anybody sees.
+	if (mine[1].getAttribute('image') !== 'resource://zotero-citation-graph/content/icons/spotlight.svg') {
+		throw new Error('isolate drew ' + mine[1].getAttribute('image'));
+	}
 
 	if (popup.openedAt.x !== 640 || popup.openedAt.y !== 480 || !popup.openedAt.isContextMenu) {
 		throw new Error('the menu did not open at the pointer as a context menu');

@@ -29,6 +29,9 @@ zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die vo
 zotero-citation-graph-scope-enrich = Namen nachschlagen
 zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
 
+zotero-citation-graph-scope-external-names = externe Namen
+zotero-citation-graph-scope-external-names-hint = Jede externe Arbeit im Graphen beschriften. Aus bleiben sie unbeschriftete Punkte.
+
 zotero-citation-graph-color-by = Farbe
 zotero-citation-graph-color-by-year = Jahr
 zotero-citation-graph-color-by-collection = Sammlung

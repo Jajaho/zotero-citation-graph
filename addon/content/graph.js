@@ -75,6 +75,12 @@
 	 *  somewhere below the fold saying so. It is the user's, and it is worth
 	 *  remembering for the same reason isolation depth is. */
 	const HIDE_ISOLATED_KEY = 'zg.hide.isolated';
+	/** And whether outside references are drawn with their names. Remembered
+	 *  here rather than in a pref for the same reason as the rest: it is how one
+	 *  person reads a graph, not something about the collection. Unlike the
+	 *  others it defaults to ON, so it is a stored NO that turns it off -- an
+	 *  unreadable store has to leave the names on the graph. */
+	const GHOST_NAMES_KEY = 'zg.ghost.names';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
 	 *  live here beside the rest and not in a Zotero pref. */
@@ -439,6 +445,7 @@
 	let elHideIsolated = el('hide-isolated');
 	let elRecursive = el('recursive');
 	let elIncludeExternal = el('include-external');
+	let elGhostNames = el('ghost-names');
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
 	let elColorBy = el('color-by');
@@ -2704,6 +2711,16 @@
 	function placeLabel(node, ctx, globalScale, ox, oy, force) {
 		node._labelWant = 0;
 		if (!node.label) return;
+		// Outside references, when the panel says their names are not wanted.
+		// Here rather than by clearing n.label in render(): the label is what the
+		// search box matches on and what its rows are headed with, and a ghost
+		// nobody can find by name is a worse trade than a canvas with names on
+		// it. Held items are never in question -- the citekey is the graph.
+		//
+		// It holds for a hovered or picked ghost too, which are otherwise forced.
+		// A setting that says don't draw these names has to mean it, and a ghost
+		// under the pointer is already answering with its tooltip.
+		if (node.ghost && !elGhostNames.checked) return;
 		// Dimmed nodes lose their label entirely rather than fading it -- see
 		// drawLabel -- so they must not take up room either.
 		if (dimmed(node)) return;
@@ -4564,6 +4581,10 @@
 		let on = elIncludeExternal.checked;
 		elMinCites.disabled = !on;
 		el('min-cites-label').classList.toggle('disabled', !on);
+		// Same again for the names on them: with the ghosts off there is nothing
+		// on screen for this to label.
+		elGhostNames.disabled = !on;
+		el('ghost-names-label').classList.toggle('disabled', !on);
 
 		// Nothing has a global count until the lookup has run, so sizing by one
 		// after switching the lookup back off would flatten every node to the
@@ -4702,6 +4723,22 @@
 	});
 
 	/**
+	 * Names on the outside references, or not.
+	 *
+	 * A repaint, not a render: no node enters or leaves the graph and nothing
+	 * moves. The next frame's label pass reads the checkbox and hands the room
+	 * back to the held items -- which is the other half of what this buys, on a
+	 * graph where the ghosts were crowding the papers out of their own names.
+	 */
+	elGhostNames.addEventListener('change', () => {
+		try {
+			window.localStorage.setItem(GHOST_NAMES_KEY, elGhostNames.checked ? '1' : '0');
+		}
+		catch (e) { /* see setCollapsed */ }
+		repaint();
+	});
+
+	/**
 	 * How far an isolation reaches. Paint, not data, exactly like isolating
 	 * itself: the neighbourhood is recomputed and the canvas redrawn, and no
 	 * node moves while you widen or narrow what is lit.
@@ -4776,13 +4813,14 @@
 	/**
 	 * Show or hide the sidebar.
 	 *
-	 * The button stays lit while the pane is open, which is what the reader's
-	 * own sidebar toggle does: a toggle that looks the same in both states is a
-	 * button you have to press to find out what it did.
+	 * The button looks the same in both states, because every other pane toggle
+	 * in Zotero does -- it says which way it will go by its own icon and its
+	 * tooltip, and what says the pane is open is the pane. It wore a lit
+	 * background here for a while and read as stuck rather than as on; see
+	 * graph.css.
 	 */
 	function setSideOpen(on) {
 		elFrame.classList.toggle('side-closed', !on);
-		elSideToggle.classList.toggle('on', on);
 		elSideToggle.setAttribute('aria-expanded', on ? 'true' : 'false');
 		// Both ids written out at each call rather than picked into a variable:
 		// npm test reads the ids this page asks for out of the source, and a
@@ -5268,6 +5306,13 @@
 		// Only a stored yes turns it on: an empty store is a graph that draws
 		// everything it was asked to draw.
 		if (window.localStorage.getItem(HIDE_ISOLATED_KEY) === '1') elHideIsolated.checked = true;
+	}
+	catch (e) { /* see setCollapsed */ }
+
+	try {
+		// The other way round, because this one ships on: only a stored no takes
+		// the names off, and a store that cannot be read leaves the graph named.
+		if (window.localStorage.getItem(GHOST_NAMES_KEY) === '0') elGhostNames.checked = false;
 	}
 	catch (e) { /* see setCollapsed */ }
 

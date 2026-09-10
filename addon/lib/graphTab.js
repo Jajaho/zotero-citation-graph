@@ -482,6 +482,9 @@ function mount(win, tabID, container, collection, config, options) {
 
 	open_.set(tabID, {
 		win, browser, split, collection,
+		// Where this plugin's own files are, for the chrome side to address one:
+		// lib/nodeMenu.js draws the isolate row from content/icons/spotlight.svg.
+		resRoot: config.resRoot,
 		// Handed to <item-details>, which watches tab selection by it and stops
 		// rendering while some other tab is on screen.
 		tabID,

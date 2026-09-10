@@ -94,7 +94,7 @@ THIS SOFTWARE.
 
 Copyright (c) Corporation for Digital Scholarship.
 
-`content/icons.js` holds the SVG path data of nineteen icons copied verbatim
+`content/icons.js` holds the SVG path data of eighteen icons copied verbatim
 from Zotero itself, so that a menu, a toolbar button or a section twisty drawn
 in this plugin matches the same thing drawn anywhere else in the application.
 They are copied rather than referenced because the graph is a content document
@@ -111,7 +111,6 @@ against a Zotero 7 installation on 2026-09-09:
 | `new-tab` | `16/universal/new-tab.svg` |
 | `open-link` | `16/universal/open-link.svg` |
 | `add-to-zotero` | `20/universal/save-to-zotero.svg` |
-| `isolate` | `16/universal/filter.svg` |
 | `show-all` | `16/universal/view.svg` |
 | `plus-circle` | `16/universal/plus-circle.svg` |
 | `minus-circle` | `16/universal/minus-circle.svg` |
@@ -133,7 +132,7 @@ to the full 16px box and so clips nothing.
 
 Zotero is licensed under the GNU Affero General Public License v3.0
 (`zotero/zotero`, `COPYING`), which is why this plugin is too. None of these
-sixteen files carries a licence header of its own, so the repository licence
+eighteen files carries a licence header of its own, so the repository licence
 governs them.
 
 These are Zotero's own artwork, not Mozilla's Acorn set. Earlier revisions of
@@ -145,8 +144,20 @@ distinction matters: Acorn is MPL-2.0 marked "Incompatible With Secondary
 Licenses", which cannot be relicensed under the AGPL, whereas Zotero's own
 AGPL artwork can simply be carried under this plugin's licence.
 
-`content/icons/graph.svg`, the plugin's own toolbar icon, is original work and
-is covered by this plugin's licence.
+The nineteenth entry in `icons.js`, `isolate`, is **not** Zotero's. Nothing in
+Zotero's set means what isolating a neighbourhood means, so it is drawn here:
+a spotlight, on Zotero's 16px grid and at its stroke width so that it sits in
+the same menu without looking borrowed. `content/icons/spotlight.svg` is the
+same drawing as a file, for the chrome-side menu that cannot read the page's
+copy. It is named here so the table above can be read as exhaustive:
+
+| Name in `icons.js` | Origin |
+|---|---|
+| `isolate` | original to this plugin |
+
+`content/icons/graph.svg`, the plugin's own toolbar icon, and
+`content/icons/spotlight.svg` beside it are original work and are covered by
+this plugin's licence.
 
 ---
 

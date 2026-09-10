@@ -27,7 +27,7 @@
 		     is out of the layout altogether and the bar has the whole tab. That
 		     is the reader's tab exactly. -->
 		<div id="bar">
-			<button id="side-toggle" type="button" class="on" aria-expanded="true" aria-controls="side"
+			<button id="side-toggle" type="button" aria-expanded="true" aria-controls="side"
 				data-zg-title="side-toggle-hide" data-zg-aria-label="side-toggle-hide"
 				title="Hide the sidebar" aria-label="Hide the sidebar"></button>
 			<!-- The two buttons are not the same kind of thing -- one puts a pane
@@ -123,6 +123,17 @@
 							<label id="enrich-label" data-zg-title="scope-enrich-hint" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
 								<input id="enrich" type="checkbox"/>
 								<span data-zg-str="scope-enrich">look up names</span>
+							</label>
+							<!-- Whether those names are drawn. Nothing is derived or fetched for
+							     it -- it decides which of the names the graph already has get
+							     asked for room in the label pass, so it is paint and costs a
+							     repaint. On by default: a ghost with no name is a grey dot
+							     whose only way of saying what it is is the tooltip. Off is for
+							     a graph with more outside references than papers, where the
+							     DOI tails they fall back to are noise over the collection. -->
+							<label id="ghost-names-label" data-zg-title="scope-external-names-hint" title="Draw a name on every outside reference. Off leaves them as unlabelled dots.">
+								<input id="ghost-names" type="checkbox" checked="checked"/>
+								<span data-zg-str="scope-external-names">outside names</span>
 							</label>
 						</div>
 
@@ -275,11 +286,11 @@
 			<div id="graph"></div>
 
 			<!-- Nothing came back from the collection at all. Said here rather than
-			     in #status because the status pill is a corner of a graph you are
-			     already reading, and this is the whole answer: there is no graph, and
-			     the stats line in the panel has just stopped claiming one is on its
-			     way. A sibling of #graph, not a child -- force-graph's init() does
-			     container.innerHTML = "". -->
+			     in #status because the status pill is a note in the margin of a graph
+			     you are already reading, and this is the whole answer: there is no
+			     graph, and the stats line in the panel has just stopped claiming one
+			     is on its way. A sibling of #graph, not a child -- force-graph's
+			     init() does container.innerHTML = "". -->
 			<div id="empty" hidden="hidden">
 				<div id="empty-title" data-zg-str="empty-title">Nothing to graph</div>
 				<div id="empty-body" data-zg-str="empty-body">This collection has no regular items — only attachments, notes, or nothing at all.</div>

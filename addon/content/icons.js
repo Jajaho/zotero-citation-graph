@@ -2,15 +2,17 @@
  * The menu icons.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * The nineteen icons below are Copyright (c) Corporation for Digital Scholarship,
- * taken from Zotero (AGPL-3.0) and carried here under that same licence. See
- * THIRD-PARTY-NOTICES.md section 2 for the file-by-file provenance table.
+ * Eighteen of the nineteen icons below are Copyright (c) Corporation for Digital
+ * Scholarship, taken from Zotero (AGPL-3.0) and carried here under that same
+ * licence; `isolate` is this plugin's own drawing. See THIRD-PARTY-NOTICES.md
+ * section 2 for the file-by-file provenance table.
  *
- * Zotero's own icon set, inlined. Every entry below is the path data of one file
- * under Zotero's chrome/skin/default/zotero/{16,20}/universal/, copied verbatim
- * so that a menu in this plugin and a menu in the library window are drawn from
- * the same shapes; redrawing them by hand would put a near-miss next to the real
- * thing.
+ * Zotero's own icon set, inlined. Every entry below but one is the path data of
+ * a file under Zotero's chrome/skin/default/zotero/{16,20}/universal/, copied
+ * verbatim so that a menu in this plugin and a menu in the library window are
+ * drawn from the same shapes; redrawing them by hand would put a near-miss next
+ * to the real thing. The exception is `isolate`, which is drawn here because
+ * Zotero has no icon for what it means -- see the comment on the entry.
  *
  * These are Zotero's own artwork, NOT Mozilla's Acorn set -- an earlier version
  * of this comment claimed otherwise and was wrong. It matters: Acorn is MPL-2.0
@@ -63,9 +65,17 @@
 		'add-to-zotero': [20, [
 			'M3.25 2C2.55964 2 2 2.55964 2 3.25V16.75C2 17.4404 2.55964 18 3.25 18H16.75C17.4404 18 18 17.4404 18 16.75V3.25C18 2.55964 17.4404 2 16.75 2H3.25ZM3.25 3.25H16.75V16.75H3.25V3.25ZM7.99147 13.7179L13.8467 6.02513V5H6.23933V6.28154H11.7944L5.94019 13.9739V15H14.0598V13.7179H7.99147Z',
 		]],
-		// 16/filter -- a funnel: everything but this neighbourhood is dropped.
+		// A spotlight -- the one entry here that is not Zotero's, and the one
+		// whose meaning Zotero has no drawing for. Isolating puts a
+		// neighbourhood in the light and leaves the rest of the collection in the
+		// dark, which is what a lamp and a pool of light say; the funnel this
+		// borrowed from filter.svg says the rest was thrown away, which is the one
+		// thing isolating does not do. Drawn on the same 16px grid at the same
+		// stroke width as the rest so that it sits beside them, and left hollow
+		// between the two beam edges by the fill rule on the root. Where it came
+		// from: THIRD-PARTY-NOTICES.md section 2.
 		'isolate': [16, [
-			'M1.99998 1.70711C1.37001 1.07714 1.81618 0 2.70708 0H14.2929C15.1838 0 15.6299 1.07714 15 1.70711L9.99998 6.70711V12.7071L6.99998 15.7071V6.70711L1.99998 1.70711ZM14.2929 1L2.70708 1L7.99998 6.29289V13.2929L8.99998 12.2929V6.29289L14.2929 1Z',
+			'M2.4 1.6L13.04 11.2C14.38 12.24 13.63 13.54 11.32 14.21C9.01 14.87 5.89 14.68 4.12 13.76C2.36 12.84 2.52 11.5 4.51 10.66ZM3.42 3.32L10.71 10.24C8.98 9.87 6.92 9.93 5.31 10.38Z',
 		]],
 		// 16/view -- the eye, for putting back what isolation dimmed.
 		'show-all': [16, [

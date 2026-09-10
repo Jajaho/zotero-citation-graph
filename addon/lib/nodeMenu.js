@@ -40,7 +40,7 @@ const POPUP_ID = 'zotero-itemmenu';
 const CLASS = 'zg-node-menuitem';
 
 /**
- * Zotero's own icon files, by the name the graph page calls each one.
+ * The icon files, by the name the graph page calls each one.
  *
  * The page ships the same shapes inlined, because chrome:// does not resolve
  * from a content docshell -- content/icons.js, and section 2 of the plugin's
@@ -48,13 +48,34 @@ const CLASS = 'zg-node-menuitem';
  * the menu takes them from Zotero rather than from the copy.
  */
 const ICONS = {
-	'isolate': 'chrome://zotero/skin/16/universal/filter.svg',
 	'show-all': 'chrome://zotero/skin/16/universal/view.svg',
 	'plus-circle': 'chrome://zotero/skin/16/universal/plus-circle.svg',
 	'minus-circle': 'chrome://zotero/skin/16/universal/minus-circle.svg',
 	'pin': 'chrome://zotero/skin/16/universal/pin.svg',
 	'unpin': 'chrome://zotero/skin/16/universal/pin-remove.svg',
 };
+
+/**
+ * The same table for the icons Zotero has no file of -- the spotlight the page
+ * draws over "Isolate", which is this plugin's own. Kept apart from the entries
+ * above because these need the tab's resource root to be addressed at all, and
+ * because which of the two a name comes from is the licence question section 2
+ * of THIRD-PARTY-NOTICES.md answers.
+ */
+const OWN_ICONS = {
+	'isolate': 'content/icons/spotlight.svg',
+};
+
+/**
+ * The file for one icon name, or null for a name neither table has -- and for
+ * one of ours asked for without a resource root, which would otherwise build a
+ * URL with `undefined` in it. A row with no image keeps its place in the icon
+ * column; a row with a broken one is a menu with a hole in it.
+ */
+function iconURL(name, resRoot) {
+	if (OWN_ICONS[name]) return resRoot ? 'resource://' + resRoot + '/' + OWN_ICONS[name] : null;
+	return ICONS[name] || null;
+}
 
 /**
  * The entries whose commands act on the library tab's item tree rather than on
@@ -97,9 +118,9 @@ const HIDE_WAIT_MS = 250;
 /**
  * Build Zotero's item menu for one node, add this plugin's entries, and show it.
  *
- * @param {Object}   entry  graphTab's record for the tab; only its window is
- *                          read here -- the collection reaches core through
- *                          lib/tabContext.js
+ * @param {Object}   entry  graphTab's record for the tab; only its window and
+ *                          its resource root are read here -- the collection
+ *                          reaches core through lib/tabContext.js
  * @param {Object}   msg    the page's 'node-menu' message: screen x and y, and
  *                          the entries to add at the bottom
  * @param {Function} reply  (fnName, value) back to the page; graphTab's send()
@@ -206,7 +227,7 @@ async function open(entry, msg, reply) {
 	};
 
 	popup.appendChild(separator(win.document));
-	for (let e of msg.entries || []) popup.appendChild(item(win.document, e, onPick));
+	for (let e of msg.entries || []) popup.appendChild(item(win.document, e, onPick, entry.resRoot));
 
 	let onHidden = (event) => {
 		trace.log('menu popuphidden  mine=' + (event.target === popup) + '  settled=' + record.settled);
@@ -281,7 +302,7 @@ function separator(doc) {
 	return el;
 }
 
-function item(doc, e, onPick) {
+function item(doc, e, onPick, resRoot) {
 	let el = doc.createXULElement('menuitem');
 	// menuitem-iconic even for a name this module has no file for: the class is
 	// what reserves the icon column, and a label starting at the edge beside
@@ -289,13 +310,14 @@ function item(doc, e, onPick) {
 	el.className = 'menuitem-iconic ' + CLASS;
 	el.setAttribute('label', e.label || '');
 	if (e.hint) el.setAttribute('tooltiptext', e.hint);
-	let icon = ICONS[e.icon];
+	let icon = iconURL(e.icon, resRoot);
 	if (icon) {
 		el.setAttribute('image', icon);
 		// The two properties Zotero's own menu rules set on every one of these
 		// files. They paint themselves with `context-fill`, which resolves to
 		// nothing without them -- a black shape in both themes, and invisible in
-		// one. Inline, because this plugin ships no chrome stylesheet of its own.
+		// one. This plugin's own file is drawn the same way for the same reason.
+		// Inline, because this plugin ships no chrome stylesheet of its own.
 		el.style.setProperty('-moz-context-properties', 'fill, fill-opacity');
 		el.style.setProperty('fill', 'var(--fill-secondary)');
 	}

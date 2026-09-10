@@ -291,11 +291,14 @@ body {
 	background-color: var(--fill-quinary);
 }
 
-#bar > button:active,
-/* The toggle stays lit while the sidebar is open, which is what the reader's
-   own sidebarToggle does and what makes a toggle read as a toggle rather than
-   as a button that did nothing. */
-#bar > button.on {
+/* Pressed only while it is actually being pressed. The sidebar's toggle used
+   to keep this background for as long as the sidebar was open, on the reading
+   that a toggle should look toggled -- but nothing else in Zotero does that:
+   the reader's own sidebar button, and the item pane's, are plain the whole
+   time their pane is open, and a button sitting on a grey plate in a toolbar
+   where no other button has one reads as stuck rather than as lit. What says
+   the sidebar is open is the sidebar. */
+#bar > button:active {
 	background-color: var(--fill-quarternary);
 }
 
@@ -1009,14 +1012,20 @@ body {
 	inset: 0;
 }
 
-/* Bottom-left rather than centred: it reports build progress while a partial
-   graph is already on screen, so it must not sit on top of the nodes. It has
-   the corner to itself now that the reframe button has gone up to the bar, so
-   it starts where the button used to. */
+/* Centred under the bar, where the eye already is.
+
+   It sat in the bottom-left corner, out of the way of the nodes -- which is
+   also out of the way of the reader: a line saying what the graph is doing,
+   put where nobody looks while they are watching it happen, was routinely
+   missed altogether. Under the toolbar it is read without hunting, and it
+   still covers nothing that matters: it is one line tall, it hangs from the
+   top edge where a force layout leaves the most room, and it disappears the
+   moment it has nothing to say. */
 #status {
 	position: absolute;
-	left: 10px;
-	bottom: 8px;
+	top: 8px;
+	left: 50%;
+	transform: translateX(-50%);
 	max-width: calc(100% - 20px);
 	overflow: hidden;
 	text-overflow: ellipsis;
