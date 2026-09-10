@@ -1926,14 +1926,20 @@
 	 * the badge on a node go by.
 	 *
 	 * isPinned() answers "is this node fixed", and force-graph fixes a node it
-	 * is dragging for the length of the gesture -- so a drag reads as a pin. It
-	 * does not matter to the entry in the menu, which is only ever built after
-	 * a drag has ended, but it matters to these two: it would flash a pin on
-	 * every node anyone drags, and a re-render landing mid-drag would bake a
-	 * boost into that node's links that nothing afterwards takes back off.
+	 * is dragging for the length of the gesture -- so from the moment a drag
+	 * starts, fx/fy can no longer tell a pin from a carry. It does not matter
+	 * to the entry in the menu, which is only ever built after a drag has
+	 * ended, but it matters to these two: it would flash a pin on every node
+	 * anyone drags, and a re-render landing mid-drag would bake a boost into
+	 * that node's links that nothing afterwards takes back off.
+	 *
+	 * What tells them apart is the press the drag began from, since that is the
+	 * last moment fx/fy still meant what they say. A node already pinned then
+	 * stays pinned all the way through -- dragging a pinned node MOVES its pin,
+	 * so the badge has to ride along and the links have to stay priced up.
 	 */
 	function pinnedByUser(n) {
-		return n !== dragNode && isPinned(n);
+		return (n !== dragNode || n === pressPinned) && isPinned(n);
 	}
 
 	/**
@@ -2201,11 +2207,13 @@
 	 * the edges crossing it, and none of those is a surface a small glyph reads
 	 * off.
 	 *
-	 * Not drawn on a node being carried -- see pinnedByUser(). A drag says what
-	 * it is doing while it is doing it: the node is under the pointer, moving
-	 * with it, and a mark for that would be a mark for something obvious.
+	 * Not drawn on an unpinned node being carried -- see pinnedByUser(). A drag
+	 * says what it is doing while it is doing it: the node is under the pointer,
+	 * moving with it, and a mark for that would be a mark for something obvious.
+	 * A node that WAS pinned keeps its badge through the drag, since the gesture
+	 * moves its pin rather than taking it off.
 	 */
-	const PIN_REL = 1.2;   // the icon's box, as a multiple of the node's radius
+	const PIN_REL = 0.6;   // the icon's box, as a multiple of the node's radius
 	const PIN_HALO = 0.16; // background stroked behind it, as a fraction of that
 
 	/**
@@ -2737,9 +2745,19 @@
 		menuOnDrop = null;
 	}
 
+	/** The node a press landed on, if it was pinned at the time -- read by
+	 *  pinnedByUser() for the length of the drag that press may begin. Gated on
+	 *  dragNode there, so a value left over from a press that dragged nothing
+	 *  is never consulted; the next press overwrites it in any case. */
+	let pressPinned = null;
+
 	// A new press means the last one is spent, whatever became of its release.
 	window.addEventListener('pointerdown', () => {
 		menuPress = false;
+		// Capture on window, so this runs ahead of d3's own drag handlers --
+		// and force-graph does not fix a node's coordinates until the pointer
+		// has moved 5px in any case.
+		pressPinned = hoverNode && isPinned(hoverNode) ? hoverNode : null;
 	}, true);
 
 	window.addEventListener('mouseup', (e) => {
