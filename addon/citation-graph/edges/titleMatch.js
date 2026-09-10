@@ -3,7 +3,103 @@
 const { register } = require('../core/registry');
 const { edge } = require('../core/types');
 const { normTitle, firstYear } = require('../core/normalize');
-const { segment } = require('./refSection');
+const { readSection } = require('./refSection');
+
+/**
+ * Characters in the fragment each title is screened by.
+ *
+ * Every reference section used to be searched once per title in the
+ * collection -- an indexOf over the whole section for each of them -- so the
+ * text phase grew with the square of the collection. Now each title stands
+ * for one fragment of itself, the rarest among all the titles, and a section
+ * is rolled over once to see which fragments it contains. Only the titles
+ * whose fragment turned up are searched for.
+ *
+ * It is a screen and nothing more. A title that occurs in the text contains
+ * every fragment of itself, so no match the old loop found can be screened
+ * out; a fragment that turns up by accident, or a hash that collides, costs
+ * only the indexOf the old loop paid for every title anyway. The edges, their
+ * order and the match position the author check reads are what they were.
+ *
+ * Well under minTitleLength's tested floor of 30, so every title the matcher
+ * accepts has one. A shorter one, if that option is lowered past this, is
+ * never screened: it is searched for in every section, as before.
+ */
+const FRAGMENT = 12;
+const BASE = 131;
+// BASE^(FRAGMENT-1), wrapped to 32 bits: what the character leaving the
+// window contributed to the hash.
+const LEAD = (() => {
+	let p = 1;
+	for (let i = 1; i < FRAGMENT; i++) p = Math.imul(p, BASE);
+	return p;
+})();
+
+/** Rolling hash of every FRAGMENT-long window of s, in order. */
+function fragmentHashes(s) {
+	if (s.length < FRAGMENT) return new Int32Array(0);
+	const out = new Int32Array(s.length - FRAGMENT + 1);
+	let h = 0;
+	for (let i = 0; i < FRAGMENT; i++) h = (Math.imul(h, BASE) + s.charCodeAt(i)) | 0;
+	out[0] = h;
+	for (let i = FRAGMENT; i < s.length; i++) {
+		h = (Math.imul((h - Math.imul(s.charCodeAt(i - FRAGMENT), LEAD)) | 0, BASE) + s.charCodeAt(i)) | 0;
+		out[i - FRAGMENT + 1] = h;
+	}
+	return out;
+}
+
+/**
+ * Index the targets by their rarest fragment. Once per derive(): the targets
+ * are the same for every section, and only the sections change.
+ */
+function screen(targets) {
+	const hashes = targets.map((t) => fragmentHashes(t.nt));
+	const freq = new Map();
+	for (const hs of hashes) {
+		for (const h of new Set(hs)) freq.set(h, (freq.get(h) || 0) + 1);
+	}
+	const byFragment = new Map();
+	const always = [];
+	for (let i = 0; i < targets.length; i++) {
+		const hs = hashes[i];
+		if (!hs.length) {
+			always.push(i);
+			continue;
+		}
+		let best = hs[0];
+		let bestN = freq.get(best);
+		for (let j = 1; j < hs.length; j++) {
+			const n = freq.get(hs[j]);
+			if (n < bestN) {
+				best = hs[j];
+				bestN = n;
+			}
+		}
+		let list = byFragment.get(best);
+		if (!list) byFragment.set(best, list = []);
+		list.push(i);
+	}
+	return { byFragment, always, mark: new Uint8Array(targets.length) };
+}
+
+/** Flag, by target index, every title whose fragment occurs in `flat`. The
+ *  flags are reused from section to section rather than allocated per one. */
+function candidates(sc, flat) {
+	const mark = sc.mark;
+	mark.fill(0);
+	for (const i of sc.always) mark[i] = 1;
+	if (flat.length < FRAGMENT) return mark;
+	let h = 0;
+	for (let i = 0; i < FRAGMENT; i++) h = (Math.imul(h, BASE) + flat.charCodeAt(i)) | 0;
+	for (let i = FRAGMENT - 1; ; ) {
+		const list = sc.byFragment.get(h);
+		if (list) for (let k = 0; k < list.length; k++) mark[list[k]] = 1;
+		if (++i >= flat.length) break;
+		h = (Math.imul((h - Math.imul(flat.charCodeAt(i - FRAGMENT), LEAD)) | 0, BASE) + flat.charCodeAt(i)) | 0;
+	}
+	return mark;
+}
 
 /**
  * Strategy: the cited paper's title appears verbatim in the citing paper's
@@ -38,21 +134,25 @@ module.exports.id = register({
 		rejectImpossibleYear: true,
 	},
 
-	async *derive({ adapter, items, index, options, onProgress }) {
+	async *derive({ adapter, items, index, options, onProgress, refSection }) {
 		const targets = index.titleTargets.filter((t) => t.nt.length >= options.minTitleLength);
+		const sc = screen(targets);
 		let done = 0;
 		for (const item of items) {
 			onProgress && onProgress(++done, items.length, item.key);
 			const citingYear = firstYear(item.date);
 			for (const att of await adapter.getAttachments(item.key)) {
-				const text = await adapter.getAttachmentText(att.key);
-				if (!text) continue;
-				const seg = segment(text);
-				if (seg.quality === 'none') continue;
+				const seg = await readSection(adapter, att.key, refSection);
+				if (!seg || seg.quality === 'none') continue;
 				const flat = normTitle(seg.flat);
 				const conf = options.confidenceBySegment[seg.quality] ?? 0.4;
 
-				for (const t of targets) {
+				// In the targets' own order, so the edges come out in the order the
+				// unscreened loop produced them.
+				const mark = candidates(sc, flat);
+				for (let i = 0; i < targets.length; i++) {
+					if (!mark[i]) continue;
+					const t = targets[i];
 					if (t.key === item.key) continue;
 					const at = flat.indexOf(t.nt);
 					if (at < 0) continue;
@@ -74,3 +174,8 @@ module.exports.id = register({
 		}
 	},
 });
+
+// For the tests, which hold the screen to the loop it replaced.
+module.exports.screen = screen;
+module.exports.candidates = candidates;
+module.exports.FRAGMENT = FRAGMENT;

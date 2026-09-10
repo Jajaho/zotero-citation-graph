@@ -4454,6 +4454,130 @@ check('the lifecycle trail costs nothing until it is switched on', async () => {
 	}
 });
 
+// --- title-match screening (citation-graph/edges/titleMatch.js) -------------
+
+/** A small deterministic PRNG, so a failure names a fixture that can be rerun. */
+function mulberry32(seed) {
+	return function () {
+		seed |= 0;
+		seed = (seed + 0x6D2B79F5) | 0;
+		let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+/**
+ * Titles drawn from a vocabulary small enough that they share prefixes and
+ * fragments constantly, and reference sections that hold some of them whole,
+ * some glued onto the end of another word, and some cut one character short.
+ * The last two are the cases a screen could plausibly get wrong.
+ */
+function screenFixture(seed) {
+	const rnd = mulberry32(seed);
+	const vocab = ['quantum', 'sensing', 'with', 'nitrogen', 'vacancy', 'centers',
+		'in', 'diamond', 'the', 'of', 'spin', 'coherence', 'magnetometry', 'a'];
+	const words = n => Array.from({ length: n }, () => vocab[Math.floor(rnd() * vocab.length)]).join(' ');
+	const items = [];
+	for (let i = 0; i < 120; i++) {
+		items.push({ key: 'T' + i, itemType: 'journalArticle', title: words(5 + Math.floor(rnd() * 6)),
+			doi: null, date: null, creators: [] });
+	}
+	const sections = new Map();
+	for (let i = 0; i < 40; i++) {
+		let body = '';
+		for (let j = 0; j < 12; j++) {
+			const t = items[Math.floor(rnd() * items.length)].title;
+			const r = rnd();
+			if (r < 0.4) body += '[' + j + '] ' + t + '. Journal 2010.\n';
+			else if (r < 0.6) body += '[' + j + '] x' + t + '\n';
+			else if (r < 0.8) body += '[' + j + '] ' + t.slice(0, -1) + '\n';
+			else body += '[' + j + '] ' + words(20) + '\n';
+		}
+		sections.set('T' + i, 'Introduction. '.repeat(20) + '\nReferences\n' + body);
+	}
+	return { items, sections };
+}
+
+check('title-match screen never drops a title the unscreened search would find', () => {
+	const tm = require_('./citation-graph/edges/titleMatch.js');
+	const { normTitle } = require_('./citation-graph/core/normalize');
+	for (let seed = 1; seed <= 5; seed++) {
+		const { items, sections } = screenFixture(seed);
+		const targets = items.map(it => ({ key: it.key, nt: normTitle(it.title) }));
+		const sc = tm.screen(targets);
+		for (const text of sections.values()) {
+			const flat = normTitle(text);
+			const mark = tm.candidates(sc, flat);
+			for (let i = 0; i < targets.length; i++) {
+				if (flat.indexOf(targets[i].nt) >= 0 && !mark[i]) {
+					throw new Error('seed ' + seed + ': screened out "' + targets[i].nt + '"');
+				}
+			}
+		}
+	}
+});
+
+check('a title shorter than the fragment is searched for in every section', () => {
+	const tm = require_('./citation-graph/edges/titleMatch.js');
+	const sc = tm.screen([{ key: 'S', nt: 'short' }, { key: 'L', nt: 'a title long enough to screen' }]);
+	if ('short'.length >= tm.FRAGMENT) throw new Error('fixture no longer shorter than the fragment');
+	const mark = tm.candidates(sc, 'nothing in here matches anything at all');
+	if (!mark[0]) throw new Error('a title too short to screen was screened out');
+	if (mark[1]) throw new Error('a title whose fragment is absent was let through');
+});
+
+check('title-match yields exactly the edges of the unscreened loop, in its order', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const { normTitle } = require_('./citation-graph/core/normalize');
+	const { segment } = require_('./citation-graph/edges/refSection');
+	for (let seed = 11; seed <= 13; seed++) {
+		const { items, sections } = screenFixture(seed);
+		const adapter = {
+			listItems: async () => items,
+			getAttachments: async k => (sections.has(k) ? [{ key: k + 'a', parentKey: k, contentType: 'application/pdf' }] : []),
+			getAttachmentText: async attKey => sections.get(attKey.slice(0, -1)) || null,
+			getPdfLinkUris: async () => [],
+		};
+		const r = await cg.build(adapter, { enable: ['title-match'], offline: true });
+		// The loop the screen replaced, written out longhand over the same
+		// targets in the same order. Dates are null and requireAuthor is off,
+		// so a match is the whole of the test.
+		const targets = r.index.titleTargets.filter(t => t.nt.length >= 30);
+		const want = [];
+		const seen = new Set();
+		for (const it of items) {
+			const text = sections.get(it.key);
+			if (!text) continue;
+			const flat = normTitle(segment(text).flat);
+			for (const t of targets) {
+				if (t.key === it.key || flat.indexOf(t.nt) < 0) continue;
+				const k = it.key + '>' + t.key;
+				if (!seen.has(k)) { seen.add(k); want.push(k); }
+			}
+		}
+		const got = r.edges.map(e => e.from + '>' + e.to);
+		if (!want.length) throw new Error('seed ' + seed + ': fixture produced no matches to compare');
+		if (JSON.stringify(got) !== JSON.stringify(want)) {
+			throw new Error('seed ' + seed + ': ' + got.length + ' edges, wanted ' + want.length);
+		}
+	}
+});
+
+check('the text strategies read each attachment once per build, not once each', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const { items, sections } = screenFixture(21);
+	let reads = 0;
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async k => (sections.has(k) ? [{ key: k + 'a', parentKey: k, contentType: 'application/pdf' }] : []),
+		getAttachmentText: async (attKey) => { reads++; return sections.get(attKey.slice(0, -1)) || null; },
+		getPdfLinkUris: async () => [],
+	};
+	await cg.build(adapter, { enable: ['text-doi', 'title-match'], offline: true });
+	if (reads !== sections.size) throw new Error(sections.size + ' attachments, ' + reads + ' reads');
+});
+
 Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);

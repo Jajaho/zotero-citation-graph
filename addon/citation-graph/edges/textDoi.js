@@ -3,7 +3,7 @@
 const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
 const { findDois } = require('../core/normalize');
-const { segment } = require('./refSection');
+const { readSection } = require('./refSection');
 
 /**
  * Strategy: DOIs printed as visible text in the reference section.
@@ -26,15 +26,14 @@ module.exports.id = register({
 		minSegmentQuality: 'tail',
 	},
 
-	async *derive({ adapter, items, index, options, includeExternal, onProgress }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress, refSection }) {
 		const rank = { heading: 3, numbered: 2, tail: 1, none: 0 };
 		let done = 0;
 		for (const item of items) {
 			onProgress && onProgress(++done, items.length, item.key);
 			for (const att of await adapter.getAttachments(item.key)) {
-				const text = await adapter.getAttachmentText(att.key);
-				if (!text) continue;
-				const seg = segment(text);
+				const seg = await readSection(adapter, att.key, refSection);
+				if (!seg) continue;
 				if (rank[seg.quality] < rank[options.minSegmentQuality]) continue;
 				for (const d of findDois(seg.flat)) {
 					const target = index.lookupDoi(d);

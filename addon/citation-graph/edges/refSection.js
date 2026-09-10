@@ -63,4 +63,20 @@ function finish(t, quality) {
 	return { text: t, flat: flattenPdfText(t), quality };
 }
 
-module.exports = { segment };
+/**
+ * One attachment's reference section, or null when it has no text.
+ *
+ * `memo` is the per-build cache graphBuilder hands every provider as
+ * ctx.refSection: two strategies read the same attachments, and each used to
+ * read the file and segment it again for itself. Without one this does
+ * exactly that, so a provider driven from outside build() still works.
+ *
+ * @returns {Promise<?{flat: string, quality: string}>}
+ */
+async function readSection(adapter, attKey, memo) {
+	if (memo) return memo(attKey);
+	const text = await adapter.getAttachmentText(attKey);
+	return text ? segment(text) : null;
+}
+
+module.exports = { segment, readSection };

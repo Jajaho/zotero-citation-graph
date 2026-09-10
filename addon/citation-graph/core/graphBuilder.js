@@ -3,6 +3,7 @@
 const registry = require('./registry');
 const { CollectionIndex } = require('./collectionIndex');
 const { edgeKey, isExternalKey, parseExternalKey } = require('./types');
+const { segment } = require('../edges/refSection');
 
 /**
  * Runs the selected providers and merges their output into one graph.
@@ -32,6 +33,25 @@ async function build(adapter, config = {}) {
 	const perProvider = {};
 	const errors = [];
 
+	// Each attachment's reference section, read and segmented once for the
+	// whole build. text-doi and title-match run back to back over the same
+	// attachments, and each used to read the file and segment it again. Only
+	// the section is kept, not the text it came from, and the cache dies with
+	// this call -- the pdf-links pass is a separate build() and never asks.
+	const sections = new Map();
+	const refSection = (attKey) => {
+		let s = sections.get(attKey);
+		if (!s) {
+			s = adapter.getAttachmentText(attKey).then((text) => {
+				if (!text) return null;
+				const seg = segment(text);
+				return { flat: seg.flat, quality: seg.quality };
+			});
+			sections.set(attKey, s);
+		}
+		return s;
+	};
+
 	for (const p of providers) {
 		const started = Date.now();
 		let produced = 0;
@@ -48,6 +68,7 @@ async function build(adapter, config = {}) {
 				// knows) simply ignore it.
 				includeExternal: !!config.includeExternal,
 				signal: config.signal,
+				refSection,
 				onProgress: (done, total, note) =>
 					config.onProgress && config.onProgress({ provider: p.id, done, total, note }),
 			};
