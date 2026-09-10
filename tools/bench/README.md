@@ -1,32 +1,49 @@
 # Label rendering benchmark
 
-`labels.html` answers the one question the Node-side benchmarks cannot: how
-long does the engine actually take to rasterise the labels we ask it to draw?
+Answers the one question the Node-side benchmarks cannot: how long does the
+engine actually take to rasterise the labels we ask it to draw?
 
 The placement pass is pure arithmetic, so `tools/test-cjs-shim.js` can time it
 in Node and the number means something. Painting is not — it is glyph
 rasterisation, a halo stroke, a compositing path and whatever the GPU is doing,
-and none of that exists in Node. A Cairo or Skia figure would be *a* number
-measured on the wrong rasteriser, which is worse than no number, because it
-looks like an answer.
+and none of that exists in Node. A Cairo or Skia figure would be a real
+measurement of the wrong rasteriser, which is worse than none, because it looks
+like an answer.
+
+So the page lives at `addon/content/bench/` and is served over `resource://`
+from inside the plugin. That is not tidiness — it is the entire point. Loaded
+that way it runs in Zotero's own docshell, with Zotero's fonts, compositor and
+`devicePixelRatio`, which is the only configuration whose numbers apply.
 
 ## Running it
 
-**In Zotero** — the only place the numbers are literally right. Open
-Tools → Developer → Run JavaScript and run:
+Zotero → Tools → Developer → Run JavaScript:
 
 ```js
 Zotero.getMainWindow().openDialog(
-    'file:///C:/Users/you/Repositories/zotero-graph-plugin/tools/bench/labels.html',
-    'zg-bench', 'chrome,centerscreen,resizable,width=1100,height=900');
+    'resource://zotero-citation-graph/content/bench/bench.html',
+    'zg-bench', 'chrome,centerscreen,resizable,width=1150,height=950');
 ```
 
-**In Firefox** — a good proxy, and much easier. Zotero 7 is built on Firefox
-115 ESR, so the rasteriser is the same family. `npm run bench` prints the URL.
+The window should come up titled **Label rendering benchmark — ready**. If it
+is blank, the build you are running does not carry the page:
 
-**Anywhere else** — Chrome, Edge and friends will run it and report Skia's
-numbers, not Gecko's. The page says so in its header when it detects a
-non-Gecko engine. Useful for spotting a 10× regression, useless for tuning.
+| install | has the benchmark |
+|---|---|
+| dev install (`tools/install-dev.ps1`) | always — it serves `addon/` directly |
+| `npm run build` | no, by design |
+| `npm run build -- --with-bench` | yes |
+
+`npm run bench` prints the snippet and this table.
+
+### Why the first version came up blank
+
+It was a `file://` page opened with `openDialog(..., 'chrome,...')`. Two
+independent faults, either one fatal: a chrome-privileged window will not load
+a top-level `file://` document, and the CSP such a window carries blocks inline
+`<script>` outright. Serving from `resource://` fixes the first; splitting the
+harness into `bench.js` fixes the second, since `resource:` is exactly what
+that CSP does allow. Keep the harness in its own file.
 
 ## What it measures
 
@@ -42,7 +59,7 @@ than means, because frame time is skewed and the tail is what people see:
 Three buttons:
 
 - **Run benchmark** — frame cost across four zoom levels.
-- **Sweep label counts** — what the halo costs, as a share of paint time. The
+- **Sweep label counts** — what the halo costs as a share of paint time. The
   halo is a second full rasterisation of every glyph with a wide round-joined
   stroke; if it dominates, dropping it below some type size is the cheapest win
   available.
@@ -68,11 +85,12 @@ fill rate scales with it, and a HiDPI display is drawing four times the pixels.
 
 ## Keeping it honest
 
-The page copies the label constants out of `graph.js`, because that file is one
-IIFE with no exports and a benchmark is not a good enough reason to carve it
-up. A copy that drifts turns the whole tool into a confident measurement of
+`bench.js` copies the label constants out of `graph.js`, because that file is
+one IIFE with no exports and a benchmark is not a good enough reason to carve
+it up. A copy that drifts turns the whole tool into a confident measurement of
 code nobody runs — so `npm test` asserts the two agree, including the halo
-width, which is a bare literal in `drawLabel` and half of what a label costs.
+width, which is a bare literal in `drawLabel` and half of what a name costs to
+paint.
 
 The backdrop is *not* force-graph's own drawing. It is circles and edges at the
 right count and roughly the right cost, there to put the label figures in a

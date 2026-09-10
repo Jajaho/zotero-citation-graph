@@ -33,6 +33,14 @@ const outDir = outIdx === -1 ? path.join(root, 'dist') : path.resolve(argv[outId
 // unreachable code in every install.
 const EXCLUDE = ['citation-graph/adapters'];
 
+// The rendering benchmark has to live under addon/ to be reachable over
+// resource:// -- that is the whole point of it, since a page served any other
+// way measures a different renderer than the one Zotero draws the graph with.
+// It is still a developer tool, so it stays out of a release build unless
+// asked for. A dev install (tools/install-dev.ps1) serves addon/ directly and
+// always has it; --with-bench is for testing it through a packed XPI.
+if (!argv.includes('--with-bench')) EXCLUDE.push('content/bench/');
+
 /** Every file under dir, as archive-relative forward-slash paths, sorted. */
 function walk(dir, prefix = '') {
 	const out = [];

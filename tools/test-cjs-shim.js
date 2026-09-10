@@ -862,7 +862,7 @@ check('the rendering benchmark measures the constants that actually ship', () =>
 	// silent -- so it is caught here instead.
 	const gjs = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
 	const bench = fs.readFileSync(
-		path.join(__dirname, 'bench/labels.html'), 'utf8');
+		path.join(addonDir, 'content/bench/bench.js'), 'utf8');
 	const names = ['LABEL_MIN_PX', 'LABEL_MAX_PX', 'LABEL_PER_RADIUS', 'LABEL_FIT',
 		'LABEL_PAD', 'LABEL_INK', 'LABEL_STICKY', 'LABEL_REF_PX'];
 	for (const name of names) {
