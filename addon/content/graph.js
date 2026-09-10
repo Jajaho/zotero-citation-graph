@@ -1619,7 +1619,6 @@
 			// own and only ever need registering once.
 			fg.d3Force('centerPull', centerPull());
 			fg.d3Force('groupPull', groupPull());
-			fg.d3Force('pinPull', pinPull());
 			fg.d3Force('collide', collide());
 			// force-graph registers 'link' itself, so this reaches in and
 			// reprices it rather than replacing it -- the arrows, curvature and
@@ -1889,78 +1888,52 @@
 	}
 
 	/**
-	 * Pull every free node towards the pin nearest it.
+	 * How much harder a pinned node's own citation links pull.
 	 *
-	 * A pin has only ever held the one node it is on: the paper stops moving
-	 * and everything else carries on around it. That is the honest minimum, and
-	 * it is off by default here for exactly that reason -- but it leaves the
-	 * gesture weaker than it looks. Someone who drags four landmark papers to
-	 * four corners and pins them has said where the graph's regions go, and the
-	 * layout answers by putting the papers wherever the links happen to send
-	 * them, which is usually back into one ball in the middle.
+	 * A pin holds the one node it is on: the paper stops moving and everything
+	 * else carries on around it. That is the honest minimum, and it is what
+	 * this slider at 0 still means -- but it leaves the gesture weaker than it
+	 * looks. Drag a landmark paper to the edge, pin it, and the papers that
+	 * cite it stay wherever the rest of the layout had already put them, since
+	 * their links to it pull no harder than any other.
 	 *
-	 * Turned up, each pin becomes a well: the nearest one to a node is the one
-	 * it feels, so the pins partition the cloud into basins rather than fighting
-	 * over the same paper, and the links go on arguing with the result. Nearest
-	 * rather than all of them, because a node pulled towards every pin at once
-	 * is a node pulled towards their centroid -- the middle of the canvas by
-	 * another name, and the centre pull is already there.
+	 * So the pin's reach is expressed as edge attraction, not as a pull of its
+	 * own: the links that touch a pinned node are strengthened, and since the
+	 * node at one end cannot move, the papers at the other come to it. Nothing
+	 * that is not cited by or citing the pin is touched at all -- which is the
+	 * whole point, and is what makes it a way of saying "gather this paper's
+	 * literature here" rather than "collect the graph at this spot".
 	 *
-	 * An anchored node is left alone. A group is a mask the user typed, naming
-	 * papers on purpose; a pin says nothing about any paper but its own. When
-	 * both would move the same node, the one that named it wins.
-	 *
-	 * The centre pull is NOT withheld the way it is from an anchored node. At
-	 * anything past the slider's floor this force is an order of magnitude the
-	 * stronger of the two, so the pins win where they matter, and leaving the
-	 * centre in is what still catches a node with no pin worth travelling to.
+	 * This lives in linkStrength() rather than in a force of its own, and it
+	 * replaced one that was a force of its own -- an attraction towards the
+	 * nearest pin. That gathered every node in the graph onto the pins whether
+	 * it had anything to do with them or not, and then the hard-sphere collision
+	 * had to resolve the pile it made, which threw the graph apart. Edge
+	 * attraction has no such failure mode: it asks more of a spring that was
+	 * already there.
 	 */
-	const PIN_PULL = 0.25;
-
-	/** The panel's strength, read live per tick like the centre pull's. */
 	function pinScale() {
 		let v = Number(elPinPull.value);
 		return Number.isFinite(v) ? v : 0;
 	}
 
-	function pinPull() {
-		let nodes = [];
-		let pins = [];
-		function force(alpha) {
-			let scale = pinScale();
-			if (!scale) return;
-			// Rebuilt per tick rather than kept: pinning is a menu entry and a
-			// drop, both of which can land between any two ticks, and a list of
-			// pins that went stale would pull towards a node that is moving.
-			pins.length = 0;
-			for (let n of nodes) if (isPinned(n)) pins.push(n);
-			if (!pins.length) return;
-			let k = PIN_PULL * scale * alpha;
-			for (let n of nodes) {
-				// Every node d3 has stopped integrating, which is the pins
-				// themselves and anything a settle has frozen. Adding velocity
-				// to a fixed node is wasted work, not a bug -- but a pin pulled
-				// towards its own neighbour would be one.
-				if (n.fx != null || n.fy != null) continue;
-				if (groupOf.has(n.id)) continue;
-				let near = null;
-				let best = Infinity;
-				for (let p of pins) {
-					let dx = p.x - n.x;
-					let dy = p.y - n.y;
-					let d = dx * dx + dy * dy;
-					if (d >= best) continue;
-					best = d;
-					near = p;
-				}
-				n.vx += (near.x - n.x) * k;
-				n.vy += (near.y - n.y) * k;
-			}
-		}
-		force.initialize = ns => {
-			nodes = ns;
-		};
-		return force;
+	/** What the slider buys at the top of its travel: a link touching a pin
+	 *  pulls five times as hard as the same link would elsewhere. */
+	const PIN_BOOST = 4;
+
+	/**
+	 * Pinned as the user means it, which is what both the price of a link and
+	 * the badge on a node go by.
+	 *
+	 * isPinned() answers "is this node fixed", and force-graph fixes a node it
+	 * is dragging for the length of the gesture -- so a drag reads as a pin. It
+	 * does not matter to the entry in the menu, which is only ever built after
+	 * a drag has ended, but it matters to these two: it would flash a pin on
+	 * every node anyone drags, and a re-render landing mid-drag would bake a
+	 * boost into that node's links that nothing afterwards takes back off.
+	 */
+	function pinnedByUser(n) {
+		return n !== dragNode && isPinned(n);
 	}
 
 	/**
@@ -2079,18 +2052,37 @@
 			}
 		}
 		let deg = Math.min(pullDeg.get(link.source) || 1, pullDeg.get(link.target) || 1);
-		return Number(elLinkPull.value) / deg;
+		let s = Number(elLinkPull.value) / deg;
+		let pin = pinScale();
+		if (!pin) return s;
+		// Sound even mid-settle: a settle skips any node that already carries
+		// fx/fy, so a pinned one is never in `frozen` and never reads as merely
+		// held still.
+		if (!pinnedByUser(link.source) && !pinnedByUser(link.target)) return s;
+		// d3 solves a link as a position correction scaled by its strength, so
+		// past 1 the correction overshoots what it was meant to fix and the pair
+		// rings instead of settling. The boost is capped there -- and never
+		// below what the link would have pulled at anyway, since a link already
+		// past the cap is one the edge pull has taken there on purpose.
+		return Math.max(s, Math.min(1, s * (1 + PIN_BOOST * pin)));
 	}
 
 	/**
-	 * Reinstalling the function is what makes the new value take: d3 evaluates
-	 * link strengths once, when the force is initialised, and caches them.
+	 * Reinstalling the function is what makes a new value take: d3 evaluates
+	 * link strengths once, when the force is initialised, and caches them. Both
+	 * sliders that price a link go through here, and so does pinning, which
+	 * changes which links are the pinned ones.
 	 */
-	function applyLinkPull() {
-		elPullValue.textContent = Number(elLinkPull.value).toFixed(2);
+	function reinstallLinkStrength() {
 		if (!fg) return;
 		let link = fg.d3Force('link');
 		if (link) link.strength(linkStrength);
+	}
+
+	function applyLinkPull() {
+		elPullValue.textContent = Number(elLinkPull.value).toFixed(2);
+		if (!fg) return;
+		reinstallLinkStrength();
 		fg.d3ReheatSimulation();
 	}
 
@@ -2105,10 +2097,12 @@
 		fg.d3ReheatSimulation();
 	}
 
-	/** Nor does the pin pull: pinPull() reads the slider on every tick too. */
+	/** The pin pull prices links, so it takes the same route the edge pull
+	 *  does rather than the centre pull's live read. */
 	function applyPinPull() {
 		elPinPullValue.textContent = pinScale().toFixed(2);
 		if (!fg) return;
+		reinstallLinkStrength();
 		fg.d3ReheatSimulation();
 	}
 
@@ -2150,7 +2144,7 @@
 
 	function drawNode(node, ctx, globalScale) {
 		drawPick(node, ctx, globalScale);
-		drawPin(node, ctx, globalScale);
+		drawPin(node, ctx);
 		drawLabel(node, ctx, globalScale);
 	}
 
@@ -2195,14 +2189,24 @@
 	 * entry that put it there, so the gesture and its result are one picture and
 	 * nothing has to be remembered at all.
 	 *
-	 * Sized in screen pixels like the label, so it stays a badge at any zoom
-	 * rather than swelling with the node, and haloed in the page background for
-	 * the reason the label is: it lies over the node's own fill, over whatever
-	 * neighbours crowd that shoulder and over the edges crossing it, and none of
-	 * those is a surface a small glyph reads off.
+	 * Sized from the node's own radius, in graph coordinates -- so it zooms with
+	 * the graph and keeps one proportion to the circle it marks. A constant
+	 * SCREEN size, which is what the label and the two rings use, is the wrong
+	 * rule here: zoomed out far enough to see a whole collection the nodes are
+	 * specks and a fixed 12px pin is four times the paper it belongs to, which
+	 * reads as a badge that grows every time you pull back.
+	 *
+	 * Haloed in the page background for the reason the label is: it lies over
+	 * the node's own fill, over whatever neighbours crowd that shoulder and over
+	 * the edges crossing it, and none of those is a surface a small glyph reads
+	 * off.
+	 *
+	 * Not drawn on a node being carried -- see pinnedByUser(). A drag says what
+	 * it is doing while it is doing it: the node is under the pointer, moving
+	 * with it, and a mark for that would be a mark for something obvious.
 	 */
-	const PIN_PX = 12;       // screen px, the side of the icon's box
-	const PIN_HALO_PX = 2.5; // screen px of background stroked behind it
+	const PIN_REL = 1.2;   // the icon's box, as a multiple of the node's radius
+	const PIN_HALO = 0.16; // background stroked behind it, as a fraction of that
 
 	/**
 	 * The pin, as canvas paths. Parsed once and kept: the shape never changes,
@@ -2222,24 +2226,25 @@
 		return _pinPaths;
 	}
 
-	function drawPin(node, ctx, globalScale) {
-		if (!isPinned(node)) return;
+	function drawPin(node, ctx) {
+		if (!pinnedByUser(node)) return;
 		let pin = pinPaths();
 		if (!pin) return;
 		let theme = themeColors();
-		let size = PIN_PX / globalScale;
+		let r = nodeRadius(node);
+		let size = r * PIN_REL;
 		// The icon is drawn with its head in the top right of its own box and
 		// its needle running to the bottom left, so centring that box on the
 		// node's upper-right shoulder stands the pin outside the circle with the
 		// point going back into it.
-		let off = nodeRadius(node) * Math.SQRT1_2 - size / 2;
+		let off = r * Math.SQRT1_2 - size / 2;
 		let k = size / pin.box;
 		ctx.save();
 		ctx.translate(node.x + off, node.y - off - size);
 		ctx.scale(k, k);
-		// Everything below is in the icon's own units, so a screen width has to
-		// come back through the scale: one unit is PIN_PX / box screen pixels.
-		ctx.lineWidth = PIN_HALO_PX * pin.box / PIN_PX;
+		// In the icon's own units from here: the transform above is what turns
+		// them into graph coordinates.
+		ctx.lineWidth = PIN_HALO * pin.box;
 		ctx.lineJoin = 'round';
 		ctx.strokeStyle = theme.halo;
 		// Faded with the rest when isolation has dimmed it, exactly as drawPick
@@ -2808,10 +2813,13 @@
 		n.fx = n.x;
 		n.fy = n.y;
 		repaint();
-		// With the pin pull turned up a new pin is a new well, and the nodes
-		// nearest it have somewhere to be that they did not a moment ago. At 0
-		// a pin still only holds itself, and a settled graph should stay settled.
-		if (fg && pinScale()) fg.d3ReheatSimulation();
+		// With the pin pull turned up this node's links have just become the
+		// strengthened ones, and d3 has the old prices cached. At 0 nothing
+		// about the layout changed, and a settled graph should stay settled.
+		if (pinScale()) {
+			reinstallLinkStrength();
+			if (fg) fg.d3ReheatSimulation();
+		}
 		trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
 	}
 
@@ -2819,6 +2827,10 @@
 		delete n.fx;
 		delete n.fy;
 		repaint();
+		// Before the settle, not after: a settle fixes every free node in place
+		// for a couple of ticks, and re-pricing the links while it holds would
+		// read the frozen ones as pinned. The reheat this needs is the settle's.
+		if (pinScale()) reinstallLinkStrength();
 		settle();
 	}
 

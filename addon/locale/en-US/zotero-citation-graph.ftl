@@ -64,7 +64,7 @@ zotero-citation-graph-group-pull = group pull
 zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers it names. At 0 they name them without moving them.
 
 zotero-citation-graph-pin-pull = pin pull
-zotero-citation-graph-pin-pull-hint = How hard a pinned node draws the rest of the graph towards it. At 0 a pin holds only itself.
+zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
 
 zotero-citation-graph-item-pane-failed = Could not open Zotero's item pane here.
 

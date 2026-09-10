@@ -54,7 +54,7 @@ zotero-citation-graph-group-pull = Gruppenzug
 zotero-citation-graph-group-pull-hint = Wie stark jeder Anker die Einträge anzieht, die er benennt. Bei 0 benennen sie sie, ohne sie zu bewegen.
 
 zotero-citation-graph-pin-pull = Nadelzug
-zotero-citation-graph-pin-pull-hint = Wie stark ein angehefteter Knoten den übrigen Graphen zu sich zieht. Bei 0 hält eine Nadel nur sich selbst.
+zotero-citation-graph-pin-pull-hint = Wie viel stärker die Kanten eines angehefteten Knotens ziehen. Bei 0 hält eine Nadel nur den Knoten, auf dem sie steckt.
 
 zotero-citation-graph-item-pane-failed = Zoteros Infobereich konnte hier nicht geöffnet werden.
 

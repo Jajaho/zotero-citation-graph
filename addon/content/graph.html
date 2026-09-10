@@ -181,14 +181,12 @@
 								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
 								<span id="group-pull-value">0.40</span>
 							</label>
-							<!-- A pin is a position the user placed by hand; this is how much
-							     the rest of the graph is asked to care. At 0 a pin holds only
-							     the node it is on, which is what a pin has always meant;
-							     turned up, each pin becomes a well the nodes nearest it
-							     gather into, and a handful of pins lay the graph out by hand.
-							     Off by default -- a pin should move nothing but itself until
-							     it is asked to. -->
-							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How hard a pinned node draws the rest of the graph towards it. At 0 a pin holds only itself.">
+							<!-- A pin's reach, expressed the only way that keeps it about the
+							     pinned paper: the links that touch it pull harder, so the works
+							     citing or cited by it come to it and nothing else is disturbed.
+							     At 0 a pin holds only the node it is on, which is what a pin
+							     has always meant -- so that is the default. -->
+							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
 								<span data-zg-str="pin-pull">pin pull</span>
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
