@@ -102,6 +102,13 @@ the renderer.
 Shares do not sum to 100%: some work is shared, and some is neither drawing nor
 attributable to one subsystem.
 
+A subsystem whose whole cost is smaller than the spread between repeats of the
+same measurement is reported as **under noise**, with the floor it fell under,
+rather than as a number. Rounded to "0%" it would read as a claim that the
+subsystem is free; it is not a claim, it is an absence of one. Raise `--n`
+until a subsystem matters enough to resolve, or `--repeat` until the floor
+drops below it.
+
 ## How it is wired
 
 No browser-driver dependency, and no `about:config` surgery to explain.
@@ -116,6 +123,26 @@ parsing `dump()` off stdout.
 `run.js` finds Firefox, writes a throwaway profile (so nothing from your own
 browsing can move a number, and so this never touches that profile), opens the
 page with `?auto=1`, waits for the POST, and prints the table.
+
+## Settling, and why it is worth waiting for
+
+Every scenario but `settle` measures a graph that has stopped moving, so the
+harness has to know when that is. It waits for force-graph to stop *painting* —
+counted by patching `clearRect` in the frame's realm, since force-graph
+reschedules its animation frame whether or not it draws, and counting frames
+cannot tell a live layout from a cooled one.
+
+The first version watched the harness's own recorded-frame array, which only
+grows while a measurement is running — so during a settle it never grew, the
+loop read that as "already quiet", and returned after about a dozen frames.
+Every number calling itself a settled-graph measurement was taken off a graph
+still flying into place. Fixing it dropped `steady`'s run-to-run noise from
+±30% to ±3%, which is most of the difference between a tool that can resolve a
+5% change and one that cannot.
+
+This is why a full run takes minutes: force-graph's default cooldown is 15
+seconds, and a scenario that disturbs the layout has to pay it again on each
+repeat.
 
 ## Two things that make the numbers real
 

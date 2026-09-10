@@ -149,15 +149,47 @@ var rafReal = null;
 var frames = [];
 var recording = false;
 
+/**
+ * How many frames force-graph has actually painted.
+ *
+ * Needed because its animation cycle reschedules itself every frame whether or
+ * not it draws -- so counting rAF callbacks cannot tell a live layout from a
+ * cooled one. It does clear the canvas on every frame it does draw, so
+ * counting that is the signal. Patched in the frame's own realm, the same way
+ * the ablation is, and for the same reason: no hook in graph.js to rot.
+ */
+var paintCount = 0;
+
+function hookPaint() {
+	var p = proto();
+	if (p.__zgClear) return;
+	var real = p.clearRect;
+	p.__zgClear = real;
+	p.clearRect = function () {
+		paintCount++;
+		return real.apply(this, arguments);
+	};
+}
+
 function hookFrames() {
 	if (rafReal) return;
 	rafReal = W.requestAnimationFrame;
 	W.requestAnimationFrame = function (cb) {
 		return rafReal.call(W, function (ts) {
 			if (!recording) return cb(ts);
+			var painted = paintCount;
 			var t0 = W.performance.now();
 			cb(ts);
 			flush();
+			// Only frames on which the renderer actually drew.
+			//
+			// force-graph reschedules its animation cycle every frame whether
+			// or not there is anything to redraw, and an idle cycle costs about
+			// 0.8ms. Counting those, a scenario whose gesture failed to land
+			// reported 0.82ms and 1220fps -- a beautifully consistent
+			// measurement of not drawing a graph -- and because the headline is
+			// the fastest repeat, one such repeat captured the whole result.
+			if (paintCount === painted) return;
 			// Minus the read-back's own fixed cost -- see calibrateFlush().
 			frames.push(Math.max(0, W.performance.now() - t0 - flushCost));
 		});
@@ -179,9 +211,15 @@ async function record(count, drive) {
 	frames = [];
 	recording = true;
 	var i = 0;
+	// Capped in FRAMES OFFERED, not frames kept: now that idle frames are
+	// discarded, a scenario that draws nothing would otherwise never finish.
+	// It ends up with an empty sample, which the caller reports as a skip --
+	// the honest outcome, and a much louder one than 1220fps.
+	var offered = 0;
+	var limit = count * 12 + 600;
 	await new Promise(function (done) {
 		function tick() {
-			if (frames.length >= count) return done();
+			if (frames.length >= count || offered++ > limit) return done();
 			if (drive) drive(i++);
 			else poke();
 			rafReal.call(W, tick);
@@ -243,7 +281,21 @@ function restore() {
  * measure a function nobody calls.
  * ------------------------------------------------------------------ */
 
-function at(x, y, type, opts) {
+/**
+ * @param {string} type   the event to send
+ * @param {object} [opts] extra event init
+ * @param {boolean} [toWindow] send it to the window rather than the canvas
+ *
+ * Two event families, and they are not interchangeable. force-graph tracks
+ * which node is under the cursor with POINTER events, so hover and the node
+ * probe use those. d3-zoom and d3-drag -- which are what actually pan the
+ * view and carry a node -- bind mousedown on the canvas and then move,
+ * mousemove and mouseup onto the VIEW for the rest of the gesture. Sent as
+ * pointer events, or sent to the canvas after the press, the drag simply never
+ * happens: the scenario then measures force-graph's idle animation loop and
+ * reports a beautifully consistent 1220fps for not drawing a graph.
+ */
+function at(x, y, type, opts, toWindow) {
 	var c = canvas();
 	if (!c) return;
 	var r = c.getBoundingClientRect();
@@ -257,7 +309,7 @@ function at(x, y, type, opts) {
 	if (opts) for (var k in opts) init[k] = opts[k];
 	var Ctor = type.indexOf('pointer') === 0 ? W.PointerEvent
 		: type === 'wheel' ? W.WheelEvent : W.MouseEvent;
-	c.dispatchEvent(new Ctor(type, init));
+	(toWindow ? W : c).dispatchEvent(new Ctor(type, init));
 }
 
 /**
@@ -298,7 +350,23 @@ var SCENARIOS = [
 		id: 'settle',
 		what: 'cold layout: a fresh payload annealed until the engine cools',
 		async run(cx) {
-			W.zgSetData(JSON.stringify(cx.data));
+			// A DIFFERENT collection each repeat, not the same one again.
+			//
+			// updateGraph() compares a signature of the node ids and every drawn
+			// edge property, and re-sending an identical payload takes its
+			// cheapest tier: repaint in place, no re-anneal. Which is correct,
+			// and is why recolouring the graph does not move it -- but it means
+			// a settle scenario that re-sends its own data measures a repaint
+			// and calls it a cold layout. On the run that caught this it painted
+			// nothing at all and had to be thrown away.
+			//
+			// Same size, same shape, same generator: a different draw from the
+			// same distribution, which is a fair thing to average over.
+			cx.settleSeed = (cx.settleSeed || 0) + 1;
+			var fresh = ZGFixture.collection({
+				n: cx.n, seed: cx.seed + 1000 + cx.settleSeed, edgeRatio: cx.ratio,
+			});
+			W.zgSetData(JSON.stringify(fresh));
 			return await record(cx.frames, function () {});
 		},
 	},
@@ -315,15 +383,20 @@ var SCENARIOS = [
 		what: 'dragging a node: hit test, reheat and re-layout every frame',
 		async run(cx) {
 			await settle(cx);
-			var p = cx.node;
+			// Probed after this scenario's own settle, not once at the start: a
+			// reframe moves every node, so a point that was over one before is
+			// not after -- and a drag that misses is a pan wearing its name.
+			var p = await findNode(cx.vw, cx.vh) || cx.node;
 			if (!p) return null;
 			at(p.x, p.y, 'pointermove');
-			at(p.x, p.y, 'pointerdown');
+			at(p.x, p.y, 'mousedown');
 			var f = await record(cx.frames, function (i) {
 				var t = i / 30;
-				at(p.x + Math.cos(t) * 140, p.y + Math.sin(t) * 90, 'pointermove', { buttons: 1 });
+				var x = p.x + Math.cos(t) * 140, y = p.y + Math.sin(t) * 90;
+				at(x, y, 'mousemove', { buttons: 1 }, true);
+				at(x, y, 'pointermove', { buttons: 1 });
 			});
-			at(p.x, p.y, 'pointerup');
+			at(p.x, p.y, 'mouseup', null, true);
 			return f;
 		},
 	},
@@ -332,11 +405,17 @@ var SCENARIOS = [
 		what: 'panning the background: no layout work, pure redraw at a new transform',
 		async run(cx) {
 			await settle(cx);
-			at(6, 6, 'pointerdown');
+			// About the middle and back again, not away in one direction: a pan
+			// that accumulates walks the graph off screen and then measures the
+			// cost of drawing nothing.
+			var cxp = cx.vw / 2, cyp = cx.vh / 2;
+			at(cxp, cyp, 'mousedown');
 			var f = await record(cx.frames, function (i) {
-				at(6 + (i % 40) * 6, 6 + (i % 25) * 5, 'pointermove', { buttons: 1 });
+				var t = i / 12;
+				at(cxp + Math.sin(t) * 160, cyp + Math.cos(t) * 110,
+					'mousemove', { buttons: 1 }, true);
 			});
-			at(6, 6, 'pointerup');
+			at(cxp, cyp, 'mouseup', null, true);
 			return f;
 		},
 	},
@@ -345,9 +424,11 @@ var SCENARIOS = [
 		what: 'wheel zoom: every screen-space size recomputed per frame',
 		async run(cx) {
 			await settle(cx);
+			// In and back out in equal measure, so the scenario ends at the
+			// scale it started at and leaves the next one a graph to draw.
 			return await record(cx.frames, function (i) {
 				at(cx.vw / 2, cx.vh / 2, 'wheel',
-					{ deltaY: (i % 40) < 20 ? -110 : 110, deltaMode: 0 });
+					{ deltaY: (i % 20) < 10 ? -110 : 110, deltaMode: 0 });
 			});
 		},
 	},
@@ -356,7 +437,10 @@ var SCENARIOS = [
 		what: 'isolating a neighbourhood: the whole graph repainted into a wash',
 		async run(cx) {
 			await settle(cx);
-			var p = cx.node;
+			// Probed after this scenario's own settle, not once at the start: a
+			// reframe moves every node, so a point that was over one before is
+			// not after -- and a drag that misses is a pan wearing its name.
+			var p = await findNode(cx.vw, cx.vh) || cx.node;
 			if (!p) return null;
 			at(p.x, p.y, 'pointermove');
 			var f = await record(cx.frames, function (i) {
@@ -403,14 +487,53 @@ var SCENARIOS = [
  *  graph is not silently measuring the tail of the layout. */
 async function settle(cx) {
 	W.zgSetData(JSON.stringify(cx.data));
+	await quiesce();
+	await reframe();
+}
+
+/**
+ * Put the whole graph back in view.
+ *
+ * zgSetData replaces the data; it does not touch the zoom transform, which is
+ * view state and rightly survives a rebuild. So a scenario that moves the view
+ * leaves it moved for everything that runs after it -- and `pan` used to drag
+ * in one direction until the graph was off screen, after which every later
+ * repeat measured an empty canvas at 1163 fps and best-of-repeats faithfully
+ * reported the emptiest one. Any scenario that touches the view has to hand it
+ * back.
+ *
+ * Through the page's own reframe button, so this is the same zoom-to-fit a
+ * user gets rather than a second implementation of it.
+ */
+async function reframe() {
+	var btn = D.getElementById('reframe');
+	if (!btn) return;
+	btn.click();
+	// zoomToFit animates; waiting for the paint to stop waits for it to land.
+	await quiesce(300);
+}
+
+/**
+ * Wait until the graph stops painting, which is when the layout has cooled.
+ *
+ * The first version watched the recorded-frame array, which only grows while a
+ * measurement is running -- so during a settle it never grew, the loop read
+ * that as "already quiet" and returned after a dozen frames. Every number that
+ * called itself a settled-graph measurement was taken off a graph still flying
+ * into place, and the attribution table it fed printed a subsystem costing
+ * more than the superset it belongs to. Watch what the renderer does, not what
+ * the harness is doing.
+ */
+async function quiesce(maxFrames) {
 	var quiet = 0;
-	for (var i = 0; i < 900 && quiet < 12; i++) {
-		var before = frames.length;
+	var cap = maxFrames || 1800;
+	for (var i = 0; i < cap && quiet < 20; i++) {
+		var before = paintCount;
 		await new Promise(function (r) { rafReal.call(W, r); });
-		quiet = (frames.length === before) ? quiet + 1 : 0;
-		await sleep(0);
+		quiet = (paintCount === before) ? quiet + 1 : 0;
 	}
-	await sleep(60);
+	await sleep(50);
+	return quiet >= 20;
 }
 
 /* ------------------------------------------------------------------ *
@@ -452,13 +575,15 @@ async function runAll(which) {
 
 	await attach(p.vw, p.vh);
 	hookFrames();
+	hookPaint();
 	out.env.flushCost = calibrateFlush();
 
 	var data = ZGFixture.collection({ n: p.n, seed: p.seed, edgeRatio: p.ratio });
 	out.config.edges = data.edges.length;
 	out.config.external = data.external.length;
 
-	var cx = { data: data, n: p.n, vw: p.vw, vh: p.vh, frames: p.frames + p.warm, node: null };
+	var cx = { data: data, n: p.n, seed: p.seed, ratio: p.ratio,
+		vw: p.vw, vh: p.vh, frames: p.frames + p.warm, node: null };
 
 	// One settle up front, so the node probe and every scenario after it start
 	// from a graph that has finished moving.
@@ -490,6 +615,13 @@ async function runAll(which) {
 					continue;
 				}
 				var kept = f.slice(p.warm);
+				if (!kept.length) {
+					// No painted frames at all: the gesture never reached the
+					// renderer. Silence beats a number that describes an idle loop.
+					out.errors.push(s.id + ' painted nothing on repeat ' + (rep + 1)
+						+ ' — nothing reached the renderer');
+					continue;
+				}
 				(pooled[s.id] || (pooled[s.id] = [])).push.apply(pooled[s.id], kept);
 				(perRepeat[s.id] || (perRepeat[s.id] = [])).push(stats(kept).p50);
 			}
@@ -547,18 +679,47 @@ async function runAll(which) {
  * the difference is drawing and not the simulation.
  */
 async function attribute(cx, p) {
+	// Repeated and taken at its best, for the same reason the scenarios are.
+	// Measured once each, this table printed the halo costing twice what
+	// labels cost -- and the halo is a strict SUBSET of labels, so that is not
+	// a surprising result, it is an arithmetically impossible one. A single
+	// sample of a noisy quantity is how you print an impossible number with a
+	// straight face.
+	// Settled once, and left alone. Re-annealing between repeats lays the graph
+	// out differently each time -- a different number of nodes on screen, a
+	// different amount to draw -- and differences between subsystems measured
+	// across different pictures are not differences between subsystems.
 	await settle(cx);
-	var base = stats((await record(cx.frames)).slice(p.warm));
-	var out = { baseline: base, parts: {} };
+	var best = async function (label) {
+		var lo = Infinity, hi = 0;
+		for (var r = 0; r < p.repeat; r++) {
+			log('attributing ' + label + ' (' + (r + 1) + '/' + p.repeat + ')');
+			var v = stats((await record(cx.frames)).slice(p.warm)).p50;
+			if (v < lo) lo = v;
+			if (v > hi) hi = v;
+		}
+		return { best: lo, spread: hi - lo };
+	};
+
+	var base = await best('everything');
+	// The floor this table can resolve at all. A subsystem whose whole cost is
+	// smaller than the spread between repeats of the SAME measurement has not
+	// been measured as cheap -- it has not been measured. Reporting it as "0%"
+	// would be a claim; reporting it as below the floor is the fact.
+	var out = { baseline: { p50: base.best, spread: base.spread }, parts: {} };
 	var keys = Object.keys(ABLATE);
 	for (var i = 0; i < keys.length; i++) {
 		ablate(keys[i]);
-		var off = stats((await record(cx.frames)).slice(p.warm));
+		var off = await best(keys[i]);
 		restore();
+		var cost = base.best - off.best;
+		var floor = Math.max(base.spread, off.spread);
 		out.parts[keys[i]] = {
-			without: off.p50,
-			cost: Math.max(0, base.p50 - off.p50),
-			share: base.p50 > 0 ? Math.max(0, 1 - off.p50 / base.p50) : 0,
+			without: off.best,
+			cost: cost,
+			floor: floor,
+			resolved: Math.abs(cost) > floor,
+			share: base.best > 0 ? cost / base.best : 0,
 		};
 	}
 	return out;
