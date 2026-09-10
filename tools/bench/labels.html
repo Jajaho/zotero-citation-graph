@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Label rendering benchmark</title>
+<style>
+	:root {
+		--bg: #ffffff; --fg: #1a1a1a; --muted: #6b6b6b;
+		--accent: #0a67c2; --line: #d8d8d8; --warn: #a8500a;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #2f2f30; --fg: #f0f0f0; --muted: #a0a0a0;
+			--accent: #6aa9e9; --line: #4a4a4c; --warn: #e0a060;
+		}
+	}
+	body {
+		background: var(--bg); color: var(--fg); margin: 0; padding: 16px 20px;
+		font: 13px/1.5 -apple-system, "Segoe UI", sans-serif;
+	}
+	h1 { font-size: 15px; margin: 0 0 2px; }
+	h2 { font-size: 13px; margin: 18px 0 6px; }
+	p.sub { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
+	fieldset { border: 1px solid var(--line); border-radius: 5px; padding: 8px 12px 10px; margin: 0 0 12px; }
+	legend { color: var(--muted); padding: 0 5px; }
+	label.f { display: inline-flex; align-items: center; gap: 5px; margin: 0 14px 4px 0; }
+	input[type=number] { width: 68px; background: var(--bg); color: var(--fg);
+		border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px; font: inherit; }
+	button { font: inherit; padding: 5px 14px; border-radius: 4px; cursor: pointer;
+		border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+	button:disabled { opacity: .5; cursor: default; }
+	button.alt { background: transparent; color: var(--accent); }
+	table { border-collapse: collapse; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+	th, td { padding: 3px 12px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
+	th:first-child, td:first-child { text-align: left; }
+	th { color: var(--muted); font-weight: 600; }
+	td.hi { color: var(--warn); font-weight: 600; }
+	#env { color: var(--muted); margin: 0 0 12px; }
+	#log { white-space: pre-wrap; color: var(--muted); margin-top: 10px; }
+	canvas { border: 1px solid var(--line); border-radius: 4px; margin-top: 8px;
+		max-width: 100%; height: auto; }
+	code { background: rgba(128,128,128,.16); padding: 0 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Label rendering benchmark</h1>
+<p class="sub">
+	Measures what the Node-side benchmarks cannot: how long the engine actually
+	takes to rasterise haloed text on a canvas. Open this <strong>inside
+	Zotero</strong> for the numbers that matter — a different browser measures a
+	different rasteriser. The placement pass is the real
+	<code>labelLayout.js</code>; the paint is the exact sequence
+	<code>drawLabel()</code> issues.
+</p>
+
+<p id="env"></p>
+
+<fieldset>
+	<legend>graph</legend>
+	<label class="f">nodes <input type="number" id="nodes" value="2000" min="10" max="200000" step="100"></label>
+	<label class="f">viewport <input type="number" id="vw" value="1400" min="200" step="20"> ×
+		<input type="number" id="vh" value="900" min="200" step="20"></label>
+	<label class="f">seed <input type="number" id="seed" value="7" min="0"></label>
+</fieldset>
+
+<fieldset>
+	<legend>run</legend>
+	<label class="f">frames <input type="number" id="runs" value="120" min="10" max="5000"></label>
+	<label class="f">warmup <input type="number" id="warm" value="25" min="0" max="500"></label>
+	<label class="f"><input type="checkbox" id="backdrop" checked> draw circles + edges too</label>
+	<label class="f"><input type="checkbox" id="raf"> pace with requestAnimationFrame</label>
+</fieldset>
+
+<button id="run">Run benchmark</button>
+<button id="sweep" class="alt">Sweep label counts</button>
+<button id="ab" class="alt">A/B the box rule</button>
+
+<div id="out"></div>
+<div id="log"></div>
+<canvas id="cv" width="700" height="450"></canvas>
+
+<script src="../../addon/content/labelLayout.js"></script>
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * The constants under test.
+ *
+ * Copied from addon/content/graph.js rather than imported, because that
+ * file is one big IIFE with no exports and a benchmark must not be a
+ * reason to carve it up. tools/test-cjs-shim.js asserts these are equal
+ * to the ones graph.js actually declares, so the copy cannot drift
+ * silently -- if you change one, change both and the test will tell you
+ * if you missed.
+ * ------------------------------------------------------------------ */
+var K = {
+	LABEL_MIN_PX: 13,
+	LABEL_MAX_PX: 28,
+	LABEL_PER_RADIUS: 0.85,
+	LABEL_FIT: 1.9,
+	LABEL_PAD: 1,
+	LABEL_INK: 0.72,
+	LABEL_STICKY: 0.85,
+	LABEL_REF_PX: 100,
+};
+var SIZING = {
+	min: K.LABEL_MIN_PX, max: K.LABEL_MAX_PX,
+	perRadius: K.LABEL_PER_RADIUS, fit: K.LABEL_FIT,
+};
+var NODE_REL_SIZE = 4;
+var HALO_RATIO = 0.3;   // drawLabel: ctx.lineWidth = px * 0.3 / globalScale
+
+var el = function (id) { return document.getElementById(id); };
+var cv = el('cv');
+var ctx = cv.getContext('2d');
+
+/* Deterministic input: two runs of the same seed are comparable, which is
+ * the whole point of an A/B. Mulberry32 -- small, and good enough for
+ * positions nobody is doing statistics on. */
+function rng(seed) {
+	var a = seed >>> 0;
+	return function () {
+		a = (a + 0x6D2B79F5) >>> 0;
+		var t = Math.imul(a ^ (a >>> 15), 1 | a);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+var SURNAMES = ['Smith', 'Kucsko', 'Nakamura', 'Ivanov', 'Okafor', 'Dubois',
+	'vanDerBerg', 'Schmidt', 'Rossi', 'Tanaka', 'Lindqvist', 'Ferreira',
+	'OConnell', 'Bhattacharya', 'Weiss', 'Almeida'];
+
+/** A graph shaped like a real one: heavy-tailed local citation counts, so a
+ *  few papers are large and named early and most are specks. */
+function makeGraph(n, seed) {
+	var r = rng(seed);
+	var nodes = [];
+	for (var i = 0; i < n; i++) {
+		// Pareto-ish: most near zero, a thin tail into the hundreds.
+		var inDeg = Math.floor(Math.pow(r(), 6) * 220);
+		var label = SURNAMES[Math.floor(r() * SURNAMES.length)]
+			+ (1975 + Math.floor(r() * 50))
+			+ (r() < 0.18 ? String.fromCharCode(97 + Math.floor(r() * 4)) : '');
+		nodes.push({
+			x: (r() * 2 - 1) * 2200, y: (r() * 2 - 1) * 2200,
+			inDeg: inDeg, label: label,
+			val: 1 + inDeg * 2,
+			_labelLit: 0, _labelWant: 0, _per: 0, _measured: null,
+		});
+	}
+	// Edges, for the backdrop only -- the layout is not being benchmarked.
+	var links = [];
+	for (var j = 0; j < n * 1.4; j++) {
+		links.push([nodes[Math.floor(r() * n)], nodes[Math.floor(r() * n)]]);
+	}
+	return { nodes: nodes, links: links };
+}
+
+function nodeRadius(n) { return Math.sqrt(n.val) * NODE_REL_SIZE; }
+
+/** graph.js labelWidthPer(), verbatim in effect. */
+function widthPer(n) {
+	if (n._measured !== n.label) {
+		ctx.font = K.LABEL_REF_PX + 'px sans-serif';
+		n._per = ctx.measureText(n.label).width / K.LABEL_REF_PX;
+		n._measured = n.label;
+	}
+	return n._per;
+}
+
+/* ------------------------------------------------------------------ *
+ * The two phases, kept separately timeable.
+ * ------------------------------------------------------------------ */
+
+var pass = ZGLabels.pass();
+var sizeOut = { px: 0, w: 0 };
+var draw = [];
+
+/**
+ * reserveLabels(), minus the parts that read live UI state. `rule` picks the
+ * box: 'now' is what ships, 'circle' is the rule it replaced (node circle
+ * unioned in, 3px pad, full em height) so the two can be compared on the same
+ * canvas rather than across two Node runs.
+ */
+function place(g, zoom, W, H, rule) {
+	var pad = rule === 'circle' ? 3 : K.LABEL_PAD;
+	pass.begin(Math.max(24, 5 * K.LABEL_MIN_PX),
+		ZGLabels.capacity(W, H, 2 * K.LABEL_MIN_PX, K.LABEL_MIN_PX + pad), 0, 0);
+	draw.length = 0;
+	var nodes = g.order;
+	for (var i = 0; i < nodes.length; i++) {
+		var n = nodes[i];
+		if (pass.full()) { n._labelWant = 0; continue; }
+		var x = n.x * zoom + W / 2;
+		var y = n.y * zoom + H / 2;
+		var r = nodeRadius(n) * zoom;
+		var m = ZGLabels.size(r, widthPer(n), SIZING, sizeOut);
+		var hw, hh;
+		if (rule === 'circle') {
+			hw = Math.max(m.w / 2 + pad, r);
+			hh = Math.max(m.px / 2 + pad, r);
+		} else {
+			hw = m.w / 2 + pad;
+			hh = m.px * K.LABEL_INK / 2 + pad;
+		}
+		n._labelWant = 0;
+		if (x + hw < 0 || x - hw > W || y + hh < 0 || y - hh > H) continue;
+		var k = n._labelLit > 0 ? K.LABEL_STICKY : 1;
+		if (pass.hits(x - hw * k, y - hh * k, x + hw * k, y + hh * k)) continue;
+		pass.claim(x - hw, y - hh, x + hw, y + hh);
+		n._labelWant = 1;
+		n._px = m.px;
+		n._sx = x; n._sy = y;
+		draw.push(n);
+	}
+	// Settled, not mid-fade: a benchmark measures the steady state, and a
+	// fade would make every frame paint a different number of labels.
+	for (var j = 0; j < draw.length; j++) draw[j]._labelLit = 1;
+	return draw.length;
+}
+
+/**
+ * drawLabel()'s paint, for every winner. The sequence and the state changes
+ * are what graph.js issues -- halo stroke first, then the fill -- because the
+ * question this page exists to answer is what that sequence costs, and a
+ * simplified stand-in would answer a different one.
+ */
+function paint(zoom, halo) {
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.lineJoin = 'round';
+	for (var i = 0; i < draw.length; i++) {
+		var n = draw[i];
+		var px = n._px;
+		ctx.font = px + 'px sans-serif';
+		if (halo) {
+			ctx.lineWidth = px * HALO_RATIO;
+			ctx.strokeStyle = css('--bg');
+			ctx.strokeText(n.label, n._sx, n._sy);
+		}
+		ctx.fillStyle = css('--fg');
+		ctx.fillText(n.label, n._sx, n._sy);
+	}
+}
+
+/** The graph under the labels, so a frame cost means something. Not tuned to
+ *  match force-graph exactly -- it is context, not the measurement. */
+function backdrop(g, zoom, W, H) {
+	var i, n;
+	ctx.strokeStyle = 'rgba(128,128,140,0.30)';
+	ctx.lineWidth = 1;
+	ctx.beginPath();
+	for (i = 0; i < g.links.length; i++) {
+		var a = g.links[i][0], b = g.links[i][1];
+		ctx.moveTo(a.x * zoom + W / 2, a.y * zoom + H / 2);
+		ctx.lineTo(b.x * zoom + W / 2, b.y * zoom + H / 2);
+	}
+	ctx.stroke();
+	ctx.fillStyle = 'rgba(90,140,200,0.75)';
+	for (i = 0; i < g.nodes.length; i++) {
+		n = g.nodes[i];
+		var r = nodeRadius(n) * zoom;
+		var x = n.x * zoom + W / 2, y = n.y * zoom + H / 2;
+		if (x + r < 0 || x - r > W || y + r < 0 || y - r > H) continue;
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, 6.283185307179586);
+		ctx.fill();
+	}
+}
+
+var _css = {};
+function css(v) {
+	if (!(v in _css)) {
+		_css[v] = (getComputedStyle(document.documentElement)
+			.getPropertyValue(v) || '').trim() || '#888';
+	}
+	return _css[v];
+}
+
+/* ------------------------------------------------------------------ *
+ * Timing.
+ *
+ * Canvas drawing is pipelined: fillText queues work and returns long
+ * before a glyph reaches a pixel, so timing the calls alone measures
+ * command submission and reports a fiction. Reading one pixel back
+ * forces the queue to drain, which is what makes these numbers real.
+ * Its own cost is measured separately and subtracted.
+ * ------------------------------------------------------------------ */
+function flush() { ctx.getImageData(0, 0, 1, 1); }
+
+function flushCost() {
+	var i, t;
+	for (i = 0; i < 10; i++) flush();
+	t = performance.now();
+	for (i = 0; i < 50; i++) flush();
+	return (performance.now() - t) / 50;
+}
+
+function stats(xs) {
+	var s = xs.slice().sort(function (a, b) { return a - b; });
+	var q = function (p) { return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+	var sum = 0;
+	for (var i = 0; i < s.length; i++) sum += s[i];
+	return { mean: sum / s.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), min: s[0] };
+}
+
+function clear(W, H) {
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.fillStyle = css('--bg');
+	ctx.fillRect(0, 0, W, H);
+}
+
+/**
+ * One configuration, measured.
+ *
+ * Phases are timed in one pass rather than in separate loops: the placement
+ * pass warms exactly the caches the paint then uses, and splitting them would
+ * measure a cold canvas that no real frame ever sees.
+ */
+function measure(opt, done) {
+	var g = opt.graph, W = opt.W, H = opt.H, zoom = opt.zoom;
+	var tPass = [], tPaint = [], tBack = [], tFrame = [];
+	var fc = flushCost();
+	var shown = 0;
+	var i = 0;
+	var total = opt.warm + opt.runs;
+
+	function one() {
+		var t0, t1, t2, t3, t4;
+		clear(W, H);
+		t0 = performance.now();
+		shown = place(g, zoom, W, H, opt.rule);
+		t1 = performance.now();
+		if (opt.backdrop) backdrop(g, zoom, W, H);
+		flush();
+		t2 = performance.now();
+		paint(zoom, opt.halo);
+		flush();
+		t3 = performance.now();
+		if (i >= opt.warm) {
+			tPass.push(t1 - t0);
+			tBack.push(Math.max(0, t2 - t1 - fc));
+			tPaint.push(Math.max(0, t3 - t2 - fc));
+			tFrame.push(Math.max(0, t3 - t0 - 2 * fc));
+		}
+		i++;
+		if (i < total) {
+			if (opt.raf) requestAnimationFrame(one);
+			else one();
+			return;
+		}
+		done({
+			shown: shown, flushCost: fc,
+			pass: stats(tPass), paint: stats(tPaint),
+			backdrop: stats(tBack), frame: stats(tFrame),
+		});
+	}
+	// Yield once so the button repaints as disabled before a long tight loop.
+	setTimeout(one, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * Zoom levels, chosen to span the cases that behave differently: filling
+ * the pane, the whole graph in view, and pulled back past readability.
+ * ------------------------------------------------------------------ */
+var ZOOMS = [1, 0.5, 0.2, 0.08];
+
+function opts() {
+	var W = +el('vw').value, H = +el('vh').value;
+	cv.width = W; cv.height = H;
+	cv.style.width = Math.min(W, 700) + 'px';
+	cv.style.height = 'auto';
+	var g = makeGraph(+el('nodes').value, +el('seed').value);
+	// Ranked once, as graph.js does per render: by local citations, then size.
+	g.order = ZGLabels.order(g.nodes, function (n) { return [n.inDeg, nodeRadius(n)]; });
+	return {
+		graph: g, W: W, H: H,
+		runs: +el('runs').value, warm: +el('warm').value,
+		backdrop: el('backdrop').checked, raf: el('raf').checked,
+		halo: true, rule: 'now',
+	};
+}
+
+function table(cols, rows) {
+	var h = '<table><tr>';
+	for (var i = 0; i < cols.length; i++) h += '<th>' + cols[i] + '</th>';
+	h += '</tr>';
+	for (var r = 0; r < rows.length; r++) {
+		h += '<tr>';
+		for (var c = 0; c < rows[r].length; c++) {
+			var v = rows[r][c];
+			var cls = (v && v.hi) ? ' class="hi"' : '';
+			h += '<td' + cls + '>' + (v && v.hi ? v.v : v) + '</td>';
+		}
+		h += '</tr>';
+	}
+	return h + '</table>';
+}
+
+function ms(x) { return x.toFixed(3); }
+/** 16.7 ms is one frame at 60 Hz; past that the graph is dropping frames. */
+function budget(x) { return x > 16.7 ? { hi: 1, v: ms(x) } : ms(x); }
+
+function busy(on) {
+	el('run').disabled = on; el('sweep').disabled = on; el('ab').disabled = on;
+	el('log').textContent = on ? 'running…' : '';
+}
+
+/** Run a list of configurations one after another without blocking the UI. */
+function series(list, step, done) {
+	var out = [], i = 0;
+	(function next() {
+		if (i >= list.length) return done(out);
+		el('log').textContent = 'running… ' + (i + 1) + '/' + list.length;
+		step(list[i], function (res) { out.push(res); i++; next(); });
+	}());
+}
+
+el('run').onclick = function () {
+	busy(true);
+	var base = opts();
+	series(ZOOMS, function (zoom, cb) {
+		var o = Object.assign({}, base, { zoom: zoom });
+		measure(o, function (r) { cb({ zoom: zoom, r: r }); });
+	}, function (all) {
+		var rows = all.map(function (a) {
+			var r = a.r;
+			return [a.zoom, r.shown,
+				ms(r.pass.p50),
+				ms(r.paint.p50), ms(r.paint.p95),
+				r.shown ? (r.paint.p50 * 1000 / r.shown).toFixed(1) : '—',
+				base.backdrop ? ms(r.backdrop.p50) : '—',
+				budget(r.frame.p50), budget(r.frame.p95)];
+		});
+		el('out').innerHTML = '<h2>Frame cost by zoom</h2>' + table(
+			['zoom', 'names', 'pass p50', 'paint p50', 'paint p95', 'µs/name',
+				'backdrop p50', 'frame p50', 'frame p95'], rows)
+			+ note(all[0].r);
+		busy(false);
+	});
+};
+
+el('sweep').onclick = function () {
+	busy(true);
+	var base = opts();
+	// Zoom 0.5 is where the packing accepts the most names, so it is the
+	// honest place to ask what a name costs.
+	series([0.5], function (zoom, cb) {
+		var o = Object.assign({}, base, { zoom: zoom });
+		measure(o, function (withHalo) {
+			o = Object.assign({}, o, { halo: false });
+			measure(o, function (noHalo) { cb({ withHalo: withHalo, noHalo: noHalo }); });
+		});
+	}, function (all) {
+		var a = all[0].withHalo, b = all[0].noHalo;
+		el('out').innerHTML = '<h2>What the halo costs</h2>' + table(
+			['variant', 'names', 'paint p50', 'µs/name'],
+			[['halo + fill', a.shown, ms(a.paint.p50), (a.paint.p50 * 1000 / a.shown).toFixed(1)],
+			 ['fill only', b.shown, ms(b.paint.p50), (b.paint.p50 * 1000 / b.shown).toFixed(1)],
+			 ['halo share', '', ms(a.paint.p50 - b.paint.p50),
+				(100 * (1 - b.paint.p50 / a.paint.p50)).toFixed(0) + '%']])
+			+ '<p class="sub">The halo is a second full text rasterisation with a '
+			+ 'wide round-joined stroke. If it dominates, dropping it below some '
+			+ 'type size is the cheapest win available.</p>';
+		busy(false);
+	});
+};
+
+el('ab').onclick = function () {
+	busy(true);
+	var base = opts();
+	var list = [];
+	ZOOMS.forEach(function (z) {
+		list.push({ zoom: z, rule: 'circle' });
+		list.push({ zoom: z, rule: 'now' });
+	});
+	series(list, function (c, cb) {
+		var o = Object.assign({}, base, { zoom: c.zoom, rule: c.rule });
+		measure(o, function (r) { cb({ zoom: c.zoom, rule: c.rule, r: r }); });
+	}, function (all) {
+		var rows = [];
+		for (var i = 0; i < all.length; i += 2) {
+			var was = all[i], now = all[i + 1];
+			rows.push([was.zoom,
+				was.r.shown, now.r.shown,
+				(now.r.shown / Math.max(1, was.r.shown)).toFixed(2) + '×',
+				ms(was.r.paint.p50), ms(now.r.paint.p50),
+				budget(was.r.frame.p50), budget(now.r.frame.p50)]);
+		}
+		el('out').innerHTML = '<h2>Box rule: reserving circles vs. names only</h2>'
+			+ table(['zoom', 'names was', 'names now', 'more', 'paint was',
+				'paint now', 'frame was', 'frame now'], rows)
+			+ '<p class="sub">“was” unions the node circle into every reserved box '
+			+ 'with 3px of pad, which is what suppressed names over proximity. '
+			+ '“now” reserves the glyphs alone. The names column is the point; the '
+			+ 'paint columns are what that costs.</p>';
+		busy(false);
+	});
+};
+
+function note(r) {
+	return '<p class="sub">Flush overhead measured at ' + ms(r.flushCost)
+		+ ' ms and subtracted from every figure. Amber marks a frame over the '
+		+ '16.7 ms that 60 Hz allows.</p>';
+}
+
+el('env').textContent = 'devicePixelRatio ' + (window.devicePixelRatio || 1)
+	+ ' · ' + (navigator.userAgent.indexOf('Firefox') > -1 ? 'Gecko' : 'non-Gecko engine — numbers will not match Zotero')
+	+ ' · ' + navigator.userAgent;
+</script>
+</body>
+</html>

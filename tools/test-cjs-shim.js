@@ -854,6 +854,39 @@ check('label sizing shrinks to the node but never below the floor', () => {
 	if (Math.abs(long.w - long.px * 4) > 1e-9) throw new Error('width disagrees with size');
 });
 
+check('the rendering benchmark measures the constants that actually ship', () => {
+	// tools/bench/labels.html copies the label constants out of graph.js,
+	// because graph.js is one IIFE with no exports and a benchmark is not a
+	// good enough reason to carve it up. A copy that drifts turns the whole
+	// tool into a confident measurement of code nobody runs, and drift is
+	// silent -- so it is caught here instead.
+	const gjs = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const bench = fs.readFileSync(
+		path.join(__dirname, 'bench/labels.html'), 'utf8');
+	const names = ['LABEL_MIN_PX', 'LABEL_MAX_PX', 'LABEL_PER_RADIUS', 'LABEL_FIT',
+		'LABEL_PAD', 'LABEL_INK', 'LABEL_STICKY', 'LABEL_REF_PX'];
+	for (const name of names) {
+		const inSrc = new RegExp('const\\s+' + name + '\\s*=\\s*([-\\d.]+)\\s*;').exec(gjs);
+		if (!inSrc) throw new Error('graph.js no longer declares ' + name);
+		const inBench = new RegExp('\\b' + name + '\\s*:\\s*([-\\d.]+)\\s*,').exec(bench);
+		if (!inBench) throw new Error('the benchmark does not carry ' + name);
+		if (inSrc[1] !== inBench[1]) {
+			throw new Error(name + ' is ' + inSrc[1] + ' in graph.js but '
+				+ inBench[1] + ' in the benchmark');
+		}
+	}
+	// The halo width is a bare literal in drawLabel rather than a named
+	// constant, and it is half of what a label costs to paint -- so the
+	// benchmark's copy of it is worth pinning too.
+	const halo = /ctx\.lineWidth = \(px \* ([\d.]+)\) \/ globalScale;/.exec(gjs);
+	if (!halo) throw new Error('drawLabel no longer sets a halo width the bench can track');
+	const benchHalo = /HALO_RATIO = ([\d.]+)/.exec(bench);
+	if (!benchHalo || benchHalo[1] !== halo[1]) {
+		throw new Error('halo ratio is ' + halo[1] + ' in graph.js but '
+			+ (benchHalo ? benchHalo[1] : 'absent') + ' in the benchmark');
+	}
+});
+
 // --- chrome-side modules ---------------------------------------------------
 
 check('lib/ modules load through the shim', () => {

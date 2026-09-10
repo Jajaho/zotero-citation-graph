@@ -1,6 +1,6 @@
 {
   "name": "zotero-citation-graph",
-  "version": "0.43.0",
+  "version": "0.43.1",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
   "license": "AGPL-3.0-or-later",
@@ -16,6 +16,7 @@
     "check-version": "node tools/check-version.js",
     "verify": "node tools/check-version.js && node tools/test-cjs-shim.js",
     "build": "node tools/build-xpi.js",
+    "bench": "node tools/bench/open.js",
     "strategies": "node tools/cli.js --list",
     "install-dev": "powershell -ExecutionPolicy Bypass -File tools/install-dev.ps1"
   }
