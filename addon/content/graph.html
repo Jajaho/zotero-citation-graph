@@ -109,11 +109,19 @@
 		     was equally far away: the colour menu, the strategy list and the
 		     force sliders shared one fold and one scroll position, and the one
 		     you wanted was reliably below the edge of a 200px pane. Four
-		     sections give each question somewhere to be asked -- what pulls
-		     what, which items are here at all, how the ones that are here get
-		     drawn, and where the edges were read from -- and each remembers its
-		     own fold, so the forces you have settled can be put away without
-		     taking the strategies you are still arguing with down with them.
+		     sections give each question somewhere to be asked -- which items are
+		     here at all, where the edges were read from, what moves them, and
+		     how the ones that are here get drawn -- and each remembers its own
+		     fold, so the physics you have settled can be put away without taking
+		     the strategies you are still arguing with down with them.
+
+		     Graph Physics holds two sections of its own, and is the only one
+		     that does. The split is between what decides where a node goes and
+		     what decides how much movement it has to get there -- two questions
+		     that are read together and answered at different moments, which is
+		     an argument for one pane with a seam in it rather than either one
+		     list of seven sliders or two panes that have to be found
+		     separately.
 
 		     One scroller for all four, #side-body, so a long strategy list is
 		     reached by scrolling the pane rather than a box inside it. The
@@ -226,79 +234,127 @@
 					</div>
 				</div>
 
-				<!-- Forces. Layout and nothing else: no node enters or leaves the
-				     graph when one of these moves, and none of them costs a rebuild. -->
-				<div class="section" id="sec-forces">
-					<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
+				<!-- The simulation, in two halves. Layout and nothing else: no node
+				     enters or leaves the graph when any of this moves, and none of it
+				     costs a rebuild. The forces decide where a node is going; the
+				     energies decide how much movement there is to get there with, and
+				     when it runs out. Two questions, and answering one while reading
+				     the other is the reason they are one pane and not two.
+
+				     Nested sections rather than one long list: six sliders under a
+				     single header is a wall, and the two halves are asked at
+				     different moments -- the forces when the shape is wrong, the
+				     energies when the motion is. -->
+				<div class="section" id="sec-physics">
+					<button class="section-toggle" id="sec-physics-toggle" type="button" aria-expanded="true" aria-controls="sec-physics-body" title="Collapse this section">
 						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-forces">Force Adjustment</span>
+						<span class="section-title" data-zg-str="section-physics">Graph Physics</span>
 					</button>
-					<div class="section-body" id="sec-forces-body">
-						<div class="group">
-							<!-- A dense collection packs into balls because every edge pulls
-							     at full strength; slackening the edges lets charge repulsion
-							     win and the clusters open up far enough to read. -->
-							<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
-								<span data-zg-str="link-pull">Edge pull</span>
-								<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
-								<span id="pull-value">1.00</span>
-							</label>
-							<!-- The other half of the same trade. This is the pull that stops a
-							     paper nothing cites from drifting off the canvas forever, so at 0
-							     the unconnected ones do exactly that; turned up, the whole graph
-							     gathers into a tighter disc. -->
-							<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
-								<span data-zg-str="center-pull">Centre pull</span>
-								<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
-								<span id="center-value">1.00</span>
-							</label>
-							<!-- Every anchor's strength at once. It sat on each flag's own
-							     card once, which made one question a per-anchor one: a graph
-							     with four groups had four answers to "how hard does a group
-							     pull", and none of them was where the other layout sliders
-							     are. It is the same trade as the two above -- how far a paper
-							     may be dragged from where its citations would put it -- so it
-							     belongs beside them. At 0 every anchor names its papers and
-							     moves none of them. -->
-							<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
-								<span data-zg-str="group-pull">Group pull</span>
-								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
-								<span id="group-pull-value">0.40</span>
-							</label>
-							<!-- A pin's reach, expressed the only way that keeps it about the
-							     pinned paper: the links that touch it pull harder, so the works
-							     citing or cited by it come to it and nothing else is disturbed.
-							     At 0 a pin holds only the node it is on, which is what a pin
-							     has always meant -- so that is the default. -->
-							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
-								<span data-zg-str="pin-pull">Pin pull</span>
-								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
-								<span id="pin-pull-value">0.00</span>
-							</label>
-							<!-- How much of the graph a drag sets in motion. force-graph holds
-							     the layout's energy at a third of a cold start's for as long as
-							     a node is carried -- not a push it spends and recovers from but
-							     a tap left running, every force acting on every node on every
-							     tick for the whole gesture. That is why dragging one paper
-							     churns the whole picture however settled it was. 1 is that; 0
-							     holds everything but the node in your hand. -->
-							<label id="drag-alpha-label" data-zg-title="drag-alpha-hint" title="How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.">
-								<span data-zg-str="drag-alpha">Drag energy</span>
-								<input id="drag-alpha" type="range" min="0" max="1" step="0.05" value="0.2"/>
-								<span id="drag-alpha-value">0.20</span>
-							</label>
-							<!-- When the layout is allowed to stop. Not a force: every slider
-							     above decides where the nodes go, and this one decides how long
-							     they are given to get there. The layout's energy falls every tick
-							     and the engine stops once it is under this; the scale is
-							     logarithmic because the energy is, and its left end is 0, which
-							     never stops at all. -->
-							<label id="settle-label" data-zg-title="settle-hint" title="The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.">
-								<span data-zg-str="settle">Stop at energy</span>
-								<input id="settle" type="range" min="0" max="3" step="0.25" value="1"/>
-								<span id="settle-value">0.001</span>
-							</label>
+					<div class="section-body" id="sec-physics-body">
+					<div class="section" id="sec-forces">
+						<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
+							<span class="section-chevron"></span>
+							<span class="section-title" data-zg-str="section-forces">Force Adjustment</span>
+						</button>
+						<div class="section-body" id="sec-forces-body">
+							<div class="group">
+								<!-- A dense collection packs into balls because every edge pulls
+								     at full strength; slackening the edges lets charge repulsion
+								     win and the clusters open up far enough to read. -->
+								<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
+									<span data-zg-str="link-pull">Edge pull</span>
+									<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
+									<span id="pull-value">1.00</span>
+								</label>
+								<!-- The other half of the same trade. This is the pull that stops a
+								     paper nothing cites from drifting off the canvas forever, so at 0
+								     the unconnected ones do exactly that; turned up, the whole graph
+								     gathers into a tighter disc. -->
+								<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
+									<span data-zg-str="center-pull">Centre pull</span>
+									<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
+									<span id="center-value">1.00</span>
+								</label>
+								<!-- Every anchor's strength at once. It sat on each flag's own
+								     card once, which made one question a per-anchor one: a graph
+								     with four groups had four answers to "how hard does a group
+								     pull", and none of them was where the other layout sliders
+								     are. It is the same trade as the two above -- how far a paper
+								     may be dragged from where its citations would put it -- so it
+								     belongs beside them. At 0 every anchor names its papers and
+								     moves none of them. -->
+								<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
+									<span data-zg-str="group-pull">Group pull</span>
+									<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
+									<span id="group-pull-value">0.40</span>
+								</label>
+								<!-- A pin's reach, expressed the only way that keeps it about the
+								     pinned paper: the links that touch it pull harder, so the works
+								     citing or cited by it come to it and nothing else is disturbed.
+								     At 0 a pin holds only the node it is on, which is what a pin
+								     has always meant -- so that is the default. -->
+								<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
+									<span data-zg-str="pin-pull">Pin pull</span>
+									<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
+									<span id="pin-pull-value">0.00</span>
+								</label>
+							</div>
 						</div>
+					</div>
+
+					<!-- What there is to move with, rather than what does the moving.
+					     Alpha, in the engine's own terms: a multiplier every force is
+					     handed on every tick. A settled graph is a cooled one and not a
+					     still one -- its forces have not cancelled, they are simply being
+					     multiplied by almost nothing -- which is why all three of these
+					     are the same question asked at three moments. -->
+					<div class="section" id="sec-energy">
+						<button class="section-toggle" id="sec-energy-toggle" type="button" aria-expanded="true" aria-controls="sec-energy-body" title="Collapse this section">
+							<span class="section-chevron"></span>
+							<span class="section-title" data-zg-str="section-energy">Energy</span>
+						</button>
+						<div class="section-body" id="sec-energy-body">
+							<div class="group">
+								<!-- How much of the graph a drag sets in motion. force-graph holds
+								     the layout's energy at a third of a cold start's for as long as
+								     a node is carried -- not a push it spends and recovers from but
+								     a tap left running, every force acting on every node on every
+								     tick for the whole gesture. That is why dragging one paper
+								     churns the whole picture however settled it was. 1 is that; 0
+								     holds everything but the node in your hand. -->
+								<label id="drag-alpha-label" data-zg-title="drag-alpha-hint" title="How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.">
+									<span data-zg-str="drag-alpha">Drag energy</span>
+									<input id="drag-alpha" type="range" min="0" max="1" step="0.05" value="0.2"/>
+									<span id="drag-alpha-value">0.20</span>
+								</label>
+								<!-- When the layout is allowed to stop. Not a force: every slider
+								     above decides where the nodes go, and this one decides how long
+								     they are given to get there. The layout's energy falls every tick
+								     and the engine stops once it is under this; the scale is
+								     logarithmic because the energy is, and its left end is 0, which
+								     never stops at all. -->
+								<label id="settle-label" data-zg-title="settle-hint" title="The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.">
+									<span data-zg-str="settle">Stop at energy</span>
+									<input id="settle" type="range" min="0" max="3" step="0.25" value="1"/>
+									<span id="settle-value">0.001</span>
+								</label>
+								<!-- The layout kept simmering, hands off.
+								     Dragging a node is the only gesture that holds the engine's
+								     alpha above zero, which is why a graph goes on arranging
+								     itself for as long as a node is held and stops when it is
+								     let go. This asks for that without the mouse: alpha is
+								     brought to the chosen level and pinned there, so the layout
+								     keeps working at a constant energy until it is turned off.
+								     At 0 it is off, and the stopping threshold above decides
+								     when the graph comes to rest as before. -->
+								<label id="hold-label" data-zg-title="hold-hint" title="Keep the layout working at a constant energy, the way it does while a node is held. At 0 it is off; higher simmers harder. It never stops on its own.">
+									<span data-zg-str="hold">Keep moving</span>
+									<input id="hold" type="range" min="0" max="0.3" step="0.01" value="0"/>
+									<span id="hold-value">off</span>
+								</label>
+							</div>
+						</div>
+					</div>
 					</div>
 				</div>
 

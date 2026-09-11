@@ -820,6 +820,34 @@ body {
 }
 
 /*
+ * A section inside a section: the two halves of Graph Physics.
+ *
+ * The heavy rule is what separates one PANE from the next, so a nested one
+ * gives it up and takes the lighter rule a group takes -- the same hierarchy
+ * core draws, --color-panedivider between sections and --fill-quinary within
+ * one. Its header is a step in and a weight lighter than the pane's own, so
+ * that reading down the sidebar the pane titles are still the ones that stand
+ * out and these read as what they are: two questions under one of them.
+ */
+.section .section {
+	border-bottom: 0;
+	border-top: 1px solid var(--fill-quinary);
+}
+
+.section-body > .section:first-child {
+	border-top: 0;
+}
+
+.section .section > .section-toggle {
+	font-weight: 400;
+	padding: 5px 0 5px 2px;
+}
+
+.section .section > .section-body {
+	padding: 0 0 4px 2px;
+}
+
+/*
  * The section headers.
  *
  * These are core's <collapsible-section> heads, which is what they now are: a

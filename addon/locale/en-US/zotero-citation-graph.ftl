@@ -40,6 +40,8 @@ zotero-citation-graph-section-expand = Show this section
 
 # What each anchor, edge and node is pulled by. Layout only: nothing enters or
 # leaves the graph when one of these moves.
+zotero-citation-graph-section-physics = Graph Physics
+zotero-citation-graph-section-energy = Energy
 zotero-citation-graph-section-forces = Force Adjustment
 # Which items are on the canvas at all.
 zotero-citation-graph-section-items = Item Selection
@@ -89,6 +91,9 @@ zotero-citation-graph-pin-pull = Pin pull
 zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
 zotero-citation-graph-drag-alpha = Drag energy
 zotero-citation-graph-drag-alpha-hint = How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.
+zotero-citation-graph-hold = Keep moving
+zotero-citation-graph-hold-hint = Keep the layout working at a constant energy, the way it does while a node is held. At 0 it is off; higher simmers harder. It never stops on its own.
+zotero-citation-graph-hold-off = off
 zotero-citation-graph-settle = Stop at energy
 zotero-citation-graph-settle-hint = The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.
 zotero-citation-graph-settle-never = never

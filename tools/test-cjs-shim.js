@@ -3819,7 +3819,9 @@ function referencedIds() {
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;
 	for (const src of files) {
-		for (const call of src.matchAll(/\b(?:t|tr|attr)\(([^)]*)\)/g)) {
+		// word() is t() with the markup's English standing in until the strings
+		// land -- an id asked for by another name, and still asked for.
+		for (const call of src.matchAll(/\b(?:t|tr|attr|word)\(([^)]*)\)/g)) {
 			for (const s of call[1].matchAll(idLike)) ids.add(s[1]);
 		}
 	}

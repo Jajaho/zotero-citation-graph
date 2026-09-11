@@ -50,7 +50,10 @@
 	 * markup is the source of the order and of the titles; this list is only
 	 * what has to be wired, so a fifth section costs a name here.
 	 */
-	const SECTIONS = ['items', 'strategies', 'forces', 'display'];
+	// Every collapsible section, nested or not: the machinery below is the same
+	// for both -- a header that toggles a body, remembered by name -- and
+	// Graph Physics holding two of them changes nothing about any of it.
+	const SECTIONS = ['items', 'strategies', 'physics', 'forces', 'energy', 'display'];
 
 	// Whether a section was left collapsed, remembered across openings, one
 	// answer per section: putting the forces away is not putting the strategies
@@ -76,6 +79,8 @@
 	const DRAG_ALPHA_KEY = 'zg.drag.alpha';
 	/** And for when the layout is allowed to stop. */
 	const SETTLE_KEY = 'zg.settle';
+	/** And for the energy it is held at when it is not allowed to. */
+	const HOLD_KEY = 'zg.hold';
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
@@ -131,6 +136,13 @@
 	 * to check whether the strings have arrived before it can draw.
 	 */
 	const t = (id, args) => ZGL10n.t(id, args);
+
+	/** A word this file paints into the page, rather than one it hands to a
+	 *  tooltip. Before the strings land t() answers with the id it was asked
+	 *  for -- fine for a label nobody is reading yet, and wrong on screen -- so
+	 *  the English the markup already carries stands in until they do. Both
+	 *  callers are repainted by the onReady block at the foot of this file. */
+	const word = (id, english) => (ZGL10n.loaded() ? t(id) : english);
 
 	// nodeFilters.js is pure and stays that way: it is handed the translator
 	// rather than reaching for one, so the same file still runs under Node with
@@ -283,6 +295,107 @@
 	const COOLDOWN_MS = 15000;
 
 	/**
+	 * Keep the layout working at a constant energy, hands off.
+	 *
+	 * Dragging a node is the only gesture in the page that holds alpha above
+	 * zero -- force-graph pins the alpha TARGET at 0.3 for as long as the button
+	 * is down -- which is why a graph goes on arranging itself while a node is
+	 * held and stops being rearranged when it is let go. Someone who wants that
+	 * without the mouse is not asking for a threshold: a threshold decides when
+	 * motion ENDS, and the thing keeping it going is a tap. This is the tap.
+	 *
+	 * The target is out of reach, but the tick that reads it is not:
+	 *
+	 *     alpha += (alphaTarget - alpha) * alphaDecay
+	 *
+	 * at a decay of 0 that whole term is 0, whatever the target -- so alpha
+	 * stops moving and stays exactly where it stands. Bring it to the level
+	 * asked for, pin the decay at 0, and the layout simmers there until
+	 * something turns it off. d3AlphaDecay is one force-graph does re-export.
+	 *
+	 * Which leaves reading alpha, since holding it needs to know where it is.
+	 * d3 hands the live alpha to every registered force on every tick, and this
+	 * page registers three of its own -- so the centre pull notes it on the way
+	 * past and holdEnergy() reads it one tick later. Nothing is sampled or
+	 * estimated: it is the number the engine just used.
+	 */
+	function holdLevel() {
+		let v = Number(elHold.value);
+		return Number.isFinite(v) && v > 0 ? v : 0;
+	}
+
+	/** The alpha d3 last ran the forces at. See holdLevel(). */
+	let lastAlpha = null;
+
+	/** How near the level counts as being at it. A hold that re-aimed on every
+	 *  tick would set d3AlphaDecay sixty times a second to no visible end. */
+	const HOLD_SLOP = 0.02;
+
+	/**
+	 * One tick of the hold, from the engine's own tick hook.
+	 *
+	 * Three cases, and only one of them is the usual one. Above the level, the
+	 * decay that lands on it next tick is 1 - level/alpha, so a graph reheated
+	 * by a slider comes back down to the simmer in a single tick instead of
+	 * riding alpha 1 for the rest of the session. At the level, the decay is 0
+	 * and nothing moves it. Below it -- a graph that had already cooled when the
+	 * hold was switched on -- alpha cannot be raised from out here at all, so
+	 * this borrows the shed: freeze the picture, reheat behind it, and spend
+	 * back down to the level over a few invisible ticks. See shedTo().
+	 *
+	 * While a node is carried the decay is pinned at 0 and nothing else is done.
+	 * force-graph is pushing the target to 0.3 on every drag event, and with the
+	 * decay at 0 that push is worth nothing -- so a held graph drags at the
+	 * energy it is held at, which is the point of holding it.
+	 */
+	function holdEnergy() {
+		if (!fg || !PERF.physics) return;
+		let level = holdLevel();
+		if (!level) return;
+		// A shed is a cooling schedule of its own, and a short one. Let it land.
+		if (shedLeft) return;
+		if (dragNode) {
+			fg.d3AlphaDecay(0);
+			return;
+		}
+		let a = lastAlpha;
+		if (a == null) return;
+		if (a > level * (1 + HOLD_SLOP)) fg.d3AlphaDecay(1 - level / a);
+		else if (a < level * (1 - HOLD_SLOP)) shedTo(level);
+		else fg.d3AlphaDecay(0);
+	}
+
+	/**
+	 * Switching the hold on or off.
+	 *
+	 * On: the engine has to be allowed to run forever -- no floor to stop under
+	 * and no clock to run out -- and then the tick hook does the rest. It needs
+	 * a tick to do it in, so a graph that has already stopped is started here.
+	 *
+	 * Off: the cooling schedule the engine came with, and the floor and the
+	 * clock the settle slider asks for. A decay left at 0 would be a layout that
+	 * never cools again, which is the one way this could outlive being turned
+	 * off.
+	 */
+	function applyHold() {
+		let level = holdLevel();
+		elHoldValue.textContent = level ? level.toFixed(2) : word('hold-off', 'off');
+		if (!fg) return;
+		if (level) {
+			fg.cooldownTime(Infinity).cooldownTicks(Infinity);
+			holdForCollide();
+			// Only when there is nothing to keep going: reheating a graph that
+			// is already moving would throw it around for no reason.
+			if (lastAlpha == null || lastAlpha < level * (1 - HOLD_SLOP)) shedTo(level);
+		}
+		else {
+			if (baseDecay !== null) fg.d3AlphaDecay(baseDecay);
+			holdForCollide();
+			applySettle();
+		}
+	}
+
+	/**
 	 * The floor the panel asks for.
 	 *
 	 * Logarithmic, because alpha is: it falls by a fixed fraction per tick, so
@@ -406,6 +519,9 @@
 			.d3AlphaMin(stopAlpha())
 			.cooldownTime(stopAlpha() ? COOLDOWN_MS : Infinity);
 		alphaMinNow = stopAlpha();
+		// Everything above is the cooling schedule a hold replaces, and this is
+		// one of the two paths that write it. Put the hold back over the top.
+		if (PERF.physics) applyHold();
 		fg.d3Force('collide', PERF.collide ? collide() : null);
 		// A graph handed the engine back has to be told to use it; one that has
 		// just lost it needs the frame that paints the halt.
@@ -546,6 +662,8 @@
 	let elDragAlphaValue = el('drag-alpha-value');
 	let elSettle = el('settle');
 	let elSettleValue = el('settle-value');
+	let elHold = el('hold');
+	let elHoldValue = el('hold-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolateDepth = el('isolate-depth');
@@ -2297,6 +2415,11 @@
 	function centerPull() {
 		let nodes = [];
 		function force(alpha) {
+			// The one place on the page where d3's live alpha is readable: it is
+			// handed to every force on every tick, and force-graph re-exports no
+			// getter for it. Noted before the early return below, because the
+			// hold needs it whether or not this force has anything to do.
+			lastAlpha = alpha;
 			// Once per tick, not once per node: it cannot change mid-tick, and at
 			// zero there is nothing for the loop to add.
 			let scale = centerScale();
@@ -2653,9 +2776,11 @@
 	 */
 	function applySettle() {
 		let a = stopAlpha();
-		elSettleValue.textContent = a ? String(Number(a.toPrecision(2))) : t('settle-never');
+		elSettleValue.textContent = a ? String(Number(a.toPrecision(2))) : word('settle-never', 'never');
 		if (!fg) return;
-		fg.cooldownTime(a ? COOLDOWN_MS : Infinity);
+		// A hold has already lifted the clock, and saying when to stop is not
+		// this slider's to answer while the layout is being kept going.
+		if (!holdLevel()) fg.cooldownTime(a ? COOLDOWN_MS : Infinity);
 		holdForCollide();
 	}
 
@@ -4104,6 +4229,7 @@
 	 */
 	function shed() {
 		holdForCollide();
+		holdEnergy();
 		if (!shedLeft || --shedLeft > 0) return;
 		thaw();
 	}
@@ -4137,7 +4263,10 @@
 	 */
 	function holdForCollide() {
 		if (!fg) return;
-		let floor = stopAlpha();
+		// A hold is a layout that does not stop, so there is no floor to stop
+		// under. Same for a carried node, and for circles still being pushed
+		// apart -- see the note above.
+		let floor = holdLevel() ? 0 : stopAlpha();
 		let want = dragNode || (PERF.collide && collideBusy && floor <= ALPHA_MIN) ? 0 : floor;
 		if (want === alphaMinNow) return;
 		alphaMinNow = want;
@@ -5227,6 +5356,13 @@
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
+	elHold.addEventListener('input', () => {
+		applyHold();
+		try {
+			window.localStorage.setItem(HOLD_KEY, elHold.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
 	elSettle.addEventListener('input', () => {
 		applySettle();
 		try {
@@ -6028,9 +6164,10 @@
 	 */
 	ZGL10n.onReady(() => {
 		for (let name of SECTIONS) setCollapsed(name, isCollapsed(name));
-		// One of the same: at the left end the settle readout is a word rather
-		// than a number, and a slider restored to it painted its id.
+		// One of the same: at each slider's left end the readout is a word
+		// rather than a number, and one restored to it painted its id.
 		applySettle();
+		applyHold();
 		// Same reason as the ones above: the sidebar toggle's tooltip depends on
 		// a state the markup cannot know, and a sidebar left open is the case
 		// where setSideOpen() never ran to say so in the user's language.
@@ -6091,6 +6228,15 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applySettle();
+
+	// After the settle slider, which it overrules: a hold restored from an
+	// earlier window has to be the last word on the engine's schedule.
+	try {
+		let saved = window.localStorage.getItem(HOLD_KEY);
+		if (saved !== null) elHold.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyHold();
 
 	try {
 		let saved = window.localStorage.getItem(DEPTH_KEY);
