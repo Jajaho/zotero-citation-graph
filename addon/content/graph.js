@@ -503,6 +503,7 @@
 	let elHideGhostNames = el('hide-ghost-names');
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
+	let elOpenAlexRefs = el('openalex-refs');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
 	let elLinkPull = el('link-pull');
@@ -632,6 +633,7 @@
 			elRecursive.checked = !!raw.options.recursive;
 			elIncludeExternal.checked = !!raw.options.includeExternal;
 			elEnrich.checked = !!raw.options.enrich;
+			elOpenAlexRefs.checked = !!raw.options.openalexRefs;
 		}
 		yearRange = null;
 		// The ghost the popover describes may not exist in this payload -- after
@@ -1179,6 +1181,10 @@
 	function renderStrategyToggles() {
 		let seen = new Set();
 		for (let e of raw.edges) for (let v of e.via) seen.add(v);
+		// OpenAlex has its own switch above this list, and that one decides
+		// whether it runs at all. A second box that only hid its edges would be
+		// two answers to one question.
+		seen.delete('openalex');
 		let vias = [...seen].sort();
 		let sig = vias.join(',');
 		if (sig === renderedVias) return;
@@ -4986,6 +4992,7 @@
 				recursive: elRecursive.checked,
 				includeExternal: elIncludeExternal.checked,
 				enrich: elEnrich.checked,
+				openalexRefs: elOpenAlexRefs.checked,
 			},
 		});
 	}
@@ -5013,6 +5020,8 @@
 
 	elRecursive.addEventListener('change', requestRebuild);
 	elIncludeExternal.addEventListener('change', requestRebuild);
+	elOpenAlexRefs.addEventListener('change', requestRebuild);
+	el('openalex-refs-dot').style.background = viaColor('openalex');
 	elEnrich.addEventListener('change', requestLookup);
 	el('rebuild').addEventListener('click', requestRebuild);
 

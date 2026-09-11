@@ -410,11 +410,13 @@ check('openalex enricher builds one filtered call and maps the response back', (
 	});
 });
 
-check('openalex references resolve to held papers and, with outside refs on, to ghosts', async () => {
+check('openalex references resolve to held papers, and a warm cache asks nothing', async () => {
 	const cg = require_('./citation-graph/index.js');
 	const items = [
-		{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'A paper nothing could be read from', doi: '10.1000/a' },
-		{ key: 'BBBBBBBB', itemType: 'journalArticle', title: 'A paper read offline', doi: '10.1000/b' },
+		{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Paper A', doi: '10.1000/a' },
+		{ key: 'BBBBBBBB', itemType: 'journalArticle', title: 'Paper B', doi: '10.1000/b' },
+		// A DOI OpenAlex does not know.
+		{ key: 'CCCCCCCC', itemType: 'journalArticle', title: 'Paper C', doi: '10.1000/c' },
 	];
 	const adapter = {
 		listItems: async () => items,
@@ -422,36 +424,51 @@ check('openalex references resolve to held papers and, with outside refs on, to 
 		getAttachmentText: async () => null,
 		getPdfLinkUris: async () => [],
 	};
-	const seen = [];
+	let requests = 0;
 	const fetchImpl = async (url) => {
-		seen.push(url);
+		requests++;
 		return fakeOpenAlex([
 			{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/A',
+				display_name: 'Paper A', publication_year: 2020, authorships: [], cited_by_count: 3,
 				referenced_works: ['https://openalex.org/W2', 'https://openalex.org/W9'] },
-			// B's references are not asked for -- the files already answered.
 			{ id: 'https://openalex.org/W2', doi: 'https://doi.org/10.1000/b',
+				display_name: 'Paper B', publication_year: 2019, authorships: [], cited_by_count: 1,
 				referenced_works: ['https://openalex.org/W8'] },
 		])(url);
 	};
+	const memo = () => {
+		const m = new Map();
+		return { m, get: k => m.get(k) || null, set: (k, v) => m.set(k, v) };
+	};
+	const refs = memo();
+	const names = memo();
 	const run = includeExternal => cg.build(adapter, {
 		enable: ['openalex'],
 		includeExternal,
-		providers: { openalex: { fetchImpl, citing: ['AAAAAAAA'] } },
+		providers: { openalex: { fetchImpl, cache: refs, metadataCache: names } },
 	});
 	const pairs = r => r.edges.map(e => e.from + '>' + e.to).sort().join(' ');
 
-	const on = await run(true);
-	if (on.meta.errors.length) throw new Error(JSON.stringify(on.meta.errors));
-	if (pairs(on) !== 'AAAAAAAA>BBBBBBBB AAAAAAAA>openalex:W9') {
-		throw new Error('with outside refs: ' + pairs(on));
+	const cold = await run(true);
+	if (cold.meta.errors.length) throw new Error(JSON.stringify(cold.meta.errors));
+	// A reference to a held paper resolves through that paper's own ID; the
+	// rest are ghosts under their OpenAlex ID, unnamed.
+	if (pairs(cold) !== 'AAAAAAAA>BBBBBBBB AAAAAAAA>openalex:W9 BBBBBBBB>openalex:W8') {
+		throw new Error('edges: ' + pairs(cold));
 	}
-	if (on.externalNodes.length !== 1 || on.externalNodes[0].ns !== 'openalex') {
-		throw new Error('ghosts: ' + JSON.stringify(on.externalNodes));
-	}
-	const off = await run(false);
-	if (pairs(off) !== 'AAAAAAAA>BBBBBBBB') throw new Error('without outside refs: ' + pairs(off));
-	// The reference to B resolves only because B was asked about as well.
-	if (!/10\.1000%2Fb/.test(seen[0])) throw new Error('the held papers were not all asked about: ' + seen[0]);
+	if (requests !== 1) throw new Error(requests + ' requests for three DOIs, expected 1');
+	// The unknown DOI is remembered as unknown, not asked about every build.
+	const c = refs.m.get('doi:10.1000/c');
+	if (!c || c.id !== null || c.refs.length) throw new Error('unknown DOI cached as ' + JSON.stringify(c));
+	// The held papers' own names came in the same response and were kept for
+	// the lookup -- and nothing was kept for the references, which nobody named.
+	const a = names.m.get('doi:10.1000/a');
+	if (!a || a.title !== 'Paper A' || a.citedByGlobal !== 3) throw new Error('held metadata: ' + JSON.stringify(a));
+	if ([...names.m.keys()].some(k => k.startsWith('openalex:'))) throw new Error('a reference was named');
+
+	const warm = await run(false);
+	if (requests !== 1) throw new Error('a warm cache still asked: ' + requests + ' requests');
+	if (pairs(warm) !== 'AAAAAAAA>BBBBBBBB') throw new Error('without outside refs: ' + pairs(warm));
 });
 
 check('the API key travels in a header, never in the URL', () => {
@@ -1928,20 +1945,6 @@ check('a paper filed somewhere else is not folded into this graph', async () => 
 	if (sent.length) throw new Error('it pushed anyway');
 });
 
-check('only papers the files said nothing about are sent to OpenAlex for references', () => {
-	const { reflessKeys } = require_('./lib/graphTab.js');
-	const items = [
-		{ key: 'AAAAAAAA', doi: '10.1000/a' },  // its PDF linked a reference
-		{ key: 'CCCCCCCC', doi: '10.1000/c' },  // nothing read from it
-		{ key: 'DDDDDDDD', doi: null },         // nothing to ask OpenAlex with
-	];
-	const built = {
-		state: { items },
-		offlineEdges: [{ from: 'AAAAAAAA', to: 'doi:10.5555/x', confidence: 0.95, via: ['pdf-links'] }],
-	};
-	if (reflessKeys(built).join() !== 'CCCCCCCC') throw new Error('asked about ' + reflessKeys(built).join());
-});
-
 check('an OpenAlex reference, once named, joins the node its DOI already has', () => {
 	const { rekeyByDoi } = require_('./lib/graphTab.js');
 	const { collectExternalNodes } = require_('./citation-graph/index.js');
@@ -2020,7 +2023,7 @@ check('naming a graph changes no node and no edge', () => {
 check('a graph tab reduces to what session.json can hold, and reads back', () => {
 	const { tabData, restoreOptions } = require_('./lib/graphTab.js');
 	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
-	const options = { recursive: true, includeExternal: true, enrich: false };
+	const options = { recursive: true, includeExternal: true, enrich: false, openalexRefs: true };
 
 	const data = JSON.parse(JSON.stringify(tabData(collection, options)));
 	if (data.collectionKey !== 'ABCD1234') throw new Error('key: ' + data.collectionKey);
@@ -2047,7 +2050,7 @@ check('a scope written by an older version fills in from the defaults', () => {
 	const { restoreOptions } = require_('./lib/graphTab.js');
 	for (const data of [undefined, {}, { options: null }, { options: { recursive: true } }]) {
 		const o = restoreOptions(data);
-		for (const k of ['recursive', 'includeExternal', 'enrich']) {
+		for (const k of ['recursive', 'includeExternal', 'enrich', 'openalexRefs']) {
 			if (typeof o[k] !== 'boolean') {
 				throw new Error(`${k} is ${o[k]} for ${JSON.stringify(data)}`);
 			}
@@ -2058,6 +2061,7 @@ check('a scope written by an older version fills in from the defaults', () => {
 	if (!o.recursive || o.includeExternal || o.enrich) throw new Error(JSON.stringify(o));
 	// The network option is never entered by a default.
 	if (restoreOptions({}).enrich) throw new Error('a restored tab defaulted into the lookup');
+	if (restoreOptions({}).openalexRefs) throw new Error('a restored tab defaulted into asking OpenAlex');
 });
 
 check('an empty collection reports why, and offers the switch only when it helps', () => {

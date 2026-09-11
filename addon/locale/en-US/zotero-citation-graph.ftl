@@ -55,7 +55,7 @@ zotero-citation-graph-scope-external-hint = Show cited works that are not in the
 zotero-citation-graph-scope-min-cites = Cited by ≥
 zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
 zotero-citation-graph-scope-enrich = Query node metadata
-zotero-citation-graph-scope-enrich-hint = Look up citation counts, titles and authors for outside works, and the references of papers none could be read from (uses the OpenAlex API)
+zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
 
 # Whether the names an outside reference already has are left off the canvas.
 # Nothing is fetched for this one -- that is the entry above.
@@ -116,6 +116,8 @@ zotero-citation-graph-strategy-pdf-links-hint = DOI hyperlinks inside your PDFs.
 zotero-citation-graph-strategy-text-doi-hint = DOIs printed in the reference lists of your papers' indexed text. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-title-match-hint = Titles of papers in this collection found in another paper's reference section. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-hint = The works OpenAlex lists as referenced by each paper. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-openalex-run = OpenAlex references
+zotero-citation-graph-strategy-openalex-run-hint = Ask OpenAlex which works each paper with a DOI cites, which finds references in PDFs that neither link nor print DOIs (uses the OpenAlex API; answers are cached for 30 days). The outside works it finds are named only with "Query node metadata" on.
 zotero-citation-graph-strategy-other-hint = Untick to hide the edges only this strategy found.
 
 zotero-citation-graph-reframe-hint = Fit the whole graph in view
@@ -316,9 +318,10 @@ zotero-citation-graph-build-reading-text-progress = Reading indexed text… { $d
 zotero-citation-graph-build-scanning-pdfs = Scanning PDFs…
 zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count } PDFs for DOI links…
 zotero-citation-graph-build-scanning-pdfs-progress = Scanning PDFs for DOI links… { $done }/{ $total }
+zotero-citation-graph-build-openalex-references = Asking OpenAlex for references…
+zotero-citation-graph-build-openalex-progress = Asking OpenAlex for references… { $done }/{ $total }
 zotero-citation-graph-lookup-works = Looking up { $count -> [one] { $count } work *[other] { $count } works }…
 zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total } ({ $provider })
-zotero-citation-graph-lookup-references = Asking OpenAlex what { $count -> [one] { $count } paper cites *[other] { $count } papers cite }…
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 
 

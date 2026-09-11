@@ -31,7 +31,7 @@ zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nich
 zotero-citation-graph-scope-min-cites = Zitiert von ≥
 zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
-zotero-citation-graph-scope-enrich-hint = Zitationszahlen, Titel und Autoren externer Arbeiten nachschlagen, dazu die Literatur von Einträgen, aus denen keine gelesen werden konnte (nutzt die OpenAlex-API)
+zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
 
 zotero-citation-graph-scope-hide-external-names = Externe Namen ausblenden
 zotero-citation-graph-scope-hide-external-names-hint = Externe Arbeiten im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
@@ -87,6 +87,8 @@ zotero-citation-graph-strategy-pdf-links-hint = DOI-Hyperlinks in deinen PDFs. A
 zotero-citation-graph-strategy-text-doi-hint = DOIs in den Literaturverzeichnissen im indexierten Text deiner Einträge. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieser Sammlung, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-openalex-hint = Die Werke, die OpenAlex als von einem Eintrag zitiert führt. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
+zotero-citation-graph-strategy-openalex-run = OpenAlex-Referenzen
+zotero-citation-graph-strategy-openalex-run-hint = OpenAlex fragen, welche Arbeiten jeder Eintrag mit DOI zitiert. So findet sich auch die Literatur von PDFs, die keine DOIs verlinken oder abdrucken (nutzt die OpenAlex-API; Antworten werden 30 Tage zwischengespeichert). Die externen Arbeiten, die dabei gefunden werden, bekommen nur mit „Knotenmetadaten abfragen“ einen Namen.
 zotero-citation-graph-strategy-other-hint = Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 
 zotero-citation-graph-reframe-hint = Ganzen Graphen einpassen
@@ -266,9 +268,10 @@ zotero-citation-graph-build-reading-text-progress = Indexierter Text wird gelese
 zotero-citation-graph-build-scanning-pdfs = PDFs werden durchsucht…
 zotero-citation-graph-build-scanning-pdfs-count = { $count } PDFs werden nach DOI-Links durchsucht…
 zotero-citation-graph-build-scanning-pdfs-progress = PDFs werden nach DOI-Links durchsucht… { $done }/{ $total }
+zotero-citation-graph-build-openalex-references = Referenzen werden bei OpenAlex abgefragt…
+zotero-citation-graph-build-openalex-progress = Referenzen werden bei OpenAlex abgefragt… { $done }/{ $total }
 zotero-citation-graph-lookup-works = { $count -> [one] { $count } Arbeit wird *[other] { $count } Arbeiten werden } nachgeschlagen…
 zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $done }/{ $total } ({ $provider })
-zotero-citation-graph-lookup-references = OpenAlex wird gefragt, was { $count -> [one] { $count } Eintrag zitiert *[other] { $count } Einträge zitieren }…
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
 
 

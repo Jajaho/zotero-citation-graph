@@ -23,10 +23,12 @@ const DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_TTL = 30 * DAY;
 
 class MetadataCache {
-	constructor(dir, { ttl = DEFAULT_TTL } = {}) {
+	// `file` lets a second cache of the same kind live beside this one: the
+	// OpenAlex strategy keeps its reference lists that way (graphTab.js).
+	constructor(dir, { ttl = DEFAULT_TTL, file = 'metadata.json' } = {}) {
 		this.dir = dir;
 		this.ttl = ttl;
-		this.path = PathUtils.join(dir, 'metadata.json');
+		this.path = PathUtils.join(dir, file);
 		this.data = { version: VERSION, entries: {} };
 		this.dirty = false;
 		this.hits = 0;

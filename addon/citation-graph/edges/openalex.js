@@ -3,6 +3,7 @@
 const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
 const { normDoi } = require('../core/normalize');
+const { toMetadata } = require('../enrich/openalex');
 
 /**
  * Strategy: OpenAlex `referenced_works`.
@@ -33,64 +34,102 @@ module.exports.id = register({
 		batchSize: 50,
 		endpoint: 'https://api.openalex.org/works',
 		fetchImpl: null,         // see enrich/openalex.js for why this is injectable
-		// Item keys whose references to report; null reports every item's.
-		// Every item with a DOI is still ASKED about, because a reference
-		// arrives as an OpenAlex ID and resolves to a held paper only if that
-		// paper's own ID came back too -- asking about the citing papers alone
-		// would turn every reference to the collection into a ghost of itself.
-		citing: null,
+		// {get, set} over 'doi:<doi>' -> { id, refs }: each held paper's OpenAlex
+		// ID and reference list. A published paper's references do not change, so
+		// a paper is asked about once and then again only when the cache ages its
+		// answer out -- a warm build makes no request at all. A DOI OpenAlex does
+		// not know is remembered as { id: null, refs: [] }, so it is not asked
+		// about on every build either.
+		cache: null,
+		// {set}: where the held papers' own names and counts go. They come back in
+		// the same response for the price of naming the fields, so they are kept
+		// for the metadata lookup to find rather than asked for twice. Kept, not
+		// shown: whether anything is named is that lookup's decision.
+		metadataCache: null,
 	},
 
 	async derive({ items, index, options, includeExternal, onProgress }) {
-		const dois = [];
 		const keyByDoi = new Map();
 		for (const it of items) {
 			const d = normDoi(it.doi);
-			if (d && !keyByDoi.has(d)) { keyByDoi.set(d, it.key); dois.push(d); }
+			if (d && !keyByDoi.has(d)) keyByDoi.set(d, it.key);
 		}
-		if (!dois.length) return [];
-		const only = options.citing ? new Set(options.citing) : null;
+		if (!keyByDoi.size) return [];
 
-		const fetch_ = options.fetchImpl || globalThis.fetch;
-		if (typeof fetch_ !== 'function') throw new Error('no fetch implementation available');
-		const headers = { Accept: 'application/json' };
-		if (options.apiKey) headers.Authorization = 'Bearer ' + options.apiKey;
+		// Every held paper is needed, not only the ones whose references are
+		// wanted: a reference arrives as an OpenAlex ID, and resolves to a held
+		// paper only if that paper's own ID is known.
+		const works = new Map();
+		const ask = [];
+		for (const d of keyByDoi.keys()) {
+			const hit = options.cache && options.cache.get(externalKey('doi', d));
+			if (hit) works.set(d, hit);
+			else ask.push(d);
+		}
 
-		const works = [];
-		for (let i = 0; i < dois.length; i += options.batchSize) {
-			const batch = dois.slice(i, i + options.batchSize);
-			const url = new URL(options.endpoint);
-			url.searchParams.set('per-page', String(options.batchSize));
-			url.searchParams.set('select', 'id,doi,referenced_works');
-			url.searchParams.set('filter', 'doi:' + batch.join('|'));
+		if (ask.length) {
+			const fetch_ = options.fetchImpl || globalThis.fetch;
+			if (typeof fetch_ !== 'function') throw new Error('no fetch implementation available');
+			const headers = { Accept: 'application/json' };
+			if (options.apiKey) headers.Authorization = 'Bearer ' + options.apiKey;
 
-			const res = await fetch_(url.toString(), { headers });
-			if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
-			const json = await res.json();
-			if (json.results) works.push(...json.results);
-			onProgress && onProgress(Math.min(i + options.batchSize, dois.length), dois.length);
+			for (let i = 0; i < ask.length; i += options.batchSize) {
+				const batch = ask.slice(i, i + options.batchSize);
+				const url = new URL(options.endpoint);
+				url.searchParams.set('per-page', String(options.batchSize));
+				url.searchParams.set('select', 'id,doi,referenced_works,'
+					+ 'display_name,publication_year,authorships,cited_by_count,type');
+				url.searchParams.set('filter', 'doi:' + batch.join('|'));
+
+				const res = await fetch_(url.toString(), { headers });
+				if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
+				const json = await res.json();
+				const answered = new Set();
+				for (const w of (json && json.results) || []) {
+					const d = normDoi(w.doi);
+					if (!d || !keyByDoi.has(d)) continue;
+					answered.add(d);
+					const key = externalKey('doi', d);
+					const entry = { id: w.id || null, refs: w.referenced_works || [] };
+					works.set(d, entry);
+					if (options.cache) options.cache.set(key, entry);
+					if (options.metadataCache) {
+						// Only a complete answer, by the same rule core/enrich.js
+						// writes the cache by: a half one would stop the lookup
+						// from ever completing it.
+						const m = toMetadata(w, new Map([[key, key]]));
+						if (m && m.title) options.metadataCache.set(key, m);
+					}
+				}
+				for (const d of batch) {
+					if (answered.has(d)) continue;
+					const entry = { id: null, refs: [] };
+					works.set(d, entry);
+					if (options.cache) options.cache.set(externalKey('doi', d), entry);
+				}
+				onProgress && onProgress(Math.min(i + options.batchSize, ask.length), ask.length);
+			}
 		}
 
 		// Register OpenAlex IDs on the shared index so other providers (and a
 		// later ghost-node expansion) can reuse the resolution.
-		for (const w of works) {
-			const k = keyByDoi.get(normDoi(w.doi));
-			if (k) index.setExternal('openalex', w.id, k);
+		for (const [d, w] of works) {
+			if (w.id) index.setExternal('openalex', w.id, keyByDoi.get(d));
 		}
 
 		const out = [];
-		for (const w of works) {
-			const from = keyByDoi.get(normDoi(w.doi));
-			if (!from || (only && !only.has(from))) continue;
-			for (const ref of w.referenced_works || []) {
+		for (const [d, w] of works) {
+			const from = keyByDoi.get(d);
+			for (const ref of w.refs) {
 				const to = index.lookupExternal('openalex', ref);
 				if (to) {
 					if (to !== from) out.push(edge(from, to, 'openalex', 0.98, { openalexId: ref }));
 				}
 				else if (includeExternal) {
 					// A cited work the collection does not hold, known only by its
-					// OpenAlex ID until a lookup names it -- which brings its DOI,
-					// and with that the node the same work has when a PDF links it.
+					// OpenAlex ID. Naming it -- which also brings its DOI, and with
+					// that the node the same work has when a PDF links it -- is the
+					// metadata lookup's to do, and only when it is switched on.
 					out.push(edge(from, externalKey('openalex', shortId(ref)), 'openalex', 0.98,
 						{ openalexId: ref, external: true }));
 				}

@@ -203,6 +203,17 @@
 						<span class="section-title" data-zg-str="section-strategies">Referencing Strategies</span>
 					</button>
 					<div class="section-body" id="sec-strategies-body">
+						<!-- The one strategy that reaches the network, and so the one whose
+						     switch decides whether it RUNS: ticking it rebuilds, like
+						     "outside refs". The list under it only hides what the other
+						     strategies found. -->
+						<div class="group">
+							<label class="via-toggle" data-zg-title="strategy-openalex-run-hint" title="Ask OpenAlex which works each paper with a DOI cites (uses the OpenAlex API)">
+								<input id="openalex-refs" type="checkbox"/>
+								<span class="dot" id="openalex-refs-dot"></span>
+								<span data-zg-str="strategy-openalex-run">OpenAlex references</span>
+							</label>
+						</div>
 						<div id="strategies" class="group"></div>
 
 						<div class="group">
