@@ -94,15 +94,16 @@ THIS SOFTWARE.
 
 Copyright (c) Corporation for Digital Scholarship.
 
-`content/icons.js` holds the SVG path data of eighteen icons copied verbatim
+`content/icons.js` holds the SVG path data of twenty-three icons copied verbatim
 from Zotero itself, so that a menu, a toolbar button or a section twisty drawn
 in this plugin matches the same thing drawn anywhere else in the application.
 They are copied rather than referenced because the graph is a content document
 at a `resource://` URL, from which `chrome://zotero/skin/...` is not reachable.
 
 Source: <https://github.com/zotero/zotero>, under
-`chrome/skin/default/zotero/{16,20}/universal/`. Verified byte-identical
-against a Zotero 7 installation on 2026-09-09:
+`chrome/skin/default/zotero/{8,16,20}/universal/`. Verified byte-identical
+against a Zotero 7 installation on 2026-09-09, and the last five rows against
+Zotero 10.0.2 on 2026-09-11:
 
 | Name in `icons.js` | Zotero source file |
 |---|---|
@@ -124,6 +125,11 @@ against a Zotero 7 installation on 2026-09-09:
 | `magnifier` | `16/universal/magnifier.svg` |
 | `clear` | `16/universal/x-8.svg` |
 | `chevron-12` | `16/universal/chevron-12.svg` |
+| `filter` | `16/universal/filter.svg` |
+| `chevron-6` | `8/universal/chevron-6.svg` |
+| `collapse` | `20/universal/minimize.svg` |
+| `expand` | `20/universal/maximize.svg` |
+| `close` | `20/universal/x.svg` |
 
 The only changes are mechanical: `fill="context-fill"` becomes `currentColor`,
 because `context-fill` is understood by the chrome image loader and not by a
@@ -132,7 +138,7 @@ to the full 16px box and so clips nothing.
 
 Zotero is licensed under the GNU Affero General Public License v3.0
 (`zotero/zotero`, `COPYING`), which is why this plugin is too. None of these
-eighteen files carries a licence header of its own, so the repository licence
+twenty-three files carries a licence header of its own, so the repository licence
 governs them.
 
 These are Zotero's own artwork, not Mozilla's Acorn set. Earlier revisions of
@@ -144,7 +150,7 @@ distinction matters: Acorn is MPL-2.0 marked "Incompatible With Secondary
 Licenses", which cannot be relicensed under the AGPL, whereas Zotero's own
 AGPL artwork can simply be carried under this plugin's licence.
 
-The nineteenth entry in `icons.js`, `isolate`, is **not** Zotero's. Nothing in
+The twenty-fourth entry in `icons.js`, `isolate`, is **not** Zotero's. Nothing in
 Zotero's set means what isolating a neighbourhood means, so it is drawn here:
 a spotlight, on Zotero's 16px grid and at its stroke width so that it sits in
 the same menu without looking borrowed. `content/icons/spotlight.svg` is the

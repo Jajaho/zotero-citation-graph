@@ -22,6 +22,7 @@ let itemPane = require('./itemPane.js');
 let splitPane = require('./splitPane.js');
 let gapsPane = require('./gapsPane.js');
 let nodeMenu = require('./nodeMenu.js');
+let searchPane = require('./searchPane.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
@@ -219,6 +220,12 @@ async function selectItems(tabID, itemIDs) {
  */
 function dropEntry(tabID) {
 	let entry = open_.get(tabID);
+	try {
+		if (entry) searchPane.drop(entry);
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
 	try {
 		if (entry) itemPane.close(entry);
 	}
@@ -547,6 +554,9 @@ async function ready(win, tabID, cw, collection) {
 	// splitPane's notifier only fires when the panel MOVES, so this is the state
 	// it never reports. See splitPane.watch() below.
 	if (entry) send(entry, 'zgSetPane', { open: splitPane.showing(entry) });
+	// The Quick Search mode is core's pref, and its name is the field's
+	// placeholder. See lib/searchPane.js.
+	if (entry) send(entry, 'zgSetSearchMode', searchPane.modeInfo());
 
 	// content -> chrome. event.detail is a JSON string (a primitive), so there is
 	// nothing to unwrap.
@@ -643,6 +653,37 @@ async function handleMessage(win, tabID, collection, msg) {
 					add: !!msg.add,
 				}));
 			}
+			break;
+		}
+		// The bar's search field: Zotero's own Quick Search and Advanced Search,
+		// run here because the page cannot reach Zotero.Search, and drawn here
+		// because the mode menu and the condition editor are XUL. See
+		// lib/searchPane.js.
+		case 'quick-search': {
+			let entry = open_.get(tabID);
+			if (!entry || typeof msg.text !== 'string') break;
+			let itemIDs = await searchPane.quickSearch(entry, msg.text);
+			send(entry, 'zgQuickSearch', { seq: msg.seq, itemIDs });
+			break;
+		}
+		case 'search-mode': {
+			let entry = open_.get(tabID);
+			if (entry) send(entry, 'zgSetSearchMode', searchPane.modeInfo());
+			break;
+		}
+		case 'search-mode-menu': {
+			let entry = open_.get(tabID);
+			if (entry) searchPane.openModeMenu(entry, msg, (fn, value) => send(entry, fn, value));
+			break;
+		}
+		case 'advanced-search': {
+			let entry = open_.get(tabID);
+			if (entry) await searchPane.advanced(entry, msg, (fn, value) => send(entry, fn, value));
+			break;
+		}
+		case 'advanced-search-rect': {
+			let entry = open_.get(tabID);
+			if (entry) searchPane.place(entry, msg);
 			break;
 		}
 		// The graph page runs with a content principal and cannot open a browser
@@ -1052,6 +1093,10 @@ function pushData(entry, state, meta) {
 		edges: state.edges.map(toWireEdge),
 		meta,
 	});
+	// What a search is cut down to -- and a search that is running is asked
+	// again, since this push may carry items its last answer never saw.
+	entry.heldIDs = new Set(state.items.map(it => it.itemID));
+	searchPane.refresh(entry);
 }
 
 /**

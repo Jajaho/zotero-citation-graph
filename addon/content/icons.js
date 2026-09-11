@@ -2,13 +2,13 @@
  * The menu icons.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * Eighteen of the nineteen icons below are Copyright (c) Corporation for Digital
+ * Twenty-three of the twenty-four icons below are Copyright (c) Corporation for Digital
  * Scholarship, taken from Zotero (AGPL-3.0) and carried here under that same
  * licence; `isolate` is this plugin's own drawing. See THIRD-PARTY-NOTICES.md
  * section 2 for the file-by-file provenance table.
  *
  * Zotero's own icon set, inlined. Every entry below but one is the path data of
- * a file under Zotero's chrome/skin/default/zotero/{16,20}/universal/, copied
+ * a file under Zotero's chrome/skin/default/zotero/{8,16,20}/universal/, copied
  * verbatim so that a menu in this plugin and a menu in the library window are
  * drawn from the same shapes; redrawing them by hand would put a near-miss next
  * to the real thing. The exception is `isolate`, which is drawn here because
@@ -144,6 +144,27 @@
 		// down and rotates it 180 degrees when the section is open.
 		'chevron-12': [16, [
 			'M2 5.70711L8 11.7071L14 5.70711L13.2929 5L8 10.2929L2.70711 5L2 5.70711Z',
+		]],
+		// 16/filter -- the Advanced Search button at the end of core's quick search field.
+		'filter': [16, [
+			'M1.99998 1.70711C1.37001 1.07714 1.81618 0 2.70708 0H14.2929C15.1838 0 15.6299 1.07714 15 1.70711L9.99998 6.70711V12.7071L6.99998 15.7071V6.70711L1.99998 1.70711ZM14.2929 1L2.70708 1L7.99998 6.29289V13.2929L8.99998 12.2929V6.29289L14.2929 1Z',
+		]],
+		// 8/chevron-6 -- the Quick Search mode menu's dropmarker.
+		'chevron-6': [8, [
+			'M1.70711 2L1 2.70711L4 5.70711L7 2.70711L6.29289 2L4 4.29289L1.70711 2Z',
+		]],
+		// 20/minimize -- Collapse Advanced Search.
+		'collapse': [20, [
+			'M13.1339 7.75L18 2.88388L17.1161 2L12.25 6.86612V4H11V8.375V9H11.625H16V7.75H13.1339ZM7.75 13.1339L7.75 16H9L9 11H4L4 12.25H6.86612L2 17.1161L2.88388 18L7.75 13.1339Z',
+		]],
+		// 20/maximize -- Expand Advanced Search. The same file as zoom-to-fit,
+		// named here for what it does in this place.
+		'expand': [20, [
+			'M16.75 7H18V2H13V3.25L15.8661 3.25L11 8.11612L11.8839 9L16.75 4.13389V7ZM4.13389 16.75L9 11.8839L8.11612 11L3.25 15.8661V13H2V17.375V18H2.625H7V16.75H4.13389Z',
+		]],
+		// 20/x -- Close Advanced Search.
+		'close': [20, [
+			'M9.11607 9.99999L2.99999 3.88388L3.88387 3L9.99995 9.11611L16.1161 3L17 3.88388L10.8838 9.99999L17 16.1162L16.1161 17L9.99995 10.8839L3.88382 17L2.99994 16.1161L9.11607 9.99999Z',
 		]],
 	};
 

@@ -116,7 +116,12 @@ zotero-citation-graph-side-toggle-show = Show the sidebar
 zotero-citation-graph-pane-toggle-show = Show the item pane
 
 zotero-citation-graph-search-placeholder = Search
-zotero-citation-graph-search-hint = Find a paper on the canvas and go to it (Ctrl+F). This does not filter the graph — the filter box in the sidebar does that.
+zotero-citation-graph-search-hint = Find a paper on the canvas and go to it (Ctrl+F). This does not filter the graph — Advanced Search (Ctrl+Shift+F) and the filter box in the sidebar do that.
+zotero-citation-graph-search-mode = Quick Search mode
+zotero-citation-graph-search-advanced = Advanced Search
+zotero-citation-graph-adv-collapse = Collapse Advanced Search
+zotero-citation-graph-adv-expand = Expand Advanced Search
+zotero-citation-graph-adv-close = Close Advanced Search
 zotero-citation-graph-search-clear = Clear
 zotero-citation-graph-search-empty = No paper on screen matches
 

@@ -87,7 +87,12 @@ zotero-citation-graph-side-toggle-show = Seitenleiste einblenden
 zotero-citation-graph-pane-toggle-show = Infobereich einblenden
 
 zotero-citation-graph-search-placeholder = Suchen
-zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern (Strg+F). Das filtert den Graphen nicht — dafür ist das Filterfeld in der Seitenleiste da.
+zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern (Strg+F). Das filtert den Graphen nicht — das tun die Erweiterte Suche (Strg+Umschalt+F) und das Filterfeld in der Seitenleiste.
+zotero-citation-graph-search-mode = Schnellsuche-Modus
+zotero-citation-graph-search-advanced = Erweiterte Suche
+zotero-citation-graph-adv-collapse = Erweiterte Suche einklappen
+zotero-citation-graph-adv-expand = Erweiterte Suche ausklappen
+zotero-citation-graph-adv-close = Erweiterte Suche schließen
 zotero-citation-graph-search-clear = Leeren
 zotero-citation-graph-search-empty = Keine angezeigte Arbeit passt dazu
 

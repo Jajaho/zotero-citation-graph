@@ -45,6 +45,10 @@
 	--fill-tertiary: rgba(0, 0, 0, 0.251);
 	--fill-quarternary: rgba(0, 0, 0, 0.102);
 	--fill-quinary: rgba(0, 0, 0, 0.051);
+	--fill-senary: rgba(0, 0, 0, 0.02);
+	--color-background50: rgba(255, 255, 255, 0.502);
+	--color-background70: rgba(255, 255, 255, 0.698);
+	--color-border: rgba(0, 0, 0, 0.149);
 
 	/*
 	 * The --material-* aliases, which are what Zotero's own rules are written
@@ -59,6 +63,14 @@
 	--material-toolbar: var(--color-toolbar);
 	--material-panedivider: 1px solid var(--color-panedivider);
 	--material-border-quinary: 1px solid var(--fill-quinary);
+	--material-border: 1px solid var(--color-border);
+
+	/* Windows' text field, from core's generic input rules -- see #search-box. */
+	--zg-input-border: rgba(0, 0, 0, 0.0578);
+	--zg-input-border-bottom: rgba(0, 0, 0, 0.4458);
+	--zg-input-background: var(--color-background70);
+	--zg-input-hover: var(--color-background50);
+	--zg-input-focus: rgba(255, 255, 255, 0.3);
 
 	/*
 	 * The focus ring, which is platform-conditional in core and is copied that
@@ -107,6 +119,15 @@
 	--fill-tertiary: rgba(255, 255, 255, 0.302);
 	--fill-quarternary: rgba(255, 255, 255, 0.122);
 	--fill-quinary: rgba(255, 255, 255, 0.059);
+	--fill-senary: rgba(255, 255, 255, 0.031);
+	--color-background50: rgba(30, 30, 30, 0.502);
+	--color-background70: rgba(30, 30, 30, 0.698);
+	--color-border: rgba(255, 255, 255, 0.18);
+	--zg-input-border: rgba(255, 255, 255, 0.08);
+	--zg-input-border-bottom: rgba(255, 255, 255, 0.5442);
+	--zg-input-background: var(--fill-quinary);
+	--zg-input-hover: var(--fill-quarternary);
+	--zg-input-focus: var(--fill-senary);
 		--accent: #6fb4ff;
 		--color-focus-outer-border: #fff;
 	}
@@ -124,6 +145,15 @@
 	--fill-tertiary: rgba(255, 255, 255, 0.302);
 	--fill-quarternary: rgba(255, 255, 255, 0.122);
 	--fill-quinary: rgba(255, 255, 255, 0.059);
+	--fill-senary: rgba(255, 255, 255, 0.031);
+	--color-background50: rgba(30, 30, 30, 0.502);
+	--color-background70: rgba(30, 30, 30, 0.698);
+	--color-border: rgba(255, 255, 255, 0.18);
+	--zg-input-border: rgba(255, 255, 255, 0.08);
+	--zg-input-border-bottom: rgba(255, 255, 255, 0.5442);
+	--zg-input-background: var(--fill-quinary);
+	--zg-input-hover: var(--fill-quarternary);
+	--zg-input-focus: var(--fill-senary);
 	--accent: #6fb4ff;
 	--color-focus-outer-border: #fff;
 }
@@ -340,39 +370,132 @@ body {
 /* --- The search field -------------------------------------------------- */
 
 /*
- * Core's search-textbox, rebuilt.
+ * Core's quick-search-textbox, rebuilt: the field at the end of the items
+ * toolbar, with the Quick Search mode menu in front of it and the Advanced
+ * Search button inside its far end. Rebuilt rather than used for the reason
+ * every control on this page is -- it is a XUL custom element, out of reach
+ * from a content document -- so what is below is zotero.css's rules for it,
+ * numbers included:
  *
- * It has to be rebuilt rather than used: <search-textbox> is a Mozilla toolkit
- * XUL custom element that Zotero only skins, so it is out of reach twice over
- * from a content document. What is below is Zotero's skin for it, from
- * zotero.css, with #zotero-collections-search's 28px height -- the field in the
- * collections toolbar, which is the one this is modelled on.
+ *   quick-search-textbox      146px, growing to 300px, 28px tall
+ *   #zotero-tb-search-dropmarker
+ *                             36px laid over the field's start, its chevron
+ *                             at 23px -- after the magnifier, which is the
+ *                             textbox's own icon, 5px in
+ *   #zotero-tb-search-advanced-button
+ *                             a 24px plate 2px in from the far end, the
+ *                             filter drawn at 14px inside it
  *
- * Deliberately not the items toolbar's <quick-search-textbox>: its dropmarker
- * offers Title/Creator/Year, All Fields & Tags and Everything, three questions
- * about Zotero's search index that mean nothing asked of a built graph.
+ * It copied the collections pane's search-textbox before, which has neither
+ * the menu nor the button: that one narrows a tree of names. This one
+ * searches items, so it is the items toolbar's.
  */
 #search-box {
 	display: flex;
 	align-items: center;
-	flex: 0 1 auto;
-	width: 180px;
+	flex: 1 1 146px;
+	width: 146px;
+	max-width: 300px;
 	min-width: 0;
 	height: 28px;
+	box-sizing: border-box;
 	border-radius: 5px;
 	background: var(--material-background);
 	border: var(--material-border-quinary);
-	padding-inline-end: 6px;
 }
 
-/* ::part(search-icon) */
-#search-icon {
+#search-box[hidden] {
+	display: none;
+}
+
+/*
+ * On Windows core's generic text-input rules outrank search-textbox's own --
+ * the same specificity, later in zotero.css -- so the field there is the
+ * Fluent one: a hairline with a darker bottom edge, a 3px radius, and on
+ * focus a 2px --accent-blue underline in place of a ring. macOS and Linux
+ * have no such rules and keep search-textbox's ring.
+ *
+ * Keyed on the input rather than on :focus-within, because the mode menu's
+ * button takes the focus on its own and draws its own ring when it does, as
+ * core's dropmarker does.
+ */
+@media (-moz-platform: windows) {
+	#search-box {
+		border-radius: 3px;
+		border: 1px solid var(--zg-input-border);
+		border-bottom-color: var(--zg-input-border-bottom);
+		background: var(--zg-input-background);
+		background-origin: border-box;
+		background-clip: padding-box;
+	}
+
+	#search-box:hover {
+		background-color: var(--zg-input-hover);
+	}
+
+	#search-box:has(#search:focus) {
+		border: 1px solid var(--fill-quinary);
+		border-bottom-color: var(--accent-blue);
+		background-color: transparent;
+		background-image:
+			linear-gradient(to top, var(--accent-blue) 2px, transparent 2px 100%),
+			linear-gradient(var(--zg-input-focus), var(--zg-input-focus));
+		background-clip: border-box, padding-box;
+		background-repeat: no-repeat;
+	}
+}
+
+@media not (-moz-platform: windows) {
+	#search-box:has(#search:focus) {
+		outline: none;
+		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
+	}
+}
+
+/*
+ * The Quick Search mode menu: core's dropmarker and the textbox's magnifier,
+ * which core lays one over the other and which are one button here. The
+ * magnifier sits 5px inside the border and the 6px chevron at 22 -- 6 and 23
+ * from the field's outer edge, where core puts them -- and the text starts at
+ * 39, after the 18px core pads the magnifier by.
+ */
+#search-mode {
+	display: flex;
+	align-items: center;
+	align-self: stretch;
+	flex: 0 0 auto;
+	width: 39px;
+	margin: 0;
+	padding: 0 0 0 5px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: default;
+}
+
+#search-mode svg {
 	flex: 0 0 auto;
 	width: 16px;
 	height: 16px;
-	color: var(--fill-secondary);
-	padding: 6px 4px 6px 6px;
-	box-sizing: content-box;
+}
+
+#search-mode svg + svg {
+	width: 8px;
+	height: 8px;
+	margin-inline-start: 1px;
+}
+
+#search-mode:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
+}
+
+@media (-moz-platform: windows) {
+	#search-mode:focus-visible {
+		outline: var(--color-focus-outer-border) solid var(--width-focus-outer-border);
+		outline-offset: var(--width-focus-border);
+	}
 }
 
 #search {
@@ -389,26 +512,6 @@ body {
 #search::placeholder {
 	color: var(--fill-tertiary);
 	opacity: 1;
-}
-
-/*
- * The focus ring, in core's two-branch form. Windows draws an outer outline
- * plus an inner shadow and everything else draws the shadow alone; the plugin
- * runs on all three platforms, so the branch is copied rather than picked.
- */
-@media (-moz-platform: windows) {
-	#search-box:focus-within {
-		outline: var(--color-focus-outer-border) solid var(--width-focus-outer-border);
-		outline-offset: var(--width-focus-border);
-		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
-	}
-}
-
-@media not (-moz-platform: windows) {
-	#search-box:focus-within {
-		outline: none;
-		box-shadow: 0 0 0 var(--width-focus-border) var(--color-focus-border);
-	}
 }
 
 /* Only while there is something to clear: a permanently visible x over an
@@ -444,6 +547,119 @@ body {
 
 #search-clear[hidden] {
 	display: none;
+}
+
+/* #zotero-tb-search-advanced-button: a 24px plate ending 2px inside the
+   field, and the 16px filter at 14px inside the 5/6/5/4 padding core gives
+   it. Out of the tab order, as core's is. */
+#search-advanced {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 24px;
+	height: 24px;
+	box-sizing: border-box;
+	margin-inline: 2px 1px;
+	padding: 5px 6px 5px 4px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: default;
+}
+
+#search-advanced:hover {
+	background-color: var(--fill-quinary);
+}
+
+#search-advanced:active {
+	background-color: var(--fill-quarternary);
+}
+
+#search-advanced svg {
+	width: 14px;
+	height: 14px;
+}
+
+/*
+ * #advanced-search-indicator: what the field turns into while an Advanced
+ * Search is open or folded -- its name, then Collapse and Close. It runs to
+ * the bar's end and a pixel past its bottom edge, over the hairline, so that
+ * it reads as the top of the pane under it rather than as one more control;
+ * folded, it draws that hairline itself.
+ */
+#adv-indicator {
+	display: flex;
+	align-items: center;
+	align-self: stretch;
+	flex: 0 1 auto;
+	gap: 8px;
+	min-width: 0;
+	margin-inline-end: -4px;
+	margin-bottom: -1px;
+	padding-inline: 8px;
+	background: var(--material-toolbar);
+	border-inline-start: var(--material-border);
+	border-block: 1px solid transparent;
+}
+
+#adv-indicator[hidden] {
+	display: none;
+}
+
+#adv-indicator.collapsed {
+	border-bottom: var(--material-border);
+}
+
+/* Not at the bar's end while the item pane's toggle is after it. */
+#adv-indicator:has(+ #pane-toggle:not([hidden])) {
+	margin-inline-end: 0;
+	border-inline-end: var(--material-border);
+}
+
+#adv-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding-inline: 4px;
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* .zotero-clicky, at the 28px core's indicator gives its two. */
+.adv-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 28px;
+	height: 28px;
+	margin: 0;
+	padding: 4px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: default;
+}
+
+.adv-button:hover {
+	background-color: var(--fill-quinary);
+}
+
+.adv-button:active {
+	background-color: var(--fill-quarternary);
+}
+
+.adv-button svg {
+	width: 20px;
+	height: 20px;
+}
+
+#adv-close {
+	margin-inline-end: 2px;
 }
 
 /*
@@ -565,6 +781,9 @@ body {
 
 #canvas-wrap {
 	grid-area: canvas;
+	/* Room for the Advanced Search pane chrome lays over the top of this
+	   column -- see zgSetAdvanced in graph.js. */
+	margin-top: var(--zg-adv-height, 0px);
 	position: relative;
 	min-width: 0;
 	min-height: 0;

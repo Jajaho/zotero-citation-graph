@@ -479,6 +479,10 @@
 	// into one that does not exist would build a panel nobody asked for -- see
 	// render() and lib/itemPane.js.
 	let paneEngaged = false;
+	// The Advanced Search: whether chrome has its pane open, folded or shut,
+	// and the item IDs it found -- null while nothing is being searched.
+	let advState = 'closed';
+	let advMatch = null;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -514,7 +518,11 @@
 	let elSideGrip = el('side-grip');
 	let elSearch = el('search');
 	let elSearchBox = el('search-box');
-	let elSearchIcon = el('search-icon');
+	let elSearchMode = el('search-mode');
+	let elSearchAdvanced = el('search-advanced');
+	let elAdvIndicator = el('adv-indicator');
+	let elAdvCollapse = el('adv-collapse');
+	let elAdvClose = el('adv-close');
 	let elSearchClear = el('search-clear');
 	let elSearchSuggest = el('search-suggest');
 	let elPaneToggle = el('pane-toggle');
@@ -1656,6 +1664,9 @@
 		let facets = [];
 		let filters = panelBox.filters();
 		for (let it of raw.items) {
+			// An Advanced Search narrows first. It is a mask like the chips,
+			// written in core's editor instead: see zgSetAdvanced.
+			if (advMatch && !advMatch.has(it.itemID)) continue;
 			let f = itemFacets(it);
 			let ok = true;
 			for (let i = 0; i < filters.length && ok; i++) {
@@ -4839,8 +4850,9 @@
 	});
 
 	/**
-	 * The three keys a graph is worked with besides Escape: Ctrl-F to the
-	 * search field, Ctrl-A to pick every node on screen, P to pin the pick.
+	 * The keys a graph is worked with besides Escape: Ctrl-F to the search
+	 * field, Ctrl-Shift-F to Advanced Search, Ctrl-A to pick every node on
+	 * screen, P to pin the pick.
 	 *
 	 * A text field keeps its own keys -- P is a letter there, and Ctrl-A
 	 * selects what was typed -- and only Ctrl-F reaches past one, since no
@@ -4848,13 +4860,28 @@
 	 * reads them: see onNodeClick.
 	 */
 	window.addEventListener('keydown', (e) => {
-		if (e.defaultPrevented || e.altKey || e.shiftKey) return;
+		if (e.defaultPrevented || e.altKey) return;
 		let mod = e.ctrlKey || e.metaKey;
 		let key = e.key.toLowerCase();
+		// Core's own key for Advanced Search, taken before the main window's
+		// keyset gets it: there it opens the library's pane and switches to the
+		// library tab, away from the graph the search was meant for.
+		if (mod && e.shiftKey && key === 'f') {
+			e.preventDefault();
+			advanced('toggle');
+			return;
+		}
+		if (e.shiftKey) return;
 		if (mod && key === 'f') {
 			e.preventDefault();
-			elSearch.focus();
-			elSearch.select();
+			// To where the field is, which is the Advanced Search while there is
+			// one: core's field hands its focus() on the same way.
+			if (advState === 'open') advanced('focus');
+			else if (advState === 'collapsed') elAdvCollapse.focus();
+			else {
+				elSearch.focus();
+				elSearch.select();
+			}
 			return;
 		}
 		let target = e.target;
@@ -5265,7 +5292,11 @@
 	// The same icon as the sidebar's toggle, mirrored in CSS -- see graph.css.
 	elPaneToggle.appendChild(Icons.svg('open-pane'));
 	elReframe.appendChild(Icons.svg('zoom-to-fit'));
-	elSearchIcon.appendChild(Icons.svg('magnifier'));
+	elSearchMode.appendChild(Icons.svg('magnifier'));
+	elSearchMode.appendChild(Icons.svg('chevron-6'));
+	elSearchAdvanced.appendChild(Icons.svg('filter'));
+	elAdvCollapse.appendChild(Icons.svg('collapse'));
+	elAdvClose.appendChild(Icons.svg('close'));
 	elSearchClear.appendChild(Icons.svg('clear'));
 	for (let name of SECTIONS) {
 		el('sec-' + name).querySelector('.section-chevron').appendChild(Icons.svg('chevron-12'));
@@ -5294,50 +5325,110 @@
 	 * force-directed layout puts a known paper somewhere you have to hunt for,
 	 * and there is no ordering to hunt along.
 	 *
-	 * Matching is the filter grammar's own, over the facets render() already
-	 * kept: a bare term is asked of all eight fields, so a surname, a journal
-	 * and half a title all work without anyone having to say which is which.
-	 * No new matching code, and no new pass over the data.
+	 * What counts as a match is Zotero's answer rather than this page's. The
+	 * text goes to chrome as core's quicksearch-<mode> condition, in whichever
+	 * of its three modes the menu in front of the field is set to, and comes
+	 * back as the items it found -- so All Fields & Tags finds here exactly
+	 * the papers it finds in the library, notes and all. See
+	 * lib/searchPane.js. An outside reference is not an item and the library
+	 * cannot answer for it, so those are matched here, on what the graph
+	 * knows of them.
 	 */
 	const SEARCH_MAX = 10;
+	// Long enough that a word typed at speed is one question, not six.
+	const SEARCH_DEBOUNCE_MS = 120;
 
-	let searchRows = [];   // the nodes offered, in the order they are drawn
-	let searchAt = -1;     // which row the keyboard is on, or -1
+	let searchRows = [];     // the nodes offered, in the order they are drawn
+	let searchAt = -1;       // which row the keyboard is on, or -1
+	let searchSeq = 0;       // which question the next answer has to be for
+	let searchTimer = null;
+	let searchFound = null;  // item IDs Zotero found, or null while it is asked
+	let searchEnter = false; // Enter pressed before the answer was in
+	let searchMode = 'fields';
+
+	/** Words as core's quick search takes them: a quoted phrase is one. */
+	function searchWords(text) {
+		let out = [];
+		for (let m of text.matchAll(/"([^"]*)"|(\S+)/g)) {
+			let w = (m[1] != null ? m[1] : m[2]).trim().toLowerCase();
+			if (w) out.push(w);
+		}
+		return out;
+	}
 
 	function searchMatches(text) {
-		let filter = Filters.parse(text);
-		if (!filter || !filter.terms.length) return [];
+		let words = searchWords(text);
+		if (!words.length) return [];
 		let out = [];
 		for (let n of (drawnNodes || [])) {
-			let fac = facetCache.get(n.id);
-			// A ghost has no facets to match on -- it is a DOI and, with the
-			// lookup on, a title -- and the panel's masks already leave them
-			// out for the same reason. Its title is worth searching, though,
-			// which is the one thing the facets cannot answer for it.
-			if (fac ? Filters.matches(filter, fac) : ghostMatches(filter, n)) out.push(n);
+			let hit = n.ghost ? ghostMatches(words, n) : !!(searchFound && searchFound.has(n.itemID));
+			if (hit) out.push(n);
 			if (out.length >= SEARCH_MAX) break;
 		}
 		return out;
 	}
 
-	/** A ghost's own text, since it has no facet record. */
-	function ghostMatches(filter, n) {
-		if (!n.ghost) return false;
-		let hay = ((n.label || '') + ' ' + (n.name || '') + ' ' + (n.id || '')).toLowerCase();
-		for (let term of filter.terms) {
-			// A year range has no text to look for, and a ghost has no year to
-			// find it in; the held nodes answer that one through their facets.
-			if (term.value == null) continue;
-			if (hay.includes(String(term.value).toLowerCase())) return true;
+	/**
+	 * A ghost's own text, since Zotero has no record of it. Every word has to
+	 * be in it somewhere, which is how core joins them. Title, Creator, Year
+	 * reads those three and the name drawn on the node; the other two modes
+	 * read everything the graph has on it, the identifier included.
+	 */
+	function ghostMatches(words, n) {
+		let x = n.meta || {};
+		let parts = [n.label, x.title, x.year];
+		for (let c of (x.creators || [])) {
+			parts.push(typeof c === 'string' ? c : [c.firstName, c.lastName, c.name].join(' '));
 		}
-		return false;
+		if (searchMode !== 'titleCreatorYear') parts.push(n.name, n.id, x.id);
+		let hay = parts.filter(v => v != null).join(' ').toLowerCase();
+		return words.every(w => hay.includes(w));
 	}
+
+	/** Ask Zotero, once the typing has paused. */
+	function askSearch() {
+		clearTimeout(searchTimer);
+		searchSeq++;
+		searchFound = null;
+		let text = elSearch.value.trim();
+		if (!text) {
+			searchEnter = false;
+			return;
+		}
+		let seq = searchSeq;
+		searchTimer = setTimeout(() => emit({ type: 'quick-search', text, seq }), SEARCH_DEBOUNCE_MS);
+	}
+
+	window.zgQuickSearch = function (json) {
+		let msg;
+		try {
+			msg = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		// An answer to a question the field has since stopped asking.
+		if (!msg || msg.seq !== searchSeq) return;
+		searchFound = new Set(msg.itemIDs || []);
+		if (searchEnter) {
+			searchEnter = false;
+			renderSearch();
+			goTo(0);
+		}
+		else if (document.activeElement === elSearch) renderSearch();
+	};
 
 	function renderSearch() {
 		let text = elSearch.value.trim();
 		elSearchClear.hidden = !text;
 		if (!text) return hideSearch();
 
+		// Still waiting on Zotero: leave up the list that is there rather than
+		// blink it empty, and never say "nothing found" before anything was.
+		if (searchFound === null) {
+			if (elSearchSuggest.hidden) hideSearch();
+			return;
+		}
 		searchRows = searchMatches(text);
 		searchAt = -1;
 		elSearchSuggest.textContent = '';
@@ -5433,13 +5524,23 @@
 
 	function clearSearch() {
 		elSearch.value = '';
+		askSearch();
 		elSearchClear.hidden = true;
 		hideSearch();
 	}
 
-	elSearch.addEventListener('input', renderSearch);
+	elSearch.addEventListener('input', () => {
+		askSearch();
+		renderSearch();
+	});
 	elSearch.addEventListener('focus', () => {
-		if (elSearch.value.trim()) renderSearch();
+		// The mode is core's pref and the library's field can change it, so it
+		// is asked for again whenever this one is about to be used.
+		emit({ type: 'search-mode' });
+		if (!elSearch.value.trim()) return;
+		// And the search with it: the graph may have been rebuilt since.
+		askSearch();
+		renderSearch();
 	});
 	// The list is closed on the way out, but the field keeps its text: what was
 	// typed is still the answer to "what was I looking for", and clearing it
@@ -5447,6 +5548,12 @@
 	elSearch.addEventListener('blur', hideSearch);
 
 	elSearch.addEventListener('keydown', (e) => {
+		// Alt-Up/Down opens the mode menu, as it does in core's field.
+		if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+			e.preventDefault();
+			openModeMenu();
+			return;
+		}
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 			if (!searchRows.length) return;
 			e.preventDefault();
@@ -5459,6 +5566,11 @@
 		}
 		if (e.key === 'Enter') {
 			e.preventDefault();
+			// Typed faster than Zotero answered: go when it does.
+			if (searchFound === null && elSearch.value.trim()) {
+				searchEnter = true;
+				return;
+			}
 			// With nothing picked, Enter means the first row -- which is what
 			// the list is ordered to make true.
 			goTo(searchAt < 0 ? 0 : searchAt);
@@ -5479,6 +5591,134 @@
 		clearSearch();
 		elSearch.focus();
 	});
+
+	// --- core's two searches, around the field ----------------------------
+
+	/**
+	 * The Quick Search mode menu. Chrome's to draw -- it is core's own
+	 * menupopup, with core's names for the three modes -- and placed under the
+	 * field, as core's opens under its dropmarker.
+	 */
+	function openModeMenu() {
+		let r = elSearchBox.getBoundingClientRect();
+		emit({ type: 'search-mode-menu', x: Math.round(r.left), y: Math.round(r.bottom) });
+	}
+
+	// On the press, as core's type="menu" button opens, and without taking the
+	// focus from the field: the mode is chosen for the text in it.
+	elSearchMode.addEventListener('mousedown', (e) => {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		openModeMenu();
+	});
+	// Enter or Space on the focused button, which is the only click that gets
+	// here: the pointer's was answered on the press.
+	elSearchMode.addEventListener('click', (e) => {
+		if (e.detail === 0) openModeMenu();
+	});
+
+	window.zgSetSearchMode = function (json) {
+		let msg;
+		try {
+			msg = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		if (!msg || !msg.mode) return;
+		let changed = msg.mode !== searchMode;
+		searchMode = msg.mode;
+		// Core's placeholder is the mode's name, and so is this one.
+		if (msg.label) elSearch.placeholder = msg.label;
+		if (msg.picked) elSearch.focus();
+		// Core runs the search again when the mode changes under text.
+		if (changed && elSearch.value.trim()) {
+			askSearch();
+			if (document.activeElement === elSearch) renderSearch();
+		}
+	};
+
+	/**
+	 * Advanced Search. The pane is chrome's -- core's <zoterosearch> editor,
+	 * which is XUL -- and it is laid over the top of the canvas column, under
+	 * the bar, as core lays its own over the items list and not over the
+	 * collection tree. What it finds narrows the graph the way a filter chip
+	 * does: see masked() and lib/searchPane.js.
+	 */
+	let advRect = null;
+
+	/** Where the pane goes, whenever that changes: chrome cannot see it. */
+	function sendAdvRect(force) {
+		let bar = el('bar').getBoundingClientRect();
+		let r = el('canvas-wrap').getBoundingClientRect();
+		let next = { left: Math.round(r.left), top: Math.round(bar.bottom), width: Math.round(r.width) };
+		if (!force && advRect && advRect.left === next.left && advRect.top === next.top
+			&& advRect.width === next.width) return;
+		advRect = next;
+		emit({ type: 'advanced-search-rect', left: next.left, top: next.top, width: next.width });
+	}
+	new ResizeObserver(() => sendAdvRect(false)).observe(el('canvas-wrap'));
+
+	function advanced(action, extra) {
+		// Sent again first: the one the observer sent on load may have gone
+		// before chrome was listening.
+		sendAdvRect(true);
+		emit(Object.assign({ type: 'advanced-search', action }, extra || {}));
+	}
+
+	// Core's button: with text in the field, the Advanced Search opens seeded
+	// with it -- a condition a word, in the field's mode -- and the field is
+	// emptied, since the text lives in the conditions now. With none it is
+	// Ctrl+Shift+F.
+	elSearchAdvanced.addEventListener('mousedown', e => e.preventDefault());
+	elSearchAdvanced.addEventListener('click', () => {
+		let text = elSearch.value.trim();
+		advanced('button', { text, mode: searchMode });
+		if (text) clearSearch();
+	});
+
+	elAdvCollapse.addEventListener('click', () => advanced('collapse'));
+	elAdvClose.addEventListener('click', () => advanced('close'));
+
+	/**
+	 * What chrome says of its pane: open, folded or shut; how tall it is now;
+	 * and what the search found, or that nothing is being searched.
+	 */
+	window.zgSetAdvanced = function (json) {
+		let msg;
+		try {
+			msg = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		if (!msg) return;
+		if (msg.state) setAdvState(msg.state);
+		if ('height' in msg) {
+			elFrame.style.setProperty('--zg-adv-height', (Number(msg.height) || 0) + 'px');
+			remeasure();
+		}
+		if ('matches' in msg) {
+			advMatch = Array.isArray(msg.matches) ? new Set(msg.matches) : null;
+			render();
+		}
+	};
+
+	/** The field gives way to core's indicator while there is an Advanced Search. */
+	function setAdvState(state) {
+		advState = state;
+		let on = state !== 'closed';
+		let folded = state === 'collapsed';
+		if (on) hideSearch();
+		elSearchBox.hidden = on;
+		elAdvIndicator.hidden = !on;
+		elAdvIndicator.classList.toggle('collapsed', folded);
+		elAdvCollapse.textContent = '';
+		elAdvCollapse.appendChild(Icons.svg(folded ? 'expand' : 'collapse'));
+		let tip = t(folded ? 'adv-expand' : 'adv-collapse');
+		elAdvCollapse.title = tip;
+		elAdvCollapse.setAttribute('aria-label', tip);
+	}
 
 		// --- what Zotero's chrome looks like ----------------------------------
 

@@ -3305,8 +3305,9 @@ check('the icon notices name exactly the icons that ship', () => {
 	// nothing and are counted by neither.
 	const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
 		'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
-		'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
-	const said = md.match(/path data of (\w+) icons/);
+		'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+		'twenty-one', 'twenty-two', 'twenty-three', 'twenty-four', 'twenty-five'];
+	const said = md.match(/path data of ([\w-]+) icons/);
 	if (!said) throw new Error('the notices no longer say how many icons there are');
 	if (WORDS[listed.size] !== said[1]) {
 		throw new Error('the notices say ' + said[1] + ' icons; ' + listed.size + ' are copied');
@@ -3866,7 +3867,9 @@ check('every icon is a drawable path that paints in the menu colour', () => {
 	if (icons.names().length < 10) throw new Error('only ' + icons.names().length + ' icons');
 	for (const name of icons.names()) {
 		const svg = icons.svg(name);
-		if (!/^0 0 (16|20) (16|20)$/.test(svg.getAttribute('viewBox'))) {
+		// Zotero's own grids: 16 and 20 for most, 8 for the small chevrons such
+		// as the quick search field's dropmarker.
+		if (!/^0 0 (8|16|20) (8|16|20)$/.test(svg.getAttribute('viewBox'))) {
 			throw new Error(name + ': viewBox ' + svg.getAttribute('viewBox'));
 		}
 		if (svg.getAttribute('fill') !== 'currentColor') {

@@ -45,9 +45,17 @@
 			<div id="bar-spacer"></div>
 			<!-- Finds a paper and goes to it. Deliberately not a second filter: the
 			     panel's chips already narrow the graph, and what had no answer until
-			     now was "where in here is the paper I am thinking of". -->
+			     now was "where in here is the paper I am thinking of".
+
+			     Laid out as core's quick-search-textbox is: the Quick Search mode
+			     menu in front, the field, and the Advanced Search button inside its
+			     far end -- which opens the one search up here that does filter.
+			     While an Advanced Search is open the field gives its place to
+			     #adv-indicator, as core's gives its place to
+			     #advanced-search-indicator. -->
 			<div id="search-box">
-				<span id="search-icon"></span>
+				<button id="search-mode" type="button" aria-haspopup="menu"
+					data-zg-aria-label="search-mode" aria-label="Quick Search mode"></button>
 				<input id="search" type="text" autocomplete="off" spellcheck="false"
 					data-zg-placeholder="search-placeholder" placeholder="Search"
 					data-zg-title="search-hint"
@@ -56,6 +64,18 @@
 				<button id="search-clear" type="button" hidden="hidden"
 					data-zg-title="search-clear" data-zg-aria-label="search-clear"
 					title="Clear" aria-label="Clear"></button>
+				<button id="search-advanced" type="button" tabindex="-1"
+					data-zg-title="search-advanced" data-zg-aria-label="search-advanced"
+					title="Advanced Search" aria-label="Advanced Search"></button>
+			</div>
+			<div id="adv-indicator" hidden="hidden">
+				<span id="adv-label" data-zg-str="search-advanced">Advanced Search</span>
+				<button id="adv-collapse" class="adv-button" type="button"
+					data-zg-title="adv-collapse" data-zg-aria-label="adv-collapse"
+					title="Collapse Advanced Search" aria-label="Collapse Advanced Search"></button>
+				<button id="adv-close" class="adv-button" type="button"
+					data-zg-title="adv-close" data-zg-aria-label="adv-close"
+					title="Close Advanced Search" aria-label="Close Advanced Search"></button>
 			</div>
 			<!-- Brings the item pane back, and is only here while it is away.
 
@@ -258,6 +278,24 @@
 					</button>
 					<div class="section-body" id="sec-display-body">
 						<div class="group">
+							<!-- What a big collection gives up to stay smooth. First in this
+							     section because it is the widest switch in it: it decides how
+							     much of everything below it the renderer still bothers with,
+							     and the first thing it turns off is the engine the force
+							     sliders drive -- with it on the graph is struck once and stands
+							     still, and each of those sliders re-strikes it rather than
+							     setting it in motion.
+
+							     A checkbox rather than a threshold that switches itself on:
+							     which of these losses is worth which gain depends on the
+							     graph and on the machine, and a mode that arrived uninvited
+							     at 2000 nodes would be a renderer that changes what it draws
+							     without being asked. What it costs, measured:
+							     docs/performance.md. -->
+							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
+								<input id="perf" type="checkbox"/>
+								<span data-zg-str="perf-mode">performance mode</span>
+							</label>
 							<label>
 								<input id="hide-isolated" type="checkbox"/>
 								<span data-zg-str="hide-isolated">hide unconnected</span>
@@ -320,24 +358,6 @@
 							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
 								<span data-zg-str="isolate-depth">isolation depth</span>
 								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
-							</label>
-							<!-- What a big collection gives up to stay smooth. Last in this
-							     section because it is the widest switch in it: it decides how
-							     much of everything above it the renderer still bothers with,
-							     and the first thing it turns off is the engine the force
-							     sliders drive -- with it on the graph is struck once and stands
-							     still, and each of those sliders re-strikes it rather than
-							     setting it in motion.
-
-							     A checkbox rather than a threshold that switches itself on:
-							     which of these losses is worth which gain depends on the
-							     graph and on the machine, and a mode that arrived uninvited
-							     at 2000 nodes would be a renderer that changes what it draws
-							     without being asked. What it costs, measured:
-							     docs/performance.md. -->
-							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
-								<input id="perf" type="checkbox"/>
-								<span data-zg-str="perf-mode">performance mode</span>
 							</label>
 						</div>
 					</div>
