@@ -226,6 +226,17 @@
 								<span class="dot" id="openalex-refs-dot"></span>
 								<span data-zg-str="strategy-openalex-run">OpenAlex references</span>
 							</label>
+							<!-- Offline, unlike the one above, but switched for the other
+							     reason: it is the only strategy that adds NODES rather
+							     than edges between nodes already drawn, so it cannot be
+							     filtered off an existing graph the way the list below
+							     filters the rest. The works it finds need "Outside refs"
+							     to be drawn at all. -->
+							<label class="via-toggle" data-zg-title="strategy-ref-strings-run-hint" title="Read each entry in your papers' reference lists and add the works they name, including those with no DOI">
+								<input id="ref-strings" type="checkbox"/>
+								<span class="dot" id="ref-strings-dot"></span>
+								<span data-zg-str="strategy-ref-strings-run">Parsed references</span>
+							</label>
 						</div>
 						<div id="strategies" class="group"></div>
 

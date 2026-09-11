@@ -156,12 +156,12 @@ check('loads citation-graph/index.js through the shim', () => {
 	if (typeof cg.listStrategies !== 'function') throw new Error('no listStrategies()');
 });
 
-check('all four strategies registered via nested requires', () => {
+check('every bundled strategy is registered via nested requires', () => {
 	const cg = require_('./citation-graph/index.js');
 	// Ignore anything a later check registers -- the registry is process-wide and
 	// this must not depend on which check ran first.
 	const ids = cg.listStrategies().map(s => s.id).filter(id => !id.startsWith('test-')).sort();
-	const want = ['openalex', 'pdf-links', 'text-doi', 'title-match'];
+	const want = ['openalex', 'pdf-links', 'ref-strings', 'text-doi', 'title-match'];
 	if (JSON.stringify(ids) !== JSON.stringify(want)) {
 		throw new Error('got ' + JSON.stringify(ids));
 	}
@@ -2106,7 +2106,7 @@ check('naming a graph changes no node and no edge', () => {
 check('a graph tab reduces to what session.json can hold, and reads back', () => {
 	const { tabData, restoreOptions, collectionScope } = require_('./lib/graphTab.js');
 	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
-	const options = { recursive: true, includeExternal: true, enrich: false, openalexRefs: true };
+	const options = { recursive: true, includeExternal: true, enrich: false, openalexRefs: true, refStrings: true };
 
 	const data = JSON.parse(JSON.stringify(tabData(collectionScope(collection), options)));
 	if (data.collectionKey !== 'ABCD1234') throw new Error('key: ' + data.collectionKey);
@@ -2971,10 +2971,23 @@ check('an outside reference resolves through whichever namespace keyed it', () =
 	if (L.externalUrl('arxiv', '1303.3629') !== 'https://arxiv.org/abs/1303.3629') {
 		throw new Error('arxiv');
 	}
-	// Every namespace the builder can key an external node with must resolve to
-	// something, or the menu would offer a dead entry for nodes that do exist.
+	// Every namespace the builder can key an external node with must have a
+	// DECIDED answer here -- a URL, or a deliberate null. The rule used to be
+	// "must resolve to something", on the reasoning that anything else leaves
+	// the menu offering a dead entry. `ref` is the case that sharpened it: its
+	// id is a slug of a parsed title, so there is no address to send anyone to,
+	// and inventing one would open a 404 in the user's browser. ghostMenu()
+	// reads the null and disables the entry, which is the honest answer and the
+	// one the original concern actually asked for.
 	const sample = { doi: '10.1038/nature12373', arxiv: '1303.3629', openalex: 'W123' };
+	const addressless = new Set(['ref']);
 	for (const ns of EXTERNAL_NS) {
+		if (addressless.has(ns)) {
+			if (L.externalUrl(ns, 'some-parsed-title-slug') !== null) {
+				throw new Error('invented a URL for the addressless namespace ' + ns);
+			}
+			continue;
+		}
 		if (!sample[ns]) throw new Error('new namespace ' + ns + ' has no sample id here');
 		if (!L.externalUrl(ns, sample[ns])) throw new Error('no URL for namespace ' + ns);
 	}
@@ -5210,6 +5223,345 @@ check('the text strategies read each attachment once per build, not once each', 
 	};
 	await cg.build(adapter, { enable: ['text-doi', 'title-match'], offline: true });
 	if (reads !== sections.size) throw new Error(sections.size + ' attachments, ' + reads + ' reads');
+});
+
+// --- parsed reference strings (citation-graph/edges/refParse.js) ------------
+
+/** The same four works, written the four ways real bibliographies write them. */
+const REF_FIXTURES = {
+	ieee: [
+		'References',
+		'[1] G. Kucsko, P. C. Maurer, and N. Y. Yao, "Nanometre-scale thermometry in a living cell," Nature, vol. 500, no. 7460, pp. 54-58, 2013.',
+		'[2] T. Kamada and S. Kawai, "An algorithm for drawing general undirected graphs," Inf. Process. Lett., vol. 31, no. 1, pp. 7-15, 1989.',
+		'[3] M. Bastian, S. Heymann, and M. Jacomy, "Gephi: an open source software for exploring and manipulating networks," in Proc. ICWSM, 2009, pp. 361-362.',
+		'[4] E. R. Gansner and S. C. North, "An open graph visualization system and its applications," Softw. Pract. Exper., vol. 30, no. 11, pp. 1203-1233, 2000.',
+	].join('\n'),
+	// Hanging indent, which is the only thing separating one entry from the next.
+	apa: [
+		'References',
+		'Kucsko, G., Maurer, P. C., & Yao, N. Y. (2013). Nanometre-scale thermometry in a living cell. Nature,',
+		'    500(7460), 54-58. https://doi.org/10.1038/nature12373',
+		'Kamada, T., & Kawai, S. (1989). An algorithm for drawing general undirected graphs. Information',
+		'    Processing Letters, 31(1), 7-15.',
+		'Bastian, M., Heymann, S., & Jacomy, M. (2009). Gephi: An open source software for exploring and',
+		'    manipulating networks. In Proceedings of ICWSM (pp. 361-362).',
+	].join('\n'),
+	acm: [
+		'References',
+		'',
+		'Mathieu Bastian, Sebastien Heymann, and Mathieu Jacomy. 2009. Gephi: an open source software for exploring and manipulating networks. In Proc. ICWSM. 361-362.',
+		'',
+		'Tomihisa Kamada and Satoru Kawai. 1989. An algorithm for drawing general undirected graphs. Inf. Process. Lett. 31, 1 (1989), 7-15.',
+	].join('\n'),
+	vancouver: [
+		'References',
+		'',
+		'Kucsko G, Maurer PC, Yao NY. Nanometre-scale thermometry in a living cell. Nature. 2013;500(7460):54-58.',
+		'',
+		'Kamada T, Kawai S. An algorithm for drawing general undirected graphs. Inf Process Lett. 1989;31(1):7-15.',
+	].join('\n'),
+};
+
+check('a reference section divides into entries whatever marks them', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	const want = {
+		ieee: { layout: 'numbered', n: 4 },
+		apa: { layout: 'hanging', n: 3 },
+		acm: { layout: 'blank', n: 2 },
+		vancouver: { layout: 'blank', n: 2 },
+	};
+	for (const [name, text] of Object.entries(REF_FIXTURES)) {
+		const got = R.splitEntries(text);
+		if (got.layout !== want[name].layout || got.entries.length !== want[name].n) {
+			throw new Error(name + ': ' + got.layout + '/' + got.entries.length
+				+ ' wanted ' + want[name].layout + '/' + want[name].n);
+		}
+	}
+});
+
+check('a section with no structure splits into nothing, not into one huge entry', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// What a 'tail' segmentation hands over when it guessed wrong: body prose.
+	// The honest answer is no entries at all -- title-match already reads this
+	// text, and a wrong split would manufacture ghosts out of sentences.
+	const prose = ('The apparatus was calibrated against a reference standard before each run, and the '
+		+ 'measurements reported below were taken over a period of several weeks under conditions that '
+		+ 'were held as constant as the equipment allowed. ').repeat(6);
+	const got = R.splitEntries(prose);
+	if (got.entries.length) throw new Error('invented ' + got.entries.length + ' entries from prose');
+	if (got.layout !== 'none') throw new Error('layout: ' + got.layout);
+});
+
+check('the citation style is read off the section, not guessed per entry', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	for (const [name, text] of Object.entries(REF_FIXTURES)) {
+		const got = R.detectStyle(R.splitEntries(text).entries);
+		if (got !== name) throw new Error(name + ' read as ' + got);
+	}
+});
+
+check('a period inside initials or an abbreviated venue does not end the field', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// The single most load-bearing rule in the parser: a naive indexOf('.')
+	// truncates almost every title in the corpus at the first author initial.
+	const s = 'Smith, J. D. (2019). A long enough title to be usable here. Inf. Process. Lett., 31(1), 7.';
+	const at = R.nextSentenceBreak(s, s.indexOf('A long'));
+	if (s.slice(s.indexOf('A long'), at) !== 'A long enough title to be usable here') {
+		throw new Error('broke at ' + JSON.stringify(s.slice(s.indexOf('A long'), at)));
+	}
+	// ...and the abbreviated venue that follows is not three fields either: the
+	// next break is the one ending the whole entry, well past "Lett.".
+	const venueStart = at + 2;
+	const venue = s.slice(venueStart, R.nextSentenceBreak(s, venueStart));
+	if (!venue.startsWith('Inf. Process. Lett.')) {
+		throw new Error('broke inside the venue: ' + JSON.stringify(venue));
+	}
+});
+
+check('an abbreviated venue is not mistaken for the end of the title', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// The boundary of the abbreviation-run rule, in both directions. The first
+	// case is the one that makes the rule risky -- a short capitalised word
+	// ending a real title, with a short capitalised venue after it -- and the
+	// rest are the runs it exists for. A vocabulary alone cannot separate
+	// these: 'Brain' and 'Lett' look identical to a word list.
+	const want = [
+		['Smith, J. (2019). Measuring activity in the Brain. Nature, 500(7460), 54-58.', 'Measuring activity in the Brain'],
+		['Smith, J. (2019). A study of neural coding. Inf. Process. Lett., 31(1), 7-15.', 'A study of neural coding'],
+		['Smith, J. (2019). Learning from data. J. Mach. Learn. Res., 20, 1-30.', 'Learning from data'],
+		['Smith, J. (2019). Why science matters. Science, 300, 1-5.', 'Why science matters'],
+		// 'cell' was briefly in the abbreviation vocabulary and truncated this
+		// at the word the title ends on. It is a journal AND an English word,
+		// and the word list must stay clear of anything that is both.
+		['Kucsko, G. (2013). Nanometre-scale thermometry in a living cell. Nature, 500, 54-58.', 'Nanometre-scale thermometry in a living cell'],
+	];
+	for (const [entry, title] of want) {
+		const got = R.parseEntry(entry, 'apa').title;
+		if (got !== title) throw new Error(JSON.stringify(got) + ' wanted ' + JSON.stringify(title));
+	}
+});
+
+check('the first author is found in each of the four orderings', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	const want = [
+		['Kucsko, G., Maurer, P. C., & Yao, N. Y.', 'Kucsko'],
+		['G. Kucsko, P. C. Maurer, and N. Y. Yao', 'Kucsko'],
+		['Kucsko G, Maurer PC, Yao NY', 'Kucsko'],
+		['Mathieu Bastian, Sebastien Heymann, and Mathieu Jacomy', 'Bastian'],
+	];
+	for (const [authors, surname] of want) {
+		const got = R.parseEntry(authors + '. 2019. A title long enough to survive. In Proc.', 'acm').surname;
+		if (got !== surname) throw new Error(JSON.stringify(authors) + ' -> ' + got);
+	}
+});
+
+check('one work written four ways gets one ref: key', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// The property the whole namespace rests on. If two renderings of a work
+	// produce two slugs it becomes two ghosts cited once each, and the default
+	// "cited by >= 2" filter then hides both.
+	const keys = new Set();
+	for (const text of Object.values(REF_FIXTURES)) {
+		const { entries } = R.splitEntries(text);
+		const style = R.detectStyle(entries);
+		for (const e of entries) {
+			const sig = R.refSignature(R.parseEntry(e, style));
+			if (sig && sig.includes('algorithm-for-drawing')) keys.add(sig);
+		}
+	}
+	if (keys.size !== 1) throw new Error('fragmented into ' + keys.size + ': ' + [...keys].join(' | '));
+});
+
+check('a reference with no usable title is dropped rather than keyed', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// A fragment would collide with every other fragment, which shows up not as
+	// noise but as one enormous ghost that many papers appear to cite.
+	if (R.refSignature({ title: 'Ibid.' }) !== null) throw new Error('keyed "Ibid."');
+	if (R.refSignature({ title: null }) !== null) throw new Error('keyed a null title');
+	if (R.refSignature({ title: 'Introduction' }) !== null) throw new Error('keyed a short title');
+});
+
+// --- the ref-strings strategy end to end ------------------------------------
+
+/**
+ * Two papers citing overlapping work in two different styles, one of which
+ * prints a DOI for the work the other does not.
+ */
+function refStringsFixture() {
+	const items = [
+		{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'A citing paper about graphs', doi: '10.1000/citing', date: '2021', creators: ['Alpha'] },
+		{ key: 'BBBBBBBB', itemType: 'journalArticle', title: 'An algorithm for drawing general undirected graphs', doi: null, date: '1989', creators: ['Kamada'] },
+		{ key: 'CCCCCCCC', itemType: 'journalArticle', title: 'A second citing paper', doi: '10.1000/citing2', date: '2020', creators: ['Gamma'] },
+	];
+	const text = { AAAAAAAA1: REF_FIXTURES.ieee, CCCCCCCC1: REF_FIXTURES.apa };
+	return {
+		items,
+		adapter: {
+			listItems: async () => items,
+			getAttachments: async k => (text[k + '1'] ? [{ key: k + '1', parentKey: k, contentType: 'application/pdf' }] : []),
+			getAttachmentText: async attKey => text[attKey] || null,
+			getPdfLinkUris: async () => [],
+		},
+	};
+}
+
+check('ref-strings names works no identifier was printed for', () => {
+	const cg = require_('./citation-graph/index.js');
+	const { items, adapter } = refStringsFixture();
+	return cg.build(adapter, { enable: ['ref-strings'], offline: true, includeExternal: true }).then((r) => {
+		const byKey = Object.fromEntries(r.externalNodes.map(x => [x.key, x]));
+		// Cited by both papers, in two different styles, under one key.
+		const gephi = 'ref:gephi-an-open-source-software-for-exploring-and';
+		if (!byKey[gephi]) throw new Error('no ghost for Gephi: ' + Object.keys(byKey).join(', '));
+		if (byKey[gephi].citedBy !== 2) throw new Error('Gephi citedBy = ' + byKey[gephi].citedBy);
+		// A ghost with no identifier must arrive already carrying its name --
+		// nothing downstream can ever resolve one.
+		const d = r.described[gephi];
+		if (!d || !/^Gephi/.test(d.title)) throw new Error('unnamed ghost: ' + JSON.stringify(d));
+		if (!d.creators.includes('Bastian') || d.year !== 2009) throw new Error('thin metadata: ' + JSON.stringify(d));
+		// The entry that DID print a DOI is a doi: node, never a ref: one --
+		// that is what makes this strategy meet text-doi instead of duplicating it.
+		if (!byKey['doi:10.1038/nature12373']) throw new Error('DOI entry did not key on its DOI');
+		if (byKey['ref:nanometre-scale-thermometry-in-a-living-cell']
+				&& byKey['doi:10.1038/nature12373']) {
+			// Both exist pre-consolidation; that is the split the next check folds.
+		}
+		// The held paper is matched, not ghosted, from both styles.
+		const held = r.edges.filter(e => e.to === 'BBBBBBBB').map(e => e.from).sort();
+		if (JSON.stringify(held) !== JSON.stringify(['AAAAAAAA', 'CCCCCCCC'])) {
+			throw new Error('held-title edges: ' + JSON.stringify(held));
+		}
+		// It knows the author from the same entry as the title, unlike title-match.
+		const e = r.edges.find(x => x.to === 'BBBBBBBB');
+		if (e.confidence < 0.75) throw new Error('author agreement not credited: ' + e.confidence);
+		if (items.length !== 3) throw new Error('fixture changed');
+	});
+});
+
+check('ref-strings adds no outside nodes with includeExternal off', () => {
+	const cg = require_('./citation-graph/index.js');
+	const { adapter } = refStringsFixture();
+	return cg.build(adapter, { enable: ['ref-strings'], offline: true }).then((r) => {
+		if (r.externalNodes.length) throw new Error('leaked ' + r.externalNodes.length + ' nodes');
+		for (const e of r.edges) {
+			if (e.to.includes(':')) throw new Error('leaked an external edge to ' + e.to);
+		}
+		// The in-collection edges it finds are still worth having.
+		if (r.edges.length !== 2) throw new Error('held edges: ' + r.edges.length);
+	});
+});
+
+check('one work named two ways folds into one node, offline', () => {
+	const cg = require_('./citation-graph/index.js');
+	const { items, adapter } = refStringsFixture();
+	return cg.build(adapter, { enable: ['ref-strings'], offline: true, includeExternal: true }).then((r) => {
+		const inColl = new Set(items.map(i => i.key));
+		// One paper printed the DOI for the Nature work and the other did not, so
+		// it is doi:... from one and ref:... from the other -- two ghosts cited
+		// once each, where the truth is one cited twice. Since the min-citations
+		// filter defaults to 2, that split would hide the node entirely.
+		const before = cg.collectExternalNodes(r.edges, k => inColl.has(k));
+		const split = before.filter(x => /thermometry|nature12373/.test(x.key));
+		if (split.length !== 2) throw new Error('expected the split, saw ' + split.length);
+
+		const out = cg.consolidateByTitle(r.edges, {
+			isInCollection: k => inColl.has(k),
+			titleOf: k => r.described[k] || null,
+			items,
+		});
+		const after = cg.collectExternalNodes(out.edges, k => inColl.has(k));
+		const merged = after.filter(x => /thermometry|nature12373/.test(x.key));
+		if (merged.length !== 1) throw new Error('did not fold: ' + merged.map(x => x.key).join(', '));
+		// The identifier wins the key, never the parsed slug.
+		if (merged[0].key !== 'doi:10.1038/nature12373') throw new Error('kept ' + merged[0].key);
+		if (merged[0].citedBy !== 2) throw new Error('citedBy = ' + merged[0].citedBy);
+		// Provenance survives the re-key.
+		if (!merged[0].via.includes('ref-strings')) throw new Error('lost via');
+	});
+});
+
+check('consolidation never merges two held items that share a title', () => {
+	const cg = require_('./citation-graph/index.js');
+	// A held item is re-keyed ONTO, never re-keyed: two papers in the library
+	// with one title are two papers, and folding them would delete one.
+	const items = [
+		{ key: 'AAAAAAAA', title: 'A perfectly ordinary duplicated title', doi: null, date: '2019', creators: ['X'] },
+		{ key: 'BBBBBBBB', title: 'A perfectly ordinary duplicated title', doi: null, date: '2019', creators: ['Y'] },
+		{ key: 'CCCCCCCC', title: 'The citing paper', doi: null, date: '2021', creators: ['Z'] },
+	];
+	const edges = [
+		{ from: 'CCCCCCCC', to: 'AAAAAAAA', confidence: 0.8, via: ['ref-strings'], evidence: [] },
+		{ from: 'CCCCCCCC', to: 'BBBBBBBB', confidence: 0.8, via: ['ref-strings'], evidence: [] },
+	];
+	const inColl = new Set(items.map(i => i.key));
+	const out = cg.consolidateByTitle(edges, {
+		isInCollection: k => inColl.has(k),
+		titleOf: () => null,
+		items,
+	});
+	if (out.edges.length !== 2) throw new Error('merged two held items into ' + out.edges.length);
+	if (Object.keys(out.moved).length) throw new Error('moved a held item: ' + JSON.stringify(out.moved));
+});
+
+check('a parsed name reaches the payload with the metadata lookup off', () => {
+	const { pushData } = require_('./lib/graphTab.js');
+	const sent = [];
+	const entry = {
+		browser: { contentWindow: { wrappedJSObject: { zgSetData: j => sent.push(JSON.parse(j)) } } },
+		scope: { kind: 'collection', libraryID: 1, collection: { key: 'C1', name: 'L' }, itemKeys: null },
+		options: { recursive: false, includeExternal: true, enrich: false, refStrings: true },
+	};
+	const key = 'ref:an-algorithm-for-drawing-general-undirected-graphs';
+	const state = {
+		items: [{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Citing paper', doi: null }],
+		inCollection: new Set(['AAAAAAAA']),
+		edges: [{ from: 'AAAAAAAA', to: key, confidence: 0.5, via: ['ref-strings'], evidence: [] }],
+		metadata: Object.create(null),
+		described: Object.assign(Object.create(null), {
+			[key]: { key, title: 'An algorithm for drawing general undirected graphs', creators: ['Kamada'], year: 1989, venue: 'Inf. Process. Lett.', source: ['ref-strings'] },
+		}),
+		heldCounts: Object.create(null),
+	};
+	pushData(entry, state, { phase: 'done' });
+	const x = sent[0].external[0];
+	if (x.key !== key) throw new Error('wrong node: ' + x.key);
+	// Without this the node is a grey dot whose tooltip says nothing, and no
+	// enricher will ever fill it in: nothing supports the `ref` namespace.
+	if (x.title !== 'An algorithm for drawing general undirected graphs') {
+		throw new Error('unnamed on the wire: ' + JSON.stringify(x.title));
+	}
+	if (x.year !== 1989 || !x.creators.includes('Kamada')) throw new Error('thin: ' + JSON.stringify(x));
+	if (x.venue !== 'Inf. Process. Lett.') throw new Error('no venue for the card: ' + x.venue);
+
+	// And the lookup wins per field where it has an answer, while the parse
+	// still fills what the lookup does not -- core/enrich.js's own policy.
+	state.metadata[key] = { key, title: 'An Algorithm for Drawing General Undirected Graphs', citedByGlobal: 4200, source: ['openalex'] };
+	pushData(entry, state, { phase: 'done' });
+	const y = sent[1].external[0];
+	if (y.title !== 'An Algorithm for Drawing General Undirected Graphs') throw new Error('lookup did not win: ' + y.title);
+	if (y.citedByGlobal !== 4200) throw new Error('lost the count');
+	if (!y.creators.includes('Kamada')) throw new Error('parse did not fill creators: ' + JSON.stringify(y.creators));
+	if (y.venue !== 'Inf. Process. Lett.') throw new Error('parse did not fill venue');
+	if (!y.source.includes('ref-strings') || !y.source.includes('openalex')) {
+		throw new Error('provenance lost: ' + JSON.stringify(y.source));
+	}
+});
+
+check('a ref: node never spends the metadata lookup budget', () => {
+	const { ghostKeysOf } = require_('./lib/graphTab.js');
+	// No enricher declares the `ref` namespace, so core/enrich.js would never
+	// ask about one -- but an unfiltered list would still hand it MAX_ENRICH
+	// slots that the DOI ghosts need, and these already carry their only name.
+	const state = {
+		inCollection: new Set(['AAAAAAAA']),
+		edges: [
+			{ from: 'AAAAAAAA', to: 'doi:10.5555/x', confidence: 0.9, via: ['text-doi'], evidence: [] },
+			{ from: 'AAAAAAAA', to: 'ref:a-parsed-title-of-some-work', confidence: 0.5, via: ['ref-strings'], evidence: [] },
+		],
+	};
+	const keys = ghostKeysOf(state);
+	if (keys.includes('ref:a-parsed-title-of-some-work')) throw new Error('ref: key queued for lookup');
+	if (!keys.includes('doi:10.5555/x')) throw new Error('dropped the DOI ghost too');
 });
 
 Promise.all(pending).then(() => {

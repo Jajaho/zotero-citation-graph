@@ -18,6 +18,16 @@ class CollectionIndex {
 		this.minTitleLength = minTitleLength;
 		this.byKey = new Map();
 		this.byDoi = new Map();
+		/**
+		 * Exact normalized title -> item key.
+		 *
+		 * Distinct from titleTargets, which exists to be SEARCHED FOR inside a
+		 * blob of reference text. This answers the opposite question -- "here is
+		 * a title I parsed out of one reference, do you hold it?" -- which is a
+		 * lookup rather than a scan, and is what lets a per-entry strategy pay
+		 * O(1) where title-match pays a pass over the section.
+		 */
+		this.byTitle = new Map();
 		/** @type {{key:string,nt:string,year:?number,surname:string}[]} */
 		this.titleTargets = [];
 		/** Secondary identifier maps, filled in by identity providers. */
@@ -28,6 +38,11 @@ class CollectionIndex {
 			const d = normDoi(it.doi);
 			if (d) this.byDoi.set(d, it.key);
 			const nt = normTitle(it.title);
+			// Indexed at any length, unlike titleTargets: minTitleLength guards a
+			// SUBSTRING search, where a short title collides with the text around
+			// it. An exact-equality lookup has no such failure mode, and the
+			// short titles are exactly the ones title-match cannot reach.
+			if (nt && !this.byTitle.has(nt)) this.byTitle.set(nt, it.key);
 			if (nt.length >= minTitleLength) {
 				this.titleTargets.push({
 					key: it.key,
@@ -48,6 +63,12 @@ class CollectionIndex {
 		return d ? this.byDoi.get(d) || null : null;
 	}
 
+	/** @param {string} raw a title as printed @returns {?string} item key */
+	lookupTitle(raw) {
+		const nt = normTitle(raw);
+		return nt ? this.byTitle.get(nt) || null : null;
+	}
+
 	/** @param {string} ns e.g. 'openalex' @returns {?string} item key */
 	lookupExternal(ns, id) {
 		return this.byExternalId.get(ns + ':' + id) || null;
@@ -66,6 +87,7 @@ class CollectionIndex {
 			items: this.items.length,
 			doiIndexed: this.byDoi.size,
 			titleIndexed: this.titleTargets.length,
+			titleExact: this.byTitle.size,
 			externalIndexed: this.byExternalId.size,
 		};
 	}

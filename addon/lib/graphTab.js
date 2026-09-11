@@ -75,7 +75,16 @@ const MAX_EXTERNAL_NODES = 4000;
 //
 // `openalexRefs` is the one edge strategy that reaches the network, so it is
 // the one strategy that is switched on rather than filtered off.
-const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false, openalexRefs: false };
+//
+// `refStrings` is switched rather than filtered for the other reason: it is the
+// only offline strategy that ADDS NODES instead of edges between nodes already
+// on screen. Every other one can be toggled in the strategy list over a graph
+// that is already built, because taking it away leaves the same population with
+// fewer connections. Taking this one away would empty the canvas of everything
+// it found, which is a rebuild however it is dressed up.
+const DEFAULT_OPTIONS = {
+	recursive: false, includeExternal: false, enrich: false, openalexRefs: false, refStrings: false,
+};
 
 // tabID -> { win, tabID, browser, split, pane, itemPane, scope,
 //             generation, options, built, building, addTarget, selection }
@@ -1025,6 +1034,12 @@ async function buildPhases(entry, alive) {
 		inCollection: new Set(),
 		edges: [],
 		metadata: Object.create(null),
+		// What a strategy could say about a node it invented, as opposed to what
+		// the network was asked. Kept apart from `metadata` because the two are
+		// filled at different times and by different means, and because the
+		// lookup assigns `metadata` wholesale -- folding these in would lose them
+		// the moment it ran.
+		described: Object.create(null),
 		heldCounts: Object.create(null),
 		// How many rows the user picked, for a selection; null for a collection,
 		// where the question does not arise. Filled by phase 1 below.
@@ -1140,8 +1155,48 @@ async function buildPhases(entry, alive) {
 		logMeta('openalex', oaResult);
 	}
 
-	let results = [textResult, pdfResult].concat(oaResult ? [oaResult] : []);
+	// --- phase 3c: parsed reference strings -----------------------------
+	// Offline, but its own phase and its own switch, because it is the only
+	// strategy that adds NODES: it names works no identifier was printed for,
+	// which is the population every other offline strategy is blind to. It runs
+	// last of the deriving phases so that the DOIs the others resolved are
+	// already in hand -- an entry whose DOI text-doi matched is a node that
+	// exists, and this one joins it rather than inventing a second.
+	let refResult = null;
+	if (options.refStrings) {
+		push(mergeEdges(textResult.edges, pdfResult.edges, ...(oaResult ? [oaResult.edges] : [])), {
+			phase: 'pdf',
+			items: items.length,
+			perProvider: Object.assign({}, textResult.meta.perProvider, pdfResult.meta.perProvider,
+				oaResult ? oaResult.meta.perProvider : null),
+			errors: [...textResult.meta.errors, ...pdfResult.meta.errors,
+				...(oaResult ? oaResult.meta.errors : [])],
+		});
+		status(l10n.t('build-reading-references'));
+		refResult = await cg.build(adapter, {
+			enable: ['ref-strings'],
+			offline: true,
+			includeExternal: options.includeExternal,
+			onProgress: throttle(p => status(l10n.t('build-reading-references-progress', p))),
+		});
+		if (!alive()) return;
+		logMeta('ref-strings', refResult);
+	}
+
+	let results = [textResult, pdfResult]
+		.concat(oaResult ? [oaResult] : [])
+		.concat(refResult ? [refResult] : []);
 	let edges = mergeEdges(...results.map(r => r.edges));
+	// What the strategies could say about the nodes they invented, before any
+	// network call. Only ref-strings writes here, and only about outside works:
+	// a `ref:` node is identified by a parsed title and has nothing else to be
+	// drawn as, so this is the difference between a named ghost and a blank dot.
+	state.described = Object.assign(Object.create(null), ...results.map(r => r.described || null));
+	// Fold the same work back together where two strategies named it two ways --
+	// `doi:` from the paper that printed one, `ref:` from the paper that did not.
+	// Offline, because ref-strings describes the DOI nodes as well as its own;
+	// the lookup runs it again later over the names OpenAlex brought.
+	edges = consolidateRefs(state, edges);
 	let baseMeta = {
 		items: items.length,
 		perProvider: Object.assign({}, ...results.map(r => r.meta.perProvider)),
@@ -1278,7 +1333,11 @@ function lookupKeys(built) {
  */
 function ghostKeysOf(state) {
 	let external = cg.collectExternalNodes(state.edges, k => state.inCollection.has(k));
-	let byDoi = external.filter(x => x.ns !== 'openalex').slice(0, MAX_ENRICH);
+	// `ref:` nodes are left out entirely: no enricher declares that namespace,
+	// so core/enrich.js would never ask about one -- but they would still spend
+	// the MAX_ENRICH budget that the DOI ghosts need, and they already carry the
+	// only name they are ever going to have.
+	let byDoi = external.filter(x => x.ns !== 'openalex' && x.ns !== 'ref').slice(0, MAX_ENRICH);
 	let byOpenAlex = external.filter(x => x.ns === 'openalex').slice(0, MAX_ENRICH_REFERENCES);
 	return [...byDoi, ...byOpenAlex].map(x => x.key);
 }
@@ -1311,6 +1370,60 @@ function rekeyByDoi(state, heldByDoiKey) {
 }
 
 /**
+ * What is known about one node, whoever found it out.
+ *
+ * Fill-first with the lookup ahead of the parse, which is core/enrich.js's own
+ * policy and for its own reason: OpenAlex's title came from the publisher's
+ * record, the parsed one came out of somebody else's bibliography. But a parsed
+ * title is the only one a `ref:` node will ever have -- nothing resolves that
+ * namespace -- so the parse fills every field the lookup did not, rather than
+ * being replaced by it.
+ */
+function describeNode(state, key) {
+	// Both halves are optional: pushData is reachable with a state assembled by
+	// hand -- the tests do exactly that -- and a graph with no parsed references
+	// in it never grows a `described` at all.
+	let parsed = state.described && state.described[key];
+	let looked = state.metadata && state.metadata[key];
+	if (!parsed) return looked || null;
+	if (!looked) return parsed;
+	let out = { ...parsed };
+	for (let f of Object.keys(looked)) {
+		if (looked[f] == null) continue;
+		if (Array.isArray(looked[f]) && !looked[f].length) continue;
+		out[f] = looked[f];
+	}
+	// Both contributed, and the card's "source" line should say so.
+	out.source = [...new Set([...(parsed.source || []), ...(looked.source || [])])];
+	return out;
+}
+
+/**
+ * Fold the nodes that name one work into one node.
+ *
+ * The case it exists for: paper A's bibliography prints a DOI for a reference
+ * and paper B's does not, so the work becomes `doi:10.1038/...` from one and
+ * `ref:<title slug>` from the other -- two ghosts cited once each where the
+ * truth is one ghost cited twice. Since the min-citations filter defaults to 2,
+ * that split does not merely duplicate a node, it hides one.
+ *
+ * Run twice, because the titles it keys on arrive at two different times: once
+ * during the build, off the parsed names alone, and again after the lookup with
+ * whatever OpenAlex resolved. Both go through the same core function, so the
+ * offline answer is a subset of the online one rather than a different rule.
+ */
+function consolidateRefs(state, edges) {
+	let out = cg.consolidateByTitle(edges, {
+		isInCollection: k => state.inCollection.has(k),
+		titleOf: k => describeNode(state, k),
+		items: state.items,
+	});
+	let moved = Object.keys(out.moved).length;
+	if (moved) Zotero.debug(`[zotero-citation-graph] consolidated ${moved} outside reference(s) by title`);
+	return out.edges;
+}
+
+/**
  * The naming phase itself, over a build that already exists. Shared by the
  * build that produced it and by a later switch-on, so the two cannot disagree
  * about what a named graph looks like.
@@ -1338,6 +1451,10 @@ async function lookUpNames(entry, alive, built) {
 	// already have. Over the derived edges, so a second pass starts clean.
 	state.edges = built.derivedEdges;
 	rekeyByDoi(state, heldByDoiKey);
+	// Again, now that the lookup has named the DOI ghosts: a `ref:` node whose
+	// work is held under a DOI could not be recognised as the same work until
+	// that DOI had a title to compare against.
+	state.edges = consolidateRefs(state, state.edges);
 	built.ghostKeys = ghostKeysOf(state);
 	state.heldCounts = Object.create(null);
 	for (let [doiKey, itemKey] of heldByDoiKey) {
@@ -1367,7 +1484,7 @@ function pushData(entry, state, meta) {
 	let external = options.includeExternal
 		? cg.collectExternalNodes(state.edges, k => state.inCollection.has(k))
 			.slice(0, MAX_EXTERNAL_NODES)
-			.map(x => toWireExternal(x, state.metadata[x.key]))
+			.map(x => toWireExternal(x, describeNode(state, x.key)))
 		: [];
 	send(entry, 'zgSetData', {
 		// What the graph is OF, as the page needs to say it: the kind decides
@@ -1790,6 +1907,8 @@ function toWireExternal(x, m) {
 		out.creators = m.creators || [];
 		out.year = m.year != null ? m.year : null;
 		out.citedByGlobal = m.citedByGlobal != null ? m.citedByGlobal : null;
+		// Only ever set by ref-strings, for a node with no identifier to show.
+		out.venue = m.venue || null;
 		out.source = m.source || [];
 	}
 	return out;
@@ -1998,6 +2117,9 @@ module.exports = {
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
 	selectedLibraryID, selectItems,
 	mergeEdges, toWireExternal, adoptAdded, rekeyByDoi,
+	// Exported for the parsed-reference tests: which outside nodes a lookup is
+	// asked about, and how the two kinds of name are merged into one.
+	ghostKeysOf, describeNode, consolidateRefs,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.
 	tabData, restoreOptions, emptyReason, tabTitle,

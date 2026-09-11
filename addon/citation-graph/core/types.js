@@ -86,8 +86,15 @@ function edgeKey(from, to) {
  * These exist only when build() is called with includeExternal. Offline there
  * is no metadata behind them: a DOI harvested from a PDF is a DOI and nothing
  * more, so a bare identifier is all the UI has to label them with.
+ *
+ * `ref` is the exception and the reason build() grew a metadata sink. Its id is
+ * not a registered identifier at all but a slug of the cited work's own title
+ * (edges/refParse.js refSignature), minted for references that name a work no
+ * identifier was printed for. Nothing can resolve one -- no enricher declares
+ * `ref` and externalUrl() has no address for it -- so unlike the other three it
+ * has to arrive from the build already carrying its name.
  */
-const EXTERNAL_NS = ['doi', 'arxiv', 'openalex'];
+const EXTERNAL_NS = ['doi', 'arxiv', 'openalex', 'ref'];
 
 function externalKey(ns, id) {
 	return ns + ':' + id;

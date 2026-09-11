@@ -12,13 +12,14 @@
 require('./edges/pdfLinks');
 require('./edges/textDoi');
 require('./edges/titleMatch');
+require('./edges/refStrings');
 require('./edges/openalex');
 
 require('./enrich/openalex');
 
 const registry = require('./core/registry');
 const enrichRegistry = require('./core/enrichRegistry');
-const { build, filterEdges, collectExternalNodes } = require('./core/graphBuilder');
+const { build, filterEdges, collectExternalNodes, consolidateByTitle } = require('./core/graphBuilder');
 const { enrich } = require('./core/enrich');
 const { CollectionIndex } = require('./core/collectionIndex');
 
@@ -26,6 +27,7 @@ module.exports = {
 	build,
 	filterEdges,
 	collectExternalNodes,
+	consolidateByTitle,
 	enrich,
 	registry,
 	enrichRegistry,

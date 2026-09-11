@@ -23,6 +23,17 @@ flattening sources into one boolean. A user in a hyperlink-rich field can run
 `title-match`; someone who wants maximum recall and does not mind the network
 adds `openalex`.
 
+`ref-strings` is the odd one out and worth stating separately, because it
+answers a different question. Every other strategy answers *"does A cite B,
+where B is already in the collection?"* — even the ones that emit ghosts do it
+by recognising an identifier. `ref-strings` answers *"what does A cite at
+all?"*, by reading the reference entries themselves, and so it is the only
+source that can name a work for which nothing anywhere printed an identifier.
+That is also why its nodes are keyed on a slug of their own title
+(`refParse.js refSignature`), why it is the only strategy that has to hand its
+nodes' metadata out of `build()` through `ctx.describe`, and why it is switched
+rather than filtered: taking it away removes nodes, not edges.
+
 ## Layout
 
 ```
@@ -36,9 +47,11 @@ adapters/
   localSqlite.js      reads a Zotero data dir directly -- no running Zotero
 edges/
   refSection.js       reference-section segmentation (shared, precision-critical)
+  refParse.js         reference strings -> entries, fields, identity (pure)
   pdfLinks.js         DOI hyperlinks in PDF /URI annotations     offline
   textDoi.js          DOIs printed in reference text             offline
   titleMatch.js       cited title found in reference section     offline
+  refStrings.js       every work the references NAME             offline
   openalex.js         OpenAlex referenced_works                  network
 cli.js                benchmark harness
 ```
@@ -76,6 +89,11 @@ Obvious next ones: `crossref` (free, no key, DOIs directly), `opencitations`
 (free, returns DOI *and* OpenAlex ID per edge), `cita` (read citation notes a
 user's Cita plugin already stored), `zotero-relations` (honour manually
 confirmed edges).
+
+A strategy that invents nodes rather than recognising them has one more
+obligation: call `ctx.describe(key, { title, creators, year, ... })` for every
+external key it mints. `build()` returns those as `described`, and for a
+namespace no enricher supports it is the only name the node will ever have.
 
 ## The adapter boundary
 

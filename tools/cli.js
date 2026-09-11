@@ -7,7 +7,9 @@
  *   node citation-graph/cli.js --data-dir "C:/Users/me/Zotero" --db ./z.sqlite
  *   node citation-graph/cli.js --enable pdf-links,title-match
  *   node citation-graph/cli.js --enable openalex --api-key KEY
- *   node citation-graph/cli.js --compare pdf-links,text-doi,title-match,openalex
+ *   node citation-graph/cli.js --compare pdf-links,text-doi,title-match,ref-strings
+ *   node citation-graph/cli.js --enable ref-strings --include-external
+ *                                                      works named with no DOI at all
  *   node citation-graph/cli.js --include-external      also count works NOT held
  *   node citation-graph/cli.js --include-external --enrich   ...and name them
  *   node citation-graph/cli.js --include-external --clusters  the subfield map
@@ -236,7 +238,10 @@ function printGaps(r, metadata) {
 	for (const e of r.edges) { const n = e.via.length; byN[n] = (byN[n] || 0) + 1; }
 	console.log('edges by number of corroborating strategies:', JSON.stringify(byN));
 
-	let metadata = Object.create(null);
+	// Seeded with whatever the strategies could name for themselves, so a ref:
+	// node -- which no enricher can ever resolve -- prints as its title rather
+	// than as its slug, with or without --enrich.
+	let metadata = Object.assign(Object.create(null), r.described || null);
 	if (args.includeExternal) {
 		// Nearly all of these are cited exactly once, which is why the plugin
 		// filters on the count rather than showing them all.
@@ -265,7 +270,11 @@ function printGaps(r, metadata) {
 				providers: { openalex: { apiKey: args.apiKey || null } },
 			});
 			process.stderr.write(''.padEnd(40) + '\r');
-			metadata = e.metadata;
+			// Fill-first, as core/enrich.js merges: the lookup answers where it
+			// has one, the parse keeps the fields it does not.
+			for (const [k, m] of Object.entries(e.metadata)) {
+				metadata[k] = { ...(metadata[k] || null), ...m };
+			}
 			console.log('enriched  :', e.meta.resolved, 'of', e.meta.requested,
 				`(${heldByDoiKey.size} held, ${toName.length - heldByDoiKey.size} outside)`,
 				'via', e.meta.ran.join(', ') || '(none)', 'in', (e.meta.ms / 1000).toFixed(1) + 's');

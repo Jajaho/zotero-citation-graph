@@ -652,6 +652,7 @@
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
 	let elOpenAlexRefs = el('openalex-refs');
+	let elRefStrings = el('ref-strings');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
 	let elLinkPull = el('link-pull');
@@ -789,6 +790,7 @@
 			elIncludeExternal.checked = !!raw.options.includeExternal;
 			elEnrich.checked = !!raw.options.enrich;
 			elOpenAlexRefs.checked = !!raw.options.openalexRefs;
+			elRefStrings.checked = !!raw.options.refStrings;
 		}
 		applyScope();
 		yearRange = null;
@@ -1417,6 +1419,7 @@
 			case 'text-doi': return t('strategy-text-doi-hint');
 			case 'title-match': return t('strategy-title-match-hint');
 			case 'openalex': return t('strategy-openalex-hint');
+			case 'ref-strings': return t('strategy-ref-strings-hint');
 			default: return t('strategy-other-hint');
 		}
 	}
@@ -1427,11 +1430,16 @@
 			case 'text-doi': return '#3fa66a';
 			case 'title-match': return '#b0b0b0';
 			case 'openalex': return '#8a7fd0';
+			case 'ref-strings': return '#d08a3f';
 			default: return '#8a7fd0';
 		}
 	}
 
-	const VIA_RANK = ['pdf-links', 'text-doi', 'openalex', 'title-match'];
+	// Most-asserted first: an edge several strategies found is drawn in the
+	// colour of the strongest evidence behind it. ref-strings sits above
+	// title-match because it matched a title inside ONE reference entry with the
+	// author beside it, where title-match matched anywhere in the section.
+	const VIA_RANK = ['pdf-links', 'text-doi', 'openalex', 'ref-strings', 'title-match'];
 
 	function bestVia(via) {
 		for (let v of VIA_RANK) if (via.includes(v)) return v;
@@ -5220,12 +5228,22 @@
 		if (x.citedByGlobal != null) {
 			sub.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
 		}
-		// The DOI is the thing actually being added, so show it verbatim.
-		sub.push(n.name);
+		// The DOI is the thing actually being added, so show it verbatim -- but
+		// only when there IS one. A `ref:` node's id is a slug of its own title
+		// (citation-graph/edges/refParse.js), so printing it here would repeat
+		// the heading back in punctuation-stripped form and read as an
+		// identifier the work does not have. Its venue is the useful line
+		// instead, being the one field the card is not already showing.
+		if (x.ns === 'doi') sub.push(n.name);
+		else if (x.venue) sub.push(x.venue);
 		el('action-sub').textContent = sub.join(' · ');
 
 		let add = el('action-add');
-		add.disabled = false;
+		// Nothing can add a work that has no identifier: Zotero's add-by-
+		// identifier path is what does the adding, and a parsed title is not one.
+		// Disabled rather than hidden, so the card still says the button exists
+		// and this particular node is the reason it cannot be used.
+		add.disabled = x.ns !== 'doi';
 		add.textContent = t('action-add');
 
 		elAction.hidden = false;
@@ -5376,6 +5394,7 @@
 				includeExternal: elIncludeExternal.checked,
 				enrich: elEnrich.checked,
 				openalexRefs: elOpenAlexRefs.checked,
+				refStrings: elRefStrings.checked,
 			},
 		});
 	}
@@ -5405,6 +5424,8 @@
 	elIncludeExternal.addEventListener('change', requestRebuild);
 	elOpenAlexRefs.addEventListener('change', requestRebuild);
 	el('openalex-refs-dot').style.background = viaColor('openalex');
+	elRefStrings.addEventListener('change', requestRebuild);
+	el('ref-strings-dot').style.background = viaColor('ref-strings');
 	elEnrich.addEventListener('change', requestLookup);
 	el('rebuild').addEventListener('click', requestRebuild);
 
