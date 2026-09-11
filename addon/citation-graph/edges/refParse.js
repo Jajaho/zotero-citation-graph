@@ -45,13 +45,21 @@ const MIN_ENTRIES = 3;
  * .zotero-ft-cache. Both produced no entries at all, which is the worst
  * possible failure for a reference list that is otherwise perfectly regular.
  *
- * The punctuation must follow the digits IMMEDIATELY, and a capital must follow
- * the space. That alone rejects most of what would otherwise look like a
- * marker -- "vol. 500, no. 7460" and "pp. 54-58" both fail on the character
- * after the digits, and a four-digit year fails on the digit count. What
- * survives that is settled by the ascending-run check in markerRun().
+ * The punctuation must follow the digits IMMEDIATELY, and a capital must follow.
+ * That alone rejects most of what would otherwise look like a marker --
+ * "vol. 500, no. 7460" and "pp. 54-58" both fail on the character after the
+ * digits, and a four-digit year fails on the digit count. What survives that is
+ * settled by the ascending-run check in markerRun().
+ *
+ * The space between the marker and the author is OPTIONAL, and demanding it
+ * cost three of the thirteen bibliographies in the benchmark collection. A
+ * bracketed marker frequently abuts its author with no space at all --
+ * "[1]Alexios Beveratos et al." in the ODMR manual, "[117]E. Rittweger" in
+ * Rondin 2014 -- and against `\s+` not one marker was found in either, so a
+ * perfectly regular numbered list produced zero entries and ref-strings
+ * declined the document entirely.
  */
-const MARKER_G = /(^|[\s\f])[[(]?(\d{1,3})[\]).](?=\s+["'“‘]?[A-Z])/g;
+const MARKER_G = /(^|[\s\f])[[(]?(\d{1,3})[\]).](?=\s*["'“‘]?[A-Z])/g;
 // "Smith, J." / "Smith, John" -- an author-year entry opening at column 0.
 // Two forms because a style either abbreviates the given name or does not.
 const SURNAME_INITIAL = /^[A-Z][a-zA-Z'\u2019-]{1,20},\s+[A-Z]\./;
@@ -83,11 +91,11 @@ function splitEntries(sectionText) {
 	]) {
 		const raw = split(lines);
 		if (!raw) continue;
-		const entries = clean(raw);
+		const { entries, lengths } = clean(raw);
 		// The section-level judgement is made on everything the split produced,
 		// so a section that is mostly not a bibliography is rejected outright
 		// rather than quietly reduced to whichever few entries look like one.
-		if (!accept(entries, text)) continue;
+		if (!accept(entries, lengths, text)) continue;
 		const dated = entries.filter(hasYear);
 		if (dated.length) return { entries: dated, layout };
 	}
@@ -101,7 +109,7 @@ function splitEntries(sectionText) {
  * splitting at all. Below that a bibliography of two entries is perfectly
  * normal and the gate must not reject it.
  */
-function accept(entries, text) {
+function accept(entries, lengths, text) {
 	if (!entries.length) return false;
 	// A bibliography is a list of DATED works, and prose is not. Without this,
 	// the tail fallback on an attachment that is not a paper at all -- one real
@@ -121,7 +129,15 @@ function accept(entries, text) {
 	// The median rather than the max: one over-long entry is a split that missed
 	// a single boundary, which costs one work. A median this size means the
 	// splitter found almost no boundaries at all.
-	const lens = entries.map(e => e.length).sort((a, b) => a - b);
+	//
+	// Measured BEFORE clean() truncated anything, which is the whole of it. The
+	// lengths this once read were the post-truncation ones, and clean() caps
+	// every entry at MAX_ENTRY_CHARS -- so the comparison was `x <= x` and the
+	// gate had never once rejected a split in its life. It is the guard that
+	// stops a four-marker run splitting a four-hundred-reference bibliography,
+	// and it only became load-bearing when markerRun stopped demanding that a
+	// run start at 1.
+	const lens = [...lengths].sort((a, b) => a - b);
 	return lens[lens.length >> 1] <= MAX_ENTRY_CHARS;
 }
 
@@ -140,15 +156,25 @@ function hasYear(s) {
 	return /\b(1[89]\d\d|20\d\d)\b/.test(s);
 }
 
-/** Trim, drop furniture, and cap the runaways. */
+/**
+ * Trim, drop furniture, and cap the runaways.
+ *
+ * Reports the lengths the entries had BEFORE the cap, because how long a split
+ * really ran is the only evidence accept() has that the split worked at all,
+ * and truncating first destroys it.
+ *
+ * @returns {{entries: string[], lengths: number[]}}
+ */
 function clean(groups) {
-	const out = [];
+	const entries = [];
+	const lengths = [];
 	for (const g of groups) {
 		const s = g.join(' ').replace(/\s+/g, ' ').trim();
 		if (s.length < MIN_ENTRY_CHARS) continue;
-		out.push(s.length > MAX_ENTRY_CHARS ? s.slice(0, MAX_ENTRY_CHARS) : s);
+		entries.push(s.length > MAX_ENTRY_CHARS ? s.slice(0, MAX_ENTRY_CHARS) : s);
+		lengths.push(s.length);
 	}
-	return out;
+	return { entries, lengths };
 }
 
 /**
@@ -157,8 +183,17 @@ function clean(groups) {
  * Ascent is the whole of the precision here. Page numbers, volume numbers,
  * equation labels and "3. Results" can all look like a marker in isolation;
  * what no stray number does is continue somebody else's count. So candidate
- * markers are accepted only while they follow on from the last one, and the run
- * is anchored at a marker numbered 1 or 2.
+ * markers are accepted only while they follow on from the last one.
+ *
+ * The run is NOT anchored at 1 or 2. It was, on the reasoning that a
+ * bibliography starts at its first entry -- but an extracted section often does
+ * not start at the bibliography's first entry. Barry 2016's begins at marker
+ * 31, the earlier ones having landed elsewhere in the extraction order, and
+ * under the anchor its fifty-nine perfectly regular references produced nothing
+ * at all. What the anchor was really guarding against is a short run captured
+ * out of body text, and length is the honest test for that: the run has to
+ * reach `minRun`, and splitEntries then weighs the whole split against the size
+ * of the section it came from.
  *
  * Every plausible anchor is tried and the longest run wins, because a stray
  * "1." earlier in the text -- easy to pick up when the section scope was
@@ -182,11 +217,10 @@ function markerRun(s, { minRun = MIN_ENTRIES } = {}) {
 	}
 	let best = null;
 	for (let start = 0; start < marks.length; start++) {
-		// A bibliography starts at 1, or at 2 when the extractor lost the first
-		// marker. Never at 0 -- that is an equation label or a footnote, and
-		// allowing it let a run anchor itself in the body text of a paper whose
-		// reference section could not be found.
-		if (marks[start].n < 1 || marks[start].n > 2) continue;
+		// Never 0 -- that is an equation label or a footnote, and allowing it
+		// let a run anchor itself in the body text of a paper whose reference
+		// section could not be found.
+		if (marks[start].n < 1) continue;
 		const run = [marks[start]];
 		let expected = marks[start].n + 1;
 		for (let k = start + 1; k < marks.length; k++) {

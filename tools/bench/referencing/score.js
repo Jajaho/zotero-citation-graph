@@ -195,8 +195,18 @@ async function main() {
 	const ids = args.enable || cg.listStrategies().filter((p) => !p.requiresNetwork).map((p) => p.id);
 	const providerOpts = args.apiKey ? { openalex: { apiKey: args.apiKey } } : {};
 
-	// One build per strategy, plus the union, all with externals so tier 2 has
+	// One build per strategy, then two unions, all with externals so tier 2 has
 	// something to grade. Tier 1 ignores external targets either way.
+	//
+	// The OFFLINE union is reported beside the full one because it is what a
+	// default install actually draws: `openalex` needs the network and is
+	// off by default, so a figure that includes it describes a graph most
+	// libraries never build. The gap between the two rows is the price of
+	// staying offline, which is the number the pref is really asking about.
+	const offlineIds = ids.filter((id) => {
+		const p = cg.listStrategies().find((s) => s.id === id);
+		return p && !p.requiresNetwork;
+	});
 	const runs = [];
 	for (const id of ids) {
 		try {
@@ -204,10 +214,16 @@ async function main() {
 			runs.push({ id, edges: r.edges, errors: (r.meta && r.meta.errors) || [] });
 		} catch (e) { runs.push({ id, error: e.message }); }
 	}
-	try {
-		const r = await cg.build(adapter, { enable: ids, includeExternal: !!ext, providers: providerOpts });
-		runs.push({ id: 'ALL (union)', edges: r.edges, errors: (r.meta && r.meta.errors) || [] });
-	} catch (e) { runs.push({ id: 'ALL (union)', error: e.message }); }
+	const unions = [['OFFLINE (union)', offlineIds], ['ALL (union)', ids]];
+	for (const [label, enable] of unions) {
+		// Only when it says something the single-strategy rows do not: one
+		// offline strategy makes the offline union a copy of that row.
+		if (enable.length < 2 || (label === 'OFFLINE (union)' && enable.length === ids.length)) continue;
+		try {
+			const r = await cg.build(adapter, { enable, includeExternal: !!ext, providers: providerOpts });
+			runs.push({ id: label, union: true, edges: r.edges, errors: (r.meta && r.meta.errors) || [] });
+		} catch (e) { runs.push({ id: label, union: true, error: e.message }); }
+	}
 
 	// Resolve OpenAlex ids once, across every run that produced them.
 	const oaIds = new Set();
@@ -219,8 +235,21 @@ async function main() {
 		: { map: {}, resolved: 0, unresolved: 0 };
 
 	const results = runs.map((r) => (r.error
-		? { id: r.id, error: r.error }
-		: { id: r.id, errors: r.errors, ...gradeCore(r.edges), external: ext ? gradeExternal(r.edges) : null }));
+		? { id: r.id, union: !!r.union, error: r.error }
+		: { id: r.id, union: !!r.union, errors: r.errors, ...gradeCore(r.edges),
+			external: ext ? gradeExternal(r.edges) : null }));
+
+	// What each strategy alone contributes: the true edges no other strategy in
+	// this run found. A strategy whose unique count is zero is, on this
+	// collection, carrying nothing the rest do not already carry -- which is the
+	// question "should this one be on by default?" in its measurable form. Union
+	// rows are excluded from the comparison and report no unique count of their
+	// own, since every edge in them came from one of the rows above.
+	const singles = results.filter((r) => !r.union && !r.error);
+	for (const r of singles) {
+		const others = singles.filter((o) => o !== r).flatMap((o) => o.truePositives);
+		r.uniqueTp = r.truePositives.filter((k) => !others.includes(k));
+	}
 
 	const cond = conditions(args, adapter, ids, gt, ext);
 	cond.openalexIdsResolved = oa.resolved;
@@ -263,7 +292,7 @@ async function main() {
 				const [a, b] = k.split(' -> ');
 				return controlWorks.has(a) || controlWorks.has(b);
 			}),
-			falsePositives: fp, missed: fn,
+			truePositives: tp, falsePositives: fp, missed: fn,
 		};
 	}
 
@@ -345,14 +374,15 @@ async function main() {
 		console.log('tier 1:', run.tier1.edges, 'hand-read in-collection edges (' + run.tier1.reachable + ' PDF-reachable)');
 		if (run.tier2) console.log('tier 2:', run.tier2.externalDois, 'external DOIs from Crossref deposits (recall is a LOWER BOUND)');
 		console.log('');
-		console.log(pad('strategy', 14), rpad('pred', 5), rpad('TP', 4), rpad('FP', 4),
+		console.log(pad('strategy', 16), rpad('pred', 5), rpad('TP', 4), rpad('uniq', 5), rpad('FP', 4),
 			rpad('prec', 6), rpad('recall', 7), rpad('F1', 6), rpad('dup', 4), rpad('traps', 6),
 			run.tier2 ? '  | ext TP  miss  unconf  defect' : '');
 		const bm = new Map((baseline && baseline.results || []).map((r) => [r.id, r]));
 		for (const r of run.results) {
-			if (r.error) { console.log(pad(r.id, 14), ' ERROR:', r.error); continue; }
+			if (r.error) { console.log(pad(r.id, 16), ' ERROR:', r.error); continue; }
 			const e = r.external;
-			console.log(pad(r.id, 14), rpad(r.predicted, 5), rpad(r.tp, 4), rpad(r.fp, 4),
+			console.log(pad(r.id, 16), rpad(r.predicted, 5), rpad(r.tp, 4),
+				rpad(r.union ? '-' : r.uniqueTp.length, 5), rpad(r.fp, 4),
 				rpad(pct(r.precision), 6), rpad(pct(r.recall), 7), rpad(r.f1.toFixed(2), 6),
 				rpad(r.duplicateSelfLoops, 4), rpad(r.trapsHit.length || '-', 6),
 				e ? '  | ' + rpad(e.tp, 6) + rpad(e.missed, 6) + rpad(e.unconfirmed, 8) + rpad(e.defects, 7) : '');
@@ -363,7 +393,7 @@ async function main() {
 					['extTP', e && b.external ? d(b.external.tp, e.tp) : null],
 					['defects', e && b.external ? d(b.external.defects, e.defects) : null]]
 					.filter(([, v]) => v).map(([k, v]) => k + ' ' + v);
-				if (parts.length) console.log(pad('', 14), '  vs baseline:', parts.join(', '));
+				if (parts.length) console.log(pad('', 16), '  vs baseline:', parts.join(', '));
 			}
 		}
 
@@ -385,9 +415,9 @@ async function main() {
 		L.push('# Citation accuracy');
 		L.push('');
 		L.push('Generated by `node tools/bench/referencing/score.js --report`. Do not edit by hand —');
-		L.push('the next run overwrites it. What the numbers mean, how the answer key was');
-		L.push('built and what it can and cannot prove:');
-		L.push('[tools/bench/referencing/README.md](README.md).');
+		L.push('the next run overwrites it. Every column is defined in');
+		L.push('[README.md](README.md), which is also where to look for what the answer key');
+		L.push('can and cannot prove.');
 		L.push('');
 		L.push('## Conditions');
 		L.push('');
@@ -425,30 +455,31 @@ async function main() {
 
 		L.push('## Tier 1 — citations between held works');
 		L.push('');
-		L.push('Hand-read from the citing PDFs, cross-checked against Crossref for');
-		L.push('completeness. Exhaustive, so a predicted edge that is not in it is wrong.');
+		L.push(run.tier1.edges + ' edges, ' + run.tier1.reachable + ' of them PDF-reachable.');
 		L.push('');
-		L.push('| strategy | pred | TP | FP | precision | recall | rec/pdf | F1 | dup | traps |');
-		L.push('|---|---|---|---|---|---|---|---|---|---|');
+		L.push('| strategy | pred | TP | uniq | FP | precision | recall | rec/pdf | F1 | dup | traps |');
+		L.push('|---|---|---|---|---|---|---|---|---|---|---|');
 		for (const r of run.results) {
-			if (r.error) { L.push('| `' + r.id + '` | ERROR: ' + r.error + ' | | | | | | | | |'); continue; }
-			L.push('| `' + r.id + '` | ' + r.predicted + ' | ' + r.tp + ' | ' + r.fp + ' | ' + pct(r.precision)
+			if (r.error) { L.push('| `' + r.id + '` | ERROR: ' + r.error + ' | | | | | | | | | |'); continue; }
+			L.push('| `' + r.id + '` | ' + r.predicted + ' | ' + r.tp + ' | ' + (r.union ? '—' : r.uniqueTp.length)
+				+ ' | ' + r.fp + ' | ' + pct(r.precision)
 				+ ' | ' + pct(r.recall) + ' | ' + pct(r.recallReachable) + ' | ' + r.f1.toFixed(2)
 				+ ' | ' + r.duplicateSelfLoops + ' | ' + (r.trapsHit.length || '—') + ' |');
 		}
 		L.push('');
-		L.push('`recall` is against all ' + run.tier1.edges + ' edges; `rec/pdf` against the '
-			+ run.tier1.reachable + ' whose citing work is held with a PDF. `dup` counts edges between the');
-		L.push('two copies of the duplicated work — a merge failure, not a wrong citation.');
-		L.push('');
+		const uniq = run.results.filter((r) => !r.union && !r.error && r.uniqueTp.length);
+		if (uniq.length) {
+			L.push('Edges found by one strategy and no other:');
+			L.push('');
+			for (const r of uniq) L.push('- `' + r.id + '` — ' + r.uniqueTp.map((k) => '`' + k + '`').join(', '));
+			L.push('');
+		}
 
 		if (run.tier2) {
 			L.push('## Tier 2 — cited works the collection does not hold');
 			L.push('');
-			L.push('From Crossref deposited reference lists. **Presence is reliable, absence is');
-			L.push('not** — publishers deposit incomplete lists — so `recall` here is a lower');
-			L.push('bound and `unconf` is not a false-positive count. `defects` are the two');
-			L.push('things provable anyway: a DOI carrying a URL tail, and a DOI cut short.');
+			L.push(run.tier2.externalDois + ' external DOIs. Presence is reliable, absence is not, so');
+			L.push('`recall ≥` is a lower bound and `unconf` is not an error count.');
 			L.push('');
 			L.push('| strategy | emitted by namespace | TP | missed | unconf | defects | recall ≥ | ref: nodes |');
 			L.push('|---|---|---|---|---|---|---|---|');

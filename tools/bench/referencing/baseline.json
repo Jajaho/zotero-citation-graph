@@ -1,7 +1,7 @@
 {
  "conditions": {
-  "when": "2026-09-11T21:53:01.531Z",
-  "commit": "e9dabef",
+  "when": "2026-09-11T23:13:53.896Z",
+  "commit": "d0ff997",
   "dirty": true,
   "node": "v24.3.0",
   "platform": "win32 10.0.26200 x64",
@@ -13,7 +13,7 @@
   "pdfSetSha": "00671f2ff0d2d66f",
   "groundTruthSha": "79901e18c0a9a444",
   "groundTruthEdges": 30,
-  "externalRefsSha": "20292b70e0bef6d2",
+  "externalRefsSha": "822f19460ce60762",
   "externalDois": 1366,
   "externalFetchedOn": "2026-09-11",
   "strategies": [
@@ -90,6 +90,7 @@
  "results": [
   {
    "id": "pdf-links",
+   "union": false,
    "errors": [],
    "predicted": 19,
    "tp": 19,
@@ -102,6 +103,27 @@
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> dolde2011",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> dreau2011",
+    "zhang2022 -> barry2020",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> dreau2011",
+    "barry2020 -> barry2016",
+    "barry2020 -> dolde2011",
+    "barry2020 -> dreau2011",
+    "barry2020 -> hahn1950",
+    "barry2020 -> rondin2014",
+    "barry2020 -> sturner2019",
+    "barry2016 -> dreau2011",
+    "odmrManual -> dolde2011",
+    "blais2021 -> magnard2020"
+   ],
    "falsePositives": [],
    "missed": [
     "sarkar2023 -> sturner2019",
@@ -130,10 +152,12 @@
     "defects": 0,
     "refNodes": 0,
     "refNodesCorroborated": 0
-   }
+   },
+   "uniqueTp": []
   },
   {
    "id": "text-doi",
+   "union": false,
    "errors": [],
    "predicted": 11,
    "tp": 11,
@@ -146,6 +170,19 @@
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> dolde2011",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> dreau2011",
+    "zhang2022 -> barry2020",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> dreau2011",
+    "odmrManual -> dolde2011"
+   ],
    "falsePositives": [],
    "missed": [
     "sarkar2023 -> sturner2019",
@@ -184,10 +221,12 @@
     "defects": 1,
     "refNodes": 0,
     "refNodesCorroborated": 0
-   }
+   },
+   "uniqueTp": []
   },
   {
    "id": "title-match",
+   "union": false,
    "errors": [],
    "predicted": 20,
    "tp": 19,
@@ -202,6 +241,27 @@
     "magnard2020 -> blais2021  [titleMatch]"
    ],
    "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> dreau2011",
+    "sarkar2023 -> barry2016",
+    "sarkar2023 -> sturner2019",
+    "sarkar2023 -> rondin2014",
+    "sarkar2023 -> barry2020",
+    "sarkar2023 -> dolde2011",
+    "sturner2019 -> dreau2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> dolde2011",
+    "zhang2022 -> dreau2011",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> barry2020",
+    "rondin2014 -> dreau2011",
+    "rondin2014 -> gruber1997",
+    "rondin2014 -> dolde2011",
+    "barry2016 -> dreau2011",
+    "odmrManual -> dolde2011"
+   ],
    "falsePositives": [
     "magnard2020 -> blais2021"
    ],
@@ -230,22 +290,46 @@
     "defects": 0,
     "refNodes": 0,
     "refNodesCorroborated": 0
-   }
+   },
+   "uniqueTp": []
   },
   {
    "id": "ref-strings",
+   "union": false,
    "errors": [],
-   "predicted": 15,
-   "tp": 15,
+   "predicted": 20,
+   "tp": 20,
    "fp": 0,
-   "fn": 15,
+   "fn": 10,
    "precision": 1,
-   "recall": 0.5,
-   "recallReachable": 0.5357142857142857,
-   "f1": 0.6666666666666666,
+   "recall": 0.6666666666666666,
+   "recallReachable": 0.7142857142857143,
+   "f1": 0.8,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> rondin2014",
+    "sarkar2023 -> dolde2011",
+    "sarkar2023 -> sturner2019",
+    "sarkar2023 -> dreau2011",
+    "sarkar2023 -> barry2016",
+    "sarkar2023 -> barry2020",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> dreau2011",
+    "zhang2022 -> barry2020",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> dreau2011",
+    "rondin2014 -> gruber1997",
+    "rondin2014 -> dolde2011",
+    "rondin2014 -> dreau2011",
+    "barry2016 -> dreau2011",
+    "odmrManual -> dolde2011"
+   ],
    "falsePositives": [],
    "missed": [
     "barry2020 -> sturner2019",
@@ -254,36 +338,33 @@
     "barry2020 -> dolde2011",
     "barry2020 -> hahn1950",
     "barry2020 -> dreau2011",
-    "rondin2014 -> dolde2011",
-    "rondin2014 -> dreau2011",
-    "rondin2014 -> gruber1997",
-    "barry2016 -> dreau2011",
     "dolde2011 -> gruber1997",
-    "odmrManual -> dolde2011",
     "dreau2011 -> dolde2011",
     "dreau2011 -> gruber1997",
     "blais2021 -> magnard2020"
    ],
    "external": {
     "byNamespace": {
+     "ref": 332,
      "arxiv": 7,
-     "ref": 154,
-     "doi": 57
+     "doi": 68
     },
     "unresolvableIds": 0,
     "tp": 50,
     "missed": 1316,
-    "unconfirmed": 12,
+    "unconfirmed": 10,
     "recallLowerBound": 0.036603221083455345,
     "suffixArtifacts": [],
     "truncated": [],
     "defects": 0,
-    "refNodes": 130,
-    "refNodesCorroborated": 16
-   }
+    "refNodes": 308,
+    "refNodesCorroborated": 19
+   },
+   "uniqueTp": []
   },
   {
    "id": "openalex",
+   "union": false,
    "errors": [],
    "predicted": 29,
    "tp": 29,
@@ -296,6 +377,37 @@
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
+   "truePositives": [
+    "blais2021 -> magnard2020",
+    "dolde2011 -> gruber1997",
+    "rondin2014 -> dreau2011",
+    "rondin2014 -> dolde2011",
+    "rondin2014 -> gruber1997",
+    "barry2020 -> dreau2011",
+    "barry2020 -> dolde2011",
+    "barry2020 -> rondin2014",
+    "barry2020 -> barry2016",
+    "barry2020 -> sturner2019",
+    "barry2020 -> hahn1950",
+    "barry2016 -> dreau2011",
+    "dreau2011 -> dolde2011",
+    "dreau2011 -> gruber1997",
+    "sturner2019 -> dreau2011",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> barry2016",
+    "zhang2022 -> dreau2011",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> barry2020",
+    "sarkar2023 -> dreau2011",
+    "sarkar2023 -> dolde2011",
+    "sarkar2023 -> rondin2014",
+    "sarkar2023 -> barry2016",
+    "sarkar2023 -> sturner2019",
+    "sarkar2023 -> barry2020"
+   ],
    "falsePositives": [],
    "missed": [
     "odmrManual -> dolde2011"
@@ -314,10 +426,90 @@
     "defects": 0,
     "refNodes": 0,
     "refNodesCorroborated": 0
+   },
+   "uniqueTp": [
+    "dolde2011 -> gruber1997",
+    "dreau2011 -> dolde2011",
+    "dreau2011 -> gruber1997"
+   ]
+  },
+  {
+   "id": "OFFLINE (union)",
+   "union": true,
+   "errors": [],
+   "predicted": 28,
+   "tp": 27,
+   "fp": 1,
+   "fn": 3,
+   "precision": 0.9642857142857143,
+   "recall": 0.9,
+   "recallReachable": 0.9642857142857143,
+   "f1": 0.9310344827586207,
+   "duplicateSelfLoops": 0,
+   "trapsHit": [
+    "magnard2020 -> blais2021  [titleMatch]"
+   ],
+   "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> dolde2011",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> dreau2011",
+    "zhang2022 -> barry2020",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> dreau2011",
+    "barry2020 -> barry2016",
+    "barry2020 -> dolde2011",
+    "barry2020 -> dreau2011",
+    "barry2020 -> hahn1950",
+    "barry2020 -> rondin2014",
+    "barry2020 -> sturner2019",
+    "barry2016 -> dreau2011",
+    "odmrManual -> dolde2011",
+    "blais2021 -> magnard2020",
+    "sarkar2023 -> dreau2011",
+    "sarkar2023 -> barry2016",
+    "sarkar2023 -> sturner2019",
+    "sarkar2023 -> rondin2014",
+    "sarkar2023 -> barry2020",
+    "rondin2014 -> dreau2011",
+    "rondin2014 -> gruber1997",
+    "rondin2014 -> dolde2011"
+   ],
+   "falsePositives": [
+    "magnard2020 -> blais2021"
+   ],
+   "missed": [
+    "dolde2011 -> gruber1997",
+    "dreau2011 -> dolde2011",
+    "dreau2011 -> gruber1997"
+   ],
+   "external": {
+    "byNamespace": {
+     "doi": 1073,
+     "ref": 332,
+     "arxiv": 7
+    },
+    "unresolvableIds": 0,
+    "tp": 1039,
+    "missed": 327,
+    "unconfirmed": 24,
+    "recallLowerBound": 0.760614934114202,
+    "suffixArtifacts": [],
+    "truncated": [
+     "magnard2020  10.1103/physrevlett  ->  10.1103/physrevlett.103.110501"
+    ],
+    "defects": 1,
+    "refNodes": 308,
+    "refNodesCorroborated": 19
    }
   },
   {
    "id": "ALL (union)",
+   "union": true,
    "errors": [],
    "predicted": 31,
    "tp": 30,
@@ -332,6 +524,38 @@
     "magnard2020 -> blais2021  [titleMatch]"
    ],
    "controlHit": [],
+   "truePositives": [
+    "sarkar2023 -> dolde2011",
+    "sturner2019 -> dolde2011",
+    "sturner2019 -> barry2016",
+    "sturner2019 -> gruber1997",
+    "sturner2019 -> rondin2014",
+    "sturner2019 -> dreau2011",
+    "zhang2022 -> barry2020",
+    "zhang2022 -> barry2016",
+    "zhang2022 -> sturner2019",
+    "zhang2022 -> dreau2011",
+    "barry2020 -> barry2016",
+    "barry2020 -> dolde2011",
+    "barry2020 -> dreau2011",
+    "barry2020 -> hahn1950",
+    "barry2020 -> rondin2014",
+    "barry2020 -> sturner2019",
+    "barry2016 -> dreau2011",
+    "odmrManual -> dolde2011",
+    "blais2021 -> magnard2020",
+    "sarkar2023 -> dreau2011",
+    "sarkar2023 -> barry2016",
+    "sarkar2023 -> sturner2019",
+    "sarkar2023 -> rondin2014",
+    "sarkar2023 -> barry2020",
+    "rondin2014 -> dreau2011",
+    "rondin2014 -> gruber1997",
+    "rondin2014 -> dolde2011",
+    "dolde2011 -> gruber1997",
+    "dreau2011 -> dolde2011",
+    "dreau2011 -> gruber1997"
+   ],
    "falsePositives": [
     "magnard2020 -> blais2021"
    ],
@@ -339,22 +563,22 @@
    "external": {
     "byNamespace": {
      "doi": 1073,
+     "ref": 332,
      "arxiv": 7,
-     "ref": 154,
      "openalex": 1845
     },
     "unresolvableIds": 283,
     "tp": 1366,
     "missed": 0,
-    "unconfirmed": 209,
+    "unconfirmed": 207,
     "recallLowerBound": 1,
     "suffixArtifacts": [],
     "truncated": [
      "magnard2020  10.1103/physrevlett  ->  10.1103/physrevlett.103.110501"
     ],
     "defects": 1,
-    "refNodes": 130,
-    "refNodesCorroborated": 16
+    "refNodes": 308,
+    "refNodesCorroborated": 19
    }
   }
  ]

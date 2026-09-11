@@ -107,7 +107,7 @@ async function main() {
 	}
 
 	const out = {
-		_comment: 'Tier-2 reference set for the accuracy benchmark: everything the collection cites and does NOT hold. Machine-built from Crossref deposited reference lists; regenerate with `node tools/bench/referencing/build-external.js`. Tier 1 (ground-truth.json) is the hand-read in-collection core and is the authority on those 29 edges.',
+		_comment: 'Tier-2 reference set for the accuracy benchmark: everything the collection cites and does NOT hold. Machine-built from Crossref deposited reference lists; regenerate with `node tools/bench/referencing/build-external.js`. Tier 1 (ground-truth.json) is the hand-read in-collection core and is the authority on the in-collection edges.',
 		_provenance: 'Crossref REST, one request per citing DOI. Crossref is deliberately NOT one of the graded strategies, so this set is independent of what it measures - the same rule ground-truth.json follows about never being built from OpenAlex.',
 		_presenceIsReliableAbsenceIsNot: 'If Crossref says A cites X, A cites X. The converse does NOT hold: publishers deposit incomplete lists. barry2016 prints 75 numbered references and Crossref holds 59. So recall computed against this set is a LOWER BOUND, and an emitted DOI absent from it is reported as UNCONFIRMED, never as a false positive.',
 		_whatIsGradedAsWrong: 'Only two things, both provable despite the incompleteness: suffix-artifact (stripping /abstract, /epdf, /full, /pdf, /meta, /html yields a DOI that IS in the set) and truncated (the emitted DOI is a strict prefix of one in the set). Both mean the strategy minted a ghost node for a work that does not exist under that identifier.',
