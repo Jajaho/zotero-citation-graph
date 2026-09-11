@@ -2039,6 +2039,9 @@
 			// Cmd is the one that can actually be pressed there.
 			fg.onNodeClick((n, event) => {
 				if (spentPress()) return;
+				// The second click of a double click, whose own gesture has
+				// already been answered below. See spentDouble().
+				if (spentDouble()) return;
 				paneEngaged = true;
 				if (event && (event.ctrlKey || event.metaKey)) togglePick(n.id);
 				else pickOnly(n.id);
@@ -3804,20 +3807,54 @@
 	 * whatever the pointer is over -- force-graph's own hit test already knows,
 	 * and asking it is more reliable than timing two clicks ourselves.
 	 *
-	 * The pair of clicks underneath runs pickOnly() -- or togglePick(), with the
-	 * modifier down -- twice, which cancels out either way: the ring goes on and
-	 * straight back off. Both functions below put the pick back afterwards,
-	 * because the pick is the tab's selection now and a paper whose
-	 * neighbourhood you just asked for is not one you meant to deselect.
+	 * Only the FIRST of the two clicks underneath is allowed to run. It rings
+	 * the node, which is what a double click was going to leave ringed anyway:
+	 * both functions below set the pick themselves, because the pick is the
+	 * tab's selection now and a paper whose neighbourhood you just asked for is
+	 * not one you meant to deselect. The second click is swallowed -- left to
+	 * run it would call pickOnly() (or togglePick()) a second time on the node
+	 * the first one just picked, taking the ring straight back off again, and a
+	 * double click would flash a ring on its way to the same place. See
+	 * spentDouble() for why the swallow can be armed from here.
 	 *
 	 * Ctrl (Cmd on a Mac) reads here exactly as it does on the single click:
 	 * add to what is there rather than start again. See addToIsolate().
 	 */
 	elGraph.addEventListener('dblclick', (e) => {
 		if (!hoverNode) return;
+		armDouble();
 		if (e.ctrlKey || e.metaKey) addToIsolate(hoverNode.id);
 		else toggleIsolate(hoverNode.id);
 	});
+
+	/**
+	 * The second click's turn at onNodeClick, swallowed.
+	 *
+	 * Arming this from a dblclick handler looks like it is racing the click it
+	 * means to eat, and is not: force-graph raises its clicks from a
+	 * requestAnimationFrame scheduled in its pointerup handler, and pointerup,
+	 * mouseup, click and dblclick are all dispatched in the one task. So the
+	 * second click's frame cannot have run yet when this is armed, and the
+	 * disarm below -- scheduled a frame later, and therefore behind the one
+	 * force-graph scheduled first -- runs after it either way. A double click
+	 * force-graph raises no second click for (the pointer moved, so it counted
+	 * the gesture as a drag) disarms on that same frame rather than leaving the
+	 * next real click to be eaten.
+	 */
+	let doubleClick = false;
+
+	function armDouble() {
+		doubleClick = true;
+		requestAnimationFrame(() => {
+			doubleClick = false;
+		});
+	}
+
+	function spentDouble() {
+		if (!doubleClick) return false;
+		doubleClick = false;
+		return true;
+	}
 
 	// --- defending a drag in progress -------------------------------------
 

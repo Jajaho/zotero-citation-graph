@@ -3697,6 +3697,40 @@ check('the release that ends a right-clicked drag is not a click', () => {
 	}
 });
 
+/**
+ * A double click on a node is three events the graph acts on: two clicks
+ * force-graph raises for itself and the DOM dblclick that follows them. Left
+ * alone the second click undoes what the first one did -- pickOnly() on the
+ * node it just picked clears the pick -- so the gesture flashed a ring on and
+ * straight back off on its way to isolating the neighbourhood.
+ *
+ * The fix leans on an ordering nothing in the source shows: force-graph raises
+ * its clicks from a requestAnimationFrame scheduled in pointerup, and the
+ * dblclick is dispatched in the same task as that pointerup, so the swallow can
+ * still be armed from the dblclick handler and the disarm, scheduled a frame
+ * later, always runs behind the click it is guarding.
+ */
+check('a double click rings the node once, not on and off again', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const after = (needle, n) => {
+		const i = js.indexOf(needle);
+		return i < 0 ? '' : js.slice(i, i + n);
+	};
+	if (!after('fg.onNodeClick(', 220).includes('if (spentDouble()) return;')) {
+		throw new Error('the second click of a double click still picks, undoing the first');
+	}
+	// Armed before the isolate, which is what the ordering above buys.
+	const dbl = after("elGraph.addEventListener('dblclick'", 260);
+	if (dbl.indexOf('armDouble();') < 0 || dbl.indexOf('armDouble();') > dbl.indexOf('Isolate(')) {
+		throw new Error('the dblclick handler does not arm the swallow before it isolates');
+	}
+	// One frame only: a double click force-graph raises no second click for
+	// must not leave the next real one to be eaten.
+	if (!after('function armDouble()', 140).includes('requestAnimationFrame')) {
+		throw new Error('an armed swallow has no way out but the click it is waiting for');
+	}
+});
+
 // --- localisation -----------------------------------------------------------
 
 const Ftl = require(path.join(addonDir, 'content/ftl.js'));
