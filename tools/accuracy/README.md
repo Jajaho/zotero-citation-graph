@@ -188,17 +188,86 @@ that started single-defect microscopy is surprising. It does not. The string
 "gruber" occurs zero times in that PDF. It is recorded because the tempting
 correction is to add the edge from memory, and that would corrupt the answer key.
 
+## Two tiers, known to two standards
+
+| | tier 1 | tier 2 |
+|---|---|---|
+| file | `ground-truth.json` | `external-refs.json` |
+| covers | 29 citations **between** the 12 held works | 809 works they cite and the collection does **not** hold |
+| built by | hand, from each citing PDF | machine, from Crossref deposited reference lists |
+| exhaustive? | yes — cross-checked against Crossref | **no** — publishers deposit incomplete lists |
+| a wrong edge is | a false positive | *not* judged; reported as `unconf` |
+
+Tier 1 is small enough to be complete, so it can call a strategy wrong. Tier 2
+is 28× bigger and gives the external-facing strategies — `ref-strings` and
+`openalex`, which mint ghost nodes — something to be measured against, but it
+cannot prove a negative.
+
+**Presence is reliable, absence is not.** If Crossref says A cites X, A cites X.
+The converse fails: `barry2016` prints 75 numbered references and Crossref holds
+59, so a third of that paper's real citations are missing from the set through
+no fault of any strategy. Tier-2 recall is therefore a **lower bound**, and an
+emitted DOI that is not in the set is counted as `unconf`, never as an error.
+
+Two things *are* graded as defects, because both are provable despite the
+incompleteness:
+
+- **suffix artifact** — stripping a URL tail (`/abstract`, `/epdf`, `/full`,
+  `/pdf`, `/meta`, `/html`) turns the emitted string into a DOI that **is** in
+  the set. So the emitted one names nothing and the real one was missed.
+- **truncated** — the emitted DOI is a strict prefix of one in the set.
+
+Both mint a ghost node for a work that does not exist under that identifier,
+which is worse than a missing edge: it is a node nobody cited.
+
+Crossref is deliberately not one of the graded strategies — the graded network
+one is OpenAlex — so tier 2 stays independent of what it measures, the same rule
+tier 1 follows.
+
 ## Running it
 
 ```
-node tools/accuracy/score.js --data-dir "C:/Users/me/Zotero citation_graph_testing"
-node tools/accuracy/score.js --data-dir <dir> --db ./snap.sqlite   # Zotero running
-node tools/accuracy/score.js --enable openalex --api-key KEY
-node tools/accuracy/score.js --json out.json
+npm run accuracy -- --data-dir "C:/Users/me/Zotero citation_graph_testing"
+npm run accuracy -- --data-dir <dir> --db ./snap.sqlite      # Zotero running
+npm run accuracy -- --data-dir <dir> --enable openalex --api-key KEY
+npm run accuracy -- --data-dir <dir> --report REPORT.md --json baseline.json
+npm run accuracy -- --data-dir <dir> --baseline baseline.json
+npm run accuracy -- --data-dir <dir> --no-external           # tier 1 only
+npm run accuracy:external                                    # rebuild tier 2
 ```
 
 Zotero holds a write lock on `zotero.sqlite` while it runs, so point `--db` at a
 copy if it is open.
+
+`.crossref-cache/` (the raw deposited reference lists) and
+`.openalex-doi-cache.json` are committed on purpose: with them, everything
+except the `openalex` strategy itself scores with no network at all, and tier 2
+is rebuildable byte-for-byte rather than being whatever Crossref returns today.
+
+`openalex` returns its references as OpenAlex work IDs, not DOIs, so scoring it
+against tier 2 needs an ID→DOI map. That resolution is cached in
+`.openalex-doi-cache.json` and is **identity only** — which DOI is `W123`. The
+truth about who cites whom stays Crossref's. `--no-resolve` skips it and scores
+from the cache alone.
+
+## The report
+
+`--report <file.md>` writes a report; `--json <file>` writes the same run
+machine-readably, and `--baseline <that file>` compares a later run against it.
+`REPORT.md` and `baseline.json` in this directory are the committed current
+standing, so a change in strategy code shows up as a diff.
+
+The report leads with the conditions, because a score without them cannot be
+compared with a score taken later. It records the commit and whether the tree
+was dirty, node and OS versions, the **sha256 of the database and of the PDF
+set**, the sha256 and size of both answer keys, whether the network was used and
+whether an API key was supplied, and every strategy's confidence and full
+options object as it actually ran.
+
+That is what makes a comparison honest rather than hopeful. If the dataset hash
+or the key hash moved between two runs, the report says so above the diff and
+warns that the difference is not attributable to the code — which is exactly the
+mistake a benchmark is otherwise built to invite.
 
 Scoring is at **work** level. The collection holds one work twice on purpose; an
 item-level count would let a strategy score the same citation twice and would
@@ -248,6 +317,62 @@ miss is found by three offline strategies, so together they score 29 of 29 at
 100% precision. This is the measured version of the claim in
 `edges/openalex.js`'s own docstring — neither layer subsumes the other, and the
 one that fails is the one whose identifier is missing.
+
+### Tier 2: the outside world
+
+```
+strategy      emitted by namespace        TP  missed  unconf  defects  recall ≥
+pdf-links     doi 516                    485     324      16        4       60%
+text-doi      doi 55                      37     772       5        2        5%
+title-match   —                            0     809       0        0        0%
+ref-strings   doi 44, ref 118, arxiv 4    37     772       7        2        5%
+openalex      openalex 1025              804       5      77        0       99%
+```
+
+`title-match` contributes **nothing** outside the collection, by construction —
+it can only match a title the library already holds. That is the systematic hole
+`ref-strings` exists to fill, and the tier-2 row is the first measurement of how
+well it does: 118 `ref:` nodes for works no identifier was printed for, which no
+other offline strategy can see at all.
+
+**`openalex` finds 804 of 809 at 99%** — unsurprising, since reference lists are
+what it is. The interesting number is its 77 `unconf`: OpenAlex knows citations
+Crossref's deposits do not, which is the same incompleteness that caps everyone
+else's apparent recall.
+
+**Its 1025 external nodes are keyed `openalex:W…`, not `doi:`.** In a default
+build the same cited work is therefore *two* ghost nodes — `doi:10.x` from
+`pdf-links` and `openalex:W…` from `openalex` — until the metadata lookup runs
+and resolves them. `edges/openalex.js` says as much in its own comment; tier 2
+puts a number on it.
+
+### Six defects, all in DOI extraction
+
+The benchmark grades only provable defects, and found six:
+
+| strategy | defect | emitted | should be |
+|---|---|---|---|
+| `pdf-links` | suffix | `10.3389/fncom.2013.00137/abstract` | `10.3389/fncom.2013.00137` |
+| `pdf-links` | truncated | `10.1002/1521-396x(200009)181:1` | `…181:1<99::aid-pssa99>3.0.co;2-5` |
+| `pdf-links` | truncated | `10.1002/1521-396x(200108)186:2` | `…186:2<187::aid-pssa187>…` |
+| `pdf-links` | truncated | `10.1002/(sici)1521-396x(199903)172:1` | `…172:1<25::aid-pssa25>…` |
+| `text-doi`, `ref-strings` | truncated | `10.1038/lsa` | `10.1038/lsa.2016.32` |
+| `text-doi`, `ref-strings` | truncated | `10.1063/1` | `10.1063/1.4823548` |
+
+Three causes, all in `core/normalize.js`:
+
+1. **`normDoi` does not strip URL tails.** A Frontiers link is
+   `https://doi.org/10.3389/fncom.2013.00137/abstract`; the tail is part of the
+   URL, not of the DOI.
+2. **`DOI_RE` stops at `<`.** Pre-2005 Wiley DOIs embed `<...>`
+   (`10.1002/1521-396X(200009)181:1<99::AID-PSSA99>3.0.CO;2-5`), so every one of
+   them is cut at the angle bracket.
+3. **Line breaks inside a DOI**, the same fault as the tier-1 `text-doi` gap:
+   `flattenPdfText` rejoins wrapped lines with a space, and `10.1038/` + `lsa…`
+   on the next line becomes `10.1038/ lsa…`, so the match ends early.
+
+A truncated DOI is not a near miss. It is a node in the graph that no work
+anywhere has, permanently unresolvable by any enricher.
 
 ### OpenAlex corrected the answer key
 

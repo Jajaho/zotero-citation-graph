@@ -16,6 +16,8 @@
     "check-version": "node tools/check-version.js",
     "verify": "node tools/check-version.js && node tools/test-cjs-shim.js",
     "build": "node tools/build-xpi.js",
+    "accuracy": "node tools/accuracy/score.js",
+    "accuracy:external": "node tools/accuracy/build-external.js",
     "bench": "node tools/bench/run.js",
     "bench:report": "node tools/bench/run.js --md",
     "bench:sweep": "node tools/bench/run.js --matrix --md",
