@@ -206,7 +206,7 @@
 						<div id="strategies" class="group"></div>
 
 						<div class="group">
-							<label id="conf-label">
+							<label id="conf-label" data-zg-title="min-confidence-hint" title="Hide edges less certain than this. Every strategy rates how sure it is of each edge it finds; at 0 all of them are drawn.">
 								<span data-zg-str="min-confidence">Min confidence</span>
 								<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="conf-value">0.00</span>
@@ -296,7 +296,7 @@
 								<input id="perf" type="checkbox"/>
 								<span data-zg-str="perf-mode">Performance mode</span>
 							</label>
-							<label>
+							<label data-zg-title="hide-isolated-hint" title="Leave out papers that have no edge left on the graph as it is filtered now.">
 								<input id="hide-isolated" type="checkbox"/>
 								<span data-zg-str="hide-isolated">Hide unconnected</span>
 							</label>
@@ -319,14 +319,14 @@
 							     rebuilds, rather than sitting here greyed out: the user asked
 							     for the sizing, not for a lecture about a prerequisite. The
 							     lookup is still never entered on its own. -->
-							<label>
+							<label data-zg-title="size-by-hint" title="What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on &quot;Query node metadata&quot;).">
 								<span data-zg-str="size-by">Size</span>
 								<select id="size-by">
 									<option value="here" data-zg-str="size-by-here">Cited here</option>
 									<option value="global" data-zg-str="size-by-global">Global citations</option>
 								</select>
 							</label>
-							<label>
+							<label data-zg-title="color-by-hint" title="What a node's colour shows. The key underneath lists the colours on screen.">
 								<span data-zg-str="color-by">Colour</span>
 								<select id="color-by">
 									<option value="year" data-zg-str="color-by-year">Year</option>
@@ -370,7 +370,7 @@
 			     the sections you are. -->
 			<div id="panel-foot">
 				<span id="stats"></span>
-				<button id="rebuild" type="button" data-zg-str="rebuild">Rebuild</button>
+				<button id="rebuild" type="button" data-zg-str="rebuild" data-zg-title="rebuild-hint" title="Build the graph again from the collection as it is now.">Rebuild</button>
 			</div>
 
 			<!-- The width handle. Laid over the pane's own right edge, so the

@@ -619,9 +619,14 @@ body {
 	border-inline-end: var(--material-border);
 }
 
+/* Core's is a XUL <label>, which brings the toolkit's label margins on top of
+   the 4px zotero.css pads it by. An HTML span has neither, and the tab came
+   out 11px narrower than the library's. */
 #adv-label {
 	flex: 1 1 auto;
 	min-width: 0;
+	margin-block: 1px 2px;
+	margin-inline: 6px 5px;
 	padding-inline: 4px;
 	font-weight: 700;
 	overflow: hidden;

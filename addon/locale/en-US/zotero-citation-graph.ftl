@@ -105,6 +105,19 @@ zotero-citation-graph-isolate-depth = Isolation depth
 zotero-citation-graph-isolate-depth-hint = How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.
 zotero-citation-graph-rebuild = Rebuild
 
+# Tooltips for the sidebar controls that had none. One per strategy, because
+# the page only ever sees their ids; strategy-other-hint is for any new one.
+zotero-citation-graph-min-confidence-hint = Hide edges less certain than this. Every strategy rates how sure it is of each edge it finds; at 0 all of them are drawn.
+zotero-citation-graph-hide-isolated-hint = Leave out papers that have no edge left on the graph as it is filtered now.
+zotero-citation-graph-size-by-hint = What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on "Query node metadata").
+zotero-citation-graph-color-by-hint = What a node's colour shows. The key underneath lists the colours on screen.
+zotero-citation-graph-rebuild-hint = Build the graph again from the collection as it is now.
+zotero-citation-graph-strategy-pdf-links-hint = DOI hyperlinks inside your PDFs. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-text-doi-hint = DOIs printed in the reference lists of your papers' indexed text. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-title-match-hint = Titles of papers in this collection found in another paper's reference section. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-openalex-hint = The works OpenAlex lists as referenced by each paper. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-other-hint = Untick to hide the edges only this strategy found.
+
 zotero-citation-graph-reframe-hint = Fit the whole graph in view
 
 ## The top bar: the two pane toggles, and the search field.

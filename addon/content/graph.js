@@ -1188,6 +1188,7 @@
 		for (let via of vias) {
 			let label = document.createElement('label');
 			label.className = 'via-toggle';
+			label.title = viaHint(via);
 			let cb = document.createElement('input');
 			cb.type = 'checkbox';
 			cb.checked = !disabledVia.has(via);
@@ -1203,6 +1204,18 @@
 			label.appendChild(dot);
 			label.appendChild(document.createTextNode(via));
 			elStrategies.appendChild(label);
+		}
+	}
+
+	/** What a strategy's switch is about, for its tooltip. One message per
+	 *  strategy the build ships, because the page only ever sees their ids. */
+	function viaHint(via) {
+		switch (via) {
+			case 'pdf-links': return t('strategy-pdf-links-hint');
+			case 'text-doi': return t('strategy-text-doi-hint');
+			case 'title-match': return t('strategy-title-match-hint');
+			case 'openalex': return t('strategy-openalex-hint');
+			default: return t('strategy-other-hint');
 		}
 	}
 
@@ -2352,21 +2365,25 @@
 	 * Pinned as the user means it, which is what both the price of a link and
 	 * the badge on a node go by.
 	 *
-	 * isPinned() answers "is this node fixed", and force-graph fixes a node it
-	 * is dragging for the length of the gesture -- so from the moment a drag
-	 * starts, fx/fy can no longer tell a pin from a carry. It does not matter
+	 * isPinned() answers "is this node fixed", and force-graph fixes a node as
+	 * soon as a press lands on it -- d3's drag start, well before the 5px after
+	 * which it reports a drag -- so from the moment the button goes down, fx/fy
+	 * can no longer tell a pin from a carry. It does not matter
 	 * to the entry in the menu, which is only ever built after a drag has
 	 * ended, but it matters to these two: it would flash a pin on every node
 	 * anyone drags, and a re-render landing mid-drag would bake a boost into
 	 * that node's links that nothing afterwards takes back off.
 	 *
 	 * What tells them apart is the press the drag began from, since that is the
-	 * last moment fx/fy still meant what they say. A node already pinned then
+	 * last moment fx/fy still meant what they say. It has to be the press and
+	 * not dragNode: between the two, a node merely pressed on wore a pin badge
+	 * until it had been moved far enough to count as dragged. A node already pinned then
 	 * stays pinned all the way through -- dragging a pinned node MOVES its pin,
 	 * so the badge has to ride along and the links have to stay priced up.
 	 */
 	function pinnedByUser(n) {
-		return (n !== dragNode || n === pressPinned) && isPinned(n);
+		let carried = n === dragNode || n === pressNode;
+		return (!carried || n === pressPinned) && isPinned(n);
 	}
 
 	/**
@@ -3679,21 +3696,26 @@
 	// the window, whose mouseup never arrives.
 	function endDrag() {
 		dragNode = null;
+		pressNode = null;
 		menuOnDrop = null;
 	}
 
 	/** The node a press landed on, if it was pinned at the time -- read by
-	 *  pinnedByUser() for the length of the drag that press may begin. Gated on
-	 *  dragNode there, so a value left over from a press that dragged nothing
-	 *  is never consulted; the next press overwrites it in any case. */
+	 *  pinnedByUser() for as long as that press is held. Only consulted for
+	 *  the node the press is on, so a value left over from an earlier press is
+	 *  never read; the next press overwrites it in any case. */
 	let pressPinned = null;
+	/** The node the held press landed on, pinned or not: the one force-graph
+	 *  has fixed in place since the button went down, whether or not it has
+	 *  moved far enough yet to be called a drag. Cleared with dragNode. */
+	let pressNode = null;
 
 	// A new press means the last one is spent, whatever became of its release.
 	window.addEventListener('pointerdown', () => {
 		menuPress = false;
-		// Capture on window, so this runs ahead of d3's own drag handlers --
-		// and force-graph does not fix a node's coordinates until the pointer
-		// has moved 5px in any case.
+		// Capture on window, so this runs ahead of d3's own drag start -- which
+		// fixes the node's coordinates on this very press, not 5px later.
+		pressNode = hoverNode || null;
 		pressPinned = hoverNode && isPinned(hoverNode) ? hoverNode : null;
 	}, true);
 
@@ -3702,7 +3724,7 @@
 	}, true);
 
 	window.addEventListener('mousemove', (e) => {
-		if (dragNode && !(e.buttons & 1)) endDrag();
+		if ((dragNode || pressNode) && !(e.buttons & 1)) endDrag();
 	}, true);
 
 	// --- pinning ----------------------------------------------------------
