@@ -1918,6 +1918,9 @@
 			// drag that never really started.
 			fg.onNodeDrag((n) => {
 				dragNode = n;
+				// Before the next frame, not on the next tick: a layout that has
+				// come to rest has no next tick. See holdForCollide().
+				holdForCollide();
 			});
 			fg.onNodeDragEnd((n) => {
 				dragNode = null;
@@ -3964,7 +3967,19 @@
 	}
 
 	/**
-	 * Keep the engine running while circles are still being pulled apart.
+	 * Keep the engine running while circles are still being pulled apart, and
+	 * while a node is being carried.
+	 *
+	 * The drag is the one that needs saying. force-graph drags by raising the
+	 * alpha TARGET to 0.3 and restarting its countdown -- but alpha itself only
+	 * climbs toward a target one tick at a time, and force-graph asks whether
+	 * alpha is under d3AlphaMin BEFORE it ticks. A layout that stopped because
+	 * it came to rest is still under it, so the engine was stopped again on the
+	 * very frame the drag restarted it: the node followed the pointer and not
+	 * one neighbour answered. So a carried node lifts the floor to 0 for as
+	 * long as it is carried, set from onNodeDrag itself because a stopped
+	 * engine has no tick to set it from; the first tick after the drop puts
+	 * it back, and the drop's alpha decays under it as any other layout's does.
 	 *
 	 * Per tick, from the engine's own tick hook, and cheap: d3AlphaMin is one
 	 * of the props force-graph reads live without re-running anything, and it
@@ -3975,7 +3990,7 @@
 	 */
 	function holdForCollide() {
 		if (!fg) return;
-		let want = PERF.collide && collideBusy ? 0 : ALPHA_MIN;
+		let want = dragNode || (PERF.collide && collideBusy) ? 0 : ALPHA_MIN;
 		if (want === alphaMinNow) return;
 		alphaMinNow = want;
 		fg.d3AlphaMin(want);
