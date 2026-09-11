@@ -85,8 +85,8 @@ target-only.
 | `sarkar2023` | 2023 | source, 6 out | IEEE style: numbered, titles, DOI on only some entries |
 | `sturner2019` | 2019 | source, 5 out / 3 in | Elsevier: DOI on every entry. Also carries a **second PDF** (supplementary) with its own 4 references |
 | `zhang2022` | 2022 | source, 4 out | the clean case — DOI *and* title on every edge |
-| `barry2020` | 2020 | source, 6 out / 2 in | **author-year with no titles and no DOIs**; ~475 references |
-| `rondin2014` | 2014 | source, 3 out / 3 in | numbered with titles, no DOIs; 150 references |
+| `barry2020` | 2020 | source, 6 out / 2 in | **author-year with no titles and no DOIs**; 454 references |
+| `rondin2014` | 2014 | source, 3 out / 3 in | numbered with titles, no DOIs; 148 references |
 | `barry2016` | 2016 | source, 1 out / 4 in | PNAS numbered; page numbers broken by extraction |
 | `dolde2011` | 2011 | source, 1 out / 5 in | **held twice** — the duplicate case |
 | `hahn1950` | 1950 | source, 0 out / 1 in | pre-reference-section paper; two-word title, a false-positive magnet |
@@ -106,8 +106,9 @@ optimization", and Adam's own 23 references name no NV work.
 The reference lists deliberately span the formats real libraries contain, so the
 strategies cannot all score the same:
 
-A citation reaches a strategy through one of **three independent channels**, and
-every edge in the key is flagged for all three:
+A citation reaches a strategy through one of **three independent channels**. Each of
+the 27 PDF-reachable edges is flagged for all three (the 2 edges from the work
+held without a PDF carry none of them):
 
 | channel | flag | edges | what it is |
 |---|---|---|---|
@@ -332,8 +333,8 @@ openalex      openalex 1025              804       5      77        0       99%
 `title-match` contributes **nothing** outside the collection, by construction —
 it can only match a title the library already holds. That is the systematic hole
 `ref-strings` exists to fill, and the tier-2 row is the first measurement of how
-well it does: 118 `ref:` nodes for works no identifier was printed for, which no
-other offline strategy can see at all.
+well it does: 118 `ref:` edges resolving to 94 distinct nodes, for works no identifier
+was printed for at all — which no other offline strategy can see.
 
 **`openalex` finds 804 of 809 at 99%** — unsurprising, since reference lists are
 what it is. The interesting number is its 77 `unconf`: OpenAlex knows citations
