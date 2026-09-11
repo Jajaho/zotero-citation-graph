@@ -182,6 +182,10 @@
 		// -- see colorGen. It is never in PERF_MODE; the benchmark turns it off
 		// to ask what it is worth, and nothing else ever should.
 		memo: true,      // node and edge colours worked out once, not per frame
+		// One more of memo's kind: it costs the picture nothing, and is a switch
+		// only so the benchmark can say what it is worth. See drawArrows().
+		// Never in PERF_MODE.
+		batch: true,     // arrow heads drawn by the page, not by force-graph
 	};
 
 	/**
@@ -1920,9 +1924,13 @@
 				// trigonometry, and a curvature of 0 leaves the link with no control
 				// points at all -- so force-graph draws it with lineTo instead of
 				// working one out per link per frame and running quadraticCurveTo.
-				.linkDirectionalArrowLength(() => (PERF.arrows ? 4 : 0))
+				// With batch on, force-graph's own heads are length 0 and one
+				// carrier link draws every head instead -- see drawArrows().
+				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? ARROW_LEN : 0))
 				.linkDirectionalArrowRelPos(1)
-				.linkCurvature(() => (PERF.curves ? 0.08 : 0))
+				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
+				.linkCanvasObjectMode(l => (l === arrowCarrier ? 'after' : undefined))
+				.linkCanvasObject(drawArrows)
 				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
@@ -2711,6 +2719,8 @@
 	 */
 	function reserveLabels(ctx, globalScale) {
 		if (!fg) return;
+		frameCtx = ctx;
+		pickCarrier();
 		// Names off: no pass, and nothing left over from the last one. The list
 		// has to be emptied rather than merely skipped, or drawLabels would go
 		// on painting whatever the frame before the switch decided.
@@ -2862,6 +2872,153 @@
 	function now() {
 		return (window.performance && window.performance.now)
 			? window.performance.now() : Date.now();
+	}
+
+	// --- arrow heads ------------------------------------------------------
+
+	/**
+	 * Every arrow head in the frame, drawn by the page rather than by force-graph.
+	 *
+	 * force-graph's arrow pass was the second-dearest thing in a frame (see
+	 * PERF_MODE). For every link, every frame, it builds a Bezier object out of
+	 * the link's control points, integrates its arc length numerically, walks it
+	 * three times, and fills the head in a path of its own after setting
+	 * fillStyle from a colour string. This draws the same triangle, from the
+	 * same geometry, at the same point in the frame -- after every edge, before
+	 * every circle, in link order -- but the arc length of a quadratic Bezier has
+	 * a closed form, nothing is allocated, and fillStyle is set only when the
+	 * colour changes, which on a graph coloured by strategy is rarely.
+	 *
+	 * Drawn from the linkCanvasObject of one link, the carrier, because that is
+	 * the only hook force-graph has between its edges and its circles: it runs
+	 * 'after' link objects once the batched strokes are done, and before its
+	 * own arrow pass and the node pass. The carrier is the first link of the
+	 * array being drawn, picked afresh every frame by pickCarrier().
+	 *
+	 * PERF.batch hands the heads back to force-graph, for the benchmark.
+	 */
+	const ARROW_LEN = 4;        // graph units, as force-graph was given it
+	const LINK_CURVE = 0.08;    // bow of an edge, as a fraction of its length
+
+	let arrowCarrier = null;    // the link whose canvas object draws the heads
+	let frameCtx = null;        // the visible canvas's context, this frame
+
+	function drawArrows(link, ctx) {
+		// Once a frame, and on the canvas people look at: the hit-test canvas
+		// paints ids as colours, and a head in some other colour would be a
+		// click landing on the wrong thing.
+		if (link !== arrowCarrier || ctx !== frameCtx) return;
+		if (!PERF.arrows || !PERF.batch) return;
+		let links = fg.graphData().links;
+		let u = ARROW_LEN;
+		let half = u / 1.6 / 2;
+		let last = null;
+		for (let i = 0; i < links.length; i++) {
+			let l = links[i];
+			let a = l.source;
+			let b = l.target;
+			if (!a || !b || !a.hasOwnProperty('x') || !b.hasOwnProperty('x')) continue;
+			// Radii exactly as force-graph works them out, including its floor
+			// of 1 for a node with no value -- not nodeRadius(), which has none.
+			let ra = Math.sqrt(Math.max(0, nodeVal(a) || 1)) * NODE_REL_SIZE;
+			let rb = Math.sqrt(Math.max(0, nodeVal(b) || 1)) * NODE_REL_SIZE;
+			let cp = l.__controlPoints;
+			let m = cp ? curveLength(a, cp, b) : Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+			if (!(m > 0)) continue;
+			// Tip where the edge meets the target's circle (relPos 1), base one
+			// head-length back along it, notch at four fifths of that.
+			let x = ra + u + (m - ra - rb - u);
+			curveAt(a, cp, b, x / m, TIP);
+			curveAt(a, cp, b, (x - u) / m, BASE);
+			curveAt(a, cp, b, (x - 0.8 * u) / m, NOTCH);
+			let ang = Math.atan2(TIP.y - BASE.y, TIP.x - BASE.x) - Math.PI / 2;
+			let cx = half * Math.cos(ang);
+			let cy = half * Math.sin(ang);
+			let color = linkColor(l) || 'rgba(0,0,0,0.28)';
+			if (color !== last) {
+				ctx.fillStyle = color;
+				last = color;
+			}
+			ctx.beginPath();
+			ctx.moveTo(TIP.x, TIP.y);
+			ctx.lineTo(BASE.x + cx, BASE.y + cy);
+			ctx.lineTo(NOTCH.x, NOTCH.y);
+			ctx.lineTo(BASE.x - cx, BASE.y - cy);
+			ctx.fill();
+		}
+	}
+
+	// Scratch points, written into rather than allocated: three per link per
+	// frame would be the allocation this whole function exists to avoid.
+	const TIP = { x: 0, y: 0 };
+	const BASE = { x: 0, y: 0 };
+	const NOTCH = { x: 0, y: 0 };
+
+	/** A point on the edge from a to b at parameter t. The control points are
+	 *  force-graph's own: none for a straight edge, two numbers for the
+	 *  ordinary bow, four for the loop it draws between two coincident nodes. */
+	function curveAt(a, cp, b, t, out) {
+		if (!cp) {
+			// force-graph's own straight-line point, down to its guard against
+			// a parameter that is not a number.
+			out.x = a.x + (b.x - a.x) * t || 0;
+			out.y = a.y + (b.y - a.y) * t || 0;
+			return;
+		}
+		let s = 1 - t;
+		if (cp.length === 2) {
+			out.x = s * s * a.x + 2 * s * t * cp[0] + t * t * b.x;
+			out.y = s * s * a.y + 2 * s * t * cp[1] + t * t * b.y;
+			return;
+		}
+		out.x = s * s * s * a.x + 3 * s * s * t * cp[0] + 3 * s * t * t * cp[2] + t * t * t * b.x;
+		out.y = s * s * s * a.y + 3 * s * s * t * cp[1] + 3 * s * t * t * cp[3] + t * t * t * b.y;
+	}
+
+	/**
+	 * Arc length of the edge. A quadratic Bezier's has a closed form, which is
+	 * what makes this cheap -- force-graph integrated it numerically, per link
+	 * per frame. The four-number loop is rare enough (two nodes at exactly one
+	 * point) that a fixed polyline is plenty for it.
+	 */
+	function curveLength(a, cp, b) {
+		if (cp.length === 2) {
+			let ax = a.x - 2 * cp[0] + b.x;
+			let ay = a.y - 2 * cp[1] + b.y;
+			let bx = 2 * (cp[0] - a.x);
+			let by = 2 * (cp[1] - a.y);
+			let A = 4 * (ax * ax + ay * ay);
+			let B = 4 * (ax * bx + ay * by);
+			let C = bx * bx + by * by;
+			// No bow to speak of: the curve is its chord.
+			if (A < 1e-12) return Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+			let sabc = 2 * Math.sqrt(A + B + C);
+			let a2 = Math.sqrt(A);
+			let a32 = 2 * A * a2;
+			let c2 = 2 * Math.sqrt(C);
+			let ba = B / a2;
+			return (a32 * sabc + a2 * B * (sabc - c2)
+				+ (4 * C * A - B * B) * Math.log((2 * a2 + ba + sabc) / (ba + c2))) / (4 * a32);
+		}
+		let len = 0;
+		let px = a.x;
+		let py = a.y;
+		for (let k = 1; k <= 32; k++) {
+			curveAt(a, cp, b, k / 32, TIP);
+			len += Math.sqrt((TIP.x - px) * (TIP.x - px) + (TIP.y - py) * (TIP.y - py));
+			px = TIP.x;
+			py = TIP.y;
+		}
+		return len;
+	}
+
+	/** The carrier is the first link of whatever array force-graph is drawing
+	 *  this frame. Taken afresh each frame, because a render that keeps the old
+	 *  links hands force-graph the same array, and one that replaces them does
+	 *  not. */
+	function pickCarrier() {
+		let links = fg.graphData().links;
+		arrowCarrier = links.length ? links[0] : null;
 	}
 
 	function drawNode(node, ctx, globalScale) {

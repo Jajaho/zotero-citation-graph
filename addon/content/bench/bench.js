@@ -619,13 +619,15 @@ async function quiesce(maxFrames) {
 /** Every switch there is, so that a variant states its whole configuration
  *  rather than inheriting whatever the one before it left behind. */
 var SWITCHES = ['physics', 'collide', 'arrows', 'curves', 'tint', 'labels',
-	'halo', 'fade', 'memo'];
+	'halo', 'fade', 'memo', 'batch'];
 
 /** Everything that costs the picture something to turn off -- which is every
- *  switch except the colour cache, whose whole point is that it costs nothing.
- *  Turning THAT off in a variant called "everything off" would make the fastest
- *  row slower than the ones above it. */
-var PICTURE = SWITCHES.filter(function (k) { return k !== 'memo'; });
+ *  switch except the two optimisations (the colour cache and our own arrow
+ *  heads), whose whole point is that they cost nothing. Turning THOSE off in a
+ *  variant called "everything off" would make the fastest row slower than the
+ *  ones above it. */
+var FREE = ['memo', 'batch'];
+var PICTURE = SWITCHES.filter(function (k) { return FREE.indexOf(k) < 0; });
 
 /** Scenarios that repaint a layout which is not moving -- all a drawing switch
  *  can touch. Naming them is a claim, not a saving: a switch that changes only
@@ -663,6 +665,9 @@ var MATRIX = [
 	// that cannot be turned off is one that cannot be measured, and this is
 	// how it stays honest.
 	{ name: 'no-memo', perf: offOnly('memo'), only: MX_DRAW },
+	// The same kind of row, for the same reason: what the arrow heads cost
+	// when force-graph draws them itself.
+	{ name: 'no-batch', perf: offOnly('batch'), only: MX_DRAW },
 	{ name: 'no-collide', perf: offOnly('collide'), only: MX_LAYOUT, wall: true },
 	{ name: 'no-physics', perf: offOnly('physics'), only: MX_LAYOUT, wall: true },
 
