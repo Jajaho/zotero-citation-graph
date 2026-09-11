@@ -940,6 +940,57 @@ check('label sizing shrinks to the node but never below the floor', () => {
  * name and run against stand-ins for the three things it touches. The code
  * under test is the code that ships, not a copy of it.
  */
+/**
+ * No block in the page reads a page-level name and then declares its own.
+ *
+ * graph.js is one closure with two hundred-odd `let`s at its top, and a `let`
+ * of the same name further in shadows one of them for its WHOLE block -- not
+ * from the line it is written on. Every read of the name above that line then
+ * reaches a binding that does not exist yet, and throws. 0.61.0 shipped exactly
+ * this: render() reads the page's `picked` set to prune the pick, and a stats
+ * line added at its foot declared `let picked` for a count. Every render threw
+ * before drawing anything, for every graph, and nothing here noticed, because
+ * nothing here runs render().
+ *
+ * So the rule is checked where it is cheap to check. For each inner
+ * declaration of a page-level name, the enclosing block is found by indentation
+ * -- the file is tab-indented throughout, which is what makes that sound -- and
+ * searched for a use of the name above the declaration. A shadow nothing reads
+ * early is left alone: shortLabel() has a `word` of its own inside an `if`,
+ * and the page's word() is never called there.
+ */
+check('no block in the page reads a name it is about to shadow', () => {
+	const lines = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8').split('\n');
+	const indent = l => l.match(/^\t*/)[0].length;
+	const code = l => l.replace(/\/\/.*$/, '').replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""');
+
+	const pageLevel = new Set();
+	for (const l of lines) {
+		const m = l.match(/^\t(?:let|const) (\w+)/);
+		if (m) pageLevel.add(m[1]);
+	}
+	if (pageLevel.size < 50) throw new Error('found only ' + pageLevel.size + ' page-level names; the scan is broken');
+
+	const bad = [];
+	lines.forEach((line, i) => {
+		const m = line.match(/^(\t{2,})(?:let|const) (\w+)\b/);
+		if (!m || !pageLevel.has(m[2])) return;
+		const depth = m[1].length;
+		// The block this declaration belongs to opens on the nearest line above
+		// it that is less indented and ends in a brace.
+		let open = i - 1;
+		while (open >= 0 && !(indent(lines[open]) < depth && /\{\s*$/.test(code(lines[open])))) open--;
+		const use = new RegExp('(^|[^\\w.$])' + m[2] + '\\b');
+		for (let j = open + 1; j < i; j++) {
+			if (use.test(code(lines[j]))) {
+				bad.push(`line ${i + 1} declares ${m[2]}, which line ${j + 1} of the same block already read`);
+				break;
+			}
+		}
+	});
+	if (bad.length) throw new Error(bad.join('; '));
+});
+
 check('a graph too small for the cited-by threshold has it fitted, once', () => {
 	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
 	const m = js.match(/\n\tfunction applyScope\(\) \{[\s\S]*?\n\t\}\n/);

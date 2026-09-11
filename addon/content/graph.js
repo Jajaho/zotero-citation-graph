@@ -2257,9 +2257,12 @@
 		// silently: a note, an attachment whose paper is already here, a record
 		// with no title. Said once, beside the count it qualifies, and only when
 		// the two numbers actually differ -- "10 of 10 selected" is noise.
-		let picked = raw.scope && raw.scope.picked;
-		if (picked && picked !== raw.items.length) {
-			stats.push(t('stats-of-picked', { shown: raw.items.length, picked }));
+		// Not called `picked`: that is the page's own pick set, and render()
+		// reads it further up -- a `let` of the same name here would shadow it
+		// for the whole function and turn those reads into a TDZ throw.
+		let pickedRows = raw.scope && raw.scope.picked;
+		if (pickedRows && pickedRows !== raw.items.length) {
+			stats.push(t('stats-of-picked', { shown: raw.items.length, picked: pickedRows }));
 		}
 		if (ghostCount) {
 			stats.push(t('stats-outside', { count: ghostCount })
