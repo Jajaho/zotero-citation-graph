@@ -2,7 +2,7 @@
 
 const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
-const { normDoi } = require('../core/normalize');
+const { findDois } = require('../core/normalize');
 
 /**
  * Strategy: DOI hyperlinks embedded as PDF /URI link annotations.
@@ -36,11 +36,13 @@ module.exports.id = register({
 				const uris = await adapter.getPdfLinkUris(att.key);
 				if (!uris.length) continue;
 
+				// findDois, not a pattern of our own: this carried a private copy
+				// of the DOI regex, which then missed the percent-decoding and the
+				// angle brackets that normalize.js learned, and quietly truncated
+				// every legacy Wiley link at the bracket. A second copy of a shared
+				// pattern is a second thing to fix, and only one of them got fixed.
 				const dois = new Set();
-				for (const u of uris) {
-					const d = normDoi((u.match(/10\.\d{4,9}\/[-._;()\/:a-zA-Z0-9]+/) || [])[0]);
-					if (d) dois.add(d);
-				}
+				for (const u of uris) for (const d of findDois(u)) dois.add(d);
 				if (options.ignoreSelfOnly && dois.size === 1
 						&& index.lookupDoi([...dois][0]) === item.key) {
 					continue;

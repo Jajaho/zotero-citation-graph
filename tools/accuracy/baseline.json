@@ -1,7 +1,7 @@
 {
  "conditions": {
-  "when": "2026-09-11T20:41:47.503Z",
-  "commit": "5909fe7",
+  "when": "2026-09-11T21:19:55.783Z",
+  "commit": "3fb6dd2",
   "dirty": true,
   "node": "v24.3.0",
   "platform": "win32 10.0.26200 x64",
@@ -13,7 +13,7 @@
   "pdfSetSha": "33dbc02a1231c49d",
   "groundTruthSha": "e1be27fc9e31fc49",
   "groundTruthEdges": 29,
-  "externalRefsSha": "0bb49a75b048b684",
+  "externalRefsSha": "85d5e033b578f516",
   "externalDois": 809,
   "externalFetchedOn": "2026-09-11",
   "strategies": [
@@ -121,19 +121,13 @@
      "doi": 516
     },
     "unresolvableIds": 0,
-    "tp": 485,
-    "missed": 324,
+    "tp": 489,
+    "missed": 320,
     "unconfirmed": 16,
-    "recallLowerBound": 0.5995055624227441,
-    "suffixArtifacts": [
-     "barry2016  10.3389/fncom.2013.00137/abstract"
-    ],
-    "truncated": [
-     "barry2020  10.1002/1521-396x(200009)181:1  ->  10.1002/1521-396x(200009)181:1&lt;99::aid-pssa99&gt;3.0.co;2-5",
-     "barry2020  10.1002/1521-396x(200108)186:2  ->  10.1002/1521-396x(200108)186:2&lt;187::aid-pssa187&gt;3.0.co;2-2",
-     "barry2020  10.1002/(sici)1521-396x(199903)172:1  ->  10.1002/(sici)1521-396x(199903)172:1&lt;25::aid-pssa25&gt;3.0.co;2-9"
-    ],
-    "defects": 4,
+    "recallLowerBound": 0.6044499381953028,
+    "suffixArtifacts": [],
+    "truncated": [],
+    "defects": 0,
     "refNodes": 0,
     "refNodesCorroborated": 0
    }
@@ -141,14 +135,14 @@
   {
    "id": "text-doi",
    "errors": [],
-   "predicted": 7,
-   "tp": 7,
+   "predicted": 11,
+   "tp": 11,
    "fp": 0,
-   "fn": 22,
+   "fn": 18,
    "precision": 1,
-   "recall": 0.2413793103448276,
-   "recallReachable": 0.25925925925925924,
-   "f1": 0.3888888888888889,
+   "recall": 0.3793103448275862,
+   "recallReachable": 0.4074074074074074,
+   "f1": 0.5499999999999999,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
@@ -159,9 +153,6 @@
     "sarkar2023 -> rondin2014",
     "sarkar2023 -> barry2016",
     "sarkar2023 -> dreau2011",
-    "sturner2019 -> barry2016",
-    "sturner2019 -> dolde2011",
-    "sturner2019 -> gruber1997",
     "barry2020 -> sturner2019",
     "barry2020 -> rondin2014",
     "barry2020 -> barry2016",
@@ -173,25 +164,21 @@
     "rondin2014 -> gruber1997",
     "barry2016 -> dreau2011",
     "dolde2011 -> gruber1997",
-    "odmrManual -> dolde2011",
     "dreau2011 -> dolde2011",
     "dreau2011 -> gruber1997"
    ],
    "external": {
     "byNamespace": {
-     "doi": 55
+     "doi": 67
     },
     "unresolvableIds": 0,
-    "tp": 37,
-    "missed": 772,
+    "tp": 50,
+    "missed": 759,
     "unconfirmed": 5,
-    "recallLowerBound": 0.04573547589616811,
+    "recallLowerBound": 0.06180469715698393,
     "suffixArtifacts": [],
-    "truncated": [
-     "sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32",
-     "sturner2019  10.1063/1  ->  10.1063/1.4823548"
-    ],
-    "defects": 2,
+    "truncated": [],
+    "defects": 0,
     "refNodes": 0,
     "refNodesCorroborated": 0
    }
@@ -240,21 +227,19 @@
   {
    "id": "ref-strings",
    "errors": [],
-   "predicted": 13,
-   "tp": 13,
+   "predicted": 15,
+   "tp": 15,
    "fp": 0,
-   "fn": 16,
+   "fn": 14,
    "precision": 1,
-   "recall": 0.4482758620689655,
-   "recallReachable": 0.48148148148148145,
-   "f1": 0.6190476190476191,
+   "recall": 0.5172413793103449,
+   "recallReachable": 0.5555555555555556,
+   "f1": 0.6818181818181819,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
    "falsePositives": [],
    "missed": [
-    "sturner2019 -> dolde2011",
-    "sturner2019 -> gruber1997",
     "barry2020 -> sturner2019",
     "barry2020 -> rondin2014",
     "barry2020 -> barry2016",
@@ -273,22 +258,19 @@
    "external": {
     "byNamespace": {
      "arxiv": 4,
-     "ref": 118,
-     "doi": 44
+     "ref": 105,
+     "doi": 55
     },
     "unresolvableIds": 0,
-    "tp": 37,
-    "missed": 772,
+    "tp": 50,
+    "missed": 759,
     "unconfirmed": 7,
-    "recallLowerBound": 0.04573547589616811,
+    "recallLowerBound": 0.06180469715698393,
     "suffixArtifacts": [],
-    "truncated": [
-     "sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32",
-     "sturner2019  10.1063/1  ->  10.1063/1.4823548"
-    ],
-    "defects": 2,
-    "refNodes": 94,
-    "refNodesCorroborated": 28
+    "truncated": [],
+    "defects": 0,
+    "refNodes": 81,
+    "refNodesCorroborated": 16
    }
   },
   {
@@ -314,10 +296,10 @@
      "openalex": 1025
     },
     "unresolvableIds": 134,
-    "tp": 804,
-    "missed": 5,
-    "unconfirmed": 77,
-    "recallLowerBound": 0.9938195302843016,
+    "tp": 807,
+    "missed": 2,
+    "unconfirmed": 74,
+    "recallLowerBound": 0.9975278121137207,
     "suffixArtifacts": [],
     "truncated": [],
     "defects": 0,
@@ -343,29 +325,21 @@
    "missed": [],
    "external": {
     "byNamespace": {
-     "doi": 525,
+     "doi": 520,
      "arxiv": 4,
-     "ref": 118,
+     "ref": 105,
      "openalex": 1025
     },
     "unresolvableIds": 134,
-    "tp": 806,
-    "missed": 3,
-    "unconfirmed": 87,
-    "recallLowerBound": 0.9962917181705809,
-    "suffixArtifacts": [
-     "barry2016  10.3389/fncom.2013.00137/abstract"
-    ],
-    "truncated": [
-     "sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32",
-     "sturner2019  10.1063/1  ->  10.1063/1.4823548",
-     "barry2020  10.1002/1521-396x(200009)181:1  ->  10.1002/1521-396x(200009)181:1&lt;99::aid-pssa99&gt;3.0.co;2-5",
-     "barry2020  10.1002/1521-396x(200108)186:2  ->  10.1002/1521-396x(200108)186:2&lt;187::aid-pssa187&gt;3.0.co;2-2",
-     "barry2020  10.1002/(sici)1521-396x(199903)172:1  ->  10.1002/(sici)1521-396x(199903)172:1&lt;25::aid-pssa25&gt;3.0.co;2-9"
-    ],
-    "defects": 6,
-    "refNodes": 94,
-    "refNodesCorroborated": 28
+    "tp": 809,
+    "missed": 0,
+    "unconfirmed": 83,
+    "recallLowerBound": 1,
+    "suffixArtifacts": [],
+    "truncated": [],
+    "defects": 0,
+    "refNodes": 81,
+    "refNodesCorroborated": 16
    }
   }
  ]

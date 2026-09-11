@@ -283,13 +283,13 @@ graded, since the key says nothing about them.
 Measured 2026-09-11, all five strategies (`openalex` anonymous, no API key):
 
 ```
-strategy        pred   TP   FP   FN   prec  recall  rec/pdf     F1  dup  traps
-pdf-links         18   18    0   11   100%     62%      67%   0.77    0  -
-text-doi           7    7    0   22   100%     24%      26%   0.39    0  -
-title-match       19   19    0   10   100%     66%      70%   0.79    0  -
-ref-strings       13   13    0   16   100%     45%      48%   0.62    0  -
-openalex          28   28    0    1   100%     97%      96%   0.98    0  -
-ALL (union)       29   29    0    0   100%    100%     100%   1.00    0  -
+strategy        pred   TP   FP   prec  recall  rec/pdf     F1  dup  traps
+pdf-links         18   18    0   100%     62%      67%   0.77    0  -
+text-doi          11   11    0   100%     38%      41%   0.55    0  -
+title-match       19   19    0   100%     66%      70%   0.79    0  -
+ref-strings       15   15    0   100%     52%      56%   0.68    0  -
+openalex          28   28    0   100%     97%      96%   0.98    0  -
+ALL (union)       29   29    0   100%    100%     100%   1.00    0  -
 ```
 
 `recall` is against all 29 edges; `rec/pdf` against the 27 a PDF-reading
@@ -322,12 +322,13 @@ one that fails is the one whose identifier is missing.
 ### Tier 2: the outside world
 
 ```
-strategy      emitted by namespace        TP  missed  unconf  defects  recall ≥
-pdf-links     doi 516                    485     324      16        4       60%
-text-doi      doi 55                      37     772       5        2        5%
-title-match   —                            0     809       0        0        0%
-ref-strings   doi 44, ref 118, arxiv 4    37     772       7        2        5%
-openalex      openalex 1025              804       5      77        0       99%
+strategy      emitted by namespace        TP  missed  unconf  defects  recall >=
+pdf-links     doi 520                    489     320      16        0       60%
+text-doi      doi 68                      50     759       5        0        6%
+title-match   -                            0     809       0        0        0%
+ref-strings   doi 57, ref 118, arxiv 4    50     759       7        0        6%
+openalex      openalex 1025              807       2      74        0       99%
+ALL (union)   -                          809       0      83        0      100%
 ```
 
 `title-match` contributes **nothing** outside the collection, by construction —
@@ -347,33 +348,64 @@ build the same cited work is therefore *two* ghost nodes — `doi:10.x` from
 and resolves them. `edges/openalex.js` says as much in its own comment; tier 2
 puts a number on it.
 
-### Six defects, all in DOI extraction
+### Six defects in DOI extraction, found and fixed
 
-The benchmark grades only provable defects, and found six:
+The benchmark grades only provable defects. Its first run found six, all minting
+ghost nodes for works that exist under no such identifier — not a near miss, but
+a node in the graph permanently unresolvable by any enricher. Fixed in 0.63.1;
+kept here because they are what the tier-2 set was built to catch.
 
-| strategy | defect | emitted | should be |
+| defect | emitted | should be |
+|---|---|---|
+| suffix | `10.3389/fncom.2013.00137/abstract` | `10.3389/fncom.2013.00137` |
+| truncated | `10.1002/1521-396x(200009)181:1` | `…181:1<99::aid-pssa99>3.0.co;2-5` |
+| truncated | `10.1002/1521-396x(200108)186:2` | `…186:2<187::aid-pssa187>…` |
+| truncated | `10.1002/(sici)1521-396x(199903)172:1` | `…172:1<25::aid-pssa25>…` |
+| truncated | `10.1038/lsa` | `10.1038/lsa.2016.32` |
+| truncated | `10.1063/1` | `10.1063/1.4823548` |
+
+Four causes, three in `core/normalize.js` and one worse:
+
+1. **`normDoi` did not strip URL tails.** A Frontiers link is
+   `.../10.3389/fncom.2013.00137/abstract`; the tail belongs to the URL, not to
+   the DOI.
+2. **Percent-encoding was never decoded.** A DOI arriving through a link
+   annotation is part of a URL, so its reserved characters come encoded —
+   `%3C` for `<`. `DOI_RE` stops dead at the `%`.
+3. **`DOI_RE` had no `<` or `>`.** DOIs registered before ~2005 embed them
+   (`10.1002/1521-396X(200009)181:1<99::AID-PSSA99>3.0.CO;2-5` is *one* DOI), so
+   even decoded, every legacy Wiley reference was cut at the bracket.
+4. **`edges/pdfLinks.js` carried its own private copy of the DOI pattern.** That
+   is why fixing 2 and 3 in `normalize.js` changed nothing for the strategy that
+   produced three of the six: a second copy of a shared pattern is a second
+   thing to fix, and only one of them got fixed. It now calls `findDois`, and
+   `normalize.js`'s own docstring — *every provider must use these* — is true
+   again.
+
+Line breaks inside a DOI are the fifth strand, shared with the tier-1 `text-doi`
+gap: `flattenPdfText` rejoins wrapped lines with a space, so `10.` + `1073/…`
+becomes `10. 1073/…` and matches nothing. `healDoiLineBreaks` closes only gaps a
+DOI cannot legally contain, and each rule demands the continuation look like one
+— a digit must follow — so a reference ending `…nature12373. Smith et al.` is
+left alone.
+
+What the fix bought, against the committed baseline:
+
+| strategy | tier 1 recall | tier 2 TP | defects |
 |---|---|---|---|
-| `pdf-links` | suffix | `10.3389/fncom.2013.00137/abstract` | `10.3389/fncom.2013.00137` |
-| `pdf-links` | truncated | `10.1002/1521-396x(200009)181:1` | `…181:1<99::aid-pssa99>3.0.co;2-5` |
-| `pdf-links` | truncated | `10.1002/1521-396x(200108)186:2` | `…186:2<187::aid-pssa187>…` |
-| `pdf-links` | truncated | `10.1002/(sici)1521-396x(199903)172:1` | `…172:1<25::aid-pssa25>…` |
-| `text-doi`, `ref-strings` | truncated | `10.1038/lsa` | `10.1038/lsa.2016.32` |
-| `text-doi`, `ref-strings` | truncated | `10.1063/1` | `10.1063/1.4823548` |
+| `pdf-links` | 62% → 62% | 485 → **489** | 4 → **0** |
+| `text-doi` | 24% → **38%** | 37 → **50** | 2 → **0** |
+| `ref-strings` | 45% → **52%** | 37 → **50** | 2 → **0** |
+| `openalex` | 97% → 97% | 804 → **807** | 0 |
+| union | 100% | 806 → **809 of 809** | 6 → **0** |
 
-Three causes, all in `core/normalize.js`:
+Precision stayed at 100% throughout, no trap was hit and the negative control
+stayed clean, so none of it was bought by guessing. The union now finds every
+external DOI Crossref knows about, with nothing left missed.
 
-1. **`normDoi` does not strip URL tails.** A Frontiers link is
-   `https://doi.org/10.3389/fncom.2013.00137/abstract`; the tail is part of the
-   URL, not of the DOI.
-2. **`DOI_RE` stops at `<`.** Pre-2005 Wiley DOIs embed `<...>`
-   (`10.1002/1521-396X(200009)181:1<99::AID-PSSA99>3.0.CO;2-5`), so every one of
-   them is cut at the angle bracket.
-3. **Line breaks inside a DOI**, the same fault as the tier-1 `text-doi` gap:
-   `flattenPdfText` rejoins wrapped lines with a space, and `10.1038/` + `lsa…`
-   on the next line becomes `10.1038/ lsa…`, so the match ends early.
-
-A truncated DOI is not a near miss. It is a node in the graph that no work
-anywhere has, permanently unresolvable by any enricher.
+(`openalex` gained three without its code changing: those were legacy Wiley DOIs
+the *key* had entity-encoded, `&lt;` for `<`, which `build-external.js` now
+decodes. A benchmark can be wrong about the same DOI its subject is wrong about.)
 
 ### OpenAlex corrected the answer key
 
@@ -390,10 +422,11 @@ against both populations so no offline strategy is marked down for a citation it
 had no way to read. Gruber 1997's own deposited list (29 references) cites
 nothing in the set, so those two are the complete correction.
 
-**`text-doi` is the one strategy below its ceiling: 7 found of 11 printed.** The
-four misses are `sturner2019 → barry2016`, `→ dolde2011`, `→ gruber1997`, and
-`odmrManual → dolde2011`, and they share one cause. `flattenPdfText` joins
-wrapped lines with a space, so a DOI broken across a line break becomes
+**`text-doi` was the one strategy below its ceiling, at 7 found of 11 printed —
+it is now at all 11.** The four misses were `sturner2019 → barry2016`,
+`→ dolde2011`, `→ gruber1997` and `odmrManual → dolde2011`, and they shared one
+cause. `flattenPdfText` joins wrapped lines with a space, so a DOI broken across
+a line break becomes
 
 ```
 https://doi.org/10. 1073/pnas.1601513113      (space after "10.")
@@ -401,9 +434,12 @@ https://doi.org/10.1038/ nphys1969            (break after the slash)
 ```
 
 and `DOI_RE` — which wants digits immediately after `10.` and at least one
-character after the slash — matches neither. Repairing a break *inside* a DOI
-before matching should close the whole gap and take `text-doi` to its 41%
-ceiling. Nothing else in the table is currently leaving edges on the table.
+character after the slash — matched neither. `healDoiLineBreaks` (0.63.1) closes
+the gap and takes `text-doi` to exactly its 41% ceiling; `ref-strings`, which
+reads the same text, went 45% → 52% with it.
+
+Every offline strategy is now at its channel ceiling, so none of them can gain
+another tier-1 edge without a new channel or fuzzy title matching.
 
 ## Extending it
 

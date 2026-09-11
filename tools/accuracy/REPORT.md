@@ -9,14 +9,14 @@ built and what it can and cannot prove:
 
 | | |
 |---|---|
-| measured | 2026-09-11T20:41:47.503Z |
-| commit | `5909fe7` **+ uncommitted changes** |
+| measured | 2026-09-11T21:19:55.783Z |
+| commit | `3fb6dd2` **+ uncommitted changes** |
 | runtime | node v24.3.0 on win32 10.0.26200 x64 |
 | data dir | `C:/Users/you/Zotero citation_graph_testing` |
 | database | `run.sqlite` · sha256 `3ed1bd78f2968701` · 5013504 bytes |
 | PDFs | 12 files · set sha256 `33dbc02a1231c49d` |
 | tier 1 key | `ground-truth.json` sha256 `e1be27fc9e31fc49` · 29 edges |
-| tier 2 key | `external-refs.json` sha256 `0bb49a75b048b684` · 809 DOIs · Crossref fetched 2026-09-11 |
+| tier 2 key | `external-refs.json` sha256 `85d5e033b578f516` · 809 DOIs · Crossref fetched 2026-09-11 |
 | network | yes — API key none (anonymous) |
 | OpenAlex ids resolved | 734 to a DOI, 116 with none (identity only; truth stays Crossref) |
 
@@ -41,9 +41,9 @@ completeness. Exhaustive, so a predicted edge that is not in it is wrong.
 | strategy | pred | TP | FP | precision | recall | rec/pdf | F1 | dup | traps |
 |---|---|---|---|---|---|---|---|---|---|
 | `pdf-links` | 18 | 18 | 0 | 100% | 62% | 67% | 0.77 | 0 | — |
-| `text-doi` | 7 | 7 | 0 | 100% | 24% | 26% | 0.39 | 0 | — |
+| `text-doi` | 11 | 11 | 0 | 100% | 38% | 41% | 0.55 | 0 | — |
 | `title-match` | 19 | 19 | 0 | 100% | 66% | 70% | 0.79 | 0 | — |
-| `ref-strings` | 13 | 13 | 0 | 100% | 45% | 48% | 0.62 | 0 | — |
+| `ref-strings` | 15 | 15 | 0 | 100% | 52% | 56% | 0.68 | 0 | — |
 | `openalex` | 28 | 28 | 0 | 100% | 97% | 96% | 0.98 | 0 | — |
 | `ALL (union)` | 29 | 29 | 0 | 100% | 100% | 100% | 1.00 | 0 | — |
 
@@ -59,38 +59,23 @@ things provable anyway: a DOI carrying a URL tail, and a DOI cut short.
 
 | strategy | emitted by namespace | TP | missed | unconf | defects | recall ≥ | ref: nodes |
 |---|---|---|---|---|---|---|---|
-| `pdf-links` | doi 516 | 485 | 324 | 16 | 4 | 60% | 0 |
-| `text-doi` | doi 55 | 37 | 772 | 5 | 2 | 5% | 0 |
+| `pdf-links` | doi 516 | 489 | 320 | 16 | 0 | 60% | 0 |
+| `text-doi` | doi 67 | 50 | 759 | 5 | 0 | 6% | 0 |
 | `title-match` | — | 0 | 809 | 0 | 0 | 0% | 0 |
-| `ref-strings` | arxiv 4, ref 118, doi 44 | 37 | 772 | 7 | 2 | 5% | 94 (28 corroborated) |
-| `openalex` | openalex 1025 | 804 | 5 | 77 | 0 | 99% | 0 |
-| `ALL (union)` | doi 525, arxiv 4, ref 118, openalex 1025 | 806 | 3 | 87 | 6 | 100% | 94 (28 corroborated) |
+| `ref-strings` | arxiv 4, ref 105, doi 55 | 50 | 759 | 7 | 0 | 6% | 81 (16 corroborated) |
+| `openalex` | openalex 1025 | 807 | 2 | 74 | 0 | 100% | 0 |
+| `ALL (union)` | doi 520, arxiv 4, ref 105, openalex 1025 | 809 | 0 | 83 | 0 | 100% | 81 (16 corroborated) |
 
-### Defects
+## Against the baseline
 
-**`pdf-links`**
+`C:/Users/you/AppData/Local/Temp/claude/C--Users-you-Repositories-zotero-graph-plugin/7dd7ae83-2ce5-4d6c-9ff2-2ea12ce2063a/scratchpad/prev-baseline.json`, measured 2026-09-11T20:41:47.503Z at commit `5909fe7`.
 
-- suffix artifact — `barry2016  10.3389/fncom.2013.00137/abstract`
-- truncated — `barry2020  10.1002/1521-396x(200009)181:1  ->  10.1002/1521-396x(200009)181:1&lt;99::aid-pssa99&gt;3.0.co;2-5`
-- truncated — `barry2020  10.1002/1521-396x(200108)186:2  ->  10.1002/1521-396x(200108)186:2&lt;187::aid-pssa187&gt;3.0.co;2-2`
-- truncated — `barry2020  10.1002/(sici)1521-396x(199903)172:1  ->  10.1002/(sici)1521-396x(199903)172:1&lt;25::aid-pssa25&gt;3.0.co;2-9`
-
-**`text-doi`**
-
-- truncated — `sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32`
-- truncated — `sturner2019  10.1063/1  ->  10.1063/1.4823548`
-
-**`ref-strings`**
-
-- truncated — `sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32`
-- truncated — `sturner2019  10.1063/1  ->  10.1063/1.4823548`
-
-**`ALL (union)`**
-
-- suffix artifact — `barry2016  10.3389/fncom.2013.00137/abstract`
-- truncated — `sturner2019  10.1038/lsa  ->  10.1038/lsa.2016.32`
-- truncated — `sturner2019  10.1063/1  ->  10.1063/1.4823548`
-- truncated — `barry2020  10.1002/1521-396x(200009)181:1  ->  10.1002/1521-396x(200009)181:1&lt;99::aid-pssa99&gt;3.0.co;2-5`
-- truncated — `barry2020  10.1002/1521-396x(200108)186:2  ->  10.1002/1521-396x(200108)186:2&lt;187::aid-pssa187&gt;3.0.co;2-2`
-- truncated — `barry2020  10.1002/(sici)1521-396x(199903)172:1  ->  10.1002/(sici)1521-396x(199903)172:1&lt;25::aid-pssa25&gt;3.0.co;2-9`
+| strategy | TP | FP | ext TP | defects |
+|---|---|---|---|---|
+| `pdf-links` | — | — | +4 | -4 |
+| `text-doi` | +4 | — | +13 | -2 |
+| `title-match` | — | — | — | — |
+| `ref-strings` | +2 | — | +13 | -2 |
+| `openalex` | — | — | +3 | — |
+| `ALL (union)` | — | — | +3 | -6 |
 

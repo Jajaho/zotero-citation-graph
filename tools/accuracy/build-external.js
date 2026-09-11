@@ -46,7 +46,18 @@ const CACHE = path.join(__dirname, '.crossref-cache');
 const GT = JSON.parse(fs.readFileSync(path.join(__dirname, 'ground-truth.json'), 'utf8'));
 const UA = 'zotero-citation-graph accuracy benchmark (https://github.com/Jajaho/zotero-citation-graph)';
 
-const norm = (d) => String(d || '').toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '');
+/**
+ * Crossref stores a DOI's angle brackets HTML-escaped -- the legacy Wiley DOI
+ * 10.1002/...181:1<99::AID-PSSA99>3.0.CO;2-5 comes back with &lt; and &gt; in
+ * it. The DOI itself has the literal characters, so they are decoded here;
+ * otherwise the key disagrees with every correct extractor on exactly the DOIs
+ * this benchmark exists to catch.
+ */
+const unescapeEntities = (s) => String(s)
+	.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&amp;/gi, '&');
+
+const norm = (d) => unescapeEntities(String(d || ''))
+	.toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '');
 
 async function main() {
 	const refetch = process.argv.includes('--refetch');
