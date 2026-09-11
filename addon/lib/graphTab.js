@@ -17,6 +17,7 @@ let cg = require('../citation-graph/index.js');
 let { ZoteroAdapter, itemRecord } = require('./zoteroAdapter.js');
 let { PdfLinkCache } = require('./pdfLinkCache.js');
 let { MetadataCache } = require('./metadataCache.js');
+let cacheStore = require('./cacheStore.js');
 let addDialog = require('./addDialog.js');
 let itemPane = require('./itemPane.js');
 let splitPane = require('./splitPane.js');
@@ -47,7 +48,7 @@ const MAX_ENRICH_REFERENCES = 2500;
 
 // Where the OpenAlex strategy keeps each held paper's reference list, beside
 // the metadata cache and aged out on the same schedule.
-const REFERENCE_CACHE_FILE = 'openalex-references.json';
+const REFERENCE_CACHE_FILE = cacheStore.FILES.references;
 
 // Ordered: core/enrich.js merges fill-first, so this list IS the ranking. A
 // second enricher added here is only ever asked about what the first could not

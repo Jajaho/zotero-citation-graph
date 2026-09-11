@@ -1,0 +1,25 @@
+<!--
+	Citation Graph for Zotero: its page in Zotero's Settings window.
+
+	A XUL fragment, not a document: core parses it into the Settings window
+	(preferences.js _loadPane) and prepends the pane's title as its heading.
+	The handlers reach back into the plugin through Zotero.ZoteroCitationGraph;
+	see lib/prefsPane.js.
+-->
+<linkset>
+	<html:link rel="localization" href="zotero-citation-graph.ftl"/>
+</linkset>
+
+<vbox id="zotero-citation-graph-prefpane"
+	onload="Zotero.ZoteroCitationGraph.prefsPane.load(this)">
+	<groupbox>
+		<label><html:h2 data-l10n-id="zotero-citation-graph-prefs-cache-heading"/></label>
+		<description data-l10n-id="zotero-citation-graph-prefs-cache-description"/>
+		<hbox align="center">
+			<button id="zotero-citation-graph-clear-cache"
+				data-l10n-id="zotero-citation-graph-prefs-clear-cache"
+				oncommand="Zotero.ZoteroCitationGraph.prefsPane.clearCache(this)"/>
+			<label id="zotero-citation-graph-cache-status"/>
+		</hbox>
+	</groupbox>
+</vbox>

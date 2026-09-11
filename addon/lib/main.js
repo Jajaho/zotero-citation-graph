@@ -8,6 +8,7 @@
 let graphTab = require('./graphTab.js');
 let tabContext = require('./tabContext.js');
 let nodeMenu = require('./nodeMenu.js');
+let prefsPane = require('./prefsPane.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 
@@ -51,6 +52,10 @@ const TAB_ICON_CSS = resRoot => `
 let _config = null;
 
 module.exports = {
+	// Reached from the Settings pane's inline handlers, which run in the
+	// Settings window and see this module only as Zotero.ZoteroCitationGraph.
+	prefsPane,
+
 	async startup(config) {
 		_config = config;
 		// Tab hooks before the await, not after it. Zotero restores its tabs on
@@ -84,6 +89,8 @@ module.exports = {
 
 		this.registerMenu();
 		this.registerItemMenu();
+		// Not awaited: nothing a graph tab needs waits on the Settings window.
+		prefsPane.register(config).catch(e => Zotero.logError(e));
 	},
 
 	/**
@@ -105,6 +112,7 @@ module.exports = {
 				Zotero.logError(e);
 			}
 		}
+		prefsPane.unregister();
 
 		// The hooks first: nothing below should be able to call a load hook
 		// belonging to the version being torn down.

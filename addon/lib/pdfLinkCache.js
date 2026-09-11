@@ -2,6 +2,8 @@
 
 'use strict';
 
+let cacheStore = require('./cacheStore.js');
+
 /**
  * Persistent cache for PDF /URI link-annotation scans.
  *
@@ -27,16 +29,18 @@ const VERSION = 3;
 class PdfLinkCache {
 	constructor(dir) {
 		this.dir = dir;
-		this.path = PathUtils.join(dir, 'pdf-links.json');
+		this.path = PathUtils.join(dir, cacheStore.FILES.pdfLinks);
 		this.data = { version: VERSION, entries: {} };
 		this.dirty = false;
+		this.generation = cacheStore.generation();
 	}
 
 	static forProfile() {
-		return new PdfLinkCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-citation-graph'));
+		return new PdfLinkCache(cacheStore.dir());
 	}
 
 	async load() {
+		this.generation = cacheStore.generation();
 		try {
 			let d = await IOUtils.readJSON(this.path);
 			// A version bump invalidates everything; the scan is reproducible, so
@@ -64,6 +68,12 @@ class PdfLinkCache {
 
 	async flush() {
 		if (!this.dirty) return;
+		// Loaded before the cache was cleared: writing back would undo the
+		// clear. See cacheStore.js.
+		if (this.generation !== cacheStore.generation()) {
+			this.dirty = false;
+			return;
+		}
 		try {
 			await IOUtils.makeDirectory(this.dir, { ignoreExisting: true });
 			await IOUtils.writeJSON(this.path, this.data, { tmpPath: this.path + '.tmp' });

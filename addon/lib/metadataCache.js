@@ -2,6 +2,8 @@
 
 'use strict';
 
+let cacheStore = require('./cacheStore.js');
+
 /**
  * Persistent cache for resolved identifier metadata.
  *
@@ -25,7 +27,7 @@ const DEFAULT_TTL = 30 * DAY;
 class MetadataCache {
 	// `file` lets a second cache of the same kind live beside this one: the
 	// OpenAlex strategy keeps its reference lists that way (graphTab.js).
-	constructor(dir, { ttl = DEFAULT_TTL, file = 'metadata.json' } = {}) {
+	constructor(dir, { ttl = DEFAULT_TTL, file = cacheStore.FILES.metadata } = {}) {
 		this.dir = dir;
 		this.ttl = ttl;
 		this.path = PathUtils.join(dir, file);
@@ -33,13 +35,15 @@ class MetadataCache {
 		this.dirty = false;
 		this.hits = 0;
 		this.misses = 0;
+		this.generation = cacheStore.generation();
 	}
 
 	static forProfile(opts) {
-		return new MetadataCache(PathUtils.join(Zotero.DataDirectory.dir, 'zotero-citation-graph'), opts);
+		return new MetadataCache(cacheStore.dir(), opts);
 	}
 
 	async load() {
+		this.generation = cacheStore.generation();
 		try {
 			let d = await IOUtils.readJSON(this.path);
 			if (d && d.version === VERSION && d.entries) this.data = d;
@@ -71,6 +75,12 @@ class MetadataCache {
 
 	async flush() {
 		if (!this.dirty) return;
+		// Loaded before the cache was cleared: writing back would undo the
+		// clear. See cacheStore.js.
+		if (this.generation !== cacheStore.generation()) {
+			this.dirty = false;
+			return;
+		}
 		try {
 			await IOUtils.makeDirectory(this.dir, { ignoreExisting: true });
 			await IOUtils.writeJSON(this.path, this.data, { tmpPath: this.path + '.tmp' });

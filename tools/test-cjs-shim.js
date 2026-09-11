@@ -102,6 +102,11 @@ const ChromeUtils = {
 // profile nobody is debugging should be getting.
 const traceWrites = [];
 
+// The cache files removed and written, by path -- what lib/cacheStore.js's
+// clear, and a flush racing it, actually did to the disk.
+const removed = [];
+const jsonWrites = [];
+
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
 	Zotero, ChromeUtils,
@@ -110,7 +115,8 @@ const require_ = shim.makeRequire(rootURI, {
 		read: async () => new Uint8Array(),
 		stat: async () => ({ size: 0, lastModified: 0 }),
 		readJSON: async () => { throw new Error('no cache'); },
-		writeJSON: async () => {},
+		writeJSON: async (p) => { jsonWrites.push(p); },
+		remove: async (p) => { removed.push(p); },
 		makeDirectory: async () => {},
 		// lib/trace.js's own file, which is the one thing here that is written
 		// for its own sake. Recorded rather than written, so a check can ask
@@ -664,6 +670,66 @@ check('MetadataCache expires on age, unlike the content-stamped PDF cache', () =
 	// A citation count has no local invalidation signal, which is the whole
 	// reason this cache ages out where pdfLinkCache stamps instead.
 	if (c.size !== 1) throw new Error('expiry should not evict, only refuse');
+});
+
+check('clearing the cache removes every file, and a build already running does not put it back', async () => {
+	const cacheStore = require_('./lib/cacheStore.js');
+	const { MetadataCache } = require_('./lib/metadataCache.js');
+	const { PdfLinkCache } = require_('./lib/pdfLinkCache.js');
+	const ours = p => Object.values(cacheStore.FILES).some(f => p.endsWith('/' + f));
+
+	// Loaded before the press, as a build in progress would have them.
+	const running = [
+		await MetadataCache.forProfile().load(),
+		await MetadataCache.forProfile({ file: cacheStore.FILES.references }).load(),
+		await PdfLinkCache.forProfile().load(),
+	];
+	running[0].set('doi:10.1000/a', { key: 'doi:10.1000/a', title: 'T' });
+	running[1].set('doi:10.1000/a', { refs: [] });
+	running[2].set('ATTKEY01', '1:1', []);
+
+	await cacheStore.clear();
+	for (const f of Object.values(cacheStore.FILES)) {
+		if (!removed.some(p => p.endsWith('/' + f))) throw new Error('left ' + f + ' on disk');
+	}
+
+	const before = jsonWrites.filter(ours).length;
+	await Promise.all(running.map(c => c.flush()));
+	if (jsonWrites.filter(ours).length !== before) throw new Error('a stale flush wrote the cache back');
+
+	// A cache loaded after the clear is the next build's, and writes as usual.
+	const next = await MetadataCache.forProfile().load();
+	next.set('doi:10.1000/b', { key: 'doi:10.1000/b', title: 'U' });
+	await next.flush();
+	if (jsonWrites.filter(ours).length !== before + 1) throw new Error('the next build could not write');
+});
+
+check('the Settings pane is registered, torn down, and its handlers exist', () => {
+	const main = fs.readFileSync(path.join(addonDir, 'lib/main.js'), 'utf8');
+	if (!/prefsPane\.register\(/.test(main)) throw new Error('main.js never registers the pane');
+	if (!/prefsPane\.unregister\(\)/.test(main)) throw new Error('main.js never unregisters the pane');
+	if (!/^\s*prefsPane,$/m.test(main)) throw new Error('main.js does not expose prefsPane to the markup');
+	const pane = require_('./lib/prefsPane.js');
+	// The markup calls these by name through Zotero.ZoteroCitationGraph.
+	const xhtml = fs.readFileSync(path.join(addonDir, 'content/preferences.xhtml'), 'utf8');
+	const calls = [...xhtml.matchAll(/Zotero\.ZoteroCitationGraph\.prefsPane\.(\w+)\(/g)].map(m => m[1]);
+	if (!calls.length) throw new Error('the markup calls nothing; this check is stale');
+	for (const fn of calls) {
+		if (typeof pane[fn] !== 'function') throw new Error('the markup calls a missing ' + fn + '()');
+	}
+	// Core parses this as XML, where "--" inside a comment is a fatal error --
+	// and a parse error is a blank pane, not a message anyone would see.
+	for (const c of xhtml.matchAll(/<!--([\s\S]*?)-->/g)) {
+		if (c[1].includes('--')) throw new Error('"--" inside an XML comment');
+	}
+});
+
+check('cache sizes read in the strings\' locale', async () => {
+	await l10nReady;
+	const { formatBytes } = require_('./lib/prefsPane.js');
+	if (formatBytes(1400000) !== '1.4 MB') throw new Error('MB: ' + formatBytes(1400000));
+	if (formatBytes(820000) !== '820 kB') throw new Error('kB: ' + formatBytes(820000));
+	if (formatBytes(12) !== '12 byte') throw new Error('bytes: ' + formatBytes(12));
 });
 
 check('toWireExternal keeps local and global counts as separate fields', () => {
@@ -4314,6 +4380,7 @@ function referencedIds() {
 		'lib/gapsPane.js',
 		'lib/addDialog.js',
 		'lib/main.js',
+		'lib/prefsPane.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;
@@ -4326,6 +4393,12 @@ function referencedIds() {
 	}
 	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
 	for (const m of html.matchAll(/data-zg-(?:str|title|placeholder|aria-label)="([^"]+)"/g)) {
+		ids.add(m[1]);
+	}
+	// The Settings pane is translated by Zotero's own Fluent, so its ids are
+	// written out whole.
+	const prefs = fs.readFileSync(path.join(addonDir, 'content/preferences.xhtml'), 'utf8');
+	for (const m of prefs.matchAll(/data-l10n-id="zotero-citation-graph-([^"]+)"/g)) {
 		ids.add(m[1]);
 	}
 	for (const mode of ['year', 'collection', 'cluster', 'author', 'publication', 'type']) {

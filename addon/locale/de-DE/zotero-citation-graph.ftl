@@ -332,3 +332,15 @@ zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufüge
 zotero-citation-graph-gaps-mixed = über { $count } Teilgebiete verteilt
 zotero-citation-graph-gaps-more = +{ $count } weitere unterhalb der Grenze
 zotero-citation-graph-gaps-lookup-hint = Mit „Knotenmetadaten abfragen“ werden diese danach sortiert, wie spezifisch sie für deine Bibliothek sind, statt nur nach Anzahl.
+
+## Die Seite des Plugins in Zoteros Einstellungen.
+
+zotero-citation-graph-prefs-title = Zitationsgraph
+zotero-citation-graph-prefs-cache-heading = Cache
+zotero-citation-graph-prefs-cache-description = Aus deinen PDFs gelesene Links und online nachgeschlagene Angaben zu zitierten Werken werden aufbewahrt, damit sich ein Graph öffnet, ohne diese Arbeit zu wiederholen. Leeren ist unbedenklich: Der nächste Graph liest und schlägt alles erneut nach, was länger dauert.
+zotero-citation-graph-prefs-clear-cache =
+    .label = Cache leeren
+zotero-citation-graph-prefs-cache-size = Der Cache belegt { $size }.
+zotero-citation-graph-prefs-cache-empty = Der Cache ist leer.
+zotero-citation-graph-prefs-cache-cleared = { $size } freigegeben.
+zotero-citation-graph-prefs-cache-failed = Der Cache konnte nicht geleert werden: { $message }

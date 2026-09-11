@@ -399,3 +399,19 @@ zotero-citation-graph-gaps-add-no-doi = No DOI to add this by
 zotero-citation-graph-gaps-mixed = across { $count } subfields
 zotero-citation-graph-gaps-more = +{ $count } more below the cut
 zotero-citation-graph-gaps-lookup-hint = With "query node metadata" on, these are ranked by how specific each one is to your library rather than by count alone.
+
+## The plugin's page in Zotero's Settings window.
+#
+# The title is the pane's name in the Settings sidebar and its heading. The
+# rest is resolved by Zotero's own Fluent through the pane's linkset, except the
+# status line beside the button, which lib/prefsPane.js fills in.
+
+zotero-citation-graph-prefs-title = Citation Graph
+zotero-citation-graph-prefs-cache-heading = Cache
+zotero-citation-graph-prefs-cache-description = Links read out of your PDFs and details looked up online for cited works are kept, so that a graph opens without redoing that work. Clearing is safe: the next graph reads and looks everything up again, which takes longer.
+zotero-citation-graph-prefs-clear-cache =
+    .label = Clear Cache
+zotero-citation-graph-prefs-cache-size = The cache holds { $size }.
+zotero-citation-graph-prefs-cache-empty = The cache is empty.
+zotero-citation-graph-prefs-cache-cleared = Cleared { $size }.
+zotero-citation-graph-prefs-cache-failed = Could not clear the cache: { $message }
