@@ -1,0 +1,699 @@
+{
+	"status": "ok",
+	"message-type": "work",
+	"message-version": "1.0.0",
+	"message": {
+		"indexed": {
+			"date-parts": [
+				[
+					2026,
+					9,
+					2
+				]
+			],
+			"date-time": "2026-09-02T07:44:44Z",
+			"timestamp": 1788335084852,
+			"version": "build-2803163510"
+		},
+		"reference-count": 54,
+		"publisher": "American Physical Society (APS)",
+		"issue": "26",
+		"license": [
+			{
+				"start": {
+					"date-parts": [
+						[
+							2020,
+							12,
+							21
+						]
+					],
+					"date-time": "2020-12-21T00:00:00Z",
+					"timestamp": 1608508800000
+				},
+				"content-version": "vor",
+				"delay-in-days": 0,
+				"URL": "https://link.aps.org/licenses/aps-default-license"
+			}
+		],
+		"funder": [
+			{
+				"DOI": "10.13039/100010663",
+				"name": "H2020 European Research Council",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/100010663",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100009149",
+				"name": "National Center of Competence in Research Quantum Science and Technology",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100009149",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100001711",
+				"name": "Schweizerischer Nationalfonds zur Förderung der Wissenschaftlichen Forschung",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100001711",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100003006",
+				"name": "Eidgenössische Technische Hochschule Zürich",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100003006",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100000038",
+				"name": "Natural Sciences and Engineering Research Council of Canada",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100000038",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100010785",
+				"name": "Canada First Research Excellence Fund",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100010785",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"name": "Vanier Canada Graduate Scholarships"
+			}
+		],
+		"content-domain": {
+			"domain": [
+				"journals.aps.org"
+			],
+			"crossmark-restriction": true
+		},
+		"short-container-title": [
+			"Phys. Rev. Lett."
+		],
+		"DOI": "10.1103/physrevlett.125.260502",
+		"type": "journal-article",
+		"created": {
+			"date-parts": [
+				[
+					2020,
+					12,
+					21
+				]
+			],
+			"date-time": "2020-12-21T11:04:20Z",
+			"timestamp": 1608548660000
+		},
+		"update-policy": "https://doi.org/10.1103/crossmark-policy",
+		"source": "Crossref",
+		"is-referenced-by-count": 207,
+		"title": [
+			"Microwave Quantum Link between Superconducting Circuits Housed in Spatially Separated Cryogenic Systems"
+		],
+		"prefix": "10.1103",
+		"volume": "125",
+		"author": [
+			{
+				"ORCID": "https://orcid.org/0000-0001-9151-6499",
+				"authenticated-orcid": true,
+				"given": "P.",
+				"family": "Magnard",
+				"sequence": "first",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "S.",
+				"family": "Storz",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0002-8958-4473",
+				"authenticated-orcid": true,
+				"given": "P.",
+				"family": "Kurpiers",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "J.",
+				"family": "Schär",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "F.",
+				"family": "Marxer",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "J.",
+				"family": "Lütolf",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "T.",
+				"family": "Walter",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0002-1490-0072",
+				"authenticated-orcid": true,
+				"given": "J.-C.",
+				"family": "Besse",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "M.",
+				"family": "Gabureac",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0001-6125-9938",
+				"authenticated-orcid": true,
+				"given": "K.",
+				"family": "Reuer",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0003-1242-6466",
+				"authenticated-orcid": true,
+				"given": "A.",
+				"family": "Akin",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0001-9695-8552",
+				"authenticated-orcid": true,
+				"given": "B.",
+				"family": "Royer",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "A.",
+				"family": "Blais",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "A.",
+				"family": "Wallraff",
+				"sequence": "additional",
+				"affiliation": [],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			}
+		],
+		"member": "16",
+		"published-online": {
+			"date-parts": [
+				[
+					2020,
+					12,
+					21
+				]
+			]
+		},
+		"reference": [
+			{
+				"key": "PhysRevLett.125.260502Cc1R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.22331/q-2018-08-06-79"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc2R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1666-5"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc3R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1040-7"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc4R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature18949"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc5R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0920-y"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc6R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1244324"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc7R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature19762"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc8R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1073/pnas.1704827114"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc9R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1287-z"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc10R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.6.044010"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc11R1",
+				"volume-title": "IEEE 68th Electronic Components and Technology Conference (ECTC)",
+				"author": "R. N. Das",
+				"year": "2018"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc12R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/2058-9565/aa94fc"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc13R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/5.0003907"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc14R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1140/epjqt/s40507-019-0072-0"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc15R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1073/pnas.1619152114"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc16R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.8.041015"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc17R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.4.041041"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc18R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/npjqi.2016.2"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc19R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.aar4994"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc20R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0210-0"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc21R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-019-0673-7"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc23R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1221856"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc24R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature06118"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc25R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature12016"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc26R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.7.011035"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc27R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.118.133601"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc28R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-018-0195-y"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc29R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.200501"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc30R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0115-y"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc31R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-019-0507-7"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc32R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-019-0128-0"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc33R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.124.240502"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc35R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.78.3221"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc37R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1140/epjqt/s40507-017-0059-7"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc38R1",
+				"volume-title": "Microwave Engineering",
+				"author": "D. M. Pozar",
+				"year": "2012"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc39R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.7.054020"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc40R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.120501"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc41R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.121.157701"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc42R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.103.110501"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc43R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1080/09500349708231894"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc44R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/JLT.2018.2796647"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc46R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.121.060502"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc47R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.91.043846"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc48R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.4.041010"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc49R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.123.133602"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc50R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.75.052318"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc51R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.104.180503"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc52R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.12.044067"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc53R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1361-6455/ab3995"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc54R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.59.4249"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc55R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature15759"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc56R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-018-0019-0"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc57R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevResearch.1.032042"
+			},
+			{
+				"key": "PhysRevLett.125.260502Cc58R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.122.073601"
+			}
+		],
+		"container-title": [
+			"Physical Review Letters"
+		],
+		"original-title": [],
+		"language": "en",
+		"link": [
+			{
+				"URL": "https://link.aps.org/article/10.1103/PhysRevLett.125.260502",
+				"content-type": "unspecified",
+				"content-version": "vor",
+				"intended-application": "syndication"
+			},
+			{
+				"URL": "http://harvest.aps.org/v2/journals/articles/10.1103/PhysRevLett.125.260502/fulltext",
+				"content-type": "unspecified",
+				"content-version": "vor",
+				"intended-application": "similarity-checking"
+			}
+		],
+		"deposited": {
+			"date-parts": [
+				[
+					2025,
+					1,
+					2
+				]
+			],
+			"date-time": "2025-01-02T18:08:31Z",
+			"timestamp": 1735841311000
+		},
+		"score": 1,
+		"resource": {
+			"primary": {
+				"URL": "https://link.aps.org/doi/10.1103/PhysRevLett.125.260502"
+			}
+		},
+		"subtitle": [],
+		"short-title": [],
+		"issued": {
+			"date-parts": [
+				[
+					2020,
+					12,
+					21
+				]
+			]
+		},
+		"references-count": 54,
+		"journal-issue": {
+			"issue": "26",
+			"published-print": {
+				"date-parts": [
+					[
+						2020,
+						12
+					]
+				]
+			}
+		},
+		"URL": "https://doi.org/10.1103/physrevlett.125.260502",
+		"relation": {},
+		"ISSN": [
+			"0031-9007",
+			"1079-7114"
+		],
+		"issn-type": [
+			{
+				"value": "0031-9007",
+				"type": "print"
+			},
+			{
+				"value": "1079-7114",
+				"type": "electronic"
+			}
+		],
+		"subject": [],
+		"published": {
+			"date-parts": [
+				[
+					2020,
+					12,
+					21
+				]
+			]
+		},
+		"article-number": "260502"
+	}
+}

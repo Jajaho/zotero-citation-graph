@@ -1,20 +1,20 @@
 {
  "conditions": {
-  "when": "2026-09-11T21:19:55.783Z",
-  "commit": "3fb6dd2",
+  "when": "2026-09-11T21:53:01.531Z",
+  "commit": "e9dabef",
   "dirty": true,
   "node": "v24.3.0",
   "platform": "win32 10.0.26200 x64",
   "dataDir": "C:/Users/you/Zotero citation_graph_testing",
-  "dbPath": "C:/Users/you/AppData/Local/Temp/claude/C--Users-you-Repositories-zotero-graph-plugin/7dd7ae83-2ce5-4d6c-9ff2-2ea12ce2063a/scratchpad/bench/run.sqlite",
-  "dbSha": "3ed1bd78f2968701",
+  "dbPath": "./run.sqlite",
+  "dbSha": "24a97348babbda00",
   "dbBytes": 5013504,
-  "pdfCount": 12,
-  "pdfSetSha": "33dbc02a1231c49d",
-  "groundTruthSha": "e1be27fc9e31fc49",
-  "groundTruthEdges": 29,
-  "externalRefsSha": "85d5e033b578f516",
-  "externalDois": 809,
+  "pdfCount": 14,
+  "pdfSetSha": "00671f2ff0d2d66f",
+  "groundTruthSha": "79901e18c0a9a444",
+  "groundTruthEdges": 30,
+  "externalRefsSha": "20292b70e0bef6d2",
+  "externalDois": 1366,
   "externalFetchedOn": "2026-09-11",
   "strategies": [
    {
@@ -77,28 +77,28 @@
   ],
   "network": true,
   "apiKey": "none (anonymous)",
-  "openalexIdsResolved": 734,
-  "openalexIdsUnresolved": 116
+  "openalexIdsResolved": 1381,
+  "openalexIdsUnresolved": 256
  },
  "tier1": {
-  "edges": 29,
-  "reachable": 27
+  "edges": 30,
+  "reachable": 28
  },
  "tier2": {
-  "externalDois": 809
+  "externalDois": 1366
  },
  "results": [
   {
    "id": "pdf-links",
    "errors": [],
-   "predicted": 18,
-   "tp": 18,
+   "predicted": 19,
+   "tp": 19,
    "fp": 0,
    "fn": 11,
    "precision": 1,
-   "recall": 0.6206896551724138,
-   "recallReachable": 0.6666666666666666,
-   "f1": 0.7659574468085107,
+   "recall": 0.6333333333333333,
+   "recallReachable": 0.6785714285714286,
+   "f1": 0.7755102040816326,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
@@ -118,13 +118,13 @@
    ],
    "external": {
     "byNamespace": {
-     "doi": 516
+     "doi": 1068
     },
     "unresolvableIds": 0,
-    "tp": 489,
-    "missed": 320,
-    "unconfirmed": 16,
-    "recallLowerBound": 0.6044499381953028,
+    "tp": 1039,
+    "missed": 327,
+    "unconfirmed": 18,
+    "recallLowerBound": 0.760614934114202,
     "suffixArtifacts": [],
     "truncated": [],
     "defects": 0,
@@ -138,11 +138,11 @@
    "predicted": 11,
    "tp": 11,
    "fp": 0,
-   "fn": 18,
+   "fn": 19,
    "precision": 1,
-   "recall": 0.3793103448275862,
-   "recallReachable": 0.4074074074074074,
-   "f1": 0.5499999999999999,
+   "recall": 0.36666666666666664,
+   "recallReachable": 0.39285714285714285,
+   "f1": 0.5365853658536585,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
@@ -165,20 +165,23 @@
     "barry2016 -> dreau2011",
     "dolde2011 -> gruber1997",
     "dreau2011 -> dolde2011",
-    "dreau2011 -> gruber1997"
+    "dreau2011 -> gruber1997",
+    "blais2021 -> magnard2020"
    ],
    "external": {
     "byNamespace": {
-     "doi": 67
+     "doi": 70
     },
     "unresolvableIds": 0,
     "tp": 50,
-    "missed": 759,
-    "unconfirmed": 5,
-    "recallLowerBound": 0.06180469715698393,
+    "missed": 1316,
+    "unconfirmed": 7,
+    "recallLowerBound": 0.036603221083455345,
     "suffixArtifacts": [],
-    "truncated": [],
-    "defects": 0,
+    "truncated": [
+     "magnard2020  10.1103/physrevlett  ->  10.1103/physrevlett.103.110501"
+    ],
+    "defects": 1,
     "refNodes": 0,
     "refNodesCorroborated": 0
    }
@@ -186,18 +189,22 @@
   {
    "id": "title-match",
    "errors": [],
-   "predicted": 19,
+   "predicted": 20,
    "tp": 19,
-   "fp": 0,
-   "fn": 10,
-   "precision": 1,
-   "recall": 0.6551724137931034,
-   "recallReachable": 0.7037037037037037,
-   "f1": 0.7916666666666666,
+   "fp": 1,
+   "fn": 11,
+   "precision": 0.95,
+   "recall": 0.6333333333333333,
+   "recallReachable": 0.6785714285714286,
+   "f1": 0.7599999999999999,
    "duplicateSelfLoops": 0,
-   "trapsHit": [],
+   "trapsHit": [
+    "magnard2020 -> blais2021  [titleMatch]"
+   ],
    "controlHit": [],
-   "falsePositives": [],
+   "falsePositives": [
+    "magnard2020 -> blais2021"
+   ],
    "missed": [
     "sturner2019 -> rondin2014",
     "barry2020 -> sturner2019",
@@ -208,13 +215,14 @@
     "barry2020 -> dreau2011",
     "dolde2011 -> gruber1997",
     "dreau2011 -> dolde2011",
-    "dreau2011 -> gruber1997"
+    "dreau2011 -> gruber1997",
+    "blais2021 -> magnard2020"
    ],
    "external": {
     "byNamespace": {},
     "unresolvableIds": 0,
     "tp": 0,
-    "missed": 809,
+    "missed": 1366,
     "unconfirmed": 0,
     "recallLowerBound": 0,
     "suffixArtifacts": [],
@@ -230,11 +238,11 @@
    "predicted": 15,
    "tp": 15,
    "fp": 0,
-   "fn": 14,
+   "fn": 15,
    "precision": 1,
-   "recall": 0.5172413793103449,
-   "recallReachable": 0.5555555555555556,
-   "f1": 0.6818181818181819,
+   "recall": 0.5,
+   "recallReachable": 0.5357142857142857,
+   "f1": 0.6666666666666666,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
@@ -253,37 +261,38 @@
     "dolde2011 -> gruber1997",
     "odmrManual -> dolde2011",
     "dreau2011 -> dolde2011",
-    "dreau2011 -> gruber1997"
+    "dreau2011 -> gruber1997",
+    "blais2021 -> magnard2020"
    ],
    "external": {
     "byNamespace": {
-     "arxiv": 4,
-     "ref": 105,
-     "doi": 55
+     "arxiv": 7,
+     "ref": 154,
+     "doi": 57
     },
     "unresolvableIds": 0,
     "tp": 50,
-    "missed": 759,
-    "unconfirmed": 7,
-    "recallLowerBound": 0.06180469715698393,
+    "missed": 1316,
+    "unconfirmed": 12,
+    "recallLowerBound": 0.036603221083455345,
     "suffixArtifacts": [],
     "truncated": [],
     "defects": 0,
-    "refNodes": 81,
+    "refNodes": 130,
     "refNodesCorroborated": 16
    }
   },
   {
    "id": "openalex",
    "errors": [],
-   "predicted": 28,
-   "tp": 28,
+   "predicted": 29,
+   "tp": 29,
    "fp": 0,
    "fn": 1,
    "precision": 1,
-   "recall": 0.9655172413793104,
-   "recallReachable": 0.9629629629629629,
-   "f1": 0.9824561403508771,
+   "recall": 0.9666666666666667,
+   "recallReachable": 0.9642857142857143,
+   "f1": 0.983050847457627,
    "duplicateSelfLoops": 0,
    "trapsHit": [],
    "controlHit": [],
@@ -293,13 +302,13 @@
    ],
    "external": {
     "byNamespace": {
-     "openalex": 1025
+     "openalex": 1845
     },
-    "unresolvableIds": 134,
-    "tp": 807,
-    "missed": 2,
-    "unconfirmed": 74,
-    "recallLowerBound": 0.9975278121137207,
+    "unresolvableIds": 283,
+    "tp": 1357,
+    "missed": 9,
+    "unconfirmed": 195,
+    "recallLowerBound": 0.9934114202049781,
     "suffixArtifacts": [],
     "truncated": [],
     "defects": 0,
@@ -310,35 +319,41 @@
   {
    "id": "ALL (union)",
    "errors": [],
-   "predicted": 29,
-   "tp": 29,
-   "fp": 0,
+   "predicted": 31,
+   "tp": 30,
+   "fp": 1,
    "fn": 0,
-   "precision": 1,
+   "precision": 0.967741935483871,
    "recall": 1,
    "recallReachable": 1,
-   "f1": 1,
+   "f1": 0.9836065573770492,
    "duplicateSelfLoops": 0,
-   "trapsHit": [],
+   "trapsHit": [
+    "magnard2020 -> blais2021  [titleMatch]"
+   ],
    "controlHit": [],
-   "falsePositives": [],
+   "falsePositives": [
+    "magnard2020 -> blais2021"
+   ],
    "missed": [],
    "external": {
     "byNamespace": {
-     "doi": 520,
-     "arxiv": 4,
-     "ref": 105,
-     "openalex": 1025
+     "doi": 1073,
+     "arxiv": 7,
+     "ref": 154,
+     "openalex": 1845
     },
-    "unresolvableIds": 134,
-    "tp": 809,
+    "unresolvableIds": 283,
+    "tp": 1366,
     "missed": 0,
-    "unconfirmed": 83,
+    "unconfirmed": 209,
     "recallLowerBound": 1,
     "suffixArtifacts": [],
-    "truncated": [],
-    "defects": 0,
-    "refNodes": 81,
+    "truncated": [
+     "magnard2020  10.1103/physrevlett  ->  10.1103/physrevlett.103.110501"
+    ],
+    "defects": 1,
+    "refNodes": 130,
     "refNodesCorroborated": 16
    }
   }

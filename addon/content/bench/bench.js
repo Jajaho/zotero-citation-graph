@@ -45,8 +45,8 @@ function env() {
 		gecko: navigator.userAgent.indexOf('Firefox') > -1,
 		dpr: window.devicePixelRatio || 1,
 		// Zotero serves this page over resource://; a headless run serves it
-		// over http from tools/bench/serve.js. The renderer is the same either
-		// way, but which one produced a number is worth keeping.
+		// over http from tools/bench/rendering/serve.js. The renderer is the
+		// same either way, but which one produced a number is worth keeping.
 		host: location.protocol,
 		when: new Date().toISOString(),
 	};

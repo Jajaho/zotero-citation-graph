@@ -6,7 +6,7 @@ Zotero profile so it can be opened, rebuilt and thrown at the plugin without
 touching a real library.
 
 - **Profile** — `C:\Users\you\Zotero citation_graph_testing`
-- **Collection** — `Citation Graph Benchmark` (13 items)
+- **Collection** — `Citation Graph Benchmark` (15 items)
 - **Answers** — [`ground-truth.json`](ground-truth.json), beside this file
 
 Run Zotero against that profile with `zotero.exe -datadir "C:\Users\you\Zotero citation_graph_testing"`.
@@ -16,8 +16,8 @@ Run Zotero against that profile with `zotero.exe -datadir "C:\Users\you\Zotero c
 This trips people up, so it is worth stating before anything else. **An edge is a
 citation from one work in the collection to another work in the collection.**
 
-These 12 papers cite **931 works** between them. Only **29** of those references
-point at a work the collection also holds; those 29 are the edges. Every other
+These 14 papers cite **1512 works** between them. Only **30** of those references
+point at a work the collection also holds; those 30 are the edges. Every other
 reference lands on a ghost node outside the collection, and the key says nothing
 about it — that is what `docs/external-references.md` is about, not this.
 
@@ -25,6 +25,7 @@ So:
 
 | work | references | edges | ghosts |
 |---|---|---|---|
+| `blais2021` | 527 | 1 | 526 |
 | `barry2020` | 454 | 6 | 448 |
 | `rondin2014` | 148 | 3 | 145 |
 | `barry2016` | 59 | 1 | 58 |
@@ -32,12 +33,13 @@ So:
 | `sturner2019` | 35 | 5 | 30 |
 
 Barry 2020's 6 and Stürner's 5 are **complete counts of their in-collection
-citations**, not a sample of their bibliographies. A 12-work collection cannot
-have more than 132 possible directed pairs, and chronology rules out most of
+citations**, not a sample of their bibliographies. Blais 2021's single edge, out
+of 527 references, is the shape in its purest form. A 14-work collection cannot
+have more than 182 possible directed pairs, and chronology rules out most of
 those before anything is read.
 
-This also means recall figures depend on getting those 29 exactly right: recall
-is `TP / 29`, so a key that missed true edges would silently inflate every score
+This also means recall figures depend on getting those 30 exactly right: recall
+is `TP / 30`, so a key that missed true edges would silently inflate every score
 in the table. Hence the completeness check below.
 
 ## Completeness, checked against Crossref
@@ -46,14 +48,19 @@ The edge list was verified on 2026-09-11 against **Crossref's deposited
 reference lists** — independent of the hand reading, and deliberately not
 OpenAlex, which is one of the strategies being graded.
 
-For all ten source works that have a DOI, the in-collection targets Crossref
+For all twelve source works that have a DOI, the in-collection targets Crossref
 reports match this key exactly, work for work:
 
 ```
 sarkar2023 6 · sturner2019 5 · zhang2022 4 · barry2020 6 · rondin2014 3
-barry2016 1 · dolde2011 1 · hahn1950 0 · dreau2011 2 · gruber1997 0   = 28
-+ odmrManual 1 (no DOI; hand-read from its PDF)                       = 29
+barry2016 1 · dolde2011 1 · hahn1950 0 · dreau2011 2 · gruber1997 0
+magnard2020 0 · blais2021 1                                          = 29
++ odmrManual 1 (no DOI; hand-read from its PDF)                       = 30
 ```
+
+`magnard2020`'s **zero** is the one to read twice. Crossref's deposit for it
+lists 52 DOIs and the Blais review is not among them — which is what makes the
+title collision below a non-edge on machine evidence as well as on the reading.
 
 No edge missing, none invented. The `refCount` values in the key are Crossref's
 exact figures, replacing the bracket-number estimates the first version carried
@@ -70,14 +77,14 @@ measured — using a metadata API to build the answer key would score
 Each candidate pair was put through four independent probes — the DOI string,
 the full title, the bibliographic signature (author/journal/volume/page), and
 author-plus-year proximity — and then every hit and every near-miss was read in
-context and accepted or rejected by hand. Four pairs that one probe flagged are
-recorded as **non**-edges because reading them showed the match was spurious;
-they are in the file as `expectedNonEdges`, because a benchmark that only lists
-what should be found cannot measure precision.
+context and accepted or rejected by hand. The pairs that one probe flagged and
+the reading rejected are recorded as **non**-edges; they are in the file as
+`expectedNonEdges`, because a benchmark that only lists what should be found
+cannot measure precision.
 
 ## The set
 
-12 works in 13 items. Eleven have a PDF and can act as a source; two are
+14 works in 15 items. Thirteen have a PDF and can act as a source; two are
 target-only.
 
 | work | year | role | why it is in the set |
@@ -94,6 +101,8 @@ target-only.
 | `dreau2011` | 2011 | **target only** (no PDF), 6 in | most-cited work in the set; Zotero says first author "Rondin", every citation says "Dréau" |
 | `gruber1997` | 1997 | **target only** (no PDF), 3 in | Zotero says "Wrachtrup", every citation says "Gruber" |
 | `adam2017` | 2017 | **negative control**, 0 in / 0 out | machine learning, in a physics set |
+| `magnard2020` | 2020 | source, 0 out / 1 in | half of the **cycle pair**: its reference list names a field, not the review of it |
+| `blais2021` | 2021 | source, 1 out / 0 in | the other half: a **title that is the bare name of a field**, 31 normalised characters, one past the floor |
 
 `adam2017` was already in the profile. It stays because it is the cleanest
 precision test available: it shares no domain with anything else here, so any
@@ -107,31 +116,33 @@ The reference lists deliberately span the formats real libraries contain, so the
 strategies cannot all score the same:
 
 A citation reaches a strategy through one of **three independent channels**. Each of
-the 27 PDF-reachable edges is flagged for all three (the 2 edges from the work
+the 28 PDF-reachable edges is flagged for all three (the 2 edges from the work
 held without a PDF carry none of them):
 
 | channel | flag | edges | what it is |
 |---|---|---|---|
-| printed DOI | `doi` | 11 of 27 | a DOI visible in the extracted reference text |
-| printed title | `title` | 20 of 27 | the target's title visible in that text |
-| link annotation | `pdfLink` | 18 of 27 | a `/URI` annotation on the reference — invisible to a reader |
+| printed DOI | `doi` | 11 of 28 | a DOI visible in the extracted reference text |
+| printed title | `title` | 20 of 28 | the target's title visible in that text |
+| link annotation | `pdfLink` | 19 of 28 | a `/URI` annotation on the reference — invisible to a reader |
 
 The channels are **not** nested, which is the whole point of the set. The link
 layer in particular carries citations the printed page does not.
 
-**Only 11 of 27 edges print a DOI**, so a strategy reading printed text for
-identifiers is capped at 41% recall however well it is written.
+**Only 11 of 28 edges print a DOI**, so a strategy reading printed text for
+identifiers is capped at 39% recall however well it is written.
 
-**Six edges print neither a DOI nor a title.** All six are `barry2020`, whose
+**Seven edges print neither a DOI nor a title.** Six are `barry2020`, whose
 Reviews of Modern Physics reference list is pure author-year — `Hahn, E. L.,
-1950, Phys. Rev. 80, 580`. Nothing in that printed entry names the work.
+1950, Phys. Rev. 80, 580`. Nothing in that printed entry names the work. The
+seventh is `blais2021 → magnard2020`, the same journal and the same style —
+`Magnard, P., et al., 2020, Phys. Rev. Lett. 125, 260502.`
 
-But that same PDF carries **435 `/URI` annotations**: every one of those six
-references *is* DOI-linked in the link layer. So they are reachable without any
-author-year parsing at all, and `pdf-links` finds all six. An earlier version of
-this file claimed a 78% ceiling on the assumption that they were unreachable;
-that was wrong, because it only considered the printed text. The real ceiling
-across all three channels is **26 of 27 (96%)**.
+But those PDFs carry link layers — 435 `/URI` annotations in barry2020, 515 in
+blais2021: every one of those seven references *is* DOI-linked there. So they are
+reachable without any author-year parsing at all, and `pdf-links` finds all
+seven. An earlier version of this file claimed a 78% ceiling on the assumption
+that they were unreachable; that was wrong, because it only considered the
+printed text. The real ceiling across all three channels is **27 of 28 (96%)**.
 
 The `pdfLink` flags were extracted from raw PDF bytes by an independent parser
 (inflating object streams and reading `/URI` dictionaries), not from
@@ -147,7 +158,7 @@ extraction damaged it:
   optical microscopyand magnetic resonance on single defect centers". Neither
   normalised exact matching nor the DOI (absent) resolves it.
 
-So the realistic title-match ceiling is 19 of 27, not the 20 that carry a title.
+So the realistic title-match ceiling is 19 of 28, not the 20 that carry a title.
 
 `dolde2011 → gruber1997` is the **one edge no PDF-derived channel reaches**: its
 printed title is mangled, its entry prints no DOI, and Dolde 2011 has zero link
@@ -160,15 +171,35 @@ sharpest single illustration of why the network layer is worth having.
 list. It must collapse to one edge.
 
 **One work is held twice.** `dolde2011` is two Zotero items with the same DOI
-and a byte-identical PDF. Scored at work level the set has 27 edges; an item-level
-scorer that expands the duplicate on both sides sees 33. That six-edge gap is the
+and a byte-identical PDF. Scored at work level the set has 28 edges; an item-level
+scorer that expands the duplicate on both sides sees 34. That six-edge gap is the
 duplicate-merging penalty, and it is why `summary.edgesItemLevel` is recorded
 alongside `summary.edges`.
 
 ## The traps
 
-`expectedNonEdges` records pairs that look like edges and are not. Three are
-substring collisions that a naive matcher will emit:
+`expectedNonEdges` records pairs that look like edges and are not. The sharpest
+of them is the only one any strategy has yet fallen for:
+
+- **`magnard2020 → blais2021`** — the **reverse of a real edge**. Blais 2021
+  genuinely cites Magnard 2020, so a strategy that draws this one too puts a
+  **two-work cycle** in the graph, and the cycle is the symptom a reader notices
+  first. Magnard does not cite the Blais review: it is absent from Crossref's 52
+  deposited DOIs, absent from the PDF's 65 `/URI` annotations, and "Grimsmo"
+  occurs zero times in the file. What the reference list does carry is the phrase
+  "circuit quantum electrodynamics", twice, both times inside *another*
+  reference's title — "…qubit-resonator coupling in **circuit quantum
+  electrodynamics**, Phys. Rev. A 91, 043846" and "Microwave-Controlled
+  Generation of Shaped Single Photons in **Circuit Quantum Electrodynamics**,
+  Phys. Rev. X 4, 041010". Blais 2021's title is that phrase and nothing else.
+
+  Two guards that catch the other traps both miss this one, which is why the pair
+  is in the set. `minTitleLength` does not save it: the normalised title is 31
+  characters against a floor of 30. `rejectImpossibleYear` does not either: it
+  allows one year of slack for preprint/issue-date mismatches, and 2021 is
+  exactly one year past 2020.
+
+Three more are substring collisions that a naive matcher will emit:
 
 - **`dolde2011 → hahn1950`** — "spin echoes" really does appear in dolde2011's
   reference list, inside *another* reference's title: "van Oort, E. et al.
@@ -176,14 +207,19 @@ substring collisions that a naive matcher will emit:
   Matching the two-word title `Spin Echoes` as a substring produces a false edge.
 - **`barry2020 → zhang2022`** and **`rondin2014 → zhang2022`** — both cite a
   "Zhang", neither is *this* Zhang, and both are chronologically impossible.
+  `magnard2020 → zhang2022` and `blais2021 → zhang2022` are the same collision
+  again, recorded for the same reason.
 - **`zhang2022 → sarkar2023`** — cites a different paper in the same journal
   (IEEE TIM), also chronologically impossible.
 
-A cheap and effective guard falls out of the last three: **a work cannot cite
-one published after it.** Three of the five false positives found while building
-this set are killed by a year comparison alone.
+A cheap and effective guard falls out of those: **a work cannot cite one
+published after it.** Five of the false positives recorded here are killed by a
+year comparison alone — but `magnard2020 → blais2021` is not one of them, and
+that is the point of it. A one-year slack is the right allowance for a preprint
+cited before its journal issue, and it is exactly the window this collision sits
+in.
 
-The fifth trap is for whoever extends the set: `barry2020 → gruber1997` looks
+The last trap is for whoever extends the set: `barry2020 → gruber1997` looks
 like it must exist — a 475-reference NV review that does not cite the 1997 paper
 that started single-defect microscopy is surprising. It does not. The string
 "gruber" occurs zero times in that PDF. It is recorded because the tempting
@@ -194,13 +230,13 @@ correction is to add the edge from memory, and that would corrupt the answer key
 | | tier 1 | tier 2 |
 |---|---|---|
 | file | `ground-truth.json` | `external-refs.json` |
-| covers | 29 citations **between** the 12 held works | 809 works they cite and the collection does **not** hold |
+| covers | 30 citations **between** the 14 held works | 1366 works they cite and the collection does **not** hold |
 | built by | hand, from each citing PDF | machine, from Crossref deposited reference lists |
 | exhaustive? | yes — cross-checked against Crossref | **no** — publishers deposit incomplete lists |
 | a wrong edge is | a false positive | *not* judged; reported as `unconf` |
 
 Tier 1 is small enough to be complete, so it can call a strategy wrong. Tier 2
-is 28× bigger and gives the external-facing strategies — `ref-strings` and
+is 45× bigger and gives the external-facing strategies — `ref-strings` and
 `openalex`, which mint ghost nodes — something to be measured against, but it
 cannot prove a negative.
 
@@ -280,73 +316,115 @@ graded, since the key says nothing about them.
 
 ## Where the strategies stand
 
-Measured 2026-09-11, all five strategies (`openalex` anonymous, no API key):
+Measured 2026-09-11 on the 14-work set, all five strategies (`openalex`
+anonymous, no API key):
 
 ```
 strategy        pred   TP   FP   prec  recall  rec/pdf     F1  dup  traps
-pdf-links         18   18    0   100%     62%      67%   0.77    0  -
-text-doi          11   11    0   100%     38%      41%   0.55    0  -
-title-match       19   19    0   100%     66%      70%   0.79    0  -
-ref-strings       15   15    0   100%     52%      56%   0.68    0  -
-openalex          28   28    0   100%     97%      96%   0.98    0  -
-ALL (union)       29   29    0   100%    100%     100%   1.00    0  -
+pdf-links         19   19    0   100%     63%      68%   0.78    0  -
+text-doi          11   11    0   100%     37%      39%   0.54    0  -
+title-match       20   19    1    95%     63%      68%   0.76    0  1
+ref-strings       15   15    0   100%     50%      54%   0.67    0  -
+openalex          29   29    0   100%     97%      96%   0.98    0  -
+ALL (union)       31   30    1    97%    100%     100%   0.98    0  1
 ```
 
-`recall` is against all 29 edges; `rec/pdf` against the 27 a PDF-reading
+`recall` is against all 30 edges; `rec/pdf` against the 28 a PDF-reading
 strategy can actually reach.
 
-**Precision is 100% for every strategy.** No trap was hit, no edge touching the
-`adam2017` negative control was emitted, and the duplicated work was never split
-into a self-loop. The substring collisions the set was built to catch — "spin
-echoes" inside another reference's title, the two wrong "Zhang"s — are all
+**`title-match` hits a trap, and it is the first false positive this benchmark
+has ever recorded.** It draws `magnard2020 → blais2021` from the phrase "circuit
+quantum electrodynamics" sitting inside two other references' titles. Precision
+95%, and the union's too, because no other strategy corroborates or contradicts
+it — `openalex` declines the pair, but a union takes the edge from whoever
+emitted it. Since `blais2021 → magnard2020` is real, the graph gets a **cycle
+between two works**, which is how this surfaced in an actual library rather than
+here.
+
+The earlier reading of this collection — that "precision is 100% for every
+strategy" — held only because nothing in the set had a title that was also the
+plain name of a field. That is now the thing the set tests.
+
+Every other precision property still holds. No edge touching the `adam2017`
+negative control was emitted, the duplicated work was never split into a
+self-loop, and the substring collisions the set was built to catch — "spin
+echoes" inside another reference's title, the wrong "Zhang"s — are still all
 correctly declined.
 
-**Offline recall is channel-bound, and two strategies are already at their
-ceiling.** `pdf-links` finds 18 of the 18 link-annotated edges; `title-match`
-finds 19 of the 19 exact-matchable titles. Neither improves without a new
-channel or fuzzy matching.
+**Offline recall is channel-bound, and two strategies are at their ceiling.**
+`pdf-links` finds 19 of the 19 link-annotated edges, the new one among them;
+`title-match` finds 19 of the 19 exact-matchable titles. Neither improves
+without a new channel or fuzzy matching. The recall percentages moved by a point
+against the previous run only because the denominator grew from 29 to 30.
 
 **`openalex` is the strongest single strategy: 97% recall at perfect
 precision.** It reaches both populations the PDFs cannot — the two edges whose
 citing work is held without a PDF, and `dolde2011 → gruber1997`, whose printed
-title is too mangled for exact matching. Its one miss is `odmrManual →
-dolde2011`: the lab manual has no DOI, so OpenAlex cannot identify it as a
-source at all.
+title is too mangled for exact matching — and it is the only strategy that both
+finds `blais2021 → magnard2020` and refuses the reverse. Its one miss is
+`odmrManual → dolde2011`: the lab manual has no DOI, so OpenAlex cannot identify
+it as a source at all.
 
-**The two are complementary, and the union is complete.** That single OpenAlex
-miss is found by three offline strategies, so together they score 29 of 29 at
-100% precision. This is the measured version of the claim in
-`edges/openalex.js`'s own docstring — neither layer subsumes the other, and the
-one that fails is the one whose identifier is missing.
+**The two layers are still complementary, and the union still finds everything.**
+That single OpenAlex miss is found by three offline strategies, so together they
+score 30 of 30 — now at 97% precision rather than 100%, the one wrong edge being
+the trap. Neither layer subsumes the other, and the one that fails is the one
+whose identifier is missing.
 
 ### Tier 2: the outside world
 
 ```
 strategy      emitted by namespace        TP  missed  unconf  defects  recall >=
-pdf-links     doi 520                    489     320      16        0       60%
-text-doi      doi 68                      50     759       5        0        6%
-title-match   -                            0     809       0        0        0%
-ref-strings   doi 57, ref 118, arxiv 4    50     759       7        0        6%
-openalex      openalex 1025              807       2      74        0       99%
-ALL (union)   -                          809       0      83        0      100%
+pdf-links     doi 1068                  1039     327      18        0       76%
+text-doi      doi 70                      50    1316       7        1        4%
+title-match   -                            0    1366       0        0        0%
+ref-strings   doi 57, ref 154, arxiv 7    50    1316      12        0        4%
+openalex      openalex 1845             1357       9     195        0       99%
+ALL (union)   -                         1366       0     209        1      100%
 ```
+
+Adding two APS papers with 581 deposited references between them nearly doubled
+this tier, and `pdf-links` took most of the gain: 489 → 1039 confirmed external
+DOIs, 60% → 76% recall. That is the link layer doing what it does — Blais 2021
+prints no DOIs at all and hyperlinks 505 of them.
 
 `title-match` contributes **nothing** outside the collection, by construction —
 it can only match a title the library already holds. That is the systematic hole
-`ref-strings` exists to fill, and the tier-2 row is the first measurement of how
-well it does: 118 `ref:` edges resolving to 94 distinct nodes, for works no identifier
-was printed for at all — which no other offline strategy can see.
+`ref-strings` exists to fill: 154 `ref:` edges resolving to 130 distinct nodes,
+for works no identifier was printed for at all — which no other offline strategy
+can see.
 
-**`openalex` finds 804 of 809 at 99%** — unsurprising, since reference lists are
-what it is. The interesting number is its 77 `unconf`: OpenAlex knows citations
-Crossref's deposits do not, which is the same incompleteness that caps everyone
-else's apparent recall.
+**`openalex` finds 1357 of 1366 at 99%** — unsurprising, since reference lists
+are what it is. The interesting number is its 195 `unconf`: OpenAlex knows
+citations Crossref's deposits do not, which is the same incompleteness that caps
+everyone else's apparent recall.
 
-**Its 1025 external nodes are keyed `openalex:W…`, not `doi:`.** In a default
+**Its 1845 external nodes are keyed `openalex:W…`, not `doi:`.** In a default
 build the same cited work is therefore *two* ghost nodes — `doi:10.x` from
 `pdf-links` and `openalex:W…` from `openalex` — until the metadata lookup runs
 and resolves them. `edges/openalex.js` says as much in its own comment; tier 2
 puts a number on it.
+
+### A seventh DOI defect, not yet fixed
+
+The two new PDFs brought one with them, in `text-doi`:
+
+| defect | emitted | cause |
+|---|---|---|
+| truncated | `10.1103/physrevlett` | a space inside the DOI, from `magnard2020` |
+
+Magnard's supplemental-material note prints
+`http://link.aps.org/supplemental/10.1103/PhysRevLett .125.260502` — extraction
+put a space before `.125`, so `findDois` stops at `10.1103/physrevlett` and
+mints a ghost node under a string that names nothing. (The scorer's "should be"
+column reports whichever set member that prefix matches first, which is *not*
+the right DOI here; the right one is Magnard's own.)
+
+It is the same family as the six fixed in 0.63.1 and the same strand as the
+`10.` + `1073/…` line-break gap: `healDoiLineBreaks` demands a **digit** after
+the gap it closes, and this continuation begins with `.`. Left unfixed and
+recorded, because the point of the run was to add the pair, not to chase what it
+turned up.
 
 ### Six defects in DOI extraction, found and fixed
 

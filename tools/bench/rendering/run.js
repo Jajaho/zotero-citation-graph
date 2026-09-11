@@ -19,7 +19,7 @@
  * posts its results back to it, which is all the channel a benchmark needs.
  *
  * Usage:
- *   node tools/bench/run.js [options]
+ *   node tools/bench/rendering/run.js [options]
  *     --n <count>          items in the synthetic collection (default 1500)
  *     --frames <count>     measured frames per scenario (default 90)
  *     --repeat <count>     interleaved repeats, for a noise floor (default 3)

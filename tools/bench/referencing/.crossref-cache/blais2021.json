@@ -1,0 +1,3622 @@
+{
+	"status": "ok",
+	"message-type": "work",
+	"message-version": "1.0.0",
+	"message": {
+		"indexed": {
+			"date-parts": [
+				[
+					2026,
+					9,
+					11
+				]
+			],
+			"date-time": "2026-09-11T01:49:53Z",
+			"timestamp": 1789091393846,
+			"version": "build-2803163510"
+		},
+		"reference-count": 527,
+		"publisher": "American Physical Society (APS)",
+		"issue": "2",
+		"license": [
+			{
+				"start": {
+					"date-parts": [
+						[
+							2021,
+							5,
+							19
+						]
+					],
+					"date-time": "2021-05-19T00:00:00Z",
+					"timestamp": 1621382400000
+				},
+				"content-version": "vor",
+				"delay-in-days": 0,
+				"URL": "https://link.aps.org/licenses/aps-default-license"
+			},
+			{
+				"start": {
+					"date-parts": [
+						[
+							2022,
+							5,
+							19
+						]
+					],
+					"date-time": "2022-05-19T00:00:00Z",
+					"timestamp": 1652918400000
+				},
+				"content-version": "am",
+				"delay-in-days": 365,
+				"URL": "https://link.aps.org/licenses/aps-default-accepted-manuscript-license"
+			}
+		],
+		"funder": [
+			{
+				"DOI": "10.13039/501100000038",
+				"name": "Natural Sciences and Engineering Research Council of Canada",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100000038",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100010785",
+				"name": "Canada First Research Excellence Fund",
+				"doi-asserted-by": "publisher",
+				"id": [
+					{
+						"id": "10.13039/501100010785",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/100000183",
+				"name": "Army Research Office",
+				"doi-asserted-by": "publisher",
+				"award": [
+					"W911NF-18-1-0411"
+				],
+				"award-info": [
+					{
+						"award-number": [
+							"W911NF-18-1-0411"
+						]
+					}
+				],
+				"id": [
+					{
+						"id": "10.13039/100000183",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/100000183",
+				"name": "Army Research Office",
+				"doi-asserted-by": "publisher",
+				"award": [
+					"W911NF-18-1-0212"
+				],
+				"award-info": [
+					{
+						"award-number": [
+							"W911NF-18-1-0212"
+						]
+					}
+				],
+				"id": [
+					{
+						"id": "10.13039/100000183",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100000923",
+				"name": "Australian Research Council",
+				"doi-asserted-by": "publisher",
+				"award": [
+					"DE190100380"
+				],
+				"award-info": [
+					{
+						"award-number": [
+							"DE190100380"
+						]
+					}
+				],
+				"id": [
+					{
+						"id": "10.13039/501100000923",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			},
+			{
+				"DOI": "10.13039/501100000923",
+				"name": "Australian Research Council",
+				"doi-asserted-by": "publisher",
+				"award": [
+					"CE170100009"
+				],
+				"award-info": [
+					{
+						"award-number": [
+							"CE170100009"
+						]
+					}
+				],
+				"id": [
+					{
+						"id": "10.13039/501100000923",
+						"id-type": "DOI",
+						"asserted-by": "publisher"
+					}
+				]
+			}
+		],
+		"content-domain": {
+			"domain": [
+				"journals.aps.org"
+			],
+			"crossmark-restriction": true
+		},
+		"short-container-title": [
+			"Rev. Mod. Phys."
+		],
+		"DOI": "10.1103/revmodphys.93.025005",
+		"type": "journal-article",
+		"created": {
+			"date-parts": [
+				[
+					2021,
+					5,
+					19
+				]
+			],
+			"date-time": "2021-05-19T11:21:09Z",
+			"timestamp": 1621423269000
+		},
+		"update-policy": "https://doi.org/10.1103/crossmark-policy",
+		"source": "Crossref",
+		"is-referenced-by-count": 1828,
+		"title": [
+			"Circuit quantum electrodynamics"
+		],
+		"prefix": "10.1103",
+		"volume": "93",
+		"author": [
+			{
+				"ORCID": "https://orcid.org/0000-0002-0591-2012",
+				"authenticated-orcid": true,
+				"given": "Alexandre",
+				"family": "Blais",
+				"sequence": "first",
+				"affiliation": [
+					{
+						"name": "Institut quantique and Département de Physique, Université de Sherbrooke, Sherbrooke, Québec J1K 2R1, Canada and Canadian Institute for Advanced Research, Toronto M5G 1M1, Ontario, Canada"
+					}
+				],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "Arne L.",
+				"family": "Grimsmo",
+				"sequence": "additional",
+				"affiliation": [
+					{
+						"name": "Centre for Engineered Quantum Systems, School of Physics, The University of Sydney, Sydney, New South Wales 2006, Australia"
+					}
+				],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"given": "S. M.",
+				"family": "Girvin",
+				"sequence": "additional",
+				"affiliation": [
+					{
+						"name": "Yale Quantum Institute, P.O. Box 208 334, New Haven, Connecticut 06520-8263, USA"
+					}
+				],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			},
+			{
+				"ORCID": "https://orcid.org/0000-0002-3476-4485",
+				"authenticated-orcid": true,
+				"given": "Andreas",
+				"family": "Wallraff",
+				"sequence": "additional",
+				"affiliation": [
+					{
+						"name": "Department of Physics, ETH Zurich, CH-8093 Zurich, Switzerland and Quantum Center, ETH Zurich, CH-8093 Zurich, Switzerland"
+					}
+				],
+				"role": [
+					{
+						"vocabulary": "crossref",
+						"role": "author"
+					}
+				]
+			}
+		],
+		"member": "16",
+		"published-online": {
+			"date-parts": [
+				[
+					2021,
+					5,
+					19
+				]
+			]
+		},
+		"reference": [
+			{
+				"key": "RevModPhys.93.025005Cc1R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.87.014508",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc2R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-019-11101-3",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc3R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.104.193601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc4R1",
+				"volume-title": "Principles of Nuclear Magnetism",
+				"author": "Abragam, A.",
+				"year": "1961",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc5R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.65.014512",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc6R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/aa5941",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc7R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-019-0185-4",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc8R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1386-x",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc9R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1666-5",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc11R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.abb9811",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc12R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.86.1391",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc13R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1181918",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc14R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0115-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc15R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-021-03226-7",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc16R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.9.147",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc17R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3638063",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc18R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature13171",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc19R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms8654",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc20R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1093/acprof:oso/9780198563617.001.0001",
+				"type": "book",
+				"volume-title": "Methods in Theoretical Quantum Optics",
+				"author": "Barnett, S.",
+				"year": "2002"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc21R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.90.134515",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc22R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.114.080503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc23R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.abb0451",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc24R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.86.022305",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc25R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.84.043832",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc26R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/0957-4484/27/46/464003",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc27R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.54.3824",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc28R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.108.123902",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc29R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.95.257002",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc30R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.73.064512",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc31R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.8.021003",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc32R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRev.72.339",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc33R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.73.063808",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc34R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1639",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc35R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature16944",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc36R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.91.094517",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc37R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.92.020509",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc38R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1154",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc39R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.100505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc40R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.75.032329",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc41R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0806-z",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc42R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.69.062320",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc43R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.90.127901",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc44R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRev.57.522",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc46R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/77.622206",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc47R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.77.060305",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc48R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.79.013819",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc49R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.100504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc50R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1238/Physica.Topical.076a00165",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc52R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.86.013814",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc53R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.80.032109",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc54R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.8.054030",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc55R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1845",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc56R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.209.4456.547",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc57R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/j.aop.2011.06.004",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc58R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.7.044018",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc59R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/npjqi.2016.2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc60R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4935541",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc61R1",
+				"volume-title": "The Theory of Open Quantum Systems",
+				"author": "Breuer, H. P.",
+				"year": "2002",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc62R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4934867",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc63R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.87.052306",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc64R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.98.155313",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc65R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.76.1800",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc66R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4919761",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc67R1",
+				"volume-title": "Macroscopic Quantum Coherence and Quantum Computing",
+				"author": "Buisson, O.",
+				"year": "2001",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc68R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.5015954",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc69R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s42254-019-0135-2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc70R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.60.11404",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc71R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1994",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc72R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.46.211",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc73R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.10.034050",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc74R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.5006888",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc75R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.200501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc76R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-020-2603-3",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc77R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/0375-9601(79)90445-6",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc78R1",
+				"volume-title": "Statistical Methods in Quantum Optics 1: Master Equations and Fokker-Planck Equations",
+				"author": "Carmichael, H. J.",
+				"year": "2002",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc79R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/Physics.9.77",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc80R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.77.631",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc81R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.58.2539",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc82R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0815-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc83R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41565-018-0207-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc84R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1090",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc85R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.2773988",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc86R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevD.26.1817",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc87R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.86.063802",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc88R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.5085002",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc89R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/14/6/063003",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc90R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.7.041043",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc91R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.113.220502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc92R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.217401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc93R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.116.020501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc94R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature02831",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc95R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-018-0470-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc96R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.82.040305",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc97R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/15/11/115012",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc98R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1117/12.2192740",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc99R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.080502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc100R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms5015",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc101R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.56.1114",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc102R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.78.3221",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc103R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature20604",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc104R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.239.4843.992",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc105R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature07128",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc106R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.82.1155",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc107R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0797-9",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc108R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.59.2631",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc109R1",
+				"volume-title": "Quantum Mechanics",
+				"author": "Cohen-Tannoudji, C.",
+				"year": "1977",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc110R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1002/9783527617197",
+				"type": "book",
+				"volume-title": "Atom-Photon Interactions: Basic Processes and Applications",
+				"author": "Cohen-Tannoudji, C.",
+				"year": "1998"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc111R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.8.011021",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc112R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.30.1386",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc113R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1080/23746149.2017.1343097",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc114R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3658630",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc115R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.87.030301",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc116R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms7979",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc118R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.91.032325",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc119R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.82.043804",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc120R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.011045",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc121R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature02037",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc122R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.256804",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc123R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1231930",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc124R1",
+				"volume-title": "Quantum Fluctuations",
+				"author": "Devoret, M. H.",
+				"year": "1997",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc125R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1002/andp.200710261",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc126R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.55.1908",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc127R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.108.057002",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc128R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature09416",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc129R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature08121",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc130R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.203601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc131R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.093604",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc132R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.97.022330",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc134R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/0378-4371(80)90010-2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc135R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.040505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc136R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.11.014017",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc137R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.113601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc138R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.220503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc139R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.86.032106",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc140R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.109.240501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc141R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.113.110502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc142R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1140/epjqt2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc143R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3610677",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc144R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.011001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc145R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/35097017",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc146R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.34.158",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc147R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.90.035132",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc148R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.83.063827",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc149R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.102.200402",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc150R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.103.083601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc151R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature07112",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc152R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.163601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc153R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-0960-6",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc154R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.109.183901",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc155R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.114.090503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc156R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys3905",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc157R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.91.025005",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc158R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.237001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc159R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.8.054015",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc160R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.86.032324",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc161R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.125.120504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc162R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1164482",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc163R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.10.054020",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc164R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4984142",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc165R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.108.046807",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc166R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s42254-018-0006-2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc167R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/TASC.2005.850084",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc168R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.77.012112",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc169R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.74.042318",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc170R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.76.012325",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc171R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.030502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc172R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.83.012308",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc173R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.56.1917",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc174R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.31.3761",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc175R1",
+				"volume-title": "Quantum Noise",
+				"author": "Gardiner, C. W.",
+				"year": "1999",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc176R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1464-4266/6/8/032",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc177R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1104149",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc178R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.250401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc179R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/j.optcom.2009.10.063",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc181R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature05589",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc182R1",
+				"volume-title": "Classical Mechanics",
+				"author": "Goldstein, H.",
+				"year": "2001",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc183R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3010859",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc184R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.64.012310",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc185R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/TAC.2009.2031205",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc186R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-020-2587-z",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc187R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.011058",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc188R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/j.physrep.2017.10.002",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc189R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature06057",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc190R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.9.041053",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc191R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1257219",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc192R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.040502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc193R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PRXQuantum.2.010339",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc194R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphoton.2009.230",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc195R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.95.022306",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc196R1",
+				"volume-title": "Fundamental Systems in Quantum Optics",
+				"author": "Haroche, S.",
+				"year": "1992",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc197R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.881201",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc198R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1093/acprof:oso/9780198509141.001.0001",
+				"type": "book",
+				"volume-title": "Exploring the Quantum: Atoms, Cavities, and Photons",
+				"author": "Haroche, S.",
+				"year": "2006"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc199R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1226897",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc200R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-0980-2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc201R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-017-00045-1",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc202R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.137002",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc203R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.10.034040",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc204R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.79.052115",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc205R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature15759",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc206R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0210-0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc207R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature07136",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc208R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature08005",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc209R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.111.053601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc210R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys3484",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc211R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.108.263601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc212R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.073601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc213R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.180501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc214R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys2251",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc215R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature06126",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc216R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.101.080502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc217R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0414-3",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc218R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.8.044003",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc219R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.122.080503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc220R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.102.083602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc221R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms12303",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc222R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.112.190504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc223R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.96.127006",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc224R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1710",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc225R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.84.220503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc226R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/0031-9163(62)91369-0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc227R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PRXQuantum.1.010307",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc228R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1893",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc229R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature23879",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc230R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.abb8780",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc231R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.92.012302",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc232R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/15/12/123011",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc233R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/j.jmr.2004.11.004",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc234R1",
+				"volume-title": "Advances in Atomic, Molecular, and Optical Physics, Supplement 2: Cavity Quantum Electrodynamics",
+				"author": "Kimble, H.",
+				"year": "1994",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc235R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1238/Physica.Topical.076a00127",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc236R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature07127",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc237R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature11902",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc238R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1146/annurev-conmatphys-031119-050605",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc240R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.55.900",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc241R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/35051009",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc242R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.76.042319",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc243R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.92.224304",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc244R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1348-3",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc245R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-018-0066-3",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc246R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.119.023602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc247R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.63.115403",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc248R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.111.153601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc249R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.93.023824",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc250R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/14/4/043005",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc251R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.5089550",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc252R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.92.040303",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc253R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.14.024042",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc254R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1140/epjqt/s40507-019-0072-0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc255R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.125.200504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc256R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.140502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc257R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.2724816",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc258R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1140/epjqt/s40507-017-0059-7",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc259R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-018-0195-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc260R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.117.140503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc261R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.7567/1882-0786/ab248d",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc262R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.1603150",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc263R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.77.198",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc264R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.88.043806",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc265R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.81.040301",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc266R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRev.72.241",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc267R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1002/qute.202070011",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc268R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevD.88.035020",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc269R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.881299",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc270R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-018-0365-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc271R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys2612",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc272R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.243601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc273R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/2058-9565/ab788a",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc274R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.76.1055",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc275R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.7.024028",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc276R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.104.100504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc277R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.79.180511",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc278R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1143/PTPS.69.80",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc279R1",
+				"volume-title": "Essays in Theoretical Physics: In Honour of Dirk ter Haar",
+				"author": "Leggett, A. J.",
+				"year": "1984",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc280R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.30.1208",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc281R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.2.883",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc282R1",
+				"volume-title": "Measuring the Quantum State of Light",
+				"author": "Leonhardt, U.",
+				"year": "1997",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc283R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.48.4598",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc284R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.97.013855",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc285R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.021038",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc286R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0824-x",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc287R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.56.2567",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc288R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-019-0128-0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc289R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/srep42261",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc290R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys3834",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc291R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.76.144518",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc292R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.82.042339",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc293R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys2385",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc294R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.100502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc295R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-0897-9",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc296R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.125.110503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc297R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0893-x",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc298R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aaa8525",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc299R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.101.052308",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc300R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.114.200501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc301R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.125.260502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc302R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature06184",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc303R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/18613",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc304R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.73.357",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc305R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.119.073601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc306R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.101.134509",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc307R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.220502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc308R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1400",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc309R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.9.044023",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc310R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-017-01063-9",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc311R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.76.014524",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc312R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1175552",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc313R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.133601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc314R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1208517",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc315R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.63.054514",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc316R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.55.1543",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc317R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0829-5",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc318R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.90.022307",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc319R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.67.094510",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc320R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.89.117901",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc321R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphoton.2016.63",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc322R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.1397394",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc323R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.6.064007",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc324R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.96.022330",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc325R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/5.0017378",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc326R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3693409",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc327R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.100401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc328R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.5.021025",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc329R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature25769",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc330R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aal2469",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc331R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.6.031006",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc333R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1287-z",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc334R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-018-06142-z",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc335R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-019-1196-1",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc336R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/16/4/045014",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc337R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms6186",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc338R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.89.022317",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc339R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.285.5430.1036",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc340R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.103.110501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc341R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.65.1419",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc342R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevResearch.2.033046",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc343R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1361-6633/ab3a7e",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc344R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature12264",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc345R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature12539",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc346R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-017-02046-6",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc347R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/19718",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc348R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.6.031036",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc350R1",
+				"volume-title": "Proceedings of the 65th IEEE International Electron Devices Meeting (IEDM), San Francisco, 2019",
+				"author": "Nersisyan, A.",
+				"year": "2019",
+				"type": "conference-proceedings"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc351R1",
+				"volume-title": "Quantum Computation and Quantum Information",
+				"author": "Nielsen, M. A.",
+				"year": "2000",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc352R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1730",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc353R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.108.240502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc354R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1141324",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc355R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.73.094506",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc356R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.113.157001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc357R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.7.014012",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc358R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature18949",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc359R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1557/mrs.2013.229",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc360R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.6.031007",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc361R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.047001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc362R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aat4625",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc363R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.60.15398",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc364R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.107.240501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc365R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.117.250502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc366R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature11915",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc367R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1244563",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc368R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/2058-9565/aab1ba",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc369R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature01365",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc370R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.4.041010",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc371R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-020-2687-9",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc372R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature11559",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc373R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.101.134510",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc374R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys4143",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc375R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.96.020501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc376R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1053",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc378R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.11.034014",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc379R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.021021",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc380R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.67.224514",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc381R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.109.240505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc382R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41467-018-03312-x",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc383R1",
+				"volume-title": "Microwave Engineering",
+				"author": "Pozar, D. M.",
+				"year": "2011",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc384R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.22331/q-2018-08-06-79",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc385R1",
+				"first-page": "681",
+				"type": "journal-article",
+				"volume": "69",
+				"author": "Purcell, E. M.",
+				"year": "1946",
+				"journal-title": "Phys. Rev.",
+				"ISSN": "https://id.crossref.org/issn/0031-899X",
+				"issn-type": "print"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc386R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.116.180501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc387R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-017-0019-1",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc388R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.aay5901",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc389R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.68.042319",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc390R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.70.054521",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc391R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.94.014506",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc392R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/sciadv.aao3603",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc394R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.173601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc395R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3435463",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc396R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41567-020-0931-8",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc397R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.58.353",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc398R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/0030-4018(96)00102-2",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc399R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.93.134501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc400R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.96.174520",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc401R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.81.134507",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc402R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.86.100506",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc403R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature12513",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc404R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms7983",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc405R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.112.170501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc406R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.5133894",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc407R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.123.120502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc408R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.13.034032",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc409R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.102.173602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc410R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-017-0044-0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc411R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aat3996",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc412R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aao1401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc413R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1016/j.crhy.2016.07.012",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc414R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.89.021001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc415R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4939148",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc416R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.203602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc417R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.22331/q-2017-05-11-11",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc418R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.91.022118",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc419R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3552890",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc420R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.9.034011",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc421R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.5.021027",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc422R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aar4054",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc423R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.2929367",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc424R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.117.190503",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc425R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.112.093601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc426R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/326574a0",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc427R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1002/andp.201200261",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc428R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.97.062334",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc429R1",
+				"volume-title": "Quantum Noise in Mesoscopic Physics",
+				"author": "Schoelkopf, R.",
+				"year": "2003",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc430R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/451664a",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc431R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.77.180502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc432R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRev.149.491",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc433R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nmat2630",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc435R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.94.123602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc436R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature05461",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc437R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.105.140501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc438R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.210501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc439R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.89.104516",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc440R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.115.250402",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc441R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.93.060302",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc442R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.95.213001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc443R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.79.2371",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc444R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature06124",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc445R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1002/0471224758",
+				"type": "book",
+				"volume-title": "Coplanar Waveguide Circuits, Components and Systems",
+				"author": "Simons, R. N.",
+				"year": "2001"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc446R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4919759",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc447R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.11.054060",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc448R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.13.024014",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc449R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.9.021056",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc450R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1007/978-3-662-09441-9",
+				"type": "book",
+				"volume-title": "Principles of Magnetic Resonance",
+				"author": "Slichter, C. P.",
+				"year": "1990"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc451R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.109.153601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc452R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.90.134504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc453R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/TMTT.2019.2893639",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc454R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.083601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc455R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.89.033857",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc456R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.7.011030",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc457R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.87.220505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc458R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.91.167005",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc459R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature13436",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc460R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.5.021035",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc461R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.117.210505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc462R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRev.170.379",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc463R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/2058-9565/ab98a5",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc464R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.7567/JJAPS.26S3.1409",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc465R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature10261",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc466R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature09898",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc467R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys1096",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc468R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.68.1132",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc469R1",
+				"volume-title": "Introduction to Superconductivity",
+				"author": "Tinkham, M.",
+				"year": "2004",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc470R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.066802",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc471R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.122.080502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc472R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.6.031004",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc473R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.100.012301",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc474R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.2.031016",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc475R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.050505",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc476R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.124.130501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc477R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.9.041031",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc478R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.58.4056",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc479R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41534-017-0038-y",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc480R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1244324",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc481R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/35001526",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc482R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/s41586-020-2619-8",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc483R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.11.024003",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc484R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.89.165404",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc485R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3224703",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc486R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.110502",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc487R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1069372",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc488R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.3517252",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc489R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.1243289",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc490R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/0031-9120/39/1/006",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc491R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1002/cta.2359",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc492R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.117.133601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc493R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature02851",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc494R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.95.060501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc495R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.111.249701",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc496R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1007/978-3-540-28574-8",
+				"type": "book",
+				"volume-title": "Quantum Optics",
+				"author": "Walls, D. F.",
+				"year": "2008"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc497R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.7.054020",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc498R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4934486",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc499R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.10.021060",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc500R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.101.240401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc501R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.106.060401",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc502R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.11.014031",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc504R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1126/science.aam9288",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc505R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.101.032343",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc506R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1109/TMTT.1969.1127105",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc507R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.123.233602",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc508R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1361-6633/aa7e1a",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc509R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.112.210501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc510R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.4922348",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc511R1",
+				"doi-asserted-by": "crossref",
+				"DOI": "10.1007/b13586",
+				"type": "book",
+				"volume-title": "Spin-Orbit Coupling Effects in Two-Dimensional Electron and Hole Systems",
+				"author": "Winkler, R.",
+				"year": "2003"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc512R1",
+				"volume-title": "Quantum Measurement and Control",
+				"author": "Wiseman, H.",
+				"year": "2010",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc513R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.87.184501",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc514R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/RevModPhys.85.623",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc515R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.120.050507",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc516R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1063/1.2964182",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc517R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nature02015",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc518R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.82.184515",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc519R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevApplied.10.054062",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc520R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/ncomms12964",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc521R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.67.042311",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc522R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.107001",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc523R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1038/nphys3906",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc524R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.75.140515",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc525R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.68.064509",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc526R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1364/JOSAB.4.001551",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc527R1",
+				"volume-title": "Input-Output Theory",
+				"author": "Yurke, B.",
+				"year": "2004",
+				"type": "book"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc528R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.39.2519",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc529R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.29.1419",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc530R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.60.764",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc531R1",
+				"first-page": "215",
+				"type": "journal-article",
+				"volume": "63",
+				"author": "Zagoskin, A.",
+				"year": "2007",
+				"journal-title": "Phys. Can."
+			},
+			{
+				"key": "RevModPhys.93.025005Cc532R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.91.043846",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc533R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevX.11.011010",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc534R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevA.67.042313",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc535R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.110.113601",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc537R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevLett.118.210504",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc538R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1088/1367-2630/15/12/125013",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc539R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevB.87.024510",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc540R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1364/OPTICA.397967",
+				"type": "journal-article"
+			},
+			{
+				"key": "RevModPhys.93.025005Cc541R1",
+				"doi-asserted-by": "publisher",
+				"DOI": "10.1103/PhysRevD.24.1516",
+				"type": "journal-article"
+			}
+		],
+		"container-title": [
+			"Reviews of Modern Physics"
+		],
+		"original-title": [],
+		"language": "en",
+		"link": [
+			{
+				"URL": "https://link.aps.org/accepted/10.1103/RevModPhys.93.025005",
+				"content-type": "application/pdf",
+				"content-version": "am",
+				"intended-application": "unspecified"
+			},
+			{
+				"URL": "https://link.aps.org/article/10.1103/RevModPhys.93.025005",
+				"content-type": "unspecified",
+				"content-version": "vor",
+				"intended-application": "syndication"
+			},
+			{
+				"URL": "http://harvest.aps.org/v2/journals/articles/10.1103/RevModPhys.93.025005/fulltext",
+				"content-type": "unspecified",
+				"content-version": "vor",
+				"intended-application": "similarity-checking"
+			}
+		],
+		"deposited": {
+			"date-parts": [
+				[
+					2025,
+					8,
+					1
+				]
+			],
+			"date-time": "2025-08-01T00:02:30Z",
+			"timestamp": 1754006550000
+		},
+		"score": 1,
+		"resource": {
+			"primary": {
+				"URL": "https://link.aps.org/doi/10.1103/RevModPhys.93.025005"
+			}
+		},
+		"subtitle": [],
+		"short-title": [],
+		"issued": {
+			"date-parts": [
+				[
+					2021,
+					5,
+					19
+				]
+			]
+		},
+		"references-count": 527,
+		"journal-issue": {
+			"issue": "2",
+			"published-print": {
+				"date-parts": [
+					[
+						2021,
+						5
+					]
+				]
+			}
+		},
+		"URL": "https://doi.org/10.1103/revmodphys.93.025005",
+		"relation": {},
+		"ISSN": [
+			"0034-6861",
+			"1539-0756"
+		],
+		"issn-type": [
+			{
+				"value": "0034-6861",
+				"type": "print"
+			},
+			{
+				"value": "1539-0756",
+				"type": "electronic"
+			}
+		],
+		"subject": [],
+		"published": {
+			"date-parts": [
+				[
+					2021,
+					5,
+					19
+				]
+			]
+		},
+		"assertion": [
+			{
+				"value": "2020-06-12",
+				"name": "date_received",
+				"label": "Date Received",
+				"group": {
+					"name": "publication_dates",
+					"label": "Publication dates"
+				}
+			},
+			{
+				"value": "© 2021 American Physical Society",
+				"name": "copyright_statement",
+				"label": "Copyright statement",
+				"group": {
+					"name": "copyright",
+					"label": "copyright"
+				}
+			},
+			{
+				"value": "2021",
+				"name": "copyright_year",
+				"label": "Copyright year",
+				"group": {
+					"name": "copyright",
+					"label": "copyright"
+				}
+			},
+			{
+				"value": "American Physical Society",
+				"name": "copyright_holder",
+				"label": "Copyright holder",
+				"group": {
+					"name": "copyright",
+					"label": "copyright"
+				}
+			}
+		],
+		"article-number": "025005"
+	}
+}
