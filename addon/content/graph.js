@@ -200,28 +200,34 @@
 	 *
 	 * At 1500 items and 2699 edges (docs/performance.md):
 	 *
-	 *   tint     -36%  the biggest single win in the renderer. Its cost is a
+	 *   tint     -31%  the biggest single win in the renderer. Its cost is a
 	 *                  colour per link per frame and, worse, a stroke batch per
 	 *                  distinct colour -- flat edges are one path for all of them.
-	 *   arrows   -27%  force-graph fills each arrow head in a path of its own,
-	 *                  after working out a Bezier length per link, per frame.
-	 *   curves   -23%  a control point per link per frame, and quadraticCurveTo
-	 *                  where a straight line would be lineTo.
-	 *   physics    ~   nothing measurable per frame -- and 15.0s to 1.4s before
+	 *   arrows   -10%  a head filled per link per frame. It was -27% while
+	 *                  force-graph drew them, working out a Bezier length for
+	 *                  each one; drawArrows() works the same triangle out in
+	 *                  closed form, and what is left is the fill.
+	 *   curves     ~   under the noise at rest and -9% on zoom: a control point
+	 *                  per link per frame, and quadraticCurveTo where a straight
+	 *                  line would be lineTo. It was -23% until the arrow heads
+	 *                  stopped walking every bow as a Bezier -- most of what it
+	 *                  cost was theirs.
+	 *   physics    ~   nothing measurable per frame -- and 6.7s to 1.0s before
 	 *                  the graph stops moving. It is in for the SECOND number.
 	 *
 	 * Left out, each for its own reason:
 	 *
-	 *   labels   -13%  real, and refused anyway. A graph whose papers have no
-	 *                  names is a cloud of dots: you cannot find the one you
-	 *                  came for, and the mode would have taken away the reason
-	 *                  to open the tab. The other four give -61% without it.
-	 *   halo       ~   under the noise floor, and 0.46ms of a 19.3ms frame by
-	 *                  ablation. It is what makes a name readable over dense
-	 *                  edges, so giving it up costs legibility for nothing.
-	 *   fade       ~   likewise unmeasurable, and it is what stops a label near
-	 *                  a placement boundary from strobing.
-	 *   collide  -14%  on the layout scenarios only, and nothing on a settled
+	 *   labels   -12%  real (-22% on zoom), and refused anyway. A graph whose
+	 *                  papers have no names is a cloud of dots: you cannot find
+	 *                  the one you came for, and the mode would have taken away
+	 *                  the reason to open the tab. The other four give -43% to
+	 *                  -49% without it.
+	 *   halo       ~   under the noise floor at rest, -10% on zoom alone. It is
+	 *                  what makes a name readable over dense edges, so giving
+	 *                  it up costs legibility for next to nothing.
+	 *   fade       ~   likewise, and it is what stops a label near a placement
+	 *                  boundary from strobing.
+	 *   collide   -9%  on the layout scenarios only, and nothing on a settled
 	 *                  graph. It buys overlapping circles, and with the engine
 	 *                  off -- which this mode does -- it barely runs anyway.
 	 */
