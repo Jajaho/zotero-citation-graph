@@ -67,7 +67,6 @@
 
 	/* Windows' text field, from core's generic input rules -- see #search-box. */
 	--zg-input-border: rgba(0, 0, 0, 0.0578);
-	--zg-input-border-bottom: rgba(0, 0, 0, 0.4458);
 	--zg-input-background: var(--color-background70);
 	--zg-input-hover: var(--color-background50);
 	--zg-input-focus: rgba(255, 255, 255, 0.3);
@@ -124,7 +123,6 @@
 	--color-background70: rgba(30, 30, 30, 0.698);
 	--color-border: rgba(255, 255, 255, 0.18);
 	--zg-input-border: rgba(255, 255, 255, 0.08);
-	--zg-input-border-bottom: rgba(255, 255, 255, 0.5442);
 	--zg-input-background: var(--fill-quinary);
 	--zg-input-hover: var(--fill-quarternary);
 	--zg-input-focus: var(--fill-senary);
@@ -150,7 +148,6 @@
 	--color-background70: rgba(30, 30, 30, 0.698);
 	--color-border: rgba(255, 255, 255, 0.18);
 	--zg-input-border: rgba(255, 255, 255, 0.08);
-	--zg-input-border-bottom: rgba(255, 255, 255, 0.5442);
 	--zg-input-background: var(--fill-quinary);
 	--zg-input-hover: var(--fill-quarternary);
 	--zg-input-focus: var(--fill-senary);
@@ -411,9 +408,14 @@ body {
 /*
  * On Windows core's generic text-input rules outrank search-textbox's own --
  * the same specificity, later in zotero.css -- so the field there is the
- * Fluent one: a hairline with a darker bottom edge, a 3px radius, and on
- * focus a 2px --accent-blue underline in place of a ring. macOS and Linux
- * have no such rules and keep search-textbox's ring.
+ * Fluent one: a hairline, a 3px radius, and on focus a 2px --accent-blue
+ * underline in place of a ring. macOS and Linux have no such rules and keep
+ * search-textbox's ring.
+ *
+ * Fluent also darkens the resting bottom edge into a grey underline. That one
+ * is left out: in a bar of borderless buttons it read as a rule under the
+ * field rather than as part of it, and the blue bar on focus says "you are
+ * typing here" without it.
  *
  * Keyed on the input rather than on :focus-within, because the mode menu's
  * button takes the focus on its own and draws its own ring when it does, as
@@ -423,7 +425,6 @@ body {
 	#search-box {
 		border-radius: 3px;
 		border: 1px solid var(--zg-input-border);
-		border-bottom-color: var(--zg-input-border-bottom);
 		background: var(--zg-input-background);
 		background-origin: border-box;
 		background-clip: padding-box;
@@ -509,9 +510,13 @@ body {
 	outline: none;
 }
 
+/* A step smaller than what is typed: the hint is not the query, and at full
+   size it filled a 146px field edge to edge. The sidebar's size, so the two
+   pieces of secondary text in the tab agree. */
 #search::placeholder {
 	color: var(--fill-tertiary);
 	opacity: 1;
+	font-size: 0.9231em;
 }
 
 /* Only while there is something to clear: a permanently visible x over an
@@ -742,6 +747,12 @@ body {
 	   the same reason -- see lib/splitPane.js. */
 	contain: inline-size;
 	position: relative;
+	/* A step under the tab's own 13px: four sections of settings are a lot of
+	   text for a 200px pane, and at full size every other row wrapped. Scaled
+	   from Zotero's font size rather than fixed, so the fontSize pref still
+	   reaches it. Every control below takes its size from this -- see
+	   .section input. */
+	font-size: calc(var(--zotero-font-size, 13px) * 0.9231);
 }
 
 #frame.side-closed #side {
@@ -916,6 +927,27 @@ body {
 	cursor: default;
 }
 
+/* Form controls do not inherit font in the UA sheet -- they take the field
+   font, which is the tab's full 13px -- so without this every box and slider
+   in the sidebar stayed a size larger than the text beside it. The UA sizes a
+   range's track and thumb in em, so inheriting is all a slider needs; a
+   checkbox is sized in px there, so it is given its em square here. */
+.section input,
+.section select {
+	font: inherit;
+}
+
+.section input[type="checkbox"] {
+	width: 1em;
+	height: 1em;
+	margin: 0;
+	flex: 0 0 auto;
+}
+
+.section input[type="number"] {
+	padding: 1px 3px;
+}
+
 /* Right-aligns the control of a "text, then control" row, so the selects and
    number fields line up down the panel instead of tracking label width. */
 .section label > select,
@@ -931,7 +963,6 @@ body {
 
 #color-by,
 #size-by {
-	font: inherit;
 	/* The item-type and "global citations" options run long; staying inside the
 	   panel width matters more than showing every character. */
 	max-width: 60%;

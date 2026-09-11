@@ -54,10 +54,10 @@ zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer t
 zotero-citation-graph-scope-enrich = query node metadata
 zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
 
-# Whether the names an outside reference already has are drawn on the canvas.
+# Whether the names an outside reference already has are left off the canvas.
 # Nothing is fetched for this one -- that is the entry above.
-zotero-citation-graph-scope-external-names = outside names
-zotero-citation-graph-scope-external-names-hint = Draw a name on every outside reference. Off leaves them as unlabelled dots.
+zotero-citation-graph-scope-hide-external-names = hide outside names
+zotero-citation-graph-scope-hide-external-names-hint = Leave the names off every outside reference, so they are drawn as unlabelled dots.
 
 zotero-citation-graph-color-by = colour
 zotero-citation-graph-color-by-year = year

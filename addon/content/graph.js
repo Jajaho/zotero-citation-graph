@@ -87,11 +87,17 @@
 	 *  somewhere below the fold saying so. It is the user's, and it is worth
 	 *  remembering for the same reason isolation depth is. */
 	const HIDE_ISOLATED_KEY = 'zg.hide.isolated';
-	/** And whether outside references are drawn with their names. Remembered
+	/** And whether outside references have their names left off. Remembered
 	 *  here rather than in a pref for the same reason as the rest: it is how one
-	 *  person reads a graph, not something about the collection. Unlike the
-	 *  others it defaults to ON, so it is a stored NO that turns it off -- an
-	 *  unreadable store has to leave the names on the graph. */
+	 *  person reads a graph, not something about the collection. Off by default,
+	 *  like the others, so only a stored yes hides the names -- an unreadable
+	 *  store has to leave them on the graph.
+	 *
+	 *  GHOST_NAMES_KEY is the switch this replaced, which asked the opposite
+	 *  question ("draw outside names") and so stored a NO to hide them. It is
+	 *  read once at startup, so a profile that had switched the names off keeps
+	 *  them off, and dropped the first time the new switch is touched. */
+	const HIDE_GHOST_NAMES_KEY = 'zg.ghost.names.hide';
 	const GHOST_NAMES_KEY = 'zg.ghost.names';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
@@ -494,7 +500,7 @@
 	let elHideIsolated = el('hide-isolated');
 	let elRecursive = el('recursive');
 	let elIncludeExternal = el('include-external');
-	let elGhostNames = el('ghost-names');
+	let elHideGhostNames = el('hide-ghost-names');
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
 	let elColorBy = el('color-by');
@@ -2809,7 +2815,7 @@
 	function placeLabel(node, ctx, globalScale, ox, oy, force) {
 		node._labelWant = 0;
 		if (!node.label) return;
-		// Outside references, when the panel says their names are not wanted.
+		// Outside references, when the panel says to hide their names.
 		// Here rather than by clearing n.label in render(): the label is what the
 		// search box matches on and what its rows are headed with, and a ghost
 		// nobody can find by name is a worse trade than a canvas with names on
@@ -2818,7 +2824,7 @@
 		// It holds for a hovered or picked ghost too, which are otherwise forced.
 		// A setting that says don't draw these names has to mean it, and a ghost
 		// under the pointer is already answering with its tooltip.
-		if (node.ghost && !elGhostNames.checked) return;
+		if (node.ghost && elHideGhostNames.checked) return;
 		// Dimmed nodes lose their label entirely rather than fading it -- see
 		// drawLabel -- so they must not take up room either.
 		if (dimmed(node)) return;
@@ -4936,8 +4942,8 @@
 		el('min-cites-label').classList.toggle('disabled', !on);
 		// Same again for the names on them: with the ghosts off there is nothing
 		// on screen for this to label.
-		elGhostNames.disabled = !on;
-		el('ghost-names-label').classList.toggle('disabled', !on);
+		elHideGhostNames.disabled = !on;
+		el('hide-ghost-names-label').classList.toggle('disabled', !on);
 
 		// Nothing has a global count until the lookup has run, so sizing by one
 		// after switching the lookup back off would flatten every node to the
@@ -5093,9 +5099,10 @@
 	 * back to the held items -- which is the other half of what this buys, on a
 	 * graph where the ghosts were crowding the papers out of their own names.
 	 */
-	elGhostNames.addEventListener('change', () => {
+	elHideGhostNames.addEventListener('change', () => {
 		try {
-			window.localStorage.setItem(GHOST_NAMES_KEY, elGhostNames.checked ? '1' : '0');
+			window.localStorage.setItem(HIDE_GHOST_NAMES_KEY, elHideGhostNames.checked ? '1' : '0');
+			window.localStorage.removeItem(GHOST_NAMES_KEY);
 		}
 		catch (e) { /* see setCollapsed */ }
 		repaint();
@@ -5871,9 +5878,11 @@
 	catch (e) { /* see setCollapsed */ }
 
 	try {
-		// The other way round, because this one ships on: only a stored no takes
-		// the names off, and a store that cannot be read leaves the graph named.
-		if (window.localStorage.getItem(GHOST_NAMES_KEY) === '0') elGhostNames.checked = false;
+		// Only a stored yes hides the names, and a store that cannot be read
+		// leaves the graph named. The old switch's stored no means the same yes.
+		let hide = window.localStorage.getItem(HIDE_GHOST_NAMES_KEY);
+		if (hide === null && window.localStorage.getItem(GHOST_NAMES_KEY) === '0') hide = '1';
+		if (hide === '1') elHideGhostNames.checked = true;
 	}
 	catch (e) { /* see setCollapsed */ }
 

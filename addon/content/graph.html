@@ -300,17 +300,18 @@
 								<input id="hide-isolated" type="checkbox"/>
 								<span data-zg-str="hide-isolated">hide unconnected</span>
 							</label>
-							<!-- Whether the names an outside reference already has are drawn.
-							     Nothing is derived or fetched for it -- it decides which of the
-							     names the graph already has get asked for room in the label
-							     pass, so it is paint and costs a repaint. On by default: a
-							     ghost with no name is a grey dot whose only way of saying what
-							     it is is the tooltip. Off is for a graph with more outside
-							     references than papers, where the DOI tails they fall back to
-							     are noise over the collection. -->
-							<label id="ghost-names-label" data-zg-title="scope-external-names-hint" title="Draw a name on every outside reference. Off leaves them as unlabelled dots.">
-								<input id="ghost-names" type="checkbox" checked="checked"/>
-								<span data-zg-str="scope-external-names">outside names</span>
+							<!-- Whether the names an outside reference already has are left
+							     off the canvas. Nothing is derived or fetched for it -- it
+							     decides which of the names the graph already has get asked for
+							     room in the label pass, so it is paint and costs a repaint. Off
+							     by default, which leaves the names drawn: a ghost with no name
+							     is a grey dot whose only way of saying what it is is the
+							     tooltip. On is for a graph with more outside references than
+							     papers, where the DOI tails they fall back to are noise over
+							     the collection. -->
+							<label id="hide-ghost-names-label" data-zg-title="scope-hide-external-names-hint" title="Leave the names off every outside reference, so they are drawn as unlabelled dots.">
+								<input id="hide-ghost-names" type="checkbox"/>
+								<span data-zg-str="scope-hide-external-names">hide outside names</span>
 							</label>
 							<!-- Applies to outside refs as well as held items. "global citations"
 							     needs the counts "query node metadata" fetches, so picking it
