@@ -1,6 +1,7 @@
 'use strict';
 
 const { flattenPdfText } = require('../core/normalize');
+const { markerRun } = require('./refParse');
 
 /**
  * Reference-section segmentation.
@@ -20,7 +21,7 @@ const HEADING = /^\s*(\d+\.?\s*)?(references|bibliography|literature cited|works
 // A numbered-entry run: several lines starting [1] / 1. / (1) close together.
 const NUMBERED = /^\s*[\[(]?\d{1,3}[\]).]\s+\S/;
 
-function segment(text, { tailFraction = 0.4, minNumberedRun = 5 } = {}) {
+function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFraction = 0.5 } = {}) {
 	if (!text || text.length < 200) return { text: '', flat: '', quality: 'none' };
 	const lines = text.split(/\r?\n/);
 
@@ -52,6 +53,32 @@ function segment(text, { tailFraction = 0.4, minNumberedRun = 5 } = {}) {
 	if (bestStart >= 0) {
 		const t = lines.slice(bestStart).join('\n');
 		if (t.trim().length > 100) return finish(t, 'numbered');
+	}
+
+	// 2b. A whole bibliography on ONE line, which the run above cannot see
+	//     because it counts lines rather than markers. Britton 2012 is the case:
+	//     the word "references" does not occur anywhere in its extracted text,
+	//     so step 1 has nothing to find, and all forty entries sit on a single
+	//     line, so step 2 sees a run of one. It was falling through to the tail
+	//     and taking half the body text with it.
+	//
+	//     The earliest such line wins: a reference list is followed by methods
+	//     and supplementary material often enough that the last one would be a
+	//     different list entirely.
+	//
+	//     Bounded to a minority of the document, which is what stops this from
+	//     firing on body text. Bertet 2001 is the case: a two-column Nature page
+	//     whose extraction interleaves the neighbouring article, so a numbered
+	//     run appears near the top and an unbounded match claimed 96% of the
+	//     file and called its own body text a reference list. A real
+	//     bibliography is a tail, not a document.
+	for (let i = 0; i < lines.length; i++) {
+		const run = markerRun(lines[i], { minRun: minNumberedRun });
+		if (!run) continue;
+		const t = lines.slice(i).join('\n');
+		if (t.trim().length > 100 && t.length <= text.length * maxNumberedFraction) {
+			return finish(t, 'numbered');
+		}
 	}
 
 	// 3. Last resort: the tail of the document. Low quality by construction --

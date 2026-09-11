@@ -5330,6 +5330,62 @@ check('a reference section divides into entries whatever marks them', () => {
 	}
 });
 
+check('entries running together on one line are still separate entries', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Every real failure reported against the first version was this. pdftotext
+	// routinely emits a whole bibliography as one line: Acosta 2013 runs its
+	// entries together mid-line, and Britton 2012's entire list is a single line
+	// of the .zotero-ft-cache. A marker anchored to ^ found none of them, and
+	// the papers contributed nothing at all.
+	const oneLine = '1. J.Q. You, F. Nori, Phys. Today 58, 42 (2005). '
+		+ '2. T.D. Ladd, F. Jelezko, C. Monroe, Nature 464, 45 (2010). '
+		+ '3. J. Maze, A. Gali, E. Kaxiras, New J. Phys. 13, 25025 (2011). '
+		+ '4. G. Davies, M.F. Hamer, Proc. R. Soc. London 348, 285 (1976).';
+	const got = R.splitEntries(oneLine);
+	if (got.layout !== 'numbered') throw new Error('layout: ' + got.layout);
+	if (got.entries.length !== 4) throw new Error('entries: ' + got.entries.length);
+	if (!/^2\. T\.D\. Ladd/.test(got.entries[1])) throw new Error('bad cut: ' + got.entries[1]);
+});
+
+check('a number that is not a marker does not start an entry', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Scanning mid-line for markers is only safe because of the ascending-run
+	// check. Volume, issue and page numbers are everywhere in a reference and
+	// several of them are followed by punctuation and a capital.
+	const one = '1. Kucsko, G. Nanometre-scale thermometry in a living cell. '
+		+ 'Nature 500, no. 7460, pp. 54-58, vol. 12 (2013).';
+	const got = R.splitEntries(one);
+	if (got.entries.length > 1) throw new Error('split a single entry into ' + got.entries.length);
+	// And a run must start at 1 or 2: a "0." is an equation label or a footnote,
+	// which is how a run once anchored itself in a paper's body text.
+	if (R.markerRun('0. Some body text here. 1. More of it. 2. And more of it.')) {
+		throw new Error('anchored a run at 0');
+	}
+});
+
+check('prose is never mistaken for a bibliography', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// A real library item carries an instrument manual whose tail is a laser
+	// safety notice and the text of the AGPL. It split cleanly on its blank
+	// lines and turned licence clauses into cited works -- nodes with titles and
+	// citers that were entirely fictional. A bibliography is a list of DATED
+	// works, and this is what separates one from prose that happens to be listed.
+	const licence = [
+		'DO NOT aim any laser on yourself or others, especially not at the eyes.',
+		'',
+		'Though laser safety goggles can protect a person vision, it is always best',
+		'to remember never to look into a laser beam or a bright reflection.',
+		'',
+		'This project is under the Affero GPL license. This is a particularly',
+		'restrictive license that demands any and all updates from anyone using it.',
+		'',
+		'Notwithstanding any other provision of this License, if you modify the',
+		'Program, your modified version must prominently offer all users the source.',
+	].join('\n');
+	const got = R.splitEntries(licence);
+	if (got.entries.length) throw new Error('made ' + got.entries.length + ' references out of a licence');
+});
+
 check('a section with no structure splits into nothing, not into one huge entry', () => {
 	const R = require_('./citation-graph/edges/refParse.js');
 	// What a 'tail' segmentation hands over when it guessed wrong: body prose.
@@ -5341,6 +5397,45 @@ check('a section with no structure splits into nothing, not into one huge entry'
 	const got = R.splitEntries(prose);
 	if (got.entries.length) throw new Error('invented ' + got.entries.length + ' entries from prose');
 	if (got.layout !== 'none') throw new Error('layout: ' + got.layout);
+});
+
+check('a bibliography with no heading, all on one line, is still found', () => {
+	const { segment } = require_('./citation-graph/edges/refSection.js');
+	// Britton 2012: the word "references" does not appear anywhere in its
+	// extracted text, and all forty entries are one line. The heading search has
+	// nothing to find and the line-counting run sees a run of one, so it fell
+	// through to the tail and took half the body text with it.
+	const body = ('We measured the spin-spin coupling across the array and found it '
+		+ 'consistent with the model described above. ').repeat(40);
+	const refs = '1. Anderson, P. W. The resonating valence bond state. Science 235, 1196 (1987). '
+		+ '2. Moessner, R. & Sondhi, S. L. Two-dimensional frustrated Ising models. PRL 84, 4457 (2000). '
+		+ '3. Sandvik, A. W. Ground states of a frustrated quantum spin chain. PRL 98, 227202 (2007). '
+		+ '4. Feynman, R. P. Simulating physics with computers. Int. J. Theor. Phys. 21, 467 (1982). '
+		+ '5. Buluta, I. & Nori, F. Quantum simulators. Science 326, 108 (2009). '
+		+ '6. Trotzky, S. et al. Time-resolved observation of superexchange. Science 319, 295 (2008).';
+	const seg = segment(body + '\n' + refs);
+	if (seg.quality !== 'numbered') throw new Error('quality: ' + seg.quality);
+	if (/We measured the spin-spin/.test(seg.text)) throw new Error('swept in the body text');
+});
+
+check('a numbered run in body text cannot claim the whole document', () => {
+	const { segment } = require_('./citation-graph/edges/refSection.js');
+	// Bertet 2001 is a two-column Nature page whose extraction interleaves the
+	// neighbouring article, so a numbered run turns up near the top. Unbounded,
+	// the match claimed 96% of the file and called the paper's own body text a
+	// reference list, which produced ghosts with invented titles.
+	const early = '1. The possibility of inducing a pulse with the vacuum field in 1999. '
+		+ '2. Where ta is an effective interaction time defined in 2000. '
+		+ '3. By increasing the mass of the slit while keeping stiffness fixed in 2001. '
+		+ '4. After R1 the combined state can be written as follows in 2002. '
+		+ '5. The second quantum pulse mixes again coherently in 2003. '
+		+ '6. One could in principle continuously span the transition in 2004.';
+	const rest = ('Further discussion of the apparatus and its calibration follows here. ').repeat(60);
+	const seg = segment(early + '\n' + rest);
+	// It must not anchor at the top and swallow everything after it.
+	if (seg.quality === 'numbered' && seg.text.length > (early + rest).length * 0.5) {
+		throw new Error('claimed ' + seg.text.length + ' of ' + (early + rest).length + ' chars');
+	}
 });
 
 check('the citation style is read off the section, not guessed per entry', () => {
@@ -5366,6 +5461,68 @@ check('a period inside initials or an abbreviated venue does not end the field',
 	const venue = s.slice(venueStart, R.nextSentenceBreak(s, venueStart));
 	if (!venue.startsWith('Inf. Process. Lett.')) {
 		throw new Error('broke inside the venue: ' + JSON.stringify(venue));
+	}
+});
+
+check('the two physics styles yield their titles, not their author lists', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Both were returning null for every entry, and between them they are most
+	// of a physics library. Nature-style puts its year in parentheses at the END
+	// (so the APA branch read the whole entry as authors) and Elsevier-style
+	// delimits the title with COMMAS (so no period-based branch found it).
+	const nature = [
+		'1. Anderson, P. W. The resonating valence bond state in La2CuO4 and superconductivity. Science 235, 1196-1198 (1987).',
+		'2. Moessner, R., Sondhi, S. L. & Chandra, P. Two-dimensional periodic frustrated Ising models in a transverse field. Phys. Rev. Lett. 84, 4457 (2000).',
+		'3. Su, C.-H., Greentree, A. D. & Hollenberg, L. C. L. High-performance diamond-based single-photon sources. Opt. Express 16, 6240 (2008).',
+	].join('\n');
+	const ns = R.splitEntries(nature);
+	if (R.detectStyle(ns.entries) !== 'nature') throw new Error('style: ' + R.detectStyle(ns.entries));
+	const n0 = R.parseEntry(ns.entries[0], 'nature');
+	if (n0.title !== 'The resonating valence bond state in La2CuO4 and superconductivity') {
+		throw new Error('nature title: ' + JSON.stringify(n0.title));
+	}
+	if (n0.surname !== 'Anderson' || n0.year !== 1987) throw new Error('nature fields: ' + JSON.stringify(n0));
+	// Hyphenated initials are explicit in the pattern: the naive one stops on
+	// the hyphen and takes the rest of the author list into the title.
+	const n2 = R.parseEntry(ns.entries[2], 'nature');
+	if (n2.title !== 'High-performance diamond-based single-photon sources') {
+		throw new Error('hyphenated initial: ' + JSON.stringify(n2.title));
+	}
+
+	const elsevier = [
+		'[1] L.A. Rosenthal, Thermal response of bridewire used in electroexplosive devices, Rev. Sci. Instrum. 32 (9) (1961) 1033-1036.',
+		'[2] T. Elbel, R. Lenggenhager, H. Baltes, Model of thermoelectric radiation sensors made by CMOS, Sens. Actuators A 35 (1992) 101-106.',
+		'[3] C.A.T. Naira, C. Jos, et al., Classification of people by EEG signals using deep learning, Proc. Comput. Sci. 170 (2020) 1024-1029.',
+	].join('\n');
+	const es = R.splitEntries(elsevier);
+	if (R.detectStyle(es.entries) !== 'elsevier') throw new Error('style: ' + R.detectStyle(es.entries));
+	const e0 = R.parseEntry(es.entries[0], 'elsevier');
+	if (e0.title !== 'Thermal response of bridewire used in electroexplosive devices') {
+		throw new Error('elsevier title: ' + JSON.stringify(e0.title));
+	}
+	// "et al." belongs to the authors and must not head the title.
+	const e2 = R.parseEntry(es.entries[2], 'elsevier');
+	if (!/^Classification of people/.test(e2.title || '')) {
+		throw new Error('et al. leaked into the title: ' + JSON.stringify(e2.title));
+	}
+});
+
+check('a titleless reference style yields no node rather than a venue', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Acosta 2013 prints no article titles at all -- "J.Q. You, F. Nori, Phys.
+	// Today 58, 42 (2005)." is the whole reference. The field after the authors
+	// is the JOURNAL, and the danger of the Elsevier branch is that it reads it
+	// as a title and mints "Phys. Today" as a cited work.
+	const titleless = [
+		'1. J.Q. You, F. Nori, Phys. Today 58, 42 (2005).',
+		'2. T.D. Ladd, F. Jelezko, C. Monroe, Nature 464, 45 (2010).',
+		'3. J. Maze, A. Gali, E. Kaxiras, New J. Phys. 13, 25025 (2011).',
+	].join('\n');
+	const { entries } = R.splitEntries(titleless);
+	const style = R.detectStyle(entries);
+	for (const e of entries) {
+		const sig = R.refSignature(R.parseEntry(e, style));
+		if (sig) throw new Error('invented a work from a titleless reference: ' + sig);
 	}
 });
 

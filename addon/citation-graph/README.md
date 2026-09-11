@@ -48,6 +48,7 @@ adapters/
 edges/
   refSection.js       reference-section segmentation (shared, precision-critical)
   refParse.js         reference strings -> entries, fields, identity (pure)
+                      styles: ieee, nature, elsevier, apa, acm, vancouver
   pdfLinks.js         DOI hyperlinks in PDF /URI annotations     offline
   textDoi.js          DOIs printed in reference text             offline
   titleMatch.js       cited title found in reference section     offline

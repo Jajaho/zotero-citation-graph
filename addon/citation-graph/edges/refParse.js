@@ -1,6 +1,6 @@
 'use strict';
 
-const { findDois, findArxivIds, normTitle, firstYear } = require('../core/normalize');
+const { findDois, findArxivIds, normTitle, firstYear, flattenPdfText } = require('../core/normalize');
 
 /**
  * Reference-string parsing: a bibliography section into individual works.
@@ -34,9 +34,24 @@ const MAX_ENTRY_CHARS = 1500;
 const GATE_MIN_SECTION = 1500;
 const MIN_ENTRIES = 3;
 
-// [1] / 1. / (1) at the head of a line, with the number captured so the run can
-// be checked for ascent. The number is what tells a marker from a year.
-const MARKER = /^\s*[[(]?(\d{1,3})[\]).]\s+(\S)/;
+/**
+ * A numbered reference marker -- [1] / 1. / (1) -- ANYWHERE, not only at the
+ * head of a line.
+ *
+ * Anchoring this to `^` was the single biggest hole in the first version. Real
+ * extractions routinely put many entries on one line: Acosta 2013 runs them
+ * together as "... Phys. Today 58, 42 (2005). 2. T.D. Ladd, ... (2010). 3. ...",
+ * and Britton 2012's entire forty-entry bibliography is one line of the
+ * .zotero-ft-cache. Both produced no entries at all, which is the worst
+ * possible failure for a reference list that is otherwise perfectly regular.
+ *
+ * The punctuation must follow the digits IMMEDIATELY, and a capital must follow
+ * the space. That alone rejects most of what would otherwise look like a
+ * marker -- "vol. 500, no. 7460" and "pp. 54-58" both fail on the character
+ * after the digits, and a four-digit year fails on the digit count. What
+ * survives that is settled by the ascending-run check in markerRun().
+ */
+const MARKER_G = /(^|[\s\f])[[(]?(\d{1,3})[\]).](?=\s+["'“‘]?[A-Z])/g;
 // "Smith, J." / "Smith, John" -- an author-year entry opening at column 0.
 // Two forms because a style either abbreviates the given name or does not.
 const SURNAME_INITIAL = /^[A-Z][a-zA-Z'\u2019-]{1,20},\s+[A-Z]\./;
@@ -61,7 +76,7 @@ function splitEntries(sectionText) {
 	const lines = text.split(/\r?\n/);
 
 	for (const [layout, split] of [
-		['numbered', byMarker],
+		['numbered', () => byInlineMarker(text)],
 		['hanging', byIndent],
 		['blank', byBlankLine],
 		['hanging', byLooksLikeAuthor],
@@ -69,7 +84,12 @@ function splitEntries(sectionText) {
 		const raw = split(lines);
 		if (!raw) continue;
 		const entries = clean(raw);
-		if (accept(entries, text)) return { entries, layout };
+		// The section-level judgement is made on everything the split produced,
+		// so a section that is mostly not a bibliography is rejected outright
+		// rather than quietly reduced to whichever few entries look like one.
+		if (!accept(entries, text)) continue;
+		const dated = entries.filter(hasYear);
+		if (dated.length) return { entries: dated, layout };
 	}
 	return { entries: [], layout: 'none' };
 }
@@ -83,6 +103,19 @@ function splitEntries(sectionText) {
  */
 function accept(entries, text) {
 	if (!entries.length) return false;
+	// A bibliography is a list of DATED works, and prose is not. Without this,
+	// the tail fallback on an attachment that is not a paper at all -- one real
+	// library item carries an instrument manual, whose tail is a laser-safety
+	// notice and the text of the AGPL -- split cleanly on its blank lines and
+	// turned licence clauses into cited works. Nothing downstream could tell
+	// those from real outside references: they have titles, they have citers,
+	// and they are entirely fictional.
+	//
+	// Checked over the section rather than per entry, so a genuine "in press"
+	// reference with no year still comes through on the strength of its
+	// neighbours.
+	const dated = entries.filter(hasYear).length;
+	if (dated / entries.length < 0.6) return false;
 	if (text.length < GATE_MIN_SECTION) return true;
 	if (entries.length < MIN_ENTRIES) return false;
 	// The median rather than the max: one over-long entry is a split that missed
@@ -90,6 +123,21 @@ function accept(entries, text) {
 	// splitter found almost no boundaries at all.
 	const lens = entries.map(e => e.length).sort((a, b) => a - b);
 	return lens[lens.length >> 1] <= MAX_ENTRY_CHARS;
+}
+
+/**
+ * A cited work carries a date; a stray paragraph of body text swept in by a
+ * guessed section scope usually does not. Applied per entry as well as over the
+ * section, because the two catch different things: the section test rejects a
+ * document that is not a bibliography at all, and this one drops the body text
+ * that a contaminated section drags in beside a real reference list.
+ *
+ * The cost is a genuine "in press" reference, which is rare, and which would
+ * have made a thin node anyway -- the year is half of what distinguishes one
+ * edition of a work from another.
+ */
+function hasYear(s) {
+	return /\b(1[89]\d\d|20\d\d)\b/.test(s);
 }
 
 /** Trim, drop furniture, and cap the runaways. */
@@ -104,25 +152,73 @@ function clean(groups) {
 }
 
 /**
- * Numbered entries. The ascent check is the whole of the precision here: page
- * numbers, years and "3. Results" all match MARKER, and only a real reference
- * list counts 1, 2, 3... from near the top.
+ * The longest ascending run of reference markers in `s`.
+ *
+ * Ascent is the whole of the precision here. Page numbers, volume numbers,
+ * equation labels and "3. Results" can all look like a marker in isolation;
+ * what no stray number does is continue somebody else's count. So candidate
+ * markers are accepted only while they follow on from the last one, and the run
+ * is anchored at a marker numbered 1 or 2.
+ *
+ * Every plausible anchor is tried and the longest run wins, because a stray
+ * "1." earlier in the text -- easy to pick up when the section scope was
+ * guessed -- would otherwise capture the sequence and strand the real list.
+ *
+ * A tolerance of two lets a mis-read digit or an entry lost to the extractor
+ * pass without ending the run; it is small enough that an unrelated ascending
+ * sequence cannot walk the whole way.
+ *
+ * @returns {?{index: number, n: number}[]} marker offsets into `s`, or null
  */
-function byMarker(lines) {
+function markerRun(s, { minRun = MIN_ENTRIES } = {}) {
 	const marks = [];
-	for (let i = 0; i < lines.length; i++) {
-		const m = MARKER.exec(lines[i]);
-		if (m) marks.push({ i, n: Number(m[1]) });
+	MARKER_G.lastIndex = 0;
+	let m;
+	while ((m = MARKER_G.exec(s))) {
+		marks.push({ index: m.index + m[1].length, n: Number(m[2]) });
+		// The lookahead keeps the trailing space unconsumed, so a marker that
+		// directly abuts the next one is still seen.
+		MARKER_G.lastIndex = m.index + m[0].length;
 	}
-	if (marks.length < MIN_ENTRIES) return null;
-	if (marks[0].n > 3) return null;
-	// "Mostly" ascending: a list that restarts its numbering per section still
-	// splits correctly, and one stray mis-read digit must not disqualify 60 good
-	// boundaries.
-	let ascending = 0;
-	for (let k = 1; k < marks.length; k++) if (marks[k].n > marks[k - 1].n) ascending++;
-	if (ascending < (marks.length - 1) * 0.7) return null;
-	return groupAt(lines, marks.map(m => m.i));
+	let best = null;
+	for (let start = 0; start < marks.length; start++) {
+		// A bibliography starts at 1, or at 2 when the extractor lost the first
+		// marker. Never at 0 -- that is an equation label or a footnote, and
+		// allowing it let a run anchor itself in the body text of a paper whose
+		// reference section could not be found.
+		if (marks[start].n < 1 || marks[start].n > 2) continue;
+		const run = [marks[start]];
+		let expected = marks[start].n + 1;
+		for (let k = start + 1; k < marks.length; k++) {
+			if (marks[k].n < expected || marks[k].n > expected + 2) continue;
+			run.push(marks[k]);
+			expected = marks[k].n + 1;
+		}
+		if (!best || run.length > best.length) best = run;
+	}
+	return best && best.length >= minRun ? best : null;
+}
+
+/**
+ * Numbered entries, wherever the markers fall.
+ *
+ * Works on the flattened text rather than the line array: once the markers are
+ * found, line structure carries no further information, and flattening is what
+ * reunites an entry the extractor split across two lines. Page furniture
+ * between entries is left where it falls -- it becomes the tail of the
+ * preceding entry, and every field this parser cares about is read from the
+ * front.
+ */
+function byInlineMarker(text) {
+	const flat = flattenPdfText(String(text).replace(/\f/g, ' '));
+	const marks = markerRun(flat);
+	if (!marks) return null;
+	const groups = [];
+	for (let k = 0; k < marks.length; k++) {
+		const end = k + 1 < marks.length ? marks[k + 1].index : flat.length;
+		groups.push([flat.slice(marks[k].index, end)]);
+	}
+	return groups;
 }
 
 /**
@@ -260,6 +356,13 @@ function inAbbrevRun(s, i) {
  */
 function nextSentenceBreak(s, from) {
 	for (let i = from; i < s.length; i++) {
+		// '?' and '!' end a field outright: no abbreviation or initial ends in
+		// one, so none of the guards below apply. Without this, "Can quantum
+		// mechanical description of physical reality be considered complete?"
+		// ran on into its own journal and volume.
+		if ((s[i] === '?' || s[i] === '!') && (i + 1 >= s.length || /[\s)\]"”]/.test(s[i + 1]))) {
+			return i + 1;
+		}
 		if (s[i] !== '.') continue;
 		// A period mid-token is a decimal, a URL or an ellipsis -- never a break.
 		if (i + 1 < s.length && !/[\s)\]"”]/.test(s[i + 1])) continue;
@@ -279,6 +382,45 @@ function nextSentenceBreak(s, from) {
 const QUOTED = /[“"]([^”"]{10,300})[,.;]?[”"]/;
 const PAREN_YEAR = /\((?:19|20)\d\d[a-z]?\)/;
 const ACM_HEAD = /^(.+?)\.\s*((?:19|20)\d\d[a-z]?)\.\s+/;
+
+/**
+ * Nature/Science style: "Anderson, P. W. The resonating valence bond state in
+ * La2CuO4 and superconductivity. Science 235, 1196-1198 (1987)."
+ *
+ * The dominant style in physics journals and the one this parser first missed
+ * entirely. It has a parenthesised year like APA, but at the END rather than
+ * after the authors, so the APA branch read the whole entry as an author list
+ * and returned no title at all -- which cost every reference in Finco 2024 and
+ * Britton 2012, whose bibliographies are otherwise perfectly regular.
+ *
+ * The author block has no closing punctuation to find: "P. W. The resonating"
+ * ends where a title begins and nothing marks the seam. So it is matched
+ * positively instead, as a run of "Surname, A. B." groups. Hyphenated initials
+ * ("Su, C.-H.") are explicit because they are common and the naive pattern
+ * stops dead on the hyphen, taking the rest of the author list into the title.
+ */
+const NATURE_AUTHORS = /^((?:[A-Z][a-zA-Z'’\-]+,(?:\s*[A-Z]\.(?:-[A-Z]\.)*)+(?:\s*(?:,|&|and))?\s*)+)(?:et\s+al\.\s*)?/;
+const NATURE_TAIL = /\((?:19|20)\d\d[a-z]?\)\.?\s*$/;
+
+/**
+ * Elsevier numeric style: "[3] L.A. Rosenthal, Thermal response of bridewire
+ * used in electroexplosive devices, Rev. Sci. Instrum. 32 (9) (1961) 1033-1036."
+ *
+ * Initials-first authors, and the title delimited by COMMAS rather than by
+ * periods -- which is why it was landing in the APA branch and yielding nothing
+ * at all. Measured across the library it was the single largest loss: the APA
+ * bucket was returning a title for 34% of its entries, and most of the misses
+ * were these.
+ *
+ * The same author shape also fits the compressed style that prints no title at
+ * all ("J.Q. You, F. Nori, Phys. Today 58, 42 (2005)."), where the field after
+ * the authors is the journal. Nothing in the grammar separates those two cases,
+ * so the title is required to look like one -- see parseElsevier.
+ */
+const ELSEVIER_AUTHORS = /^((?:[A-Z]\.\s*){1,4}[A-Z][a-zA-Z'’\-]+(?:\s*,\s*(?:and\s+)?(?:[A-Z]\.\s*){1,4}[A-Z][a-zA-Z'’\-]+)*)(?:\s*,\s*et\s+al\.)?\s*,\s+/;
+// A volume or year token: where the venue's numbers start, and so the point the
+// title must already have ended.
+const VOLUME_AT = /(?:\(\s*(?:19|20)\d\d\s*\)|(?:^|\s)\d{1,4}(?:\s*\(|\s*,|\s+))/;
 // "Nature. 2013;500(7460):54-58." -- the year-semicolon-volume tail is the one
 // thing no other style produces, so it identifies Vancouver on its own.
 const VANCOUVER_TAIL = /(?:19|20)\d\d\s*;\s*\d/;
@@ -295,18 +437,31 @@ const VANCOUVER_TAIL = /(?:19|20)\d\d\s*;\s*\d/;
 function detectStyle(entries) {
 	const n = (entries || []).length;
 	if (!n) return 'generic';
-	let quoted = 0, parenYear = 0, acm = 0, vancouver = 0;
+	let quoted = 0, parenYear = 0, acm = 0, vancouver = 0, nature = 0, elsevier = 0;
 	for (const e of entries) {
+		const bare = stripMarker(e);
 		if (QUOTED.test(e)) quoted++;
 		if (PAREN_YEAR.test(e)) parenYear++;
 		if (ACM_HEAD.test(e)) acm++;
 		if (VANCOUVER_TAIL.test(e)) vancouver++;
+		if (NATURE_TAIL.test(bare) && NATURE_AUTHORS.test(bare)) nature++;
+		if (ELSEVIER_AUTHORS.test(bare) && hasYear(bare)) elsevier++;
 	}
 	const most = 0.4 * n;
 	// Order matters: a quoted title is the strongest signal there is, because it
 	// is an explicit delimiter rather than an inference about punctuation.
 	if (quoted >= most) return 'ieee';
 	if (vancouver >= most) return 'vancouver';
+	// Nature before APA, and this is the one ordering that is load-bearing
+	// rather than incidental: a Nature entry HAS a parenthesised year, so it
+	// satisfies the APA test too, and being read as APA is exactly the failure
+	// that returned no title. The reverse cannot happen -- an APA entry does not
+	// end on its year.
+	if (nature >= most) return 'nature';
+	// Elsevier before APA for the same reason as Nature: its year is in
+	// parentheses too, so the APA branch accepts it and then finds no title
+	// where the title is comma-delimited.
+	if (elsevier >= most) return 'elsevier';
 	// ACM before APA: "Smith. 2019. Title." has no parenthesised year, and an
 	// APA entry never matches ACM_HEAD, so a tie cannot go the wrong way.
 	if (acm >= most) return 'acm';
@@ -361,6 +516,8 @@ function parseEntry(entry, style) {
 function byStyle(s, style) {
 	switch (style) {
 		case 'ieee': return parseQuoted(s);
+		case 'nature': return parseNature(s);
+		case 'elsevier': return parseElsevier(s);
 		case 'acm': return parseAcm(s);
 		case 'apa': return parseApa(s);
 		case 'vancouver': return parseVancouver(s);
@@ -398,6 +555,58 @@ function parseAcm(s) {
 	const end = nextSentenceBreak(s, from);
 	o.title = end < 0 ? s.slice(from) : s.slice(from, end);
 	if (end >= 0) o.venue = s.slice(end + 1).replace(/^[,.\s]+/, '') || null;
+	return o;
+}
+
+/**
+ * Elsevier: "L.A. Rosenthal, Title of the work, Rev. Sci. Instrum. 32 (1961) 1033."
+ *
+ * The title is the comma-field between the authors and the venue. Its end is
+ * found by working back from where the venue's NUMBERS start: the last comma
+ * before the first volume-or-year token. Taking the first comma instead would
+ * truncate every title that contains one, and truncation is the one error this
+ * parser cannot absorb -- a shortened title is a different node, where an
+ * over-long one still keys on the same first eight words.
+ */
+function parseElsevier(s) {
+	const m = ELSEVIER_AUTHORS.exec(s);
+	if (!m) return parseGeneric(s);
+	const rest = s.slice(m[0].length);
+	const vol = VOLUME_AT.exec(rest);
+	const upto = vol ? vol.index : rest.length;
+	const cut = rest.lastIndexOf(',', upto);
+	const title = (cut > 0 ? rest.slice(0, cut) : rest.slice(0, upto)).trim();
+	// The compressed variant of this style prints no title, so the field here is
+	// the journal -- "Phys. Today", "Sens. Actuators A". A title is wordy; a
+	// journal abbreviation is not. Without this the venue becomes the node.
+	if (title.split(/\s+/).filter(Boolean).length < 4 || title.length < 25) {
+		const o = blank(0);
+		o.authors = m[1];
+		return o;
+	}
+	const o = blank(0.8);
+	o.authors = m[1];
+	o.title = title;
+	o.venue = rest.slice(cut + 1).trim() || null;
+	const years = s.match(/\b(?:19|20)\d\d\b/g);
+	if (years) o.year = Number(years[years.length - 1]);
+	return o;
+}
+
+/** Nature: "Anderson, P. W. Title of the work. Science 235, 1196-1198 (1987)." */
+function parseNature(s) {
+	const m = NATURE_AUTHORS.exec(s);
+	if (!m || !m[0].length) return parseGeneric(s);
+	const o = blank(0.85);
+	o.authors = m[1].replace(/[,&\s]+$/, '') || null;
+	const from = m[0].length;
+	const end = nextSentenceBreak(s, from);
+	o.title = end < 0 ? s.slice(from) : s.slice(from, end);
+	if (end >= 0) o.venue = s.slice(end + 1).replace(/^[,.\s]+/, '') || null;
+	// The year closes the entry, so the last one in it is the publication year
+	// even when the title carries one of its own.
+	const years = s.match(/\b(?:19|20)\d\d\b/g);
+	if (years) o.year = Number(years[years.length - 1]);
 	return o;
 }
 
@@ -472,6 +681,11 @@ function parseGeneric(s) {
 	o.title = best;
 	o.authors = segs[0] || null;
 	return o;
+}
+
+/** The entry without its list marker, which sits in front of the authors. */
+function stripMarker(s) {
+	return String(s).replace(/^\s*[[(]?\d{1,3}[\]).]\s+/, '').trim();
 }
 
 /** Strip the leading marker, quotes and trailing separators a title carries. */
@@ -561,6 +775,7 @@ function refSignature(parsed) {
 
 module.exports = {
 	splitEntries,
+	markerRun,
 	detectStyle,
 	parseEntry,
 	refSignature,
