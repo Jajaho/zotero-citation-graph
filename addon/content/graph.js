@@ -72,6 +72,8 @@
 	const GROUP_PULL_KEY = 'zg.group.pull';
 	/** And for how far a pin reaches past the node it is on. */
 	const PIN_PULL_KEY = 'zg.pin.pull';
+	/** And for when the layout is allowed to stop. */
+	const SETTLE_KEY = 'zg.settle';
 	/** Same again, for how far an isolation reaches: someone who reads their
 	 *  graph two steps out reads every graph two steps out. */
 	const DEPTH_KEY = 'zg.isolate.depth';
@@ -268,8 +270,31 @@
 	 * holdForCollide(). That force is not scaled by alpha, so a cooled layout
 	 * can still have overlaps to resolve, and stopping on alpha alone would
 	 * leave them there.
+	 *
+	 * The panel's default rather than the only answer: "Stop at energy" moves
+	 * the floor, and this is where its slider starts. See stopAlpha().
 	 */
 	const ALPHA_MIN = 0.001;
+
+	/** force-graph's own ceiling on a layout's length, kept for every floor
+	 *  but 0 -- a layout told never to stop has to be told about both. */
+	const COOLDOWN_MS = 15000;
+
+	/**
+	 * The floor the panel asks for.
+	 *
+	 * Logarithmic, because alpha is: it falls by a fixed fraction per tick, so
+	 * each step along the slider is a fixed number of ticks sooner or later
+	 * rather than a fixed amount of energy -- which is what makes the left half
+	 * of a linear slider all "never" and the right half all "at once". Position
+	 * p is 10^(p - 4), so 1 is ALPHA_MIN and 3 is 0.1: under a second from a
+	 * drop, the far end of stopping early. 0 is the other end, no floor at all.
+	 */
+	function stopAlpha() {
+		let p = Number(elSettle.value);
+		if (!Number.isFinite(p)) return ALPHA_MIN;
+		return p <= 0 ? 0 : Math.pow(10, p - 4);
+	}
 
 	/** What d3AlphaMin was last set to, so a tick only tells force-graph when
 	 *  the answer changes. */
@@ -376,8 +401,9 @@
 		fg.warmupTicks(PERF.physics ? 0 : PERF_WARMUP)
 			.cooldownTicks(PERF.physics ? Infinity : 0)
 			.d3AlphaDecay(PERF.physics ? baseDecay : PERF_WARMUP_DECAY)
-			.d3AlphaMin(ALPHA_MIN);
-		alphaMinNow = ALPHA_MIN;
+			.d3AlphaMin(stopAlpha())
+			.cooldownTime(stopAlpha() ? COOLDOWN_MS : Infinity);
+		alphaMinNow = stopAlpha();
 		fg.d3Force('collide', PERF.collide ? collide() : null);
 		// A graph handed the engine back has to be told to use it; one that has
 		// just lost it needs the frame that paints the halt.
@@ -514,6 +540,8 @@
 	let elGroupPullValue = el('group-pull-value');
 	let elPinPull = el('pin-pull');
 	let elPinPullValue = el('pin-pull-value');
+	let elSettle = el('settle');
+	let elSettleValue = el('settle-value');
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolateDepth = el('isolate-depth');
@@ -2602,6 +2630,21 @@
 		reheat();
 	}
 
+	/**
+	 * Not a force, so no reheat: nothing about where the nodes are going has
+	 * changed, only how long they get to go there. A running layout meets the
+	 * new floor on its next tick, and a stopped one on the next thing that
+	 * moves it -- restarting it here would spend a layout's worth of motion on
+	 * a question about when motion ends.
+	 */
+	function applySettle() {
+		let a = stopAlpha();
+		elSettleValue.textContent = a ? String(Number(a.toPrecision(2))) : t('settle-never');
+		if (!fg) return;
+		fg.cooldownTime(a ? COOLDOWN_MS : Infinity);
+		holdForCollide();
+	}
+
 	/** The pin pull prices links, so it takes the same route the edge pull
 	 *  does rather than the centre pull's live read. */
 	function applyPinPull() {
@@ -3981,6 +4024,11 @@
 	 * engine has no tick to set it from; the first tick after the drop puts
 	 * it back, and the drop's alpha decays under it as any other layout's does.
 	 *
+	 * The collision half gives way to the panel. Asked to stop sooner than
+	 * ALPHA_MIN, the layout stops, overlaps and all: that is what asking for an
+	 * early stop means, and holding on for them is what kept a dropped node's
+	 * neighbours shuffling for the whole of cooldownTime on a dense graph.
+	 *
 	 * Per tick, from the engine's own tick hook, and cheap: d3AlphaMin is one
 	 * of the props force-graph reads live without re-running anything, and it
 	 * is only set when the answer changes. A graph whose overlaps never quite
@@ -3990,7 +4038,8 @@
 	 */
 	function holdForCollide() {
 		if (!fg) return;
-		let want = dragNode || (PERF.collide && collideBusy) ? 0 : ALPHA_MIN;
+		let floor = stopAlpha();
+		let want = dragNode || (PERF.collide && collideBusy && floor <= ALPHA_MIN) ? 0 : floor;
 		if (want === alphaMinNow) return;
 		alphaMinNow = want;
 		fg.d3AlphaMin(want);
@@ -5072,6 +5121,13 @@
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
+	elSettle.addEventListener('input', () => {
+		applySettle();
+		try {
+			window.localStorage.setItem(SETTLE_KEY, elSettle.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
 	elMinCites.addEventListener('input', render);
 	// Paint, not data: the graph only has to be recoloured and its legend
 	// rebuilt. Going through render() would hand force-graph the same nodes and
@@ -5866,6 +5922,9 @@
 	 */
 	ZGL10n.onReady(() => {
 		for (let name of SECTIONS) setCollapsed(name, isCollapsed(name));
+		// One of the same: at the left end the settle readout is a word rather
+		// than a number, and a slider restored to it painted its id.
+		applySettle();
 		// Same reason as the ones above: the sidebar toggle's tooltip depends on
 		// a state the markup cannot know, and a sidebar left open is the case
 		// where setSideOpen() never ran to say so in the user's language.
@@ -5912,6 +5971,13 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyPinPull();
+
+	try {
+		let saved = window.localStorage.getItem(SETTLE_KEY);
+		if (saved !== null) elSettle.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applySettle();
 
 	try {
 		let saved = window.localStorage.getItem(DEPTH_KEY);

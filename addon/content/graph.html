@@ -275,6 +275,17 @@
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
 							</label>
+							<!-- When the layout is allowed to stop. Not a force: every slider
+							     above decides where the nodes go, and this one decides how long
+							     they are given to get there. The layout's energy falls every tick
+							     and the engine stops once it is under this; the scale is
+							     logarithmic because the energy is, and its left end is 0, which
+							     never stops at all. -->
+							<label id="settle-label" data-zg-title="settle-hint" title="The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.">
+								<span data-zg-str="settle">Stop at energy</span>
+								<input id="settle" type="range" min="0" max="3" step="0.25" value="1"/>
+								<span id="settle-value">0.001</span>
+							</label>
 						</div>
 					</div>
 				</div>
