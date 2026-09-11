@@ -72,6 +72,8 @@
 	const GROUP_PULL_KEY = 'zg.group.pull';
 	/** And for how far a pin reaches past the node it is on. */
 	const PIN_PULL_KEY = 'zg.pin.pull';
+	/** And for how hard a drag stirs the graph. */
+	const DRAG_ALPHA_KEY = 'zg.drag.alpha';
 	/** And for when the layout is allowed to stop. */
 	const SETTLE_KEY = 'zg.settle';
 	/** Same again, for how far an isolation reaches: someone who reads their
@@ -540,6 +542,8 @@
 	let elGroupPullValue = el('group-pull-value');
 	let elPinPull = el('pin-pull');
 	let elPinPullValue = el('pin-pull-value');
+	let elDragAlpha = el('drag-alpha');
+	let elDragAlphaValue = el('drag-alpha-value');
 	let elSettle = el('settle');
 	let elSettleValue = el('settle-value');
 	let elAction = el('action');
@@ -1946,13 +1950,23 @@
 			// drag that never really started.
 			fg.onNodeDrag((n) => {
 				dragNode = n;
+				// Both on every drag event, because force-graph sets what they
+				// answer on every drag event. See dragEnergy().
+				fg.d3VelocityDecay(dragDecay());
 				// Before the next frame, not on the next tick: a layout that has
 				// come to rest has no next tick. See holdForCollide().
 				holdForCollide();
 			});
 			fg.onNodeDragEnd((n) => {
 				dragNode = null;
-				if (!menuOnDrop) return;
+				undamp();
+				// A drop that ends in the menu is not a drop: the node is held
+				// where it was put for as long as the menu is up, and settling
+				// the graph under it would move the thing being asked about.
+				if (!menuOnDrop) {
+					settle();
+					return;
+				}
 				let event = menuOnDrop;
 				menuOnDrop = null;
 				// Built first, while the node is merely dropped: the entry has
@@ -2021,7 +2035,7 @@
 				// After the graph: the names so no circle can bury one, then
 				// the flags so no name can bury those. See drawLabels().
 				.onRenderFramePost(drawOver)
-				.d3VelocityDecay(0.3);
+				.d3VelocityDecay(VELOCITY_DECAY);
 
 			// d3 re-initialises every registered force whenever the node array
 			// is replaced, so these pick up new nodes and new radii on their
@@ -2643,6 +2657,23 @@
 		if (!fg) return;
 		fg.cooldownTime(a ? COOLDOWN_MS : Infinity);
 		holdForCollide();
+	}
+
+	/**
+	 * Read live, off the element, by the drag that is happening now -- so a
+	 * slider moved mid-drag is answered on the next drag event, and one moved
+	 * between drags needs nothing pushed anywhere. Like the centre pull, and for
+	 * the same reason: nothing downstream holds a copy of it.
+	 */
+	function applyDragAlpha() {
+		elDragAlphaValue.textContent = dragEnergy().toFixed(2);
+	}
+
+	/** Give the layout its own velocity decay back. Idempotent, and called from
+	 *  both ways a drag can end -- a damping left on would hold the graph still
+	 *  for every gesture after it. */
+	function undamp() {
+		if (fg) fg.d3VelocityDecay(VELOCITY_DECAY);
 	}
 
 	/** The pin pull prices links, so it takes the same route the edge pull
@@ -3748,6 +3779,9 @@
 	// The second catches the case the first cannot -- a button released outside
 	// the window, whose mouseup never arrives.
 	function endDrag() {
+		// Before dragNode is cleared, so a release this is the only witness to
+		// -- a button let go outside the window -- still hands the damping back.
+		undamp();
 		dragNode = null;
 		pressNode = null;
 		menuOnDrop = null;
@@ -3916,9 +3950,67 @@
 	 * frames are invisible, and what follows is an ordinary drop.
 	 */
 
-	// force-graph's own d3AlphaTarget while a node is being dragged, and so the
-	// alpha a dropped node is released into.
-	const DROP_ALPHA = 0.3;
+	/**
+	 * How much of the graph a drag is allowed to set moving, as a fraction of
+	 * what force-graph does by itself.
+	 *
+	 * force-graph drags by holding the layout's alpha TARGET at 0.3 -- a third
+	 * of a cold start -- for the whole gesture. Alpha converges on a target and
+	 * stays there, so it is not a push the layout spends and recovers from: it
+	 * is a tap left running. Every force acts on every node on every tick for as
+	 * long as the pointer is down, which is why dragging one paper across a
+	 * settled graph churns the entire picture, and why no stopping threshold can
+	 * answer it -- a threshold says when motion ends, and this is what keeps
+	 * refilling it.
+	 *
+	 * The tap itself is out of reach: force-graph re-exports d3AlphaMin, decay
+	 * and velocity decay from the simulation, but not the alpha target, and the
+	 * drag sets it from inside. What IS in reach is the other half of how far a
+	 * force moves a node -- the velocity decay, which is how much of its
+	 * accumulated velocity a node keeps from one tick to the next. Damping that
+	 * for the length of the gesture leaves the forces where they are and takes
+	 * the travel out of them, and it is honest about what is being asked: not
+	 * "cool the layout down" but "hold the rest of the graph still while I move
+	 * this one".
+	 *
+	 * The carried node is unaffected, which is what makes this work at all: the
+	 * drag writes its coordinates directly rather than pushing it with a force.
+	 *
+	 * So: 1 is force-graph's own behaviour, and 0 holds everything but the node
+	 * in your hand. The drop is scaled by the same number -- see dropAlpha() --
+	 * because a drag that stirs nothing should not let go like one that does.
+	 */
+	function dragEnergy() {
+		let v = Number(elDragAlpha.value);
+		return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DRAG_ENERGY_DEFAULT;
+	}
+
+	/** Calm by default. force-graph's 0.3 is tuned for a graph of dozens, where
+	 *  every node moving IS the answer to a drag; on a collection of thousands
+	 *  it reads as the picture coming apart in your hand. */
+	const DRAG_ENERGY_DEFAULT = 0.2;
+
+	/** The layout's own velocity decay, as the engine is set up with it. */
+	const VELOCITY_DECAY = 0.3;
+
+	/**
+	 * The velocity decay a drag runs at. A node keeps (1 - d) of its velocity
+	 * per tick, so under a sustained force it settles at a speed of (1 - d) / d
+	 * -- which is why the far end is 1 and not something short of it: at 1 the
+	 * velocity is spent every tick and nothing but the carried node travels.
+	 */
+	function dragDecay() {
+		return VELOCITY_DECAY + (1 - VELOCITY_DECAY) * (1 - dragEnergy());
+	}
+
+	/** force-graph's own alpha target while a node is dragged, and so the alpha
+	 *  a dropped node would be released into if nothing scaled it. */
+	const DROP_ALPHA_FULL = 0.3;
+
+	/** What a drop is worth at this energy. */
+	function dropAlpha() {
+		return DROP_ALPHA_FULL * dragEnergy();
+	}
 
 	// Alpha is multiplied by (1 - decay) per tick, so this sheds it in halves:
 	// two ticks take 1 down to 0.25.
@@ -3976,8 +4068,15 @@
 		fg.d3AlphaDecay(SHED_DECAY).d3ReheatSimulation();
 	}
 
+	/**
+	 * A drop's energy is the drag's, whatever the panel has made that -- the
+	 * whole point of this one is to let go of a node the way a drag lets go of
+	 * one. Floored at SPENT_ALPHA because a shed has to have an end to count
+	 * down to: at 0 there is no motion to spend, and shedTicks() would ask for
+	 * an infinite number of ticks to spend it over.
+	 */
 	function settle() {
-		shedTo(DROP_ALPHA);
+		shedTo(Math.max(dropAlpha(), SPENT_ALPHA));
 	}
 
 	/**
@@ -5121,6 +5220,13 @@
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
+	elDragAlpha.addEventListener('input', () => {
+		applyDragAlpha();
+		try {
+			window.localStorage.setItem(DRAG_ALPHA_KEY, elDragAlpha.value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+	});
 	elSettle.addEventListener('input', () => {
 		applySettle();
 		try {
@@ -5971,6 +6077,13 @@
 	}
 	catch (e) { /* see setCollapsed */ }
 	applyPinPull();
+
+	try {
+		let saved = window.localStorage.getItem(DRAG_ALPHA_KEY);
+		if (saved !== null) elDragAlpha.value = saved;
+	}
+	catch (e) { /* see setCollapsed */ }
+	applyDragAlpha();
 
 	try {
 		let saved = window.localStorage.getItem(SETTLE_KEY);

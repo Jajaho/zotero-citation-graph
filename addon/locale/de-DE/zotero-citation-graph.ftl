@@ -62,6 +62,8 @@ zotero-citation-graph-group-pull-hint = Wie stark jeder Anker die Einträge anzi
 
 zotero-citation-graph-pin-pull = Nadelzug
 zotero-citation-graph-pin-pull-hint = Wie viel stärker die Kanten eines angehefteten Knotens ziehen. Bei 0 hält eine Nadel nur den Knoten, auf dem sie steckt.
+zotero-citation-graph-drag-alpha = Ziehenergie
+zotero-citation-graph-drag-alpha-hint = Wie stark ein gezogener Knoten den übrigen Graphen aufrührt. Bei 0 bewegt sich nur der Knoten, den Sie ziehen; bei 1 antwortet das ganze Layout, wie es vor diesem Regler war.
 zotero-citation-graph-settle = Stopp bei Energie
 zotero-citation-graph-settle-hint = Die Energie, unter der das Layout anhält. Höher hält früher an, bevor jeder Knoten seinen Platz gefunden hat; bei 0 hält es nie an.
 zotero-citation-graph-settle-never = nie

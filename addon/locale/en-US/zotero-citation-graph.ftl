@@ -87,6 +87,8 @@ zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers i
 
 zotero-citation-graph-pin-pull = Pin pull
 zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
+zotero-citation-graph-drag-alpha = Drag energy
+zotero-citation-graph-drag-alpha-hint = How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.
 zotero-citation-graph-settle = Stop at energy
 zotero-citation-graph-settle-hint = The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.
 zotero-citation-graph-settle-never = never

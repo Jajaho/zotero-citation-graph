@@ -275,6 +275,18 @@
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
 							</label>
+							<!-- How much of the graph a drag sets in motion. force-graph holds
+							     the layout's energy at a third of a cold start's for as long as
+							     a node is carried -- not a push it spends and recovers from but
+							     a tap left running, every force acting on every node on every
+							     tick for the whole gesture. That is why dragging one paper
+							     churns the whole picture however settled it was. 1 is that; 0
+							     holds everything but the node in your hand. -->
+							<label id="drag-alpha-label" data-zg-title="drag-alpha-hint" title="How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.">
+								<span data-zg-str="drag-alpha">Drag energy</span>
+								<input id="drag-alpha" type="range" min="0" max="1" step="0.05" value="0.2"/>
+								<span id="drag-alpha-value">0.20</span>
+							</label>
 							<!-- When the layout is allowed to stop. Not a force: every slider
 							     above decides where the nodes go, and this one decides how long
 							     they are given to get there. The layout's energy falls every tick
