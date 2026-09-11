@@ -4,8 +4,8 @@
 # Nachricht pro Zeile, Variablen als { $name }, Plurale als Selektor. Deutsch
 # hat dieselben zwei CLDR-Kategorien wie Englisch (one, other).
 #
-# Die Kleinschreibung im Bedienfeld ist Absicht und stammt aus dem Original --
-# Substantive bleiben trotzdem groß, weil alles andere falsch aussähe.
+# Die Seitenleiste schreibt wie Zotero: jede Beschriftung beginnt groß, im
+# Englischen die Abschnittstitel zudem in Title Case.
 
 
 ## Das Sammlungsmenü.
@@ -26,14 +26,14 @@ zotero-citation-graph-section-strategies = Referenzstrategien
 
 zotero-citation-graph-scope-subcollections = Untersammlungen
 zotero-citation-graph-scope-subcollections-hint = Einträge aus allen Untersammlungen einbeziehen
-zotero-citation-graph-scope-external = externe Referenzen
+zotero-citation-graph-scope-external = Externe Referenzen
 zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in der Sammlung sind
-zotero-citation-graph-scope-min-cites = zitiert von ≥
+zotero-citation-graph-scope-min-cites = Zitiert von ≥
 zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
 zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
 
-zotero-citation-graph-scope-hide-external-names = externe Namen ausblenden
+zotero-citation-graph-scope-hide-external-names = Externe Namen ausblenden
 zotero-citation-graph-scope-hide-external-names-hint = Externe Arbeiten im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
 
 zotero-citation-graph-color-by = Farbe
@@ -45,7 +45,7 @@ zotero-citation-graph-color-by-publication = Publikation
 zotero-citation-graph-color-by-type = Eintragsart
 
 zotero-citation-graph-size-by = Größe
-zotero-citation-graph-size-by-here = hier zitiert
+zotero-citation-graph-size-by-here = Hier zitiert
 zotero-citation-graph-size-by-global = Zitationen weltweit
 
 zotero-citation-graph-link-pull = Kantenzug
@@ -109,23 +109,23 @@ zotero-citation-graph-stats-items = { $shown } / { $total } Einträge
 zotero-citation-graph-stats-outside = { $count } extern
 zotero-citation-graph-stats-named = ({ $count } benannt)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } Kante *[other] { $count } Kanten }
-zotero-citation-graph-stats-building = wird aufgebaut…
+zotero-citation-graph-stats-building = Wird aufgebaut…
 
 
 ## Die Legende.
 
-zotero-citation-graph-legend-outside = externe Referenzen
-zotero-citation-graph-legend-no-date = ohne Datum
+zotero-citation-graph-legend-outside = Externe Referenzen
+zotero-citation-graph-legend-no-date = Ohne Datum
 zotero-citation-graph-legend-more = +{ $count } weitere
 zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $count } Knoten *[other] { $count } Knoten }
 zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } Teilgebiet *[other] { $count } Teilgebiete }, Modularität { $q }
 
-zotero-citation-graph-color-no-collection = (keine Sammlung)
-zotero-citation-graph-color-no-cluster = (kein Teilgebiet)
+zotero-citation-graph-color-no-collection = (Keine Sammlung)
+zotero-citation-graph-color-no-cluster = (Kein Teilgebiet)
 zotero-citation-graph-color-cluster-n = Teilgebiet { $n }
-zotero-citation-graph-color-no-author = (kein Autor)
-zotero-citation-graph-color-no-publication = (keine Publikation)
-zotero-citation-graph-color-unknown-type = (unbekannte Art)
+zotero-citation-graph-color-no-author = (Kein Autor)
+zotero-citation-graph-color-no-publication = (Keine Publikation)
+zotero-citation-graph-color-unknown-type = (Unbekannte Art)
 
 
 ## Kurzinfos an den Knoten.
@@ -164,8 +164,8 @@ zotero-citation-graph-fieldkey-collection = Sammlung
 zotero-citation-graph-fieldkey-cluster = Teilgebiet
 zotero-citation-graph-fieldkey-title = Titel
 
-zotero-citation-graph-field-any-short = alle
-zotero-citation-graph-field-any = jedes Feld
+zotero-citation-graph-field-any-short = Alle
+zotero-citation-graph-field-any = Jedes Feld
 
 zotero-citation-graph-chip-remove = Diese Maske abnehmen
 zotero-citation-graph-chip-click-to-edit = Zum Bearbeiten klicken
@@ -177,9 +177,9 @@ zotero-citation-graph-chip-or-earlier = ist { $year } oder früher
 zotero-citation-graph-chip-is-exactly = ist genau „{ $value }“
 zotero-citation-graph-chip-contains = enthält „{ $value }“
 
-zotero-citation-graph-suggest-filter-by = nach { $field } filtern
-zotero-citation-graph-suggest-year-span = ein Zeitraum
-zotero-citation-graph-suggest-free = alles, was das enthält
+zotero-citation-graph-suggest-filter-by = Nach { $field } filtern
+zotero-citation-graph-suggest-year-span = Ein Zeitraum
+zotero-citation-graph-suggest-free = Alles, was das enthält
 
 
 ## Gruppen: die Fahne auf der Fläche und die Karte dazu.

@@ -31,74 +31,77 @@ zotero-citation-graph-view-citation-graph =
 # panel called "settings", so a question has a section to be asked in and the
 # answer is not four scrolls away from it. The two tooltips below are shared by
 # all four: the title beside the twisty already says which one is being folded.
+#
+# Capitalised as Zotero capitalises its own panes: section titles in Title Case,
+# every label, option and legend entry under them in sentence case.
 
 zotero-citation-graph-section-collapse = Collapse this section
 zotero-citation-graph-section-expand = Show this section
 
 # What each anchor, edge and node is pulled by. Layout only: nothing enters or
 # leaves the graph when one of these moves.
-zotero-citation-graph-section-forces = force adjustment
+zotero-citation-graph-section-forces = Force Adjustment
 # Which items are on the canvas at all.
-zotero-citation-graph-section-items = item selection
+zotero-citation-graph-section-items = Item Selection
 # How the items that are there are drawn.
-zotero-citation-graph-section-display = graph display
+zotero-citation-graph-section-display = Graph Display
 # Where the edges between them are read from.
-zotero-citation-graph-section-strategies = referencing strategies
+zotero-citation-graph-section-strategies = Referencing Strategies
 
-zotero-citation-graph-scope-subcollections = subcollections
+zotero-citation-graph-scope-subcollections = Subcollections
 zotero-citation-graph-scope-subcollections-hint = Include items from every subcollection
-zotero-citation-graph-scope-external = outside refs
+zotero-citation-graph-scope-external = Outside refs
 zotero-citation-graph-scope-external-hint = Show cited works that are not in the collection
-zotero-citation-graph-scope-min-cites = cited by ≥
+zotero-citation-graph-scope-min-cites = Cited by ≥
 zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
-zotero-citation-graph-scope-enrich = query node metadata
+zotero-citation-graph-scope-enrich = Query node metadata
 zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
 
 # Whether the names an outside reference already has are left off the canvas.
 # Nothing is fetched for this one -- that is the entry above.
-zotero-citation-graph-scope-hide-external-names = hide outside names
+zotero-citation-graph-scope-hide-external-names = Hide outside names
 zotero-citation-graph-scope-hide-external-names-hint = Leave the names off every outside reference, so they are drawn as unlabelled dots.
 
-zotero-citation-graph-color-by = colour
-zotero-citation-graph-color-by-year = year
-zotero-citation-graph-color-by-collection = collection
-zotero-citation-graph-color-by-cluster = subfield
-zotero-citation-graph-color-by-author = first author
-zotero-citation-graph-color-by-publication = publication
-zotero-citation-graph-color-by-type = item type
+zotero-citation-graph-color-by = Colour
+zotero-citation-graph-color-by-year = Year
+zotero-citation-graph-color-by-collection = Collection
+zotero-citation-graph-color-by-cluster = Subfield
+zotero-citation-graph-color-by-author = First author
+zotero-citation-graph-color-by-publication = Publication
+zotero-citation-graph-color-by-type = Item type
 
-zotero-citation-graph-size-by = size
-zotero-citation-graph-size-by-here = cited here
-zotero-citation-graph-size-by-global = global citations
+zotero-citation-graph-size-by = Size
+zotero-citation-graph-size-by-here = Cited here
+zotero-citation-graph-size-by-global = Global citations
 
-zotero-citation-graph-link-pull = edge pull
+zotero-citation-graph-link-pull = Edge pull
 zotero-citation-graph-link-pull-hint = How hard a link pulls its two nodes together. Lower spreads a crowded graph out.
 
-zotero-citation-graph-center-pull = centre pull
+zotero-citation-graph-center-pull = Centre pull
 zotero-citation-graph-center-pull-hint = How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.
 
 # Every anchor's strength at once, not one anchor's own: the flags are planted
 # on the canvas, but how hard they pull is a layout setting like the two above.
-zotero-citation-graph-group-pull = group pull
+zotero-citation-graph-group-pull = Group pull
 zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers it names. At 0 they name them without moving them.
 
-zotero-citation-graph-pin-pull = pin pull
+zotero-citation-graph-pin-pull = Pin pull
 zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
 
 # What a big collection gives up in order to stay smooth. The hint names the
 # losses rather than promising a gain: what it buys back depends on the graph and
 # the machine, and only the user can see both.
-zotero-citation-graph-perf-mode = performance mode
+zotero-citation-graph-perf-mode = Performance mode
 zotero-citation-graph-perf-hint = Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.
 
 zotero-citation-graph-item-pane-failed = Could not open Zotero's item pane here.
 
-zotero-citation-graph-filter-placeholder = filter — author:, year:, …
+zotero-citation-graph-filter-placeholder = Filter — author:, year:, …
 zotero-citation-graph-filter-hint = Type a term, or field:value. Filters stack: each one narrows what is left.
 
-zotero-citation-graph-min-confidence = min confidence
-zotero-citation-graph-hide-isolated = hide unconnected
-zotero-citation-graph-isolate-depth = isolation depth
+zotero-citation-graph-min-confidence = Min confidence
+zotero-citation-graph-hide-isolated = Hide unconnected
+zotero-citation-graph-isolate-depth = Isolation depth
 zotero-citation-graph-isolate-depth-hint = How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.
 zotero-citation-graph-rebuild = Rebuild
 
@@ -139,13 +142,13 @@ zotero-citation-graph-stats-items = { $shown } / { $total } items
 zotero-citation-graph-stats-outside = { $count } outside
 zotero-citation-graph-stats-named = ({ $count } named)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } edge *[other] { $count } edges }
-zotero-citation-graph-stats-building = building…
+zotero-citation-graph-stats-building = Building…
 
 
 ## The legend.
 
-zotero-citation-graph-legend-outside = outside refs
-zotero-citation-graph-legend-no-date = no date
+zotero-citation-graph-legend-outside = Outside refs
+zotero-citation-graph-legend-no-date = No date
 zotero-citation-graph-legend-more = +{ $count } more
 zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $count } node *[other] { $count } nodes }
 # How trustworthy the subfield split is: modularity below about 0.3 means the
@@ -153,13 +156,13 @@ zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $coun
 zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } subfield *[other] { $count } subfields }, modularity { $q }
 
 # Colour keys for held items missing the facet being coloured by.
-zotero-citation-graph-color-no-collection = (no collection)
-zotero-citation-graph-color-no-cluster = (no subfield)
+zotero-citation-graph-color-no-collection = (No collection)
+zotero-citation-graph-color-no-cluster = (No subfield)
 # A subfield whose members share no word worth naming it after.
-zotero-citation-graph-color-cluster-n = subfield { $n }
-zotero-citation-graph-color-no-author = (no author)
-zotero-citation-graph-color-no-publication = (no publication)
-zotero-citation-graph-color-unknown-type = (unknown type)
+zotero-citation-graph-color-cluster-n = Subfield { $n }
+zotero-citation-graph-color-no-author = (No author)
+zotero-citation-graph-color-no-publication = (No publication)
+zotero-citation-graph-color-unknown-type = (Unknown type)
 
 
 ## Node tooltips.
@@ -183,19 +186,19 @@ zotero-citation-graph-tooltip-actions = click to pick (Ctrl to add) · double-cl
 # One word, no space and no colon in it, because everything up to the first
 # colon is the field name and a space in the middle would make the mask
 # unreadable; nodeFilters.js falls back to the English keyword for anything that
-# breaks that rule. Capitalise it however the language does -- English keeps the
-# panel's lower case, German capitalises its nouns and writes "Jahr" -- since
+# breaks that rule. Capitalise it however the language does -- English writes
+# its keywords in lower case, German capitalises its nouns and writes "Jahr" -- since
 # what is typed is matched case-insensitively either way. The English keywords
 # are always accepted as well as the translated ones, so a mask written in one
 # language still opens in another.
-zotero-citation-graph-field-author = author
-zotero-citation-graph-field-year = year
-zotero-citation-graph-field-tag = tag
-zotero-citation-graph-field-type = item type
-zotero-citation-graph-field-publication = publication
-zotero-citation-graph-field-collection = collection
-zotero-citation-graph-field-cluster = subfield
-zotero-citation-graph-field-title = title
+zotero-citation-graph-field-author = Author
+zotero-citation-graph-field-year = Year
+zotero-citation-graph-field-tag = Tag
+zotero-citation-graph-field-type = Item type
+zotero-citation-graph-field-publication = Publication
+zotero-citation-graph-field-collection = Collection
+zotero-citation-graph-field-cluster = Subfield
+zotero-citation-graph-field-title = Title
 
 zotero-citation-graph-fieldkey-author = author
 zotero-citation-graph-fieldkey-year = year
@@ -207,9 +210,9 @@ zotero-citation-graph-fieldkey-cluster = subfield
 zotero-citation-graph-fieldkey-title = title
 
 # The chip's own short label for a mask that is not scoped to one field.
-zotero-citation-graph-field-any-short = any
+zotero-citation-graph-field-any-short = Any
 # The same mask, spelled out in the chip's tooltip.
-zotero-citation-graph-field-any = any field
+zotero-citation-graph-field-any = Any field
 
 zotero-citation-graph-chip-remove = Lift this mask
 zotero-citation-graph-chip-click-to-edit = Click to edit
@@ -222,9 +225,9 @@ zotero-citation-graph-chip-or-earlier = is { $year } or earlier
 zotero-citation-graph-chip-is-exactly = is exactly "{ $value }"
 zotero-citation-graph-chip-contains = contains "{ $value }"
 
-zotero-citation-graph-suggest-filter-by = filter by { $field }
-zotero-citation-graph-suggest-year-span = a span of years
-zotero-citation-graph-suggest-free = anything containing this
+zotero-citation-graph-suggest-filter-by = Filter by { $field }
+zotero-citation-graph-suggest-year-span = A span of years
+zotero-citation-graph-suggest-free = Anything containing this
 
 
 ## Groups: the flag on the canvas and the card that names it.

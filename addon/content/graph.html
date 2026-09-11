@@ -143,20 +143,20 @@
 				<div class="section" id="sec-items">
 					<button class="section-toggle" id="sec-items-toggle" type="button" aria-expanded="true" aria-controls="sec-items-body" title="Collapse this section">
 						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-items">item selection</span>
+						<span class="section-title" data-zg-str="section-items">Item Selection</span>
 					</button>
 					<div class="section-body" id="sec-items-body">
 						<div class="group">
 							<label data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
 								<input id="recursive" type="checkbox"/>
-								<span data-zg-str="scope-subcollections">subcollections</span>
+								<span data-zg-str="scope-subcollections">Subcollections</span>
 							</label>
 							<label data-zg-title="scope-external-hint" title="Show cited works that are not in the collection">
 								<input id="include-external" type="checkbox"/>
-								<span data-zg-str="scope-external">outside refs</span>
+								<span data-zg-str="scope-external">Outside refs</span>
 							</label>
 							<label id="min-cites-label" data-zg-title="scope-min-cites-hint" title="Hide outside works cited by fewer than this many of your papers">
-								<span data-zg-str="scope-min-cites">cited by ≥</span>
+								<span data-zg-str="scope-min-cites">Cited by ≥</span>
 								<input id="min-cites" type="number" min="1" max="20" step="1" value="2"/>
 							</label>
 							<!-- The only control that reaches the network. Off by default,
@@ -168,7 +168,7 @@
 							     graph has no name to draw until it has run. -->
 							<label id="enrich-label" data-zg-title="scope-enrich-hint" title="Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)">
 								<input id="enrich" type="checkbox"/>
-								<span data-zg-str="scope-enrich">query node metadata</span>
+								<span data-zg-str="scope-enrich">Query node metadata</span>
 							</label>
 						</div>
 
@@ -183,7 +183,7 @@
 						<div class="group" id="filter-group">
 							<div id="filter-chips"></div>
 							<input id="filter-input" type="text" autocomplete="off" spellcheck="false"
-								data-zg-placeholder="filter-placeholder" placeholder="filter — author:, year:, …"
+								data-zg-placeholder="filter-placeholder" placeholder="Filter — author:, year:, …"
 								data-zg-title="filter-hint"
 								title="Type a term, or field:value. Filters stack: each one narrows what is left."
 								role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="filter-suggest"/>
@@ -200,14 +200,14 @@
 				<div class="section" id="sec-strategies">
 					<button class="section-toggle" id="sec-strategies-toggle" type="button" aria-expanded="true" aria-controls="sec-strategies-body" title="Collapse this section">
 						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-strategies">referencing strategies</span>
+						<span class="section-title" data-zg-str="section-strategies">Referencing Strategies</span>
 					</button>
 					<div class="section-body" id="sec-strategies-body">
 						<div id="strategies" class="group"></div>
 
 						<div class="group">
 							<label id="conf-label">
-								<span data-zg-str="min-confidence">min confidence</span>
+								<span data-zg-str="min-confidence">Min confidence</span>
 								<input id="min-conf" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="conf-value">0.00</span>
 							</label>
@@ -220,7 +220,7 @@
 				<div class="section" id="sec-forces">
 					<button class="section-toggle" id="sec-forces-toggle" type="button" aria-expanded="true" aria-controls="sec-forces-body" title="Collapse this section">
 						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-forces">force adjustment</span>
+						<span class="section-title" data-zg-str="section-forces">Force Adjustment</span>
 					</button>
 					<div class="section-body" id="sec-forces-body">
 						<div class="group">
@@ -228,7 +228,7 @@
 							     at full strength; slackening the edges lets charge repulsion
 							     win and the clusters open up far enough to read. -->
 							<label id="pull-label" data-zg-title="link-pull-hint" title="How hard a link pulls its two nodes together. Lower spreads a crowded graph out.">
-								<span data-zg-str="link-pull">edge pull</span>
+								<span data-zg-str="link-pull">Edge pull</span>
 								<input id="link-pull" type="range" min="0" max="2" step="0.05" value="1"/>
 								<span id="pull-value">1.00</span>
 							</label>
@@ -237,7 +237,7 @@
 							     the unconnected ones do exactly that; turned up, the whole graph
 							     gathers into a tighter disc. -->
 							<label id="center-label" data-zg-title="center-pull-hint" title="How hard the middle of the canvas holds every node. At 0 unconnected papers drift away; higher packs the graph tighter.">
-								<span data-zg-str="center-pull">centre pull</span>
+								<span data-zg-str="center-pull">Centre pull</span>
 								<input id="center-pull" type="range" min="0" max="3" step="0.05" value="1"/>
 								<span id="center-value">1.00</span>
 							</label>
@@ -250,7 +250,7 @@
 							     belongs beside them. At 0 every anchor names its papers and
 							     moves none of them. -->
 							<label id="group-pull-label" data-zg-title="group-pull-hint" title="How hard every anchor pulls the papers it names. At 0 they name them without moving them.">
-								<span data-zg-str="group-pull">group pull</span>
+								<span data-zg-str="group-pull">Group pull</span>
 								<input id="group-pull" type="range" min="0" max="1" step="0.05" value="0.4"/>
 								<span id="group-pull-value">0.40</span>
 							</label>
@@ -260,7 +260,7 @@
 							     At 0 a pin holds only the node it is on, which is what a pin
 							     has always meant -- so that is the default. -->
 							<label id="pin-pull-label" data-zg-title="pin-pull-hint" title="How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.">
-								<span data-zg-str="pin-pull">pin pull</span>
+								<span data-zg-str="pin-pull">Pin pull</span>
 								<input id="pin-pull" type="range" min="0" max="1" step="0.05" value="0"/>
 								<span id="pin-pull-value">0.00</span>
 							</label>
@@ -274,7 +274,7 @@
 				<div class="section" id="sec-display">
 					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
 						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-display">graph display</span>
+						<span class="section-title" data-zg-str="section-display">Graph Display</span>
 					</button>
 					<div class="section-body" id="sec-display-body">
 						<div class="group">
@@ -294,11 +294,11 @@
 							     docs/performance.md. -->
 							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
 								<input id="perf" type="checkbox"/>
-								<span data-zg-str="perf-mode">performance mode</span>
+								<span data-zg-str="perf-mode">Performance mode</span>
 							</label>
 							<label>
 								<input id="hide-isolated" type="checkbox"/>
-								<span data-zg-str="hide-isolated">hide unconnected</span>
+								<span data-zg-str="hide-isolated">Hide unconnected</span>
 							</label>
 							<!-- Whether the names an outside reference already has are left
 							     off the canvas. Nothing is derived or fetched for it -- it
@@ -311,7 +311,7 @@
 							     the collection. -->
 							<label id="hide-ghost-names-label" data-zg-title="scope-hide-external-names-hint" title="Leave the names off every outside reference, so they are drawn as unlabelled dots.">
 								<input id="hide-ghost-names" type="checkbox"/>
-								<span data-zg-str="scope-hide-external-names">hide outside names</span>
+								<span data-zg-str="scope-hide-external-names">Hide outside names</span>
 							</label>
 							<!-- Applies to outside refs as well as held items. "global citations"
 							     needs the counts "query node metadata" fetches, so picking it
@@ -320,21 +320,21 @@
 							     for the sizing, not for a lecture about a prerequisite. The
 							     lookup is still never entered on its own. -->
 							<label>
-								<span data-zg-str="size-by">size</span>
+								<span data-zg-str="size-by">Size</span>
 								<select id="size-by">
-									<option value="here" data-zg-str="size-by-here">cited here</option>
-									<option value="global" data-zg-str="size-by-global">global citations</option>
+									<option value="here" data-zg-str="size-by-here">Cited here</option>
+									<option value="global" data-zg-str="size-by-global">Global citations</option>
 								</select>
 							</label>
 							<label>
-								<span data-zg-str="color-by">colour</span>
+								<span data-zg-str="color-by">Colour</span>
 								<select id="color-by">
-									<option value="year" data-zg-str="color-by-year">year</option>
-									<option value="collection" data-zg-str="color-by-collection">collection</option>
-									<option value="cluster" data-zg-str="color-by-cluster">subfield</option>
-									<option value="author" data-zg-str="color-by-author">first author</option>
-									<option value="publication" data-zg-str="color-by-publication">publication</option>
-									<option value="type" data-zg-str="color-by-type">item type</option>
+									<option value="year" data-zg-str="color-by-year">Year</option>
+									<option value="collection" data-zg-str="color-by-collection">Collection</option>
+									<option value="cluster" data-zg-str="color-by-cluster">Subfield</option>
+									<option value="author" data-zg-str="color-by-author">First author</option>
+									<option value="publication" data-zg-str="color-by-publication">Publication</option>
+									<option value="type" data-zg-str="color-by-type">Item type</option>
 								</select>
 							</label>
 							<!-- What the node colours mean. Rebuilt on every render, so it only
@@ -357,7 +357,7 @@
 							     about how you read a graph, and one you want to be able to find
 							     before you have isolated anything. -->
 							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
-								<span data-zg-str="isolate-depth">isolation depth</span>
+								<span data-zg-str="isolate-depth">Isolation depth</span>
 								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
 							</label>
 						</div>

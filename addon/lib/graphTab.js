@@ -1437,6 +1437,10 @@ function toWireExternal(x, m) {
  *              window's matchMedia does reflect the override, which is what
  *              makes reading it here the whole of the answer.
  *   fontSize   core's root is 13px scaled by this pref.
+ *   fontPx     what that comes to on core's root, measured there. The pref
+ *              alone is not enough: core applies it in rem, and a rem is not
+ *              the same length in this page as on core's root, so the page
+ *              came out a size larger than the library beside it.
  *   density    'compact' or 'comfortable', which core's own rules key off.
  *
  * Core pushes all three onto documents it owns through
@@ -1458,6 +1462,11 @@ function chromeProps(win) {
 		props.density = Zotero.Prefs.get('uiDensity');
 	}
 	catch (e) { /* likewise for a Zotero that has renamed either pref */ }
+	try {
+		let px = parseFloat(win.getComputedStyle(win.document.documentElement).fontSize);
+		if (px > 0) props.fontPx = px;
+	}
+	catch (e) { /* the page falls back to 13px scaled by the pref */ }
 	return props;
 }
 

@@ -34,14 +34,14 @@
 	 * graph.js.
 	 */
 	var FIELDS = [
-		{ name: 'author', label: 'author' },
-		{ name: 'year', label: 'year' },
-		{ name: 'tag', label: 'tag' },
-		{ name: 'type', label: 'item type' },
-		{ name: 'publication', label: 'publication' },
-		{ name: 'collection', label: 'collection' },
-		{ name: 'cluster', label: 'subfield' },
-		{ name: 'title', label: 'title' },
+		{ name: 'author', label: 'Author' },
+		{ name: 'year', label: 'Year' },
+		{ name: 'tag', label: 'Tag' },
+		{ name: 'type', label: 'Item type' },
+		{ name: 'publication', label: 'Publication' },
+		{ name: 'collection', label: 'Collection' },
+		{ name: 'cluster', label: 'Subfield' },
+		{ name: 'title', label: 'Title' },
 	];
 
 	var NAMES = FIELDS.map(function (f) { return f.name; });
@@ -402,7 +402,7 @@
 	/** The chip's text. Short, because it sits in a 220px panel -- the chip's
 	 *  title attribute carries the long form. */
 	function describe(f) {
-		var what = f.field ? fieldLabel(f.field) : tr('field-any-short', null, 'any');
+		var what = f.field ? fieldLabel(f.field) : tr('field-any-short', null, 'Any');
 		return what + ': ' + f.terms.map(termLabel).join(', ');
 	}
 
@@ -456,7 +456,7 @@
 					kind: 'field',
 					label: fkey + ':',
 					hint: tr('suggest-filter-by', { field: fieldLabel(f.name) },
-						'filter by ' + f.label),
+						'Filter by ' + f.label),
 					insert: fkey + ': ',
 				});
 			}
@@ -470,7 +470,7 @@
 				out.push({
 					kind: 'range',
 					label: termLabel({ op: 'range', lo: r.lo, hi: r.hi }),
-					hint: tr('suggest-year-span', null, 'a span of years'),
+					hint: tr('suggest-year-span', null, 'A span of years'),
 					field: 'year',
 					term: partial,
 				});
@@ -536,7 +536,7 @@
 				out.push({
 					kind: 'free',
 					label: termLabel(free),
-					hint: tr('suggest-free', null, 'anything containing this'),
+					hint: tr('suggest-free', null, 'Anything containing this'),
 					field: p.field,
 					term: termText(free),
 				});

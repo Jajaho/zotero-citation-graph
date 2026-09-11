@@ -5760,7 +5760,13 @@
 		else {
 			root.removeAttribute('data-color-scheme');
 		}
-		if (props.fontSize) root.style.setProperty('--zotero-font-size', props.fontSize + 'rem');
+		// In px, as core's root measures it. Core writes the pref as rem, but a
+		// rem here is not the length it is on core's root, and passing it on
+		// as-is set the whole page a size larger than the library's own text.
+		// Without a measurement, core's 13px scaled by the pref is the same
+		// number by another road.
+		let px = props.fontPx || (props.fontSize && 13 * parseFloat(props.fontSize));
+		if (px > 0) root.style.setProperty('--zotero-font-size', px + 'px');
 		if (props.density) root.setAttribute('zoteroUIDensity', props.density);
 		// The canvas reads its background out of the stylesheet, so a scheme
 		// arriving after the first paint has to be painted again -- and any

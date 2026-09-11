@@ -510,13 +510,9 @@ body {
 	outline: none;
 }
 
-/* A step smaller than what is typed: the hint is not the query, and at full
-   size it filled a 146px field edge to edge. The sidebar's size, so the two
-   pieces of secondary text in the tab agree. */
 #search::placeholder {
 	color: var(--fill-tertiary);
 	opacity: 1;
-	font-size: 0.9231em;
 }
 
 /* Only while there is something to clear: a permanently visible x over an
