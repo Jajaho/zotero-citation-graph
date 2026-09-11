@@ -116,7 +116,7 @@ zotero-citation-graph-side-toggle-show = Show the sidebar
 zotero-citation-graph-pane-toggle-show = Show the item pane
 
 zotero-citation-graph-search-placeholder = Search
-zotero-citation-graph-search-hint = Find a paper on the canvas and go to it. This does not filter the graph — the filter box in the sidebar does that.
+zotero-citation-graph-search-hint = Find a paper on the canvas and go to it (Ctrl+F). This does not filter the graph — the filter box in the sidebar does that.
 zotero-citation-graph-search-clear = Clear
 zotero-citation-graph-search-empty = No paper on screen matches
 
@@ -261,9 +261,9 @@ zotero-citation-graph-menu-remove-from-isolation = Remove from isolation
 zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node — or Ctrl-double-click it
 
 zotero-citation-graph-menu-pin = Pin node
-zotero-citation-graph-menu-pin-hint = hold it at this spot; drag it to move the pin
+zotero-citation-graph-menu-pin-hint = hold it at this spot; drag it to move the pin — or select it and press P
 zotero-citation-graph-menu-unpin = Unpin node
-zotero-citation-graph-menu-unpin-hint = let the layout move it again
+zotero-citation-graph-menu-unpin-hint = let the layout move it again — or select it and press P
 
 zotero-citation-graph-menu-show-details = Show details
 zotero-citation-graph-menu-open-in-browser = Open in browser

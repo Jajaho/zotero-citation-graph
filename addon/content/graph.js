@@ -3745,11 +3745,19 @@
 	}
 
 	function pin(n) {
-		// A node pinned during someone else's settle is pinned by the user, and
-		// must not be freed when that settle lifts its freeze.
-		frozen.delete(n);
-		n.fx = n.x;
-		n.fy = n.y;
+		pinAll([n]);
+	}
+
+	/** Several at once, as the P key pins a pick: the repaint and the re-price
+	 *  of the links are paid once for the lot rather than once a node. */
+	function pinAll(ns) {
+		for (let n of ns) {
+			// A node pinned during someone else's settle is pinned by the user,
+			// and must not be freed when that settle lifts its freeze.
+			frozen.delete(n);
+			n.fx = n.x;
+			n.fy = n.y;
+		}
 		repaint();
 		// With the pin pull turned up this node's links have just become the
 		// strengthened ones, and d3 has the old prices cached. At 0 nothing
@@ -3758,12 +3766,18 @@
 			reinstallLinkStrength();
 			reheat();
 		}
-		trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
+		for (let n of ns) trace('pin  node=' + n.id + '  fx=' + n.fx + '  held=' + (heldNode ? heldNode.id : 'none') + '  isPinned=' + isPinned(n));
 	}
 
 	function unpin(n) {
-		delete n.fx;
-		delete n.fy;
+		unpinAll([n]);
+	}
+
+	function unpinAll(ns) {
+		for (let n of ns) {
+			delete n.fx;
+			delete n.fy;
+		}
 		repaint();
 		// Before the settle, not after: a settle fixes every free node in place
 		// for a couple of ticks, and re-pricing the links while it holds would
@@ -4823,6 +4837,65 @@
 		else if (picked.size) clearPicked();
 		else if (gapsOpen) closeGaps();
 	});
+
+	/**
+	 * The three keys a graph is worked with besides Escape: Ctrl-F to the
+	 * search field, Ctrl-A to pick every node on screen, P to pin the pick.
+	 *
+	 * A text field keeps its own keys -- P is a letter there, and Ctrl-A
+	 * selects what was typed -- and only Ctrl-F reaches past one, since no
+	 * field on this page has a find of its own. Ctrl or Cmd, as the click
+	 * reads them: see onNodeClick.
+	 */
+	window.addEventListener('keydown', (e) => {
+		if (e.defaultPrevented || e.altKey || e.shiftKey) return;
+		let mod = e.ctrlKey || e.metaKey;
+		let key = e.key.toLowerCase();
+		if (mod && key === 'f') {
+			e.preventDefault();
+			elSearch.focus();
+			elSearch.select();
+			return;
+		}
+		let target = e.target;
+		if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+		// A menu holds the node it was opened over, and gives it back to the
+		// layout when it closes: a pin written in between would be undone by
+		// that release. The same order zgMenuPicked() keeps.
+		if (!elMenu.hidden || nativeOpen) return;
+		if (mod && key === 'a') {
+			// Instead of the page's own select-all, which would paint every
+			// label in the sidebar blue and pick nothing anyone wanted.
+			e.preventDefault();
+			let d = fg && fg.graphData();
+			if (!d || !d.nodes.length) return;
+			paneEngaged = true;
+			setPicked(new Set(d.nodes.map(n => n.id)));
+			return;
+		}
+		if (!mod && key === 'p') {
+			if (!picked.size || e.repeat) return;
+			e.preventDefault();
+			togglePinPicked();
+		}
+	});
+
+	/**
+	 * Pin the pick, or unpin it when it is all pinned already -- one key that
+	 * undoes itself, as the menu entry's label flips. A pick that is part
+	 * pinned is pinned the rest of the way: "hold these" is the likelier ask,
+	 * and a second press still frees the lot.
+	 */
+	function togglePinPicked() {
+		let ns = [];
+		for (let id of picked) {
+			let n = nodeCache.get(id);
+			if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) ns.push(n);
+		}
+		if (!ns.length) return;
+		if (ns.every(isPinned)) unpinAll(ns);
+		else pinAll(ns.filter(n => !isPinned(n)));
+	}
 
 	// --- controls ---------------------------------------------------------
 

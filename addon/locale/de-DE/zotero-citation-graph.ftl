@@ -87,7 +87,7 @@ zotero-citation-graph-side-toggle-show = Seitenleiste einblenden
 zotero-citation-graph-pane-toggle-show = Infobereich einblenden
 
 zotero-citation-graph-search-placeholder = Suchen
-zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern. Das filtert den Graphen nicht — dafür ist das Filterfeld in der Seitenleiste da.
+zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern (Strg+F). Das filtert den Graphen nicht — dafür ist das Filterfeld in der Seitenleiste da.
 zotero-citation-graph-search-clear = Leeren
 zotero-citation-graph-search-empty = Keine angezeigte Arbeit passt dazu
 
@@ -215,9 +215,9 @@ zotero-citation-graph-menu-remove-from-isolation = Aus der Isolation nehmen
 zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen — oder Strg-Doppelklick
 
 zotero-citation-graph-menu-pin = Knoten anheften
-zotero-citation-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen
+zotero-citation-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen — oder auswählen und P drücken
 zotero-citation-graph-menu-unpin = Knoten lösen
-zotero-citation-graph-menu-unpin-hint = das Layout darf ihn wieder bewegen
+zotero-citation-graph-menu-unpin-hint = das Layout darf ihn wieder bewegen — oder auswählen und P drücken
 
 zotero-citation-graph-menu-show-details = Details anzeigen
 zotero-citation-graph-menu-open-in-browser = Im Browser öffnen
