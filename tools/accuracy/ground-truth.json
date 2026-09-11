@@ -8,7 +8,7 @@
     { "id": "sarkar2023",  "itemKeys": ["7XMY5IGX"], "year": 2023, "doi": "10.1109/TIM.2023.3234086",     "firstAuthorInZotero": "Sarkar",    "container": "IEEE Trans. Instrum. Meas.",    "title": "Efficient Signal Processing for Low-Cost Magnetometry Using Nitrogen Vacancy Center in Diamond", "hasPdf": true, "refCount": 54, "refStyle": "numbered; titles present; DOI on some entries" },
     { "id": "sturner2019", "itemKeys": ["QV3ZI43J"], "year": 2019, "doi": "10.1016/j.diamond.2019.01.008", "firstAuthorInZotero": "Stürner",   "container": "Diamond and Related Materials", "title": "Compact integrated magnetometer based on nitrogen-vacancy centres in diamond", "hasPdf": true, "refCount": 35, "refStyle": "numbered; titles present; DOI on every entry", "note": "Has a SECOND PDF attachment (supplementary, mmc1.pdf) carrying its own 4-entry reference list. A strategy that concatenates every child PDF will attribute those 4 references to this work." },
     { "id": "zhang2022",   "itemKeys": ["AFZ54K88"], "year": 2022, "doi": "10.1016/j.diamond.2022.109035", "firstAuthorInZotero": "Zhang",     "container": "Diamond and Related Materials", "title": "A pulsed lock-in method for DC ensemble nitrogen-vacancy center magnetometry", "hasPdf": true, "refCount": 26, "refStyle": "numbered; titles present; DOI on every entry" },
-    { "id": "barry2020",   "itemKeys": ["PIILIQTV"], "year": 2020, "doi": "10.1103/RevModPhys.92.015004",  "firstAuthorInZotero": "Barry",     "container": "Reviews of Modern Physics",     "title": "Sensitivity optimization for NV-diamond magnetometry", "hasPdf": true, "refCount": 475, "refCountApproximate": true, "refStyle": "author-year; NO titles; NO DOIs - author/journal/volume/page only" },
+    { "id": "barry2020",   "itemKeys": ["PIILIQTV"], "year": 2020, "doi": "10.1103/RevModPhys.92.015004",  "firstAuthorInZotero": "Barry",     "container": "Reviews of Modern Physics",     "title": "Sensitivity optimization for NV-diamond magnetometry", "hasPdf": true, "refCount": 475, "refCountApproximate": true, "refStyle": "author-year; NO titles and NO DOIs in the PRINTED text - author/journal/volume/page only. But the PDF carries 435 /URI link annotations, so its references ARE DOI-linked in the link layer." },
     { "id": "rondin2014",  "itemKeys": ["WQ6XXUIM"], "year": 2014, "doi": "10.1088/0034-4885/77/5/056503", "firstAuthorInZotero": "Rondin",    "container": "Reports on Progress in Physics","title": "Magnetometry with nitrogen-vacancy defects in diamond", "hasPdf": true, "refCount": 150, "refStyle": "numbered; titles present; no DOIs" },
     { "id": "barry2016",   "itemKeys": ["EYMBJ4Y8"], "year": 2016, "doi": "10.1073/pnas.1601513113",       "firstAuthorInZotero": "Barry",     "container": "PNAS",                          "title": "Optical magnetic detection of single-neuron action potentials using quantum defects in diamond", "hasPdf": true, "refCount": 75, "refStyle": "numbered; titles present; no DOIs" },
     { "id": "dolde2011",   "itemKeys": ["XMYH7YU4", "4IN4N7SF"], "year": 2011, "doi": "10.1038/nphys1969", "firstAuthorInZotero": "Dolde",     "container": "Nature Physics",                "title": "Electric-field sensing using single diamond spins", "hasPdf": true, "refCount": 29, "refStyle": "numbered; titles present; no DOIs", "duplicate": true, "duplicateNote": "HELD TWICE. Both items carry the same DOI and the same PDF (byte-identical: both extract to 36270 characters). A citation of 10.1038/nphys1969 names ONE work. A strategy must not split it into two half-weight edges, nor double its cited-by count." },
@@ -20,40 +20,40 @@
   ],
 
   "edges": [
-    { "from": "sarkar2023",  "to": "sturner2019", "doi": false, "title": true,  "authorYear": true, "note": "author transliterated: 'F. M. Stuerner' for 'Stürner'" },
-    { "from": "sarkar2023",  "to": "barry2020",   "doi": false, "title": true,  "authorYear": true, "note": "CITED TWICE in one reference list: ref [21] as arXiv:1903.08176 (preprint) and ref [44] as Rev. Mod. Phys. 92, 015004 (published). Must collapse to ONE edge." },
-    { "from": "sarkar2023",  "to": "rondin2014",  "doi": false, "title": true,  "authorYear": true },
-    { "from": "sarkar2023",  "to": "barry2016",   "doi": false, "title": true,  "authorYear": true },
-    { "from": "sarkar2023",  "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "sarkar2023",  "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true, "note": "named 'A. Dréau et al.'; Zotero's first creator for the target is Rondin" },
+    { "from": "sarkar2023",  "to": "sturner2019", "doi": false, "pdfLink": false, "title": true,  "authorYear": true, "note": "author transliterated: 'F. M. Stuerner' for 'Stürner'" },
+    { "from": "sarkar2023",  "to": "barry2020",   "doi": false, "pdfLink": false, "title": true,  "authorYear": true, "note": "CITED TWICE in one reference list: ref [21] as arXiv:1903.08176 (preprint) and ref [44] as Rev. Mod. Phys. 92, 015004 (published). Must collapse to ONE edge." },
+    { "from": "sarkar2023",  "to": "rondin2014",  "doi": false, "pdfLink": false, "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "barry2016",   "doi": false, "pdfLink": false, "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "dolde2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "dreau2011",   "doi": false, "pdfLink": false, "title": true,  "authorYear": true, "note": "named 'A. Dréau et al.'; Zotero's first creator for the target is Rondin" },
 
-    { "from": "sturner2019", "to": "rondin2014",  "doi": true,  "title": false, "authorYear": true, "note": "TITLE TRUNCATED in the citing PDF: 'Magnetometry with nitrogen-vacancy defects in' - the word 'diamond' is missing. Exact title matching fails; only the DOI resolves it." },
-    { "from": "sturner2019", "to": "barry2016",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "sturner2019", "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "sturner2019", "to": "dreau2011",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "sturner2019", "to": "gruber1997",  "doi": true,  "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "rondin2014",  "doi": true, "pdfLink": true,   "title": false, "authorYear": true, "note": "TITLE TRUNCATED in the citing PDF: 'Magnetometry with nitrogen-vacancy defects in' - the word 'diamond' is missing. Exact title matching fails; only the DOI resolves it." },
+    { "from": "sturner2019", "to": "barry2016",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "dolde2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "dreau2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "gruber1997",  "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
 
-    { "from": "zhang2022",   "to": "sturner2019", "doi": true,  "title": true,  "authorYear": true },
-    { "from": "zhang2022",   "to": "barry2020",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "zhang2022",   "to": "barry2016",   "doi": true,  "title": true,  "authorYear": true },
-    { "from": "zhang2022",   "to": "dreau2011",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "sturner2019", "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "barry2020",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "barry2016",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "dreau2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
 
-    { "from": "barry2020",   "to": "sturner2019", "doi": false, "title": false, "authorYear": true, "note": "author-year only: 'St urner, F. M., et al., 2019, Diam. Relat. Mater. 93, 59'" },
-    { "from": "barry2020",   "to": "rondin2014",  "doi": false, "title": false, "authorYear": true },
-    { "from": "barry2020",   "to": "barry2016",   "doi": false, "title": false, "authorYear": true },
-    { "from": "barry2020",   "to": "dolde2011",   "doi": false, "title": false, "authorYear": true, "note": "'Dolde, F., et al., 2011, Nat. Phys. 7, 459'" },
-    { "from": "barry2020",   "to": "hahn1950",    "doi": false, "title": false, "authorYear": true, "note": "'Hahn, E. L., 1950, Phys. Rev. 80, 580' - the ONLY citation of hahn1950 anywhere in the set" },
-    { "from": "barry2020",   "to": "dreau2011",   "doi": false, "title": false, "authorYear": true },
+    { "from": "barry2020",   "to": "sturner2019", "doi": false, "pdfLink": true,  "title": false, "authorYear": true, "note": "author-year only: 'St urner, F. M., et al., 2019, Diam. Relat. Mater. 93, 59'" },
+    { "from": "barry2020",   "to": "rondin2014",  "doi": false, "pdfLink": true,  "title": false, "authorYear": true },
+    { "from": "barry2020",   "to": "barry2016",   "doi": false, "pdfLink": true,  "title": false, "authorYear": true },
+    { "from": "barry2020",   "to": "dolde2011",   "doi": false, "pdfLink": true,  "title": false, "authorYear": true, "note": "'Dolde, F., et al., 2011, Nat. Phys. 7, 459'" },
+    { "from": "barry2020",   "to": "hahn1950",    "doi": false, "pdfLink": true,  "title": false, "authorYear": true, "note": "'Hahn, E. L., 1950, Phys. Rev. 80, 580' - the ONLY citation of hahn1950 anywhere in the set" },
+    { "from": "barry2020",   "to": "dreau2011",   "doi": false, "pdfLink": true,  "title": false, "authorYear": true },
 
-    { "from": "rondin2014",  "to": "dolde2011",   "doi": false, "title": true,  "authorYear": true },
-    { "from": "rondin2014",  "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true },
-    { "from": "rondin2014",  "to": "gruber1997",  "doi": false, "title": true,  "authorYear": true },
+    { "from": "rondin2014",  "to": "dolde2011",   "doi": false, "pdfLink": false, "title": true,  "authorYear": true },
+    { "from": "rondin2014",  "to": "dreau2011",   "doi": false, "pdfLink": false, "title": true,  "authorYear": true },
+    { "from": "rondin2014",  "to": "gruber1997",  "doi": false, "pdfLink": false, "title": true,  "authorYear": true },
 
-    { "from": "barry2016",   "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true, "note": "page number split by text extraction: 'Phys Rev B 84:195 204'. Signature matching on '84 195204' fails; the title still resolves it." },
+    { "from": "barry2016",   "to": "dreau2011",   "doi": false, "pdfLink": true,  "title": true,  "authorYear": true, "note": "page number split by text extraction: 'Phys Rev B 84:195 204'. Signature matching on '84 195204' fails; the title still resolves it." },
 
-    { "from": "dolde2011",   "to": "gruber1997",  "doi": false, "title": true,  "authorYear": true, "note": "TITLE SPACING MANGLED by extraction: 'scanningconfocal optical microscopyand magnetic resonance on single defect centers'. Normalised exact title matching FAILS. Present identically in BOTH duplicate copies (XMYH7YU4 and 4IN4N7SF)." },
+    { "from": "dolde2011",   "to": "gruber1997",  "doi": false, "pdfLink": false, "title": true,  "authorYear": true, "note": "TITLE SPACING MANGLED by extraction: 'scanningconfocal optical microscopyand magnetic resonance on single defect centers'. Normalised exact title matching FAILS. Present identically in BOTH duplicate copies (XMYH7YU4 and 4IN4N7SF)." },
 
-    { "from": "odmrManual",  "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true }
+    { "from": "odmrManual",  "to": "dolde2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true }
   ],
 
   "expectedNonEdges": [
@@ -74,12 +74,17 @@
     "edgesItemLevelNote": "27 edges between WORKS. dolde2011 is held as two items, so a scorer that works at item level and expands the duplicate on both sides sees 33. Score at work level; the 6-edge gap is the duplicate-merging penalty.",
     "sourcesWithPdf": 11,
     "targetOnlyNoPdf": 2,
+    "channelsNote": "A citation reaches a strategy through one of three INDEPENDENT channels, and each edge is flagged for all three. 'doi'/'title' are about the PRINTED text as PDF extraction yields it. 'pdfLink' is the link layer: a /URI annotation on the reference, which a reader never sees and which survives even when the printed entry carries neither a title nor an identifier. The pdfLink flags were extracted from raw PDF bytes by an independent parser (inflating object streams and reading /URI dicts), NOT from edges/pdfLinks.js output.",
     "edgesWhoseCitingTextCarriesADoi": 11,
     "edgesWhoseCitingTextCarriesATitle": 20,
-    "edgesResolvableOnlyByAuthorYear": 6,
-    "ceilingDoiOnly": "11 of 27 (41%)",
+    "edgesCarryingAPdfLinkAnnotation": 18,
+    "edgesResolvableOnlyByAuthorYearInPrintedText": 6,
+    "ceilingPrintedDoiOnly": "11 of 27 (41%)",
     "ceilingTitleMatchExact": "19 of 27 (70%) - 20 edges carry a title, but dolde2011->gruber1997 does not survive exact normalised matching (mangled spacing). sturner2019->rondin2014 is already counted as title:false (truncated).",
-    "ceilingDoiOrTitle": "21 of 27 (78%) - the 6 barry2020 edges are unreachable without author-year parsing",
-    "maxRecallNote": "No strategy that reads only DOIs and titles can exceed 78% recall on this set. Reaching the last 6 edges requires parsing author-year-journal-volume-page reference strings that carry neither a title nor an identifier."
+    "ceilingPdfLinkOnly": "18 of 27 (67%)",
+    "ceilingPrintedDoiOrTitle": "21 of 27 (78%)",
+    "ceilingAllThreeChannels": "26 of 27 (96%)",
+    "theOneUnreachableEdge": "dolde2011 -> gruber1997. Its printed title is mangled by extraction ('scanningconfocal optical microscopyand...'), the citing PDF carries no DOI in that entry, and Dolde 2011 has ZERO link annotations. Nothing but fuzzy title matching or author-year parsing can reach it.",
+    "correctionNote": "An earlier version of this file claimed a 78% ceiling on the grounds that the 6 barry2020 edges were 'unreachable without author-year parsing'. That was wrong: it only considered the printed text. The Reviews of Modern Physics PDF carries 435 /URI annotations, so all 6 of those references are DOI-linked in the link layer even though the printed entry is bare author-year. edges/pdfLinks.js finds all 6."
   }
 }

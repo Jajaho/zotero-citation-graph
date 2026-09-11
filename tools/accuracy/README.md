@@ -57,16 +57,35 @@ optimization", and Adam's own 23 references name no NV work.
 The reference lists deliberately span the formats real libraries contain, so the
 strategies cannot all score the same:
 
-**Only 11 of 27 edges carry a DOI in the citing text.** A DOI-only strategy is
-capped at 41% recall no matter how well it is implemented. That ceiling is the
-point of the set.
+A citation reaches a strategy through one of **three independent channels**, and
+every edge in the key is flagged for all three:
 
-**Six edges carry neither a DOI nor a title.** All six are `barry2020`, whose
+| channel | flag | edges | what it is |
+|---|---|---|---|
+| printed DOI | `doi` | 11 of 27 | a DOI visible in the extracted reference text |
+| printed title | `title` | 20 of 27 | the target's title visible in that text |
+| link annotation | `pdfLink` | 18 of 27 | a `/URI` annotation on the reference — invisible to a reader |
+
+The channels are **not** nested, which is the whole point of the set. The link
+layer in particular carries citations the printed page does not.
+
+**Only 11 of 27 edges print a DOI**, so a strategy reading printed text for
+identifiers is capped at 41% recall however well it is written.
+
+**Six edges print neither a DOI nor a title.** All six are `barry2020`, whose
 Reviews of Modern Physics reference list is pure author-year — `Hahn, E. L.,
-1950, Phys. Rev. 80, 580`. Title matching and DOI extraction both score exactly
-zero on that source, though it genuinely cites six works in the set. Nothing
-short of parsing author-year-journal-volume-page reaches them, which puts the
-combined DOI-or-title ceiling at 21 of 27 (78%).
+1950, Phys. Rev. 80, 580`. Nothing in that printed entry names the work.
+
+But that same PDF carries **435 `/URI` annotations**: every one of those six
+references *is* DOI-linked in the link layer. So they are reachable without any
+author-year parsing at all, and `pdf-links` finds all six. An earlier version of
+this file claimed a 78% ceiling on the assumption that they were unreachable;
+that was wrong, because it only considered the printed text. The real ceiling
+across all three channels is **26 of 27 (96%)**.
+
+The `pdfLink` flags were extracted from raw PDF bytes by an independent parser
+(inflating object streams and reading `/URI` dictionaries), not from
+`edges/pdfLinks.js` output — same rule as the rest of the key.
 
 **Two edges carry a title that exact matching still misses**, because PDF text
 extraction damaged it:
@@ -79,6 +98,11 @@ extraction damaged it:
   normalised exact matching nor the DOI (absent) resolves it.
 
 So the realistic title-match ceiling is 19 of 27, not the 20 that carry a title.
+
+`dolde2011 → gruber1997` is the **one edge no current channel reaches**: its
+printed title is mangled, its entry prints no DOI, and Dolde 2011 has zero link
+annotations. It is the 1 of 27 that the full union still misses, and the
+standing argument for fuzzy title matching.
 
 **One edge is cited twice under two identities.** `sarkar2023` cites
 `barry2020` at ref [21] as `arXiv:1903.08176` and again at ref [44] as
@@ -114,6 +138,66 @@ like it must exist — a 475-reference NV review that does not cite the 1997 pap
 that started single-defect microscopy is surprising. It does not. The string
 "gruber" occurs zero times in that PDF. It is recorded because the tempting
 correction is to add the edge from memory, and that would corrupt the answer key.
+
+## Running it
+
+```
+node tools/accuracy/score.js --data-dir "C:/Users/me/Zotero citation_graph_testing"
+node tools/accuracy/score.js --data-dir <dir> --db ./snap.sqlite   # Zotero running
+node tools/accuracy/score.js --enable openalex --api-key KEY
+node tools/accuracy/score.js --json out.json
+```
+
+Zotero holds a write lock on `zotero.sqlite` while it runs, so point `--db` at a
+copy if it is open.
+
+Scoring is at **work** level. The collection holds one work twice on purpose; an
+item-level count would let a strategy score the same citation twice and would
+punish one that correctly merged the duplicate. An edge between the two copies
+collapses to a self-loop and is reported on its own `dup` column rather than as
+a false positive — that is a duplicate-merging failure, not a wrong citation.
+Edges to works the collection does not hold are counted as `ghost` and never
+graded, since the key says nothing about them.
+
+## Where the strategies stand
+
+Measured 2026-09-11, offline strategies only:
+
+```
+strategy        pred   TP   FP   FN   prec  recall     F1   dup  traps
+pdf-links         18   18    0    9   100%     67%   0.80     0  -
+text-doi           7    7    0   20   100%     26%   0.41     0  -
+title-match       19   19    0    8   100%     70%   0.83     0  -
+ref-strings       13   13    0   14   100%     48%   0.65     0  -
+ALL (union)       26   26    0    1   100%     96%   0.98     0  -
+```
+
+**Precision is 100% across the board.** No strategy hit any of the five traps,
+none emitted an edge touching the `adam2017` negative control, and none split
+the duplicated work into a self-loop. The substring collisions the set was built
+to catch — "spin echoes" inside another reference's title, the two wrong
+"Zhang"s — are all correctly declined.
+
+**Recall is channel-bound, and two strategies are already at their ceiling.**
+`pdf-links` finds 18 of the 18 link-annotated edges; `title-match` finds 19 of
+the 19 exact-matchable titles. Neither can improve without a new channel or
+fuzzy matching. The union reaches 26 of 27 — everything except the one edge no
+channel carries.
+
+**`text-doi` is the one strategy below its ceiling: 7 found of 11 printed.** The
+four misses are `sturner2019 → barry2016`, `→ dolde2011`, `→ gruber1997`, and
+`odmrManual → dolde2011`, and they share one cause. `flattenPdfText` joins
+wrapped lines with a space, so a DOI broken across a line break becomes
+
+```
+https://doi.org/10. 1073/pnas.1601513113      (space after "10.")
+https://doi.org/10.1038/ nphys1969            (break after the slash)
+```
+
+and `DOI_RE` — which wants digits immediately after `10.` and at least one
+character after the slash — matches neither. Repairing a break *inside* a DOI
+before matching should close the whole gap and take `text-doi` to its 41%
+ceiling. Nothing else in the table is currently leaving edges on the table.
 
 ## Extending it
 
