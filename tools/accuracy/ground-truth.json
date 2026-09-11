@@ -1,0 +1,85 @@
+{
+  "_comment": "Hand-built citation ground truth for the 'Citation Graph Benchmark' collection in the Zotero test profile. Every edge below was read out of the citing PDF's own reference list and verified by four independent probes (DOI string, full title, bibliographic signature, author+year proximity); false positives were rejected by hand. This file is the reference answer that edge strategies are scored against - it is NOT derived from any strategy's output, and in particular not from OpenAlex.",
+  "builtOn": "2026-09-11",
+  "profile": "C:\\Users\\you\\Zotero citation_graph_testing",
+  "collection": "Citation Graph Benchmark",
+
+  "works": [
+    { "id": "sarkar2023",  "itemKeys": ["7XMY5IGX"], "year": 2023, "doi": "10.1109/TIM.2023.3234086",     "firstAuthorInZotero": "Sarkar",    "container": "IEEE Trans. Instrum. Meas.",    "title": "Efficient Signal Processing for Low-Cost Magnetometry Using Nitrogen Vacancy Center in Diamond", "hasPdf": true, "refCount": 54, "refStyle": "numbered; titles present; DOI on some entries" },
+    { "id": "sturner2019", "itemKeys": ["QV3ZI43J"], "year": 2019, "doi": "10.1016/j.diamond.2019.01.008", "firstAuthorInZotero": "Stürner",   "container": "Diamond and Related Materials", "title": "Compact integrated magnetometer based on nitrogen-vacancy centres in diamond", "hasPdf": true, "refCount": 35, "refStyle": "numbered; titles present; DOI on every entry", "note": "Has a SECOND PDF attachment (supplementary, mmc1.pdf) carrying its own 4-entry reference list. A strategy that concatenates every child PDF will attribute those 4 references to this work." },
+    { "id": "zhang2022",   "itemKeys": ["AFZ54K88"], "year": 2022, "doi": "10.1016/j.diamond.2022.109035", "firstAuthorInZotero": "Zhang",     "container": "Diamond and Related Materials", "title": "A pulsed lock-in method for DC ensemble nitrogen-vacancy center magnetometry", "hasPdf": true, "refCount": 26, "refStyle": "numbered; titles present; DOI on every entry" },
+    { "id": "barry2020",   "itemKeys": ["PIILIQTV"], "year": 2020, "doi": "10.1103/RevModPhys.92.015004",  "firstAuthorInZotero": "Barry",     "container": "Reviews of Modern Physics",     "title": "Sensitivity optimization for NV-diamond magnetometry", "hasPdf": true, "refCount": 475, "refCountApproximate": true, "refStyle": "author-year; NO titles; NO DOIs - author/journal/volume/page only" },
+    { "id": "rondin2014",  "itemKeys": ["WQ6XXUIM"], "year": 2014, "doi": "10.1088/0034-4885/77/5/056503", "firstAuthorInZotero": "Rondin",    "container": "Reports on Progress in Physics","title": "Magnetometry with nitrogen-vacancy defects in diamond", "hasPdf": true, "refCount": 150, "refStyle": "numbered; titles present; no DOIs" },
+    { "id": "barry2016",   "itemKeys": ["EYMBJ4Y8"], "year": 2016, "doi": "10.1073/pnas.1601513113",       "firstAuthorInZotero": "Barry",     "container": "PNAS",                          "title": "Optical magnetic detection of single-neuron action potentials using quantum defects in diamond", "hasPdf": true, "refCount": 75, "refStyle": "numbered; titles present; no DOIs" },
+    { "id": "dolde2011",   "itemKeys": ["XMYH7YU4", "4IN4N7SF"], "year": 2011, "doi": "10.1038/nphys1969", "firstAuthorInZotero": "Dolde",     "container": "Nature Physics",                "title": "Electric-field sensing using single diamond spins", "hasPdf": true, "refCount": 29, "refStyle": "numbered; titles present; no DOIs", "duplicate": true, "duplicateNote": "HELD TWICE. Both items carry the same DOI and the same PDF (byte-identical: both extract to 36270 characters). A citation of 10.1038/nphys1969 names ONE work. A strategy must not split it into two half-weight edges, nor double its cited-by count." },
+    { "id": "hahn1950",    "itemKeys": ["LVCJ99M7"], "year": 1950, "doi": "10.1103/PhysRev.80.580",        "firstAuthorInZotero": "Hahn",      "container": "Physical Review",               "title": "Spin Echoes", "hasPdf": true, "refCount": 0, "refStyle": "1950 paper; footnote references; no reference section", "note": "Cites nothing in the set - it predates every other work. Its two-word title is a false-positive magnet for substring title matching (see expectedNonEdges)." },
+    { "id": "odmrManual",  "itemKeys": ["UV4R2JLQ"], "year": null, "doi": null,                            "firstAuthorInZotero": null,        "container": null,                            "title": "Optically detected magnetic resonance (ODMR) - Master Lab Course Manual", "hasPdf": true, "refCount": 14, "refStyle": "LaTeX/BibTeX numbered; titles + DOI + url", "note": "itemType=report. NO DOI of its own and NO creators recorded in Zotero, and it is not a publisher PDF. The only non-article source in the set." },
+    { "id": "dreau2011",   "itemKeys": ["JE3J8RTW"], "year": 2011, "doi": "10.1103/PhysRevB.84.195204",    "firstAuthorInZotero": "Rondin",    "container": "Physical Review B",             "title": "Avoiding power broadening in optically detected magnetic resonance of single NV defects for enhanced dc magnetic field sensitivity", "hasPdf": false, "refCount": null, "refStyle": null, "note": "NO PDF - target only, can never be a source. It is the most-cited work in the set (6 incoming). Zotero's stored first creator is Rondin, but every citing paper names it 'Dréau et al.' - matching a citing string against Zotero's author metadata will miss it." },
+    { "id": "gruber1997",  "itemKeys": ["SEERXZNA"], "year": 1997, "doi": "10.1126/science.276.5321.2012", "firstAuthorInZotero": "Wrachtrup", "container": "Science",                       "title": "Scanning Confocal Optical Microscopy and Magnetic Resonance on Single Defect Centers", "hasPdf": false, "refCount": null, "refStyle": null, "note": "NO PDF - target only. Zotero's stored first creator is Wrachtrup; citing papers name it 'Gruber et al.'" },
+    { "id": "adam2017",    "itemKeys": ["76YAZTBC"], "year": 2017, "doi": "10.48550/arXiv.1412.6980",      "firstAuthorInZotero": "Kingma",    "container": "arXiv / ICLR 2015",             "title": "Adam: A Method for Stochastic Optimization", "hasPdf": true, "refCount": 23, "refStyle": "author-year; titles present; no DOIs (arXiv ids and conference names)", "note": "NEGATIVE CONTROL. Machine learning; every other work is NV-centre physics. It cites none of them and none cite it - verified both ways: no fulltext in the source library of 485 indexed attachments mentions 'Kingma' or 'stochastic optimization', and Adam's own 23 references name no NV work. All 23 of its references are ghosts. ANY edge touching adam2017 is a false positive." }
+  ],
+
+  "edges": [
+    { "from": "sarkar2023",  "to": "sturner2019", "doi": false, "title": true,  "authorYear": true, "note": "author transliterated: 'F. M. Stuerner' for 'Stürner'" },
+    { "from": "sarkar2023",  "to": "barry2020",   "doi": false, "title": true,  "authorYear": true, "note": "CITED TWICE in one reference list: ref [21] as arXiv:1903.08176 (preprint) and ref [44] as Rev. Mod. Phys. 92, 015004 (published). Must collapse to ONE edge." },
+    { "from": "sarkar2023",  "to": "rondin2014",  "doi": false, "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "barry2016",   "doi": false, "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "sarkar2023",  "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true, "note": "named 'A. Dréau et al.'; Zotero's first creator for the target is Rondin" },
+
+    { "from": "sturner2019", "to": "rondin2014",  "doi": true,  "title": false, "authorYear": true, "note": "TITLE TRUNCATED in the citing PDF: 'Magnetometry with nitrogen-vacancy defects in' - the word 'diamond' is missing. Exact title matching fails; only the DOI resolves it." },
+    { "from": "sturner2019", "to": "barry2016",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "dreau2011",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "sturner2019", "to": "gruber1997",  "doi": true,  "title": true,  "authorYear": true },
+
+    { "from": "zhang2022",   "to": "sturner2019", "doi": true,  "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "barry2020",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "barry2016",   "doi": true,  "title": true,  "authorYear": true },
+    { "from": "zhang2022",   "to": "dreau2011",   "doi": true,  "title": true,  "authorYear": true },
+
+    { "from": "barry2020",   "to": "sturner2019", "doi": false, "title": false, "authorYear": true, "note": "author-year only: 'St urner, F. M., et al., 2019, Diam. Relat. Mater. 93, 59'" },
+    { "from": "barry2020",   "to": "rondin2014",  "doi": false, "title": false, "authorYear": true },
+    { "from": "barry2020",   "to": "barry2016",   "doi": false, "title": false, "authorYear": true },
+    { "from": "barry2020",   "to": "dolde2011",   "doi": false, "title": false, "authorYear": true, "note": "'Dolde, F., et al., 2011, Nat. Phys. 7, 459'" },
+    { "from": "barry2020",   "to": "hahn1950",    "doi": false, "title": false, "authorYear": true, "note": "'Hahn, E. L., 1950, Phys. Rev. 80, 580' - the ONLY citation of hahn1950 anywhere in the set" },
+    { "from": "barry2020",   "to": "dreau2011",   "doi": false, "title": false, "authorYear": true },
+
+    { "from": "rondin2014",  "to": "dolde2011",   "doi": false, "title": true,  "authorYear": true },
+    { "from": "rondin2014",  "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true },
+    { "from": "rondin2014",  "to": "gruber1997",  "doi": false, "title": true,  "authorYear": true },
+
+    { "from": "barry2016",   "to": "dreau2011",   "doi": false, "title": true,  "authorYear": true, "note": "page number split by text extraction: 'Phys Rev B 84:195 204'. Signature matching on '84 195204' fails; the title still resolves it." },
+
+    { "from": "dolde2011",   "to": "gruber1997",  "doi": false, "title": true,  "authorYear": true, "note": "TITLE SPACING MANGLED by extraction: 'scanningconfocal optical microscopyand magnetic resonance on single defect centers'. Normalised exact title matching FAILS. Present identically in BOTH duplicate copies (XMYH7YU4 and 4IN4N7SF)." },
+
+    { "from": "odmrManual",  "to": "dolde2011",   "doi": true,  "title": true,  "authorYear": true }
+  ],
+
+  "expectedNonEdges": [
+    { "from": "dolde2011",  "to": "hahn1950",   "trap": "titleMatch",     "why": "The string 'spin echoes' DOES occur in dolde2011's reference list - inside the title of a DIFFERENT reference: 'van Oort, E. et al. Electric field induced modulation of spin echoes of NV centers in diamond, Chem. Phys. Lett. 168, 6 (1990)'. Substring matching on the two-word title 'Spin Echoes' emits a false edge here." },
+    { "from": "barry2020",  "to": "zhang2022",  "trap": "authorMatch",    "why": "'Zhang' appears in barry2020 as 'Bluvstein, Zhang and Jayich 2019' - a different Zhang. Also chronologically impossible: 2020 cannot cite 2022." },
+    { "from": "rondin2014", "to": "zhang2022",  "trap": "authorMatch",    "why": "'Zhang' appears in rondin2014 as 'Babinec ... Y. Zhang, J. R. Maze ...' - a different Zhang. Also chronologically impossible." },
+    { "from": "zhang2022",  "to": "sarkar2023", "trap": "containerMatch", "why": "zhang2022 cites an IEEE Trans. Instrum. Meas. paper (Zhang 2020, TIM 69, 4370, doi 10.1109/TIM.2019.2949321) - same journal as sarkar2023, different paper. Also chronologically impossible." },
+    { "from": "barry2020",  "to": "gruber1997", "trap": "plausibility",   "why": "A reader would expect this review to cite Gruber 1997, but it does not: the string 'gruber' occurs zero times in the whole PDF. Verified, not assumed." },
+    { "from": "adam2017",   "to": "*",          "trap": "negativeControl","why": "adam2017 shares no domain with the rest of the set. Zero edges out." },
+    { "from": "*",          "to": "adam2017",   "trap": "negativeControl","why": "No work in the set cites Adam. Zero edges in." }
+  ],
+
+  "summary": {
+    "works": 12,
+    "heldItems": 13,
+    "edges": 27,
+    "edgesItemLevel": 33,
+    "edgesItemLevelNote": "27 edges between WORKS. dolde2011 is held as two items, so a scorer that works at item level and expands the duplicate on both sides sees 33. Score at work level; the 6-edge gap is the duplicate-merging penalty.",
+    "sourcesWithPdf": 11,
+    "targetOnlyNoPdf": 2,
+    "edgesWhoseCitingTextCarriesADoi": 11,
+    "edgesWhoseCitingTextCarriesATitle": 20,
+    "edgesResolvableOnlyByAuthorYear": 6,
+    "ceilingDoiOnly": "11 of 27 (41%)",
+    "ceilingTitleMatchExact": "19 of 27 (70%) - 20 edges carry a title, but dolde2011->gruber1997 does not survive exact normalised matching (mangled spacing). sturner2019->rondin2014 is already counted as title:false (truncated).",
+    "ceilingDoiOrTitle": "21 of 27 (78%) - the 6 barry2020 edges are unreachable without author-year parsing",
+    "maxRecallNote": "No strategy that reads only DOIs and titles can exceed 78% recall on this set. Reaching the last 6 edges requires parsing author-year-journal-volume-page reference strings that carry neither a title nor an identifier."
+  }
+}
