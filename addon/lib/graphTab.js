@@ -40,6 +40,11 @@ const PDF_STRATEGIES = ['pdf-links'];
 // their DOI label, which is exactly what they had before enrichment existed.
 const MAX_ENRICH = 500;
 
+// OpenAlex references are named on top of that, because naming one is what
+// merges it with the same work found offline (see rekeyByDoi). 2,500 is 50
+// calls, once: the names are cached for a month.
+const MAX_ENRICH_REFERENCES = 2500;
+
 // Ordered: core/enrich.js merges fill-first, so this list IS the ranking. A
 // second enricher added here is only ever asked about what the first could not
 // resolve. See docs/external-references.md part 3. Overridable by the
@@ -918,9 +923,6 @@ async function buildPhases(entry, alive) {
 		errors: [...textResult.meta.errors, ...pdfResult.meta.errors],
 		adapter: adapter.stats,
 	};
-	let external = options.includeExternal
-		? cg.collectExternalNodes(edges, k => state.inCollection.has(k))
-		: [];
 	// What a lookup would ask for, worked out before the push so the payload can
 	// say truthfully whether one is still to come. Ghosts need a name; held
 	// items already have one and need only the global count, which is what
@@ -928,30 +930,30 @@ async function buildPhases(entry, alive) {
 	// than half of it. Both are DOIs, so they go in one batched pass -- doiKey
 	// is the shared address space, and with outside refs off the held items are
 	// the whole of it.
-	let ghostKeys = external.slice(0, MAX_ENRICH).map(x => x.key);
 	let heldByDoiKey = new Map();
 	for (let it of items) {
 		let d = normDoi(it.doi);
 		if (d) heldByDoiKey.set(externalKey('doi', d), it.key);
 	}
 	// The derived graph, kept so that switching the lookup on later costs one
-	// phase instead of a whole build. Recorded before phase 4 runs: what a
-	// lookup needs is exactly what is on screen by now.
-	entry.built = { state, baseMeta, ghostKeys, heldByDoiKey };
+	// phase instead of a whole build. `offlineEdges` is what the files said:
+	// a lookup adds to it, and switching the lookup off goes back to it.
+	state.edges = edges;
+	entry.built = { state, baseMeta, offlineEdges: edges, ghostKeys: ghostKeysOf(state), heldByDoiKey };
 
-	let toLookUp = options.enrich ? lookupKeys(entry.built) : [];
-	push(edges, { phase: toLookUp.length ? 'edges' : 'done', ...baseMeta });
+	let lookup = options.enrich && hasLookup(entry.built);
+	push(edges, { phase: lookup ? 'edges' : 'done', ...baseMeta });
 	logMeta('pdf-links', pdfResult);
 
-	// --- phase 4: name the ghosts ---------------------------------------
+	// --- phase 4: the network -------------------------------------------
 	// Last on purpose: it is the only network phase, it is optional, and a
-	// failure here must cost names and nothing else -- the graph is already
-	// on screen and correct by this point.
-	if (!toLookUp.length) {
+	// failure here must cost what it went for and nothing else -- the graph
+	// is already on screen and correct by this point.
+	if (!lookup) {
 		status('');
 		return;
 	}
-	await lookUpNames(entry, alive, entry.built);
+	await lookUp(entry, alive, entry.built);
 }
 
 /**
@@ -999,19 +1001,21 @@ async function runLookup(tabID) {
 	entry.building = true;
 	try {
 		if (!entry.options.enrich) {
-			// Switching it off takes the names back off and nothing else: same
-			// items, same edges, so the graph does not move.
+			// Switching it off takes back what it brought and nothing else: the
+			// names, the counts, and the references only OpenAlex knew.
+			built.state.edges = built.offlineEdges;
 			built.state.metadata = Object.create(null);
 			built.state.heldCounts = Object.create(null);
+			built.ghostKeys = ghostKeysOf(built.state);
 			pushData(entry, built.state, { phase: 'done', ...built.baseMeta });
 			send(entry, 'zgSetStatus', '');
 			return;
 		}
-		if (!lookupKeys(built).length) {
+		if (!hasLookup(built)) {
 			send(entry, 'zgSetStatus', l10n.t('lookup-nothing'));
 			return;
 		}
-		await lookUpNames(entry, alive, built);
+		await lookUp(entry, alive, built);
 	}
 	finally {
 		if (alive()) entry.building = false;
@@ -1025,6 +1029,120 @@ async function runLookup(tabID) {
  */
 function lookupKeys(built) {
 	return [...new Set([...built.ghostKeys, ...built.heldByDoiKey.keys()])];
+}
+
+/** Whether a lookup pass would find anything to do. */
+function hasLookup(built) {
+	return reflessKeys(built).length > 0 || lookupKeys(built).length > 0;
+}
+
+/**
+ * The held papers the files said nothing about: a DOI to ask with, and not
+ * one reference found in the PDF or in its indexed text.
+ *
+ * These are the papers whose references can only come from the network. An
+ * IEEE paper is the usual case -- its PDF links no DOI and its bibliography
+ * prints none, so all three offline strategies correctly find nothing, and
+ * the paper sat on the canvas with no edge of any kind however many works it
+ * cites. A paper the offline pass did read keeps that answer: it came from
+ * the paper itself, and asking OpenAlex to repeat it would spend a name
+ * lookup on every reference it already has.
+ */
+function reflessKeys(built) {
+	let citing = new Set(built.offlineEdges.map(e => e.from));
+	return built.state.items
+		.filter(it => normDoi(it.doi) && !citing.has(it.key))
+		.map(it => it.key);
+}
+
+/**
+ * The outside references a lookup should name: the most-cited DOIs, as
+ * before, and the OpenAlex references as well. The latter are not a nicety.
+ * One is known only by its OpenAlex ID until it is named, and a work cited
+ * once through a PDF's DOI link and once through OpenAlex is two ghosts cited
+ * once each until the name brings its DOI -- see rekeyByDoi().
+ */
+function ghostKeysOf(state) {
+	let external = cg.collectExternalNodes(state.edges, k => state.inCollection.has(k));
+	let byDoi = external.filter(x => x.ns !== 'openalex').slice(0, MAX_ENRICH);
+	let byOpenAlex = external.filter(x => x.ns === 'openalex').slice(0, MAX_ENRICH_REFERENCES);
+	return [...byDoi, ...byOpenAlex].map(x => x.key);
+}
+
+/**
+ * The one thing the OpenAlex strategy reads from an adapter is the item list:
+ * it asks the network about the papers, not their files.
+ */
+function listingOnly(items) {
+	return {
+		listItems: async () => items,
+		getAttachments: async () => [],
+		getAttachmentText: async () => null,
+		getPdfLinkUris: async () => [],
+	};
+}
+
+/**
+ * The network phase over a build that already exists: the references of the
+ * papers the files said nothing about, then the names. Shared by the build
+ * that produced it and by a later switch-on, so the two cannot disagree.
+ */
+async function lookUp(entry, alive, built) {
+	let { state, baseMeta } = built;
+	let status = (text) => {
+		if (alive()) send(entry, 'zgSetStatus', text);
+	};
+	let citing = reflessKeys(built);
+	if (citing.length) {
+		status(l10n.t('lookup-references', { count: citing.length }));
+		let net = await cg.build(listingOnly(state.items), {
+			enable: ['openalex'],
+			includeExternal: entry.options.includeExternal,
+			providers: { openalex: { apiKey: pref('openalex.apiKey') || null, citing } },
+			onProgress: throttle(p => status(l10n.t('lookup-progress', p))),
+		});
+		if (!alive()) return;
+		for (let err of net.meta.errors) {
+			Zotero.logError(new Error(`[zotero-citation-graph] references ${err.provider}: ${err.message}`));
+		}
+		logMeta('openalex', net);
+		// Always over the offline edges, never over the last lookup's: a second
+		// pass must replace what the first one brought, not add to it.
+		state.edges = mergeEdges(built.offlineEdges, net.edges);
+		built.ghostKeys = ghostKeysOf(state);
+		pushData(entry, state, { phase: 'edges', ...baseMeta });
+	}
+	if (!lookupKeys(built).length) {
+		status('');
+		return;
+	}
+	await lookUpNames(entry, alive, built);
+}
+
+/**
+ * An OpenAlex reference stands in under its OpenAlex ID until the lookup
+ * names it, and the name comes with the work's DOI. Re-keyed to 'doi:<doi>'
+ * -- or to the held paper with that DOI -- it becomes the very node the same
+ * work has when a PDF links it, so a work cited through both is one ghost
+ * cited twice rather than two ghosts cited once each.
+ *
+ * The metadata moves with it, since the names are what the payload is built
+ * from and they are keyed like the nodes.
+ */
+function rekeyByDoi(state, heldByDoiKey) {
+	let to = new Map();
+	for (let e of state.edges) {
+		if (to.has(e.to) || !e.to.startsWith('openalex:')) continue;
+		let m = state.metadata[e.to];
+		let d = m && normDoi(m.doi);
+		if (!d) continue;
+		let doiKey = externalKey('doi', d);
+		to.set(e.to, heldByDoiKey.get(doiKey) || doiKey);
+		if (!state.metadata[doiKey]) state.metadata[doiKey] = { ...m, key: doiKey };
+	}
+	if (!to.size) return;
+	state.edges = mergeEdges(state.edges.map(e => (to.has(e.to) ? { ...e, to: to.get(e.to) } : e)))
+		.filter(e => e.from !== e.to);
 }
 
 /**
@@ -1051,6 +1169,8 @@ async function lookUpNames(entry, alive, built) {
 	if (!alive()) return;
 
 	state.metadata = enriched.metadata;
+	rekeyByDoi(state, heldByDoiKey);
+	built.ghostKeys = ghostKeysOf(state);
 	state.heldCounts = Object.create(null);
 	for (let [doiKey, itemKey] of heldByDoiKey) {
 		let m = enriched.metadata[doiKey];
@@ -1273,7 +1393,9 @@ async function adoptAdded(entry, ghostKey, item, names) {
 	let state = entry.built.state;
 	state.items = [...state.items, record];
 	state.inCollection.add(record.key);
-	for (let e of state.edges) {
+	// The offline edges too: they are what switching the lookup off goes back
+	// to, and the paper is held now either way.
+	for (let e of [...state.edges, ...(entry.built.offlineEdges || [])]) {
 		if (e.from === ghostKey) e.from = record.key;
 		if (e.to === ghostKey) e.to = record.key;
 	}
@@ -1627,7 +1749,7 @@ module.exports = {
 	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
 	watchChrome,
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection, selectItems,
-	mergeEdges, toWireExternal, adoptAdded,
+	mergeEdges, toWireExternal, adoptAdded, rekeyByDoi, reflessKeys,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.
 	tabData, restoreOptions, emptyReason,

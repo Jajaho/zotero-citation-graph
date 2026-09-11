@@ -55,7 +55,7 @@ zotero-citation-graph-scope-external-hint = Show cited works that are not in the
 zotero-citation-graph-scope-min-cites = Cited by ≥
 zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
 zotero-citation-graph-scope-enrich = Query node metadata
-zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
+zotero-citation-graph-scope-enrich-hint = Look up citation counts, titles and authors for outside works, and the references of papers none could be read from (uses the OpenAlex API)
 
 # Whether the names an outside reference already has are left off the canvas.
 # Nothing is fetched for this one -- that is the entry above.
@@ -318,6 +318,7 @@ zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count } PDFs for D
 zotero-citation-graph-build-scanning-pdfs-progress = Scanning PDFs for DOI links… { $done }/{ $total }
 zotero-citation-graph-lookup-works = Looking up { $count -> [one] { $count } work *[other] { $count } works }…
 zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total } ({ $provider })
+zotero-citation-graph-lookup-references = Asking OpenAlex what { $count -> [one] { $count } paper cites *[other] { $count } papers cite }…
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 
 

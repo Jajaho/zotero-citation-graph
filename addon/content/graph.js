@@ -1224,11 +1224,12 @@
 			case 'pdf-links': return '#4a90d9';
 			case 'text-doi': return '#3fa66a';
 			case 'title-match': return '#b0b0b0';
+			case 'openalex': return '#8a7fd0';
 			default: return '#8a7fd0';
 		}
 	}
 
-	const VIA_RANK = ['pdf-links', 'text-doi', 'title-match'];
+	const VIA_RANK = ['pdf-links', 'text-doi', 'openalex', 'title-match'];
 
 	function bestVia(via) {
 		for (let v of VIA_RANK) if (via.includes(v)) return v;

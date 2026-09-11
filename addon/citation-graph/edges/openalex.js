@@ -1,7 +1,7 @@
 'use strict';
 
 const { register } = require('../core/registry');
-const { edge } = require('../core/types');
+const { edge, externalKey } = require('../core/types');
 const { normDoi } = require('../core/normalize');
 
 /**
@@ -33,9 +33,15 @@ module.exports.id = register({
 		batchSize: 50,
 		endpoint: 'https://api.openalex.org/works',
 		fetchImpl: null,         // see enrich/openalex.js for why this is injectable
+		// Item keys whose references to report; null reports every item's.
+		// Every item with a DOI is still ASKED about, because a reference
+		// arrives as an OpenAlex ID and resolves to a held paper only if that
+		// paper's own ID came back too -- asking about the citing papers alone
+		// would turn every reference to the collection into a ghost of itself.
+		citing: null,
 	},
 
-	async derive({ items, index, options, onProgress }) {
+	async derive({ items, index, options, includeExternal, onProgress }) {
 		const dois = [];
 		const keyByDoi = new Map();
 		for (const it of items) {
@@ -43,6 +49,7 @@ module.exports.id = register({
 			if (d && !keyByDoi.has(d)) { keyByDoi.set(d, it.key); dois.push(d); }
 		}
 		if (!dois.length) return [];
+		const only = options.citing ? new Set(options.citing) : null;
 
 		const fetch_ = options.fetchImpl || globalThis.fetch;
 		if (typeof fetch_ !== 'function') throw new Error('no fetch implementation available');
@@ -74,14 +81,27 @@ module.exports.id = register({
 		const out = [];
 		for (const w of works) {
 			const from = keyByDoi.get(normDoi(w.doi));
-			if (!from) continue;
+			if (!from || (only && !only.has(from))) continue;
 			for (const ref of w.referenced_works || []) {
 				const to = index.lookupExternal('openalex', ref);
-				if (to && to !== from) {
-					out.push(edge(from, to, 'openalex', 0.98, { openalexId: ref }));
+				if (to) {
+					if (to !== from) out.push(edge(from, to, 'openalex', 0.98, { openalexId: ref }));
+				}
+				else if (includeExternal) {
+					// A cited work the collection does not hold, known only by its
+					// OpenAlex ID until a lookup names it -- which brings its DOI,
+					// and with that the node the same work has when a PDF links it.
+					out.push(edge(from, externalKey('openalex', shortId(ref)), 'openalex', 0.98,
+						{ openalexId: ref, external: true }));
 				}
 			}
 		}
 		return out;
 	},
 });
+
+/** 'https://openalex.org/W123' | 'W123' -> 'W123' */
+function shortId(id) {
+	const s = String(id || '');
+	return s.slice(s.lastIndexOf('/') + 1);
+}

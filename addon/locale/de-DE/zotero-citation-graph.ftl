@@ -31,7 +31,7 @@ zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nich
 zotero-citation-graph-scope-min-cites = Zitiert von ≥
 zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
-zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
+zotero-citation-graph-scope-enrich-hint = Zitationszahlen, Titel und Autoren externer Arbeiten nachschlagen, dazu die Literatur von Einträgen, aus denen keine gelesen werden konnte (nutzt die OpenAlex-API)
 
 zotero-citation-graph-scope-hide-external-names = Externe Namen ausblenden
 zotero-citation-graph-scope-hide-external-names-hint = Externe Arbeiten im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
@@ -268,6 +268,7 @@ zotero-citation-graph-build-scanning-pdfs-count = { $count } PDFs werden nach DO
 zotero-citation-graph-build-scanning-pdfs-progress = PDFs werden nach DOI-Links durchsucht… { $done }/{ $total }
 zotero-citation-graph-lookup-works = { $count -> [one] { $count } Arbeit wird *[other] { $count } Arbeiten werden } nachgeschlagen…
 zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $done }/{ $total } ({ $provider })
+zotero-citation-graph-lookup-references = OpenAlex wird gefragt, was { $count -> [one] { $count } Eintrag zitiert *[other] { $count } Einträge zitieren }…
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
 
 

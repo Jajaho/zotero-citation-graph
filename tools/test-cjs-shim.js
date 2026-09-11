@@ -410,6 +410,50 @@ check('openalex enricher builds one filtered call and maps the response back', (
 	});
 });
 
+check('openalex references resolve to held papers and, with outside refs on, to ghosts', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'A paper nothing could be read from', doi: '10.1000/a' },
+		{ key: 'BBBBBBBB', itemType: 'journalArticle', title: 'A paper read offline', doi: '10.1000/b' },
+	];
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async () => [],
+		getAttachmentText: async () => null,
+		getPdfLinkUris: async () => [],
+	};
+	const seen = [];
+	const fetchImpl = async (url) => {
+		seen.push(url);
+		return fakeOpenAlex([
+			{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/A',
+				referenced_works: ['https://openalex.org/W2', 'https://openalex.org/W9'] },
+			// B's references are not asked for -- the files already answered.
+			{ id: 'https://openalex.org/W2', doi: 'https://doi.org/10.1000/b',
+				referenced_works: ['https://openalex.org/W8'] },
+		])(url);
+	};
+	const run = includeExternal => cg.build(adapter, {
+		enable: ['openalex'],
+		includeExternal,
+		providers: { openalex: { fetchImpl, citing: ['AAAAAAAA'] } },
+	});
+	const pairs = r => r.edges.map(e => e.from + '>' + e.to).sort().join(' ');
+
+	const on = await run(true);
+	if (on.meta.errors.length) throw new Error(JSON.stringify(on.meta.errors));
+	if (pairs(on) !== 'AAAAAAAA>BBBBBBBB AAAAAAAA>openalex:W9') {
+		throw new Error('with outside refs: ' + pairs(on));
+	}
+	if (on.externalNodes.length !== 1 || on.externalNodes[0].ns !== 'openalex') {
+		throw new Error('ghosts: ' + JSON.stringify(on.externalNodes));
+	}
+	const off = await run(false);
+	if (pairs(off) !== 'AAAAAAAA>BBBBBBBB') throw new Error('without outside refs: ' + pairs(off));
+	// The reference to B resolves only because B was asked about as well.
+	if (!/10\.1000%2Fb/.test(seen[0])) throw new Error('the held papers were not all asked about: ' + seen[0]);
+});
+
 check('the API key travels in a header, never in the URL', () => {
 	const cg = require_('./citation-graph/index.js');
 	let seenUrl = null;
@@ -1882,6 +1926,49 @@ check('a paper filed somewhere else is not folded into this graph', async () => 
 	const took = await adoptAdded(entry, 'doi:10.5555/outside', fakeZoteroItem(), null);
 	if (took) throw new Error('the graph took in a paper it does not hold');
 	if (sent.length) throw new Error('it pushed anyway');
+});
+
+check('only papers the files said nothing about are sent to OpenAlex for references', () => {
+	const { reflessKeys } = require_('./lib/graphTab.js');
+	const items = [
+		{ key: 'AAAAAAAA', doi: '10.1000/a' },  // its PDF linked a reference
+		{ key: 'CCCCCCCC', doi: '10.1000/c' },  // nothing read from it
+		{ key: 'DDDDDDDD', doi: null },         // nothing to ask OpenAlex with
+	];
+	const built = {
+		state: { items },
+		offlineEdges: [{ from: 'AAAAAAAA', to: 'doi:10.5555/x', confidence: 0.95, via: ['pdf-links'] }],
+	};
+	if (reflessKeys(built).join() !== 'CCCCCCCC') throw new Error('asked about ' + reflessKeys(built).join());
+});
+
+check('an OpenAlex reference, once named, joins the node its DOI already has', () => {
+	const { rekeyByDoi } = require_('./lib/graphTab.js');
+	const { collectExternalNodes } = require_('./citation-graph/index.js');
+	const edge = (from, to, via) => ({ from, to, confidence: 0.95, via: [via], evidence: [] });
+	const state = {
+		inCollection: new Set(['AAAAAAAA', 'BBBBBBBB', 'CCCCCCCC']),
+		edges: [
+			edge('AAAAAAAA', 'doi:10.5555/x', 'pdf-links'),
+			edge('CCCCCCCC', 'openalex:W9', 'openalex'),   // the same work as A's
+			edge('CCCCCCCC', 'openalex:W2', 'openalex'),   // a paper the graph holds
+			edge('CCCCCCCC', 'openalex:W7', 'openalex'),   // never named: stays as it is
+		],
+		metadata: {
+			'openalex:W9': { key: 'openalex:W9', title: 'Shared work', doi: '10.5555/X', citedByGlobal: 5 },
+			'openalex:W2': { key: 'openalex:W2', title: 'Held paper', doi: '10.1000/b' },
+		},
+	};
+	rekeyByDoi(state, new Map([['doi:10.1000/b', 'BBBBBBBB']]));
+	const pairs = state.edges.map(e => e.from + '>' + e.to).sort().join(' ');
+	const want = 'AAAAAAAA>doi:10.5555/x CCCCCCCC>BBBBBBBB CCCCCCCC>doi:10.5555/x CCCCCCCC>openalex:W7';
+	if (pairs !== want) throw new Error('edges: ' + pairs);
+	const x = collectExternalNodes(state.edges, k => state.inCollection.has(k))
+		.find(n => n.key === 'doi:10.5555/x');
+	if (!x || x.citedBy !== 2) throw new Error('one work cited twice came out as ' + JSON.stringify(x));
+	if (!state.metadata['doi:10.5555/x'] || state.metadata['doi:10.5555/x'].title !== 'Shared work') {
+		throw new Error('the name did not move with the node');
+	}
 });
 
 check('naming a graph changes no node and no edge', () => {
