@@ -11,6 +11,55 @@ touching a real library.
 
 Run Zotero against that profile with `zotero.exe -datadir "C:\Users\you\Zotero citation_graph_testing"`.
 
+## An edge is not a reference
+
+This trips people up, so it is worth stating before anything else. **An edge is a
+citation from one work in the collection to another work in the collection.**
+
+These 12 papers cite **931 works** between them. Only **29** of those references
+point at a work the collection also holds; those 29 are the edges. Every other
+reference lands on a ghost node outside the collection, and the key says nothing
+about it — that is what `docs/external-references.md` is about, not this.
+
+So:
+
+| work | references | edges | ghosts |
+|---|---|---|---|
+| `barry2020` | 454 | 6 | 448 |
+| `rondin2014` | 148 | 3 | 145 |
+| `barry2016` | 59 | 1 | 58 |
+| `sarkar2023` | 54 | 6 | 48 |
+| `sturner2019` | 35 | 5 | 30 |
+
+Barry 2020's 6 and Stürner's 5 are **complete counts of their in-collection
+citations**, not a sample of their bibliographies. A 12-work collection cannot
+have more than 132 possible directed pairs, and chronology rules out most of
+those before anything is read.
+
+This also means recall figures depend on getting those 29 exactly right: recall
+is `TP / 29`, so a key that missed true edges would silently inflate every score
+in the table. Hence the completeness check below.
+
+## Completeness, checked against Crossref
+
+The edge list was verified on 2026-09-11 against **Crossref's deposited
+reference lists** — independent of the hand reading, and deliberately not
+OpenAlex, which is one of the strategies being graded.
+
+For all ten source works that have a DOI, the in-collection targets Crossref
+reports match this key exactly, work for work:
+
+```
+sarkar2023 6 · sturner2019 5 · zhang2022 4 · barry2020 6 · rondin2014 3
+barry2016 1 · dolde2011 1 · hahn1950 0 · dreau2011 2 · gruber1997 0   = 28
++ odmrManual 1 (no DOI; hand-read from its PDF)                       = 29
+```
+
+No edge missing, none invented. The `refCount` values in the key are Crossref's
+exact figures, replacing the bracket-number estimates the first version carried
+(which had `barry2016` at 75 against an actual 59, and `hahn1950` at 0 against
+an actual 19).
+
 ## What "ground truth" means here, and what it is not
 
 Every edge in the JSON was read out of the **citing PDF's own reference list**.
