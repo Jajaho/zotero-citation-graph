@@ -19,7 +19,10 @@
  * work being avoided.
  */
 
-const VERSION = 2;
+// 3: compressed object streams are inflated and read. An entry from before
+// that is missing every link a PDF 1.5+ writer packed away, and its size:mtime
+// stamp would never say so -- the file did not change, the scan did.
+const VERSION = 3;
 
 class PdfLinkCache {
 	constructor(dir) {

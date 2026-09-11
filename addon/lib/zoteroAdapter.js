@@ -1,4 +1,4 @@
-/* global Zotero, IOUtils, PathUtils */
+/* global Zotero, IOUtils, PathUtils, Services */
 
 'use strict';
 
@@ -122,10 +122,8 @@ class ZoteroAdapter {
 	 *
 	 * pdf.js is unreachable from chrome JS (it only runs inside the reader's
 	 * document worker) and Zotero has no 'link' annotation type, so the file is
-	 * read directly. Uncompressed object streams carry 87% of the linked DOIs in
-	 * the sample library (113 of 127 PDFs need no inflation at all), so the MVP
-	 * inflates nothing; resource://zotero/pako.js is there if the remaining 13%
-	 * turn out to matter.
+	 * read directly -- compressed object streams included, see
+	 * scanUriAnnotations().
 	 */
 	async getPdfLinkUris(attKey) {
 		let entry = this._attByKey.get(attKey);
@@ -152,7 +150,7 @@ class ZoteroAdapter {
 
 		let uris;
 		try {
-			uris = scanUriAnnotations(await IOUtils.read(file));
+			uris = scanUriAnnotations(await IOUtils.read(file), inflater());
 		}
 		catch (e) {
 			return [];
@@ -244,20 +242,103 @@ function ftCachePath(att) {
 }
 
 const URI_RE = /\/URI\s*\(((?:[^()\\]|\\[\s\S])*)\)/g;
+// "stream" opening a stream's body, and not the tail of an "endstream".
+const STREAM_RE = /(?<!end)stream\r?\n/g;
+// A direct /Length -- not "/Length 12 0 R", which names another object.
+const LENGTH_RE = /\/Length\s+(\d+)(?![\d\s]*R)/;
+// How far back from "stream" to look for the dictionary that owns it. An
+// object stream's is a handful of keys, so this is generous.
+const DICT_LOOKBACK = 1024;
 
 /**
+ * Every /URI string in a PDF, the ones in compressed object streams included.
+ *
+ * Since PDF 1.5 a writer may pack objects -- link annotations among them --
+ * into /Type /ObjStm streams, which are FlateDecoded, and most current writers
+ * do. A scan of the raw bytes sees none of those links, so a paper whose
+ * bibliography is linked that way came out of pdf-links with no edge at all:
+ * nothing in the collection cited, and not one outside reference either. So
+ * object streams are inflated and read as well. Only object streams: they are
+ * the one place a compressed annotation can live, and inflating every image
+ * and font on the way would make a 40 MB file cost seconds to find nothing.
+ *
+ * `inflate` is injected -- bytes in, bytes out, throwing on bad data -- so the
+ * same scan runs against zlib under Node. Without one only the raw bytes are
+ * read, which is what the scan always did.
+ *
  * @param {Uint8Array} bytes
+ * @param {?function(Uint8Array): Uint8Array} [inflate]
  * @returns {string[]}
  */
-function scanUriAnnotations(bytes) {
+function scanUriAnnotations(bytes, inflate = null) {
 	let s = bytesToBinaryString(bytes);
 	let uris = new Set();
+	collectUris(s, uris);
+	if (!inflate) return [...uris];
+
+	STREAM_RE.lastIndex = 0;
+	let m;
+	while ((m = STREAM_RE.exec(s))) {
+		let start = m.index + m[0].length;
+		let end = s.indexOf('endstream', start);
+		if (end < 0) break;
+		// Whatever the verdict below, the body is binary and not worth a
+		// regex pass of its own.
+		STREAM_RE.lastIndex = end;
+		let head = s.slice(Math.max(0, m.index - DICT_LOOKBACK), m.index);
+		let at = head.lastIndexOf('obj');
+		if (at < 0) continue;
+		head = head.slice(at);
+		if (!head.includes('/ObjStm') || !head.includes('/FlateDecode')) continue;
+		// The data has to be cut exactly. pako, unlike zlib, reads anything
+		// after the compressed stream as the start of a second one and throws
+		// on it -- the end-of-line before "endstream" included. So: the direct
+		// /Length where there is one, and "endstream" less that end-of-line
+		// where there is not.
+		let len = LENGTH_RE.exec(head);
+		let stop = len && start + Number(len[1]) <= end ? start + Number(len[1]) : end;
+		if (stop === end) {
+			while (stop > start && (s[stop - 1] === '\n' || s[stop - 1] === '\r')) stop--;
+		}
+		try {
+			collectUris(bytesToBinaryString(inflate(bytes.subarray(start, stop))), uris);
+		}
+		catch (e) {
+			// A stream that will not inflate costs its own links and no more.
+		}
+	}
+	return [...uris];
+}
+
+function collectUris(s, uris) {
 	URI_RE.lastIndex = 0;
 	let m;
 	while ((m = URI_RE.exec(s))) {
 		uris.add(m[1].replace(/\\([()\\])/g, '$1'));
 	}
-	return [...uris];
+}
+
+/**
+ * pako's inflate, from the copy Zotero ships for itself -- core's schema.js and
+ * sdt.js require the same file. Loaded on first use and remembered as `false`
+ * if it cannot be: a Zotero that has moved it costs the compressed links, not
+ * the scan.
+ */
+let pako = null;
+function inflater() {
+	if (pako === null) {
+		try {
+			// pako is UMD, and handed `exports` and `module` it fills in the former.
+			let scope = { exports: {}, module: {} };
+			Services.scriptloader.loadSubScript('resource://zotero/pako.js', scope);
+			pako = typeof scope.exports.inflate === 'function' ? scope.exports : false;
+		}
+		catch (e) {
+			Zotero.logError(e);
+			pako = false;
+		}
+	}
+	return pako ? b => pako.inflate(b) : null;
 }
 
 /**

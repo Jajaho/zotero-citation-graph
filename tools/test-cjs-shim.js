@@ -2295,6 +2295,61 @@ check('a tab whose collection is gone drops without costing the tabs after it', 
 	if (after !== 1) throw new Error('the tab after the dropped ones never restored');
 });
 
+check('scanUriAnnotations reads links packed into compressed object streams', () => {
+	const zlib = require('zlib');
+	const { scanUriAnnotations } = require_('./lib/zoteroAdapter.js');
+	const latin1 = str => Buffer.from(str, 'latin1');
+	// A PDF 1.5+ writer's layout: the link annotations live only inside
+	// FlateDecoded object streams, so the raw bytes never spell out a /URI.
+	const packed = zlib.deflateSync(latin1(
+		'<</Type/Annot/Subtype/Link/A<</URI(https://doi.org/10.1038/nature12373)>>>>'));
+	const linked = zlib.deflateSync(latin1(
+		'<</Type/Annot/Subtype/Link/A<</URI(https://doi.org/10.1103/PhysRevX.5.041037)>>>>'));
+	// A compressed stream that is not an object stream: never inflated, even
+	// when it happens to spell out a /URI.
+	const image = zlib.deflateSync(latin1('/URI(https://example.org/not-an-annotation)'));
+	const bytes = new Uint8Array(Buffer.concat([
+		// A direct /Length, and the CRLF a writer puts before "endstream".
+		latin1('%PDF-1.7\n5 0 obj\n<</Type /ObjStm /N 1 /First 4 /Length ' + packed.length
+			+ ' /Filter /FlateDecode>>\nstream\r\n'),
+		packed,
+		latin1('\r\nendstream\nendobj\n6 0 obj<</Subtype/Image/Length ' + image.length
+			+ '/Filter/FlateDecode>>stream\n'),
+		image,
+		// An object stream that will not inflate, which must cost its own
+		// links and not the scan.
+		latin1('\nendstream\nendobj\n7 0 obj<</Type/ObjStm/Filter/FlateDecode>>stream\n'
+			+ 'not zlib at all\nendstream\nendobj\n'),
+		// An indirect /Length, which says nothing here: the data ends at
+		// "endstream", less its end-of-line.
+		latin1('8 0 obj<</Type/ObjStm/N 1/First 4/Length 9 0 R/Filter/FlateDecode>>stream\n'),
+		linked,
+		latin1('\nendstream\nendobj\n'),
+	]));
+	// As strict as pako, which is what inflates these in Zotero: a byte past
+	// the compressed data is a second stream to it, and a broken one. zlib
+	// forgives that, so on its own it would pass a scan that cut the span wrong.
+	const exact = [packed, linked];
+	const tried = [];
+	const inflate = (b) => {
+		tried.push(b.length);
+		if (!exact.some(k => Buffer.compare(Buffer.from(b), k) === 0)) {
+			throw new Error('not exactly one compressed stream');
+		}
+		return new Uint8Array(zlib.inflateSync(b));
+	};
+	const got = scanUriAnnotations(bytes, inflate).sort();
+	const want = [
+		'https://doi.org/10.1038/nature12373',
+		'https://doi.org/10.1103/PhysRevX.5.041037',
+	];
+	if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error('got ' + JSON.stringify(got));
+	if (tried.length !== 3) throw new Error('inflated ' + tried.length + ' streams, expected the 3 object streams');
+	// Without an inflater the scan is what it always was -- which found nothing
+	// here, and left a paper like this one with no edge of any kind.
+	if (scanUriAnnotations(bytes).length) throw new Error('the raw scan should not see a packed link');
+});
+
 check('ZoteroAdapter implements the whole adapter contract', () => {
 	const { ZoteroAdapter } = require_('./lib/zoteroAdapter.js');
 	// The four methods every strategy is allowed to call. If one is renamed here
