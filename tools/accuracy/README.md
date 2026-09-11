@@ -99,10 +99,10 @@ extraction damaged it:
 
 So the realistic title-match ceiling is 19 of 27, not the 20 that carry a title.
 
-`dolde2011 → gruber1997` is the **one edge no current channel reaches**: its
+`dolde2011 → gruber1997` is the **one edge no PDF-derived channel reaches**: its
 printed title is mangled, its entry prints no DOI, and Dolde 2011 has zero link
-annotations. It is the 1 of 27 that the full union still misses, and the
-standing argument for fuzzy title matching.
+annotations. Every offline strategy misses it; `openalex` finds it, which is the
+sharpest single illustration of why the network layer is worth having.
 
 **One edge is cited twice under two identities.** `sarkar2023` cites
 `barry2020` at ref [21] as `arXiv:1903.08176` and again at ref [44] as
@@ -161,28 +161,59 @@ graded, since the key says nothing about them.
 
 ## Where the strategies stand
 
-Measured 2026-09-11, offline strategies only:
+Measured 2026-09-11, all five strategies (`openalex` anonymous, no API key):
 
 ```
-strategy        pred   TP   FP   FN   prec  recall     F1   dup  traps
-pdf-links         18   18    0    9   100%     67%   0.80     0  -
-text-doi           7    7    0   20   100%     26%   0.41     0  -
-title-match       19   19    0    8   100%     70%   0.83     0  -
-ref-strings       13   13    0   14   100%     48%   0.65     0  -
-ALL (union)       26   26    0    1   100%     96%   0.98     0  -
+strategy        pred   TP   FP   FN   prec  recall  rec/pdf     F1  dup  traps
+pdf-links         18   18    0   11   100%     62%      67%   0.77    0  -
+text-doi           7    7    0   22   100%     24%      26%   0.39    0  -
+title-match       19   19    0   10   100%     66%      70%   0.79    0  -
+ref-strings       13   13    0   16   100%     45%      48%   0.62    0  -
+openalex          28   28    0    1   100%     97%      96%   0.98    0  -
+ALL (union)       29   29    0    0   100%    100%     100%   1.00    0  -
 ```
 
-**Precision is 100% across the board.** No strategy hit any of the five traps,
-none emitted an edge touching the `adam2017` negative control, and none split
-the duplicated work into a self-loop. The substring collisions the set was built
-to catch — "spin echoes" inside another reference's title, the two wrong
-"Zhang"s — are all correctly declined.
+`recall` is against all 29 edges; `rec/pdf` against the 27 a PDF-reading
+strategy can actually reach.
 
-**Recall is channel-bound, and two strategies are already at their ceiling.**
-`pdf-links` finds 18 of the 18 link-annotated edges; `title-match` finds 19 of
-the 19 exact-matchable titles. Neither can improve without a new channel or
-fuzzy matching. The union reaches 26 of 27 — everything except the one edge no
-channel carries.
+**Precision is 100% for every strategy.** No trap was hit, no edge touching the
+`adam2017` negative control was emitted, and the duplicated work was never split
+into a self-loop. The substring collisions the set was built to catch — "spin
+echoes" inside another reference's title, the two wrong "Zhang"s — are all
+correctly declined.
+
+**Offline recall is channel-bound, and two strategies are already at their
+ceiling.** `pdf-links` finds 18 of the 18 link-annotated edges; `title-match`
+finds 19 of the 19 exact-matchable titles. Neither improves without a new
+channel or fuzzy matching.
+
+**`openalex` is the strongest single strategy: 97% recall at perfect
+precision.** It reaches both populations the PDFs cannot — the two edges whose
+citing work is held without a PDF, and `dolde2011 → gruber1997`, whose printed
+title is too mangled for exact matching. Its one miss is `odmrManual →
+dolde2011`: the lab manual has no DOI, so OpenAlex cannot identify it as a
+source at all.
+
+**The two are complementary, and the union is complete.** That single OpenAlex
+miss is found by three offline strategies, so together they score 29 of 29 at
+100% precision. This is the measured version of the claim in
+`edges/openalex.js`'s own docstring — neither layer subsumes the other, and the
+one that fails is the one whose identifier is missing.
+
+### OpenAlex corrected the answer key
+
+On its first run `openalex` produced two edges the key called false positives,
+both from `dreau2011`. Both turned out to be **real**: Crossref's deposited
+reference list for `10.1103/PhysRevB.84.195204` contains 38 references including
+Dolde 2011 and Gruber 1997. The key had missed them because it was built by
+reading citing PDFs, and `dreau2011` is held without one — a blind spot in the
+method, not a wrong reading.
+
+They are now in the key, marked `citingPdfHeld: false` and
+`verifiedVia: crossref-deposited-references`, and the scorer reports recall
+against both populations so no offline strategy is marked down for a citation it
+had no way to read. Gruber 1997's own deposited list (29 references) cites
+nothing in the set, so those two are the complete correction.
 
 **`text-doi` is the one strategy below its ceiling: 7 found of 11 printed.** The
 four misses are `sturner2019 → barry2016`, `→ dolde2011`, `→ gruber1997`, and

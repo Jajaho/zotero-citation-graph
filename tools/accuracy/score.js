@@ -73,6 +73,13 @@ function main() {
 	const workById = new Map(gt.works.map((w) => [w.id, w]));
 
 	const truth = new Set(gt.edges.map((e) => e.from + ' -> ' + e.to));
+	// Edges whose citing work is held WITHOUT a PDF are real, but no PDF-reading
+	// strategy can reach them. Recall is reported against both populations so an
+	// offline strategy is not marked down for a citation it had no way to read,
+	// and a metadata-backed one still gets credit for finding it.
+	const reachable = new Set(
+		gt.edges.filter((e) => e.citingPdfHeld !== false).map((e) => e.from + ' -> ' + e.to)
+	);
 	const traps = gt.expectedNonEdges.filter((t) => t.from !== '*' && t.to !== '*');
 	const controlWorks = new Set(
 		gt.expectedNonEdges.filter((t) => t.from === '*' || t.to === '*')
@@ -130,6 +137,8 @@ function main() {
 		const fn = [...truth].filter((k) => !seen.has(k));
 		const precision = seen.size ? tp.length / seen.size : 0;
 		const recall = truth.size ? tp.length / truth.size : 0;
+		const tpReach = tp.filter((k) => reachable.has(k));
+		const recallReachable = reachable.size ? tpReach.length / reachable.size : 0;
 		const trapsHit = traps.filter((t) => seen.has(t.from + ' -> ' + t.to));
 		const controlHit = [...seen].filter((k) => {
 			const [a, b] = k.split(' -> ');
@@ -137,7 +146,7 @@ function main() {
 		});
 		return {
 			predicted: seen.size, tp: tp.length, fp: fp.length, fn: fn.length,
-			precision, recall, f1: f1(precision, recall),
+			precision, recall, recallReachable, f1: f1(precision, recall),
 			ghostEdges: ghost, duplicateSelfLoops: selfLoop,
 			trapsHit: trapsHit.map((t) => t.from + ' -> ' + t.to + '  [' + t.trap + ']'),
 			controlHit,
@@ -147,17 +156,20 @@ function main() {
 
 	function report(results, union) {
 		console.log('Accuracy against', path.relative(process.cwd(), GT_PATH));
-		console.log(gt.works.length, 'works ·', gt.edges.length, 'true edges · scored at work level\n');
+		console.log(gt.works.length, 'works ·', gt.edges.length, 'true edges (' + reachable.size +
+			' reachable from a held PDF) · scored at work level');
+		console.log('recall = against all ' + gt.edges.length + '; rec/pdf = against the ' + reachable.size +
+			' a PDF-reading strategy can actually reach\n');
 
 		console.log(pad('strategy', 14), rpad('pred', 5), rpad('TP', 4), rpad('FP', 4), rpad('FN', 4),
-			rpad('prec', 6), rpad('recall', 7), rpad('F1', 6), rpad('ghost', 6), rpad('dup', 4), ' traps');
+			rpad('prec', 6), rpad('recall', 7), rpad('rec/pdf', 8), rpad('F1', 6), rpad('dup', 4), ' traps');
 		const rows = [...results, union].filter(Boolean);
 		for (const r of rows) {
 			if (r.error) { console.log(pad(r.id, 14), ' ERROR:', r.error); continue; }
 			console.log(
 				pad(r.id, 14), rpad(r.predicted, 5), rpad(r.tp, 4), rpad(r.fp, 4), rpad(r.fn, 4),
-				rpad(pct(r.precision), 6), rpad(pct(r.recall), 7), rpad(r.f1.toFixed(2), 6),
-				rpad(r.ghostEdges, 6), rpad(r.duplicateSelfLoops, 4),
+				rpad(pct(r.precision), 6), rpad(pct(r.recall), 7), rpad(pct(r.recallReachable), 8), rpad(r.f1.toFixed(2), 6),
+				rpad(r.duplicateSelfLoops, 4),
 				' ' + (r.trapsHit.length ? r.trapsHit.length + ' HIT' : '-')
 			);
 		}
@@ -169,7 +181,7 @@ function main() {
 		console.log('  all three channels     ', gt.summary.ceilingAllThreeChannels);
 
 		for (const r of rows) {
-			if (r.error || (!r.trapsHit.length && !r.controlHit.length && !r.fp.length)) continue;
+			if (r.error || (!r.trapsHit.length && !r.controlHit.length && !r.falsePositives.length)) continue;
 			console.log('\n' + r.id + ':');
 			for (const t of r.trapsHit) console.log('   TRAP  ', t);
 			for (const c of r.controlHit) console.log('   CONTROL violated  ', c);

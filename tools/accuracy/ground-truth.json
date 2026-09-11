@@ -53,7 +53,10 @@
 
     { "from": "dolde2011",   "to": "gruber1997",  "doi": false, "pdfLink": false, "title": true,  "authorYear": true, "note": "TITLE SPACING MANGLED by extraction: 'scanningconfocal optical microscopyand magnetic resonance on single defect centers'. Normalised exact title matching FAILS. Present identically in BOTH duplicate copies (XMYH7YU4 and 4IN4N7SF)." },
 
-    { "from": "odmrManual",  "to": "dolde2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true }
+    { "from": "odmrManual",  "to": "dolde2011",   "doi": true, "pdfLink": true,   "title": true,  "authorYear": true },
+
+    { "from": "dreau2011",   "to": "dolde2011",   "doi": false, "pdfLink": false, "title": false, "authorYear": false, "citingPdfHeld": false, "verifiedVia": "crossref-deposited-references", "note": "REAL citation, but the collection holds no PDF for dreau2011, so no PDF-reading strategy can reach it. Found by edges/openalex.js and confirmed independently against Crossref's deposited reference list for 10.1103/PhysRevB.84.195204 (38 references, this DOI among them). Recorded so the key does not report a true edge as a false positive." },
+    { "from": "dreau2011",   "to": "gruber1997",  "doi": false, "pdfLink": false, "title": false, "authorYear": false, "citingPdfHeld": false, "verifiedVia": "crossref-deposited-references", "note": "Same: real, PDF-unreachable, confirmed via Crossref. gruber1997's own deposited reference list (29 entries) cites nothing in this set, so the two no-PDF works contribute exactly these two edges and no more." }
   ],
 
   "expectedNonEdges": [
@@ -69,7 +72,9 @@
   "summary": {
     "works": 12,
     "heldItems": 13,
-    "edges": 27,
+    "edges": 29,
+    "edgesPdfReachable": 27,
+    "edgesPdfReachableNote": "27 of the 29 edges have a citing work whose PDF the collection holds; those are the only ones a PDF-reading strategy can possibly find. The other 2 are from dreau2011, which is held without a PDF, and were confirmed against Crossref's deposited reference lists after edges/openalex.js proposed them. Score offline strategies against the 27 and anything with a metadata source against all 29 - the scorer reports both.",
     "edgesItemLevel": 33,
     "edgesItemLevelNote": "27 edges between WORKS. dolde2011 is held as two items, so a scorer that works at item level and expands the duplicate on both sides sees 33. Score at work level; the 6-edge gap is the duplicate-merging penalty.",
     "sourcesWithPdf": 11,
