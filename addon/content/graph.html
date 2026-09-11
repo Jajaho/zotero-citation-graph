@@ -155,7 +155,12 @@
 					</button>
 					<div class="section-body" id="sec-items-body">
 						<div class="group">
-							<label data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
+							<!-- Hidden outright for a graph built from a selection: a
+							     pick of items has no subtree, so there is nothing this
+							     could widen to. It carries its own [hidden] rule
+							     because the author display:flex on .group > label beats
+							     the UA stylesheet's -- see graph.css. -->
+							<label id="recursive-label" data-zg-title="scope-subcollections-hint" title="Include items from every subcollection">
 								<input id="recursive" type="checkbox"/>
 								<span data-zg-str="scope-subcollections">Subcollections</span>
 							</label>

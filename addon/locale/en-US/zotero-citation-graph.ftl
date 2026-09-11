@@ -16,7 +16,11 @@
 # against this file's message list.
 
 
-## The collection menu.
+## The context menus.
+#
+# One message, two entries: the collection tree's, over a whole collection, and
+# the item tree's, over the papers that are selected. They read as one command,
+# so they say the same thing.
 #
 # This one is resolved by Zotero's own Fluent, not by ftl.js: MenuManager reads
 # it from the main window's bundle through the l10nID on the menu entry.
@@ -53,7 +57,7 @@ zotero-citation-graph-section-strategies = Referencing Strategies
 zotero-citation-graph-scope-subcollections = Subcollections
 zotero-citation-graph-scope-subcollections-hint = Include items from every subcollection
 zotero-citation-graph-scope-external = Outside refs
-zotero-citation-graph-scope-external-hint = Show cited works that are not in the collection
+zotero-citation-graph-scope-external-hint = Show cited works that are not in this graph
 zotero-citation-graph-scope-min-cites = Cited by ≥
 zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
 zotero-citation-graph-scope-enrich = Query node metadata
@@ -121,10 +125,10 @@ zotero-citation-graph-min-confidence-hint = Hide edges less certain than this. E
 zotero-citation-graph-hide-isolated-hint = Leave out papers that have no edge left on the graph as it is filtered now.
 zotero-citation-graph-size-by-hint = What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on "Query node metadata").
 zotero-citation-graph-color-by-hint = What a node's colour shows. The key underneath lists the colours on screen.
-zotero-citation-graph-rebuild-hint = Build the graph again from the collection as it is now.
+zotero-citation-graph-rebuild-hint = Build the graph again from these items as they are now.
 zotero-citation-graph-strategy-pdf-links-hint = DOI hyperlinks inside your PDFs. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-text-doi-hint = DOIs printed in the reference lists of your papers' indexed text. Untick to hide the edges only this strategy found.
-zotero-citation-graph-strategy-title-match-hint = Titles of papers in this collection found in another paper's reference section. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-title-match-hint = Titles of papers in this graph found in another paper's reference section. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-hint = The works OpenAlex lists as referenced by each paper. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-run = OpenAlex references
 zotero-citation-graph-strategy-openalex-run-hint = Ask OpenAlex which works each paper with a DOI cites, which finds references in PDFs that neither link nor print DOIs (uses the OpenAlex API; answers are cached for 30 days). The outside works it finds are named only with "Query node metadata" on.
@@ -169,6 +173,12 @@ zotero-citation-graph-stats-named = ({ $count } named)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } edge *[other] { $count } edges }
 zotero-citation-graph-stats-building = Building…
 
+# On the stats line of a graph built from a selection, and only when the two
+# numbers differ: how many of the rows the user picked became papers. The rest
+# were notes, attachments of a paper already here, or records with no title,
+# and itemRecord() declines them silently.
+zotero-citation-graph-stats-of-picked = { $shown } of { $picked } selected
+
 
 ## The legend.
 
@@ -192,7 +202,7 @@ zotero-citation-graph-color-unknown-type = (Unknown type)
 
 ## Node tooltips.
 
-zotero-citation-graph-tooltip-not-in-collection = Not in collection — { $title }
+zotero-citation-graph-tooltip-not-in-collection = Not in this graph — { $title }
 zotero-citation-graph-tooltip-cited-here = cited by { $count } here
 zotero-citation-graph-tooltip-citations-total = { $count } citations total
 zotero-citation-graph-tooltip-pinned = pinned
@@ -311,10 +321,14 @@ zotero-citation-graph-action-adding = Adding…
 zotero-citation-graph-action-close = Close
 
 
-## The card an empty collection gets in place of a graph.
+## The card a graph with no items gets in place of one.
+#
+# The subcollection lines belong to a collection graph alone: a selection has no
+# subtree to widen to, so it gets the body below instead and no offer.
 
 zotero-citation-graph-empty-title = Nothing to graph
 zotero-citation-graph-empty-body = This collection has no regular items — only attachments, notes, or nothing at all.
+zotero-citation-graph-empty-body-selection = { $count -> [one] The selected row is not a paper *[other] None of the { $count } selected rows is a paper } — only attachments, notes, or items with no title.
 zotero-citation-graph-empty-sub = Not included: { $count -> [one] one subcollection *[other] { $count } subcollections }.
 zotero-citation-graph-empty-include-sub = Include subcollections
 
@@ -323,6 +337,7 @@ zotero-citation-graph-empty-include-sub = Include subcollections
 
 zotero-citation-graph-build-loading-collection = Loading collection…
 zotero-citation-graph-build-loading-collection-recursive = Loading collection and subcollections…
+zotero-citation-graph-build-loading-selection = Loading the selected items…
 zotero-citation-graph-build-reading-text = Reading indexed text…
 zotero-citation-graph-build-reading-text-progress = Reading indexed text… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = Scanning PDFs…
@@ -352,10 +367,17 @@ zotero-citation-graph-add-rebuilding = Added "{ $title }" — rebuilding…
 
 
 ## The tab.
+#
+# Three forms, and the collection comes first in every one of them: the tab
+# strip truncates from the right, so the half that distinguishes one graph tab
+# from another has to be the half that survives. A selection carries its count,
+# because two selection tabs are otherwise told apart by nothing at all.
 
 zotero-citation-graph-tab-title = { $collection } — Citation Graph
+zotero-citation-graph-tab-title-selection = { $count -> [one] { $count } item *[other] { $count } items } — Citation Graph
+zotero-citation-graph-tab-title-selection-in = { $collection } · { $count -> [one] { $count } item *[other] { $count } items } — Citation Graph
 
-## The gap list: works the collection cites and does not hold.
+## The gap list: works the graph's papers cite and the library does not hold.
 
 zotero-citation-graph-menu-gaps = What is missing
 zotero-citation-graph-menu-gaps-hide = Hide what is missing
@@ -364,7 +386,7 @@ zotero-citation-graph-gaps-title = Missing works
 zotero-citation-graph-gaps-close = Close
 zotero-citation-graph-gaps-caption = The number is how many of your items cite the work.
 zotero-citation-graph-gaps-empty = Nothing is cited by two of your papers and missing.
-zotero-citation-graph-gaps-building = Still reading the collection…
+zotero-citation-graph-gaps-building = Still reading the items…
 zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light it, double-click to isolate, Ctrl to add
 zotero-citation-graph-gaps-off-screen = That work is not on the graph — a filter is hiding it.
 zotero-citation-graph-gaps-add = Add to Zotero

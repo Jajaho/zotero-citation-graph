@@ -77,7 +77,7 @@ const MAX_EXTERNAL_NODES = 4000;
 // the one strategy that is switched on rather than filtered off.
 const DEFAULT_OPTIONS = { recursive: false, includeExternal: false, enrich: false, openalexRefs: false };
 
-// tabID -> { win, tabID, browser, split, pane, itemPane, collection,
+// tabID -> { win, tabID, browser, split, pane, itemPane, scope,
 //             generation, options, built, building, addTarget, selection }
 // `split` is the box holding the graph and, once opened, the tab's side
 // panel; `pane` is splitPane.js's record for that panel and `itemPane` is
@@ -103,19 +103,66 @@ let claimed_ = new WeakSet();
 let pending_ = new Map();
 
 /**
+ * What a graph is OF. Two kinds, and everything downstream that used to read a
+ * bare Zotero.Collection now reads one of these.
+ *
+ *   kind         'collection' | 'selection'
+ *   libraryID    the library either kind lives in
+ *   collection   the collection, for a collection graph -- and for a SELECTION
+ *                made inside one, where it is the anchor rather than the scope:
+ *                nodes come from itemKeys, but "which collection is open",
+ *                "can this be edited" and the Add dialog's default target all
+ *                still have an honest answer. Null for a selection made in My
+ *                Library, a saved search, a tag view or unfiled items.
+ *   itemKeys     the frozen pick, for a selection; null for a collection.
+ *
+ * Frozen is the point. The keys are taken once, when the tab opens, so clicking
+ * around the item tree afterwards cannot move a graph someone is reading -- the
+ * same bargain a collection graph already strikes with the collection tree.
+ */
+function collectionScope(collection) {
+	return {
+		kind: 'collection',
+		libraryID: collection.libraryID,
+		collection,
+		itemKeys: null,
+	};
+}
+
+function selectionScope(libraryID, itemKeys, collection) {
+	return {
+		kind: 'selection',
+		libraryID,
+		collection: collection || null,
+		itemKeys: [...itemKeys],
+	};
+}
+
+/** A selection graph, as against one of a whole collection. */
+function isSelection(scope) {
+	return !!scope && scope.kind === 'selection';
+}
+
+/**
  * What a graph tab is, reduced to what has to survive a restart.
  *
  * Zotero_Tabs.getState() serialises tab.data wholesale into session.json, so
- * this IS the persisted form: two collection coordinates and the scope the user
- * set. Everything else about a graph -- its edges, its layout, its names -- is
- * derived, and re-derived far more cheaply than it could be stored honestly.
- * See pdfLinkCache.js and metadataCache.js, which are where the expensive
- * phases already survive a restart, invalidated per input rather than wholesale.
+ * this IS the persisted form: where the graph is, what it is of, and the scope
+ * options the user set. Everything else about a graph -- its edges, its layout,
+ * its names -- is derived, and re-derived far more cheaply than it could be
+ * stored honestly. See pdfLinkCache.js and metadataCache.js, which are where the
+ * expensive phases already survive a restart, invalidated per input rather than
+ * wholesale.
+ *
+ * `itemKeys: null` is what says "a collection graph", which is exactly the
+ * shape every tab written before selections existed already has -- so old
+ * session data restores unchanged, with no migration and no version stamp.
  */
-function tabData(collection, options) {
+function tabData(scope, options) {
 	return {
-		collectionKey: collection.key,
-		libraryID: collection.libraryID,
+		collectionKey: scope.collection ? scope.collection.key : null,
+		libraryID: scope.libraryID,
+		itemKeys: scope.itemKeys ? [...scope.itemKeys] : null,
 		// `icon` is read by tabs.js _update(): with one set, it does not go looking
 		// for an item to take a type icon from -- a graph tab has no item, and the
 		// lookup it would otherwise attempt leaves the tab with no icon at all.
@@ -136,22 +183,40 @@ function restoreOptions(data) {
 }
 
 /**
- * The tab title, which is the collection's name. Read from the live collection
- * on every path including restore, so a collection renamed while its tab was
- * closed comes back under the name it has now rather than the one it had.
+ * The tab title. For a collection graph it is the collection's name, read from
+ * the live collection on every path including restore, so a collection renamed
+ * while its tab was closed comes back under the name it has now rather than the
+ * one it had. For a selection it is the count -- with the anchor collection's
+ * name in front of it where there is one, since two selection tabs in the strip
+ * are otherwise told apart only by a number.
+ *
+ * Collection first in every form: the tab strip truncates from the right, and
+ * which shelf of the library this is is the half that distinguishes one graph
+ * tab from another.
+ *
  * Control characters are stripped for the reason core's reader hook strips them
  * (tabs.js restoreState): one in a title raises "An invalid or illegal string
  * was specified" and takes the whole restore down with it.
  */
-function tabTitle(collection) {
-	// Collection first: the tab strip truncates from the right, and which
-	// collection this is is the half that distinguishes one graph tab from another.
-	let title = l10n.t('tab-title', { collection: collection.name });
+function tabTitle(scope, count) {
+	let name = scope.collection ? scope.collection.name : '';
+	let title, fallback;
+	if (isSelection(scope)) {
+		let n = count != null ? count : (scope.itemKeys || []).length;
+		title = name
+			? l10n.t('tab-title-selection-in', { collection: name, count: n })
+			: l10n.t('tab-title-selection', { count: n });
+		fallback = name ? name + ' (' + n + ')' : String(n);
+	}
+	else {
+		title = l10n.t('tab-title', { collection: name });
+		fallback = name;
+	}
 	// t() answers with the bare message id when the strings have not landed.
 	// Restore can run on a timeline of Zotero's choosing, so this path is not
 	// guaranteed to be after startup the way opening from the menu is, and a
 	// tab labelled "tab-title" would be a poor way to find that out.
-	if (title === 'tab-title') title = collection.name;
+	if (title.startsWith('tab-title')) title = fallback;
 	// eslint-disable-next-line no-control-regex
 	return title.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
 }
@@ -192,11 +257,23 @@ function selectedItemIDs(tabID) {
  *
  * Null rather than a guess for a tab id with no graph behind it: one closed, or
  * restored and never selected. Core's own answer is better than an invented
- * collection.
+ * collection. Null too for a selection graph with no anchor -- one opened from
+ * My Library, a saved search or a tag view -- where tabContext.js answers from
+ * the library row instead. See selectedLibraryID().
  */
 function selectedCollection(tabID) {
 	let entry = open_.get(tabID);
-	return (entry && entry.collection) || null;
+	return (entry && entry.scope && entry.scope.collection) || null;
+}
+
+/**
+ * The library a graph tab is in, for the same asker. Always known, even where
+ * the collection is not -- which is what lets tabContext.js fall back to a
+ * library row rather than to the library tab's stale tree selection.
+ */
+function selectedLibraryID(tabID) {
+	let entry = open_.get(tabID);
+	return entry && entry.scope ? entry.scope.libraryID : null;
 }
 
 /**
@@ -253,19 +330,65 @@ function dropEntry(tabID) {
 }
 
 async function open(win, collection, config) {
+	openScope(win, collectionScope(collection), { ...DEFAULT_OPTIONS }, config);
+}
+
+/**
+ * A graph of the items the user picked in the item tree, rather than of a whole
+ * collection -- the item context menu's entry. See lib/main.js.
+ *
+ * The keys are frozen here and never taken again: the tab is of THESE papers,
+ * and clicking elsewhere in the library afterwards must not move a graph
+ * someone is reading. Rebuild re-derives edges over the same keys.
+ *
+ * One option is decided here rather than left at its default. A single paper
+ * with outside references off is one dot and no edges -- a picture that reads
+ * as a failed build -- so a selection of one opens with `includeExternal`, which
+ * makes it the honest thing to ask of one paper: what does this cite. The page
+ * has the matching half of the bargain, since the default "cited by >= 2"
+ * threshold cannot be met by a graph holding one paper at all; see the clamp in
+ * content/graph.js.
+ *
+ * @param {Window} win
+ * @param {Integer} libraryID
+ * @param {String[]} itemKeys      the pick, already reduced to graphable items
+ * @param {?Zotero.Collection} collection  the row it was made in, when that row
+ *                                 was a collection; null otherwise
+ * @param {Object} config
+ */
+async function openSelection(win, libraryID, itemKeys, collection, config) {
+	let scope = selectionScope(libraryID, itemKeys, collection);
+	openScope(win, scope, {
+		...DEFAULT_OPTIONS,
+		includeExternal: scope.itemKeys.length === 1,
+	}, config);
+}
+
+/** The tab both entry points end in, so the two cannot come to differ. */
+function openScope(win, scope, options, config) {
 	let { id, container } = win.Zotero_Tabs.add({
 		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
 		// the content type from the '-unloaded' state suffix.
 		type: 'graph',
-		title: tabTitle(collection),
-		data: tabData(collection, DEFAULT_OPTIONS),
+		title: tabTitle(scope),
+		data: tabData(scope, options),
 		select: true,
 		onClose: () => dropEntry(id),
 	});
 
-	trace.log(`opened a graph tab for ${collection.key}  strip=[${stripSummary(win)}]`);
-	mount(win, id, container, collection, config, { ...DEFAULT_OPTIONS })
+	trace.log(`opened a graph tab for ${scopeSummary(scope)}  strip=[${stripSummary(win)}]`);
+	mount(win, id, container, scope, config, options)
 		.catch(e => Zotero.logError(e));
+}
+
+/** What a scope is, in one word and a number, for the lifecycle log. */
+function scopeSummary(scope) {
+	if (!scope) return '-';
+	if (isSelection(scope)) {
+		return `a selection of ${(scope.itemKeys || []).length}`
+			+ (scope.collection ? ` in ${scope.collection.key}` : ' with no collection');
+	}
+	return scope.collection ? scope.collection.key : '?';
 }
 
 /**
@@ -301,16 +424,16 @@ async function restore(win, tab, tabIndex) {
 		// only fail at it again.
 		claimed_.add(tab);
 
-		let collection = tabCollectionSync(tab.data) || await tabCollection(tab.data);
+		let scope = tabScopeSync(tab.data) || await tabScope(tab.data);
 		trace.log(`restore  index=${tabIndex}`
-			+ `  key=${(tab.data && tab.data.collectionKey) || '-'}`
-			+ `  -> ${collection ? 'restoring' : 'dropped (no such collection)'}`);
-		if (!collection) return { itemID: null };
+			+ `  scope=${scopeSummary(scope)}`
+			+ `  -> ${scope ? 'restoring' : 'dropped (nothing left to graph)'}`);
+		if (!scope) return { itemID: null };
 
 		let id;
 		({ id } = win.Zotero_Tabs.add({
 			type: 'graph-unloaded',
-			title: tabTitle(collection),
+			title: tabTitle(scope),
 			// add() rejects an index below 1; index 0 is the library tab's, and
 			// no hook of ours is called for it.
 			index: tabIndex > 0 ? tabIndex : 1,
@@ -407,10 +530,11 @@ async function load(win, tab, config) {
 	// closed -- and leaves the rejection unhandled.
 	try {
 		if (open_.has(tab.id)) return;
-		let collection = await tabCollection(tab.data);
-		if (!collection) {
-			// The collection went away between sessions. There is nothing to
-			// draw and nowhere honest to say so, since the tab IS the graph of it.
+		let scope = await tabScope(tab.data);
+		if (!scope) {
+			// The collection was deleted between sessions, or every item the
+			// selection named was. There is nothing to draw and nowhere honest
+			// to say so, since the tab IS the graph of it.
 			win.Zotero_Tabs.close(tab.id);
 			return;
 		}
@@ -418,7 +542,7 @@ async function load(win, tab, config) {
 		if (!container || container.querySelector('.zg-split')) return;
 
 		await Promise.race([
-			mount(win, tab.id, container, collection, config, restoreOptions(tab.data)),
+			mount(win, tab.id, container, scope, config, restoreOptions(tab.data)),
 			// A page that never fires DOMContentLoaded must not leave the
 			// loading cover over the tab for the rest of the session.
 			Zotero.Promise.delay(15000),
@@ -434,38 +558,81 @@ async function load(win, tab, config) {
  * stay synchronous down to Zotero_Tabs.add() on the path that always applies,
  * and only fall back to the promise for a library still to be loaded.
  */
-function tabCollectionSync(data) {
-	if (!data || !data.libraryID || !data.collectionKey) return null;
-	try {
-		return Zotero.Collections.getByLibraryAndKey(data.libraryID, data.collectionKey) || null;
+function tabScopeSync(data) {
+	if (!data || !data.libraryID) return null;
+	let collection = null;
+	if (data.collectionKey) {
+		try {
+			collection = Zotero.Collections.getByLibraryAndKey(
+				data.libraryID, data.collectionKey) || null;
+		}
+		catch (e) {
+			collection = null;
+		}
 	}
-	catch (e) {
-		return null;
-	}
+	return finishScope(data, collection);
 }
 
 /**
- * The collection a tab's persisted data points at, or null when it cannot be
- * honoured -- data from before any of this was stored, or a collection deleted
- * while the tab was closed.
+ * The scope a tab's persisted data points at, or null when it cannot be
+ * honoured -- data from before any of this was stored, a collection deleted
+ * while the tab was closed, or a selection whose every item has since gone.
  */
-async function tabCollection(data) {
+async function tabScope(data) {
 	// getIDFromLibraryAndKey() throws on a falsy library id rather than missing.
-	if (!data || !data.libraryID || !data.collectionKey) return null;
-	try {
-		// The awaiting form only. tabCollectionSync() is tried first by every
-		// caller that cares about latency, and is deliberately NOT retried here:
-		// sharing one try block let a throwing sync call swallow the async
-		// fallback with it, which is exactly how a group library would have lost
-		// its tabs. Returns false, not null, when there is no such collection.
-		let c = await Zotero.Collections.getByLibraryAndKeyAsync(
-			data.libraryID, data.collectionKey);
-		return c || null;
+	if (!data || !data.libraryID) return null;
+	let collection = null;
+	if (data.collectionKey) {
+		try {
+			// The awaiting form only. tabScopeSync() is tried first by every
+			// caller that cares about latency, and is deliberately NOT retried
+			// here: sharing one try block let a throwing sync call swallow the
+			// async fallback with it, which is exactly how a group library would
+			// have lost its tabs. Returns false, not null, when there is no such
+			// collection.
+			collection = await Zotero.Collections.getByLibraryAndKeyAsync(
+				data.libraryID, data.collectionKey) || null;
+		}
+		catch (e) {
+			Zotero.logError(e);
+			collection = null;
+		}
 	}
-	catch (e) {
-		Zotero.logError(e);
-		return null;
+	return finishScope(data, collection);
+}
+
+/**
+ * Turn persisted data plus whatever became of its collection into a scope.
+ *
+ * A collection graph is unrestorable the moment its collection is gone: the tab
+ * IS the graph of it. A selection is not -- it names its papers itself, and an
+ * anchor collection that has since been deleted costs it only the conveniences
+ * the anchor bought (see selectedCollection). What kills a selection is running
+ * out of papers, and the keys are checked here rather than at build time so a
+ * tab that can draw nothing is never put in the strip at all.
+ *
+ * The surviving keys are what the scope carries, so a graph that lost a paper
+ * between sessions does not go on asking for it at every rebuild -- and
+ * saveTabData() writes the shortened list back the first time anything else
+ * changes.
+ */
+function finishScope(data, collection) {
+	if (!data.itemKeys) {
+		return collection ? collectionScope(collection) : null;
 	}
+	let keys = [];
+	for (let key of data.itemKeys) {
+		let id = null;
+		try {
+			id = Zotero.Items.getIDFromLibraryAndKey(data.libraryID, key);
+		}
+		catch (e) {
+			id = null;
+		}
+		if (id) keys.push(key);
+	}
+	if (!keys.length) return null;
+	return selectionScope(data.libraryID, keys, collection);
 }
 
 /**
@@ -476,7 +643,7 @@ async function tabCollection(data) {
  * @returns {Promise} resolved when the chrome<->content bridge is up. The build
  *          runs on after that, deliberately unawaited -- see load().
  */
-function mount(win, tabID, container, collection, config, options) {
+function mount(win, tabID, container, scope, config, options) {
 	// The graph goes inside a horizontal box rather than straight into the tab
 	// container, because splitPane.js appends a splitter and the side panel
 	// beside it.
@@ -500,7 +667,7 @@ function mount(win, tabID, container, collection, config, options) {
 	container.appendChild(split);
 
 	open_.set(tabID, {
-		win, browser, split, collection,
+		win, browser, split, scope,
 		// Where this plugin's own files are, for the chrome side to address one:
 		// lib/nodeMenu.js draws the isolate row from content/icons/spotlight.svg.
 		resRoot: config.resRoot,
@@ -524,7 +691,7 @@ function mount(win, tabID, container, collection, config, options) {
 		let onDOMContentLoaded = (event) => {
 			if (browser.contentWindow && browser.contentWindow.document === event.target) {
 				win.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
-				ready(win, tabID, browser.contentWindow, collection)
+				ready(win, tabID, browser.contentWindow, scope)
 					.then(() => {
 						resolve();
 						return runBuild(tabID);
@@ -539,7 +706,7 @@ function mount(win, tabID, container, collection, config, options) {
 	});
 }
 
-async function ready(win, tabID, cw, collection) {
+async function ready(win, tabID, cw, scope) {
 	cw.addEventListener('error', e => Zotero.logError(e.error));
 
 	// The content page defines window.zgSetData synchronously as its script parses,
@@ -580,7 +747,7 @@ async function ready(win, tabID, cw, collection) {
 		catch (e) {
 			return;
 		}
-		handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
+		handleMessage(win, tabID, scope, msg).catch(e => Zotero.logError(e));
 	});
 }
 
@@ -593,11 +760,11 @@ async function ready(win, tabID, cw, collection) {
  * two places to fix the day it changes, and the row's + and the ghost's context
  * menu are meant to end in the same dialog.
  */
-function fromPane(win, tabID, collection) {
-	return msg => handleMessage(win, tabID, collection, msg).catch(e => Zotero.logError(e));
+function fromPane(win, tabID, scope) {
+	return msg => handleMessage(win, tabID, scope, msg).catch(e => Zotero.logError(e));
 }
 
-async function handleMessage(win, tabID, collection, msg) {
+async function handleMessage(win, tabID, scope, msg) {
 	switch (msg.type) {
 		case 'rebuild': {
 			let entry = open_.get(tabID);
@@ -623,7 +790,7 @@ async function handleMessage(win, tabID, collection, msg) {
 			break;
 		}
 		case 'add-item':
-			if (msg.doi) await addByDoi(win, tabID, collection, msg.doi, msg.title);
+			if (msg.doi) await addByDoi(win, tabID, scope, msg.doi, msg.title);
 			break;
 		// The gap list, in the pane beside the graph. Chrome's to draw for the
 		// same reason as the item pane it shares a deck with: it is a XUL
@@ -637,7 +804,7 @@ async function handleMessage(win, tabID, collection, msg) {
 		}
 		case 'gaps-rows': {
 			let entry = open_.get(tabID);
-			if (entry) gapsPane.rows(entry, msg, fromPane(win, tabID, collection));
+			if (entry) gapsPane.rows(entry, msg, fromPane(win, tabID, scope));
 			break;
 		}
 		case 'gaps-close': {
@@ -845,9 +1012,9 @@ async function runBuild(tabID) {
 }
 
 async function buildPhases(entry, alive) {
-	let { collection, options } = entry;
+	let { scope, options } = entry;
 	let cache = await PdfLinkCache.forProfile().load();
-	let adapter = new ZoteroAdapter(collection, { cache, recursive: options.recursive });
+	let adapter = new ZoteroAdapter(scope, { cache, recursive: options.recursive });
 	// Everything a payload is assembled from, in one object so that a later
 	// pass -- see runLookup() -- can be handed the build this one produced.
 	// `metadata` and `heldCounts` live here rather than in the payload so a
@@ -859,6 +1026,9 @@ async function buildPhases(entry, alive) {
 		edges: [],
 		metadata: Object.create(null),
 		heldCounts: Object.create(null),
+		// How many rows the user picked, for a selection; null for a collection,
+		// where the question does not arise. Filled by phase 1 below.
+		picked: null,
 	};
 
 	let push = (edges, meta) => {
@@ -871,20 +1041,32 @@ async function buildPhases(entry, alive) {
 	};
 
 	// --- phase 1: nodes -------------------------------------------------
-	status(l10n.t(options.recursive
-		? 'build-loading-collection-recursive'
+	// Written as one flat conditional with no call inside it: the l10n audit
+	// in tools/test-cjs-shim.js scans a t(...) call for quoted ids and stops at
+	// the first ')', so a nested call here would hide all three from it.
+	status(l10n.t(scope.kind === 'selection' ? 'build-loading-selection'
+		: options.recursive ? 'build-loading-collection-recursive'
 		: 'build-loading-collection'));
 	let items = await adapter.listItems();
 	if (!alive()) return;
 	state.items = items;
 	state.inCollection = new Set(items.map(i => i.key));
+	// How many rows were picked against how many became nodes. Only ever
+	// different for a selection, and different silently: itemRecord() declines
+	// a note, an attachment whose parent is already here, and an untitled
+	// record, so ten rows can become seven papers with nothing on screen saying
+	// which three went. Carried on every payload from here, since the page
+	// re-states it whenever it re-states the count.
+	state.picked = adapter.picked;
+	// The title is the count, for a selection, and the count is only known now.
+	retitle(entry, items.length);
 	// Stamped 'done', not 'items': the renderer reads any other phase as work
 	// still in flight, and would go on saying "building..." over a canvas that
 	// is never going to get anything on it. The one payload an empty collection
 	// produces has to be a finished one. The `empty` block is what the page
 	// paints its card from, and says whether there is a next thing to try.
 	if (!items.length) {
-		push([], { phase: 'done', items: 0, empty: emptyReason(collection, options) });
+		push([], { phase: 'done', items: 0, empty: emptyReason(scope, options) });
 		// The card is the single voice. A pill in the opposite corner saying
 		// the same thing in fewer words is half of what made this confusing.
 		status('');
@@ -1012,16 +1194,28 @@ async function buildPhases(entry, alive) {
  * getChildCollections(true) returns ids, so this counts them without loading
  * a single collection.
  */
-function emptyReason(collection, options) {
+function emptyReason(scope, options) {
+	// A selection has no subtree, so there is nothing to offer to widen to and
+	// the card must not offer it. What it says instead is why a pick of rows
+	// came to nothing: every one of them was a note, an attachment, or a record
+	// with no title. See #empty-body in content/graph.js.
+	if (isSelection(scope)) {
+		return {
+			selection: true,
+			picked: (scope.itemKeys || []).length,
+			recursive: false,
+			subcollections: 0,
+		};
+	}
 	let subcollections = 0;
 	try {
-		subcollections = collection.getChildCollections(true).length;
+		subcollections = scope.collection.getChildCollections(true).length;
 	}
 	catch (e) {
 		// A count we cannot take is a hint we cannot offer, not a failed build.
 		Zotero.logError(e);
 	}
-	return { recursive: !!options.recursive, subcollections };
+	return { selection: false, picked: null, recursive: !!options.recursive, subcollections };
 }
 
 /**
@@ -1166,7 +1360,7 @@ async function lookUpNames(entry, alive, built) {
  * derived it would have sent.
  */
 function pushData(entry, state, meta) {
-	let { collection, options } = entry;
+	let { scope, options } = entry;
 	// External nodes are recomputed over the combined edge list rather than
 	// carried from each build: a work found by both text-doi and pdf-links is
 	// one node cited once, not two.
@@ -1176,7 +1370,20 @@ function pushData(entry, state, meta) {
 			.map(x => toWireExternal(x, state.metadata[x.key]))
 		: [];
 	send(entry, 'zgSetData', {
-		collection: { key: collection.key, name: collection.name },
+		// What the graph is OF, as the page needs to say it: the kind decides
+		// which controls apply (a selection has no subcollections to include)
+		// and the name is what an empty card and a status line read back.
+		scope: {
+			kind: scope.kind,
+			name: scope.collection ? scope.collection.name : '',
+			picked: state.picked != null ? state.picked : null,
+		},
+		// Kept beside it under its old name, because it is what the page has
+		// always read and it is still true wherever there is a collection at
+		// all. Null for a selection with no anchor.
+		collection: scope.collection
+			? { key: scope.collection.key, name: scope.collection.name }
+			: null,
 		options,
 		// citedByGlobal is folded in rather than carried on the item objects
 		// themselves, so the adapter's output stays exactly what the CLI sees.
@@ -1210,7 +1417,7 @@ function pushData(entry, state, meta) {
  * somewhere the user did not choose is cheap to undo but tedious to find. See
  * addDialog.js.
  */
-async function addByDoi(win, tabID, collection, doi, title) {
+async function addByDoi(win, tabID, scope, doi, title) {
 	let entry = open_.get(tabID);
 	let status = (t) => entry && send(entry, 'zgSetStatus', t);
 	// The gap list disables its row the moment the '+' is pressed and gets it
@@ -1226,9 +1433,13 @@ async function addByDoi(win, tabID, collection, doi, title) {
 
 	// The collection this graph is of, until the tab is told otherwise: filing a
 	// missing reference beside the papers that cite it is the common case, and
-	// it is the collection the ghost was derived from in the first place.
-	let target = (entry && entry.addTarget)
-		|| { libraryID: collection.libraryID, collectionID: collection.id };
+	// it is the collection the ghost was derived from in the first place. A
+	// selection made outside any collection has no such place, and a null
+	// collectionID is already what addDialog reads as the library root.
+	let target = (entry && entry.addTarget) || {
+		libraryID: scope.libraryID,
+		collectionID: scope.collection ? scope.collection.id : null,
+	};
 	let choice = await addDialog.open(win, {
 		doi: d,
 		title: title || null,
@@ -1379,6 +1590,16 @@ async function adoptAdded(entry, ghostKey, item, names) {
 	if (m && m.citedByGlobal != null) state.heldCounts[record.key] = m.citedByGlobal;
 	entry.built.heldByDoiKey.set(ghostKey, record.key);
 	entry.built.ghostKeys = entry.built.ghostKeys.filter(k => k !== ghostKey);
+	// A selection's pick grows by exactly this one paper, and the next rebuild
+	// -- which is what reads the new paper's own PDF for what IT cites -- finds
+	// it because of this line. saveTabData() puts it where a restart can read
+	// it, and the tab's title restates the count.
+	if (isSelection(entry.scope) && !entry.scope.itemKeys.includes(record.key)) {
+		entry.scope.itemKeys.push(record.key);
+		state.picked = state.picked != null ? state.picked + 1 : null;
+		saveTabData(entry);
+		retitle(entry, state.items.length);
+	}
 
 	pushData(entry, state, {
 		...entry.built.baseMeta,
@@ -1390,16 +1611,41 @@ async function adoptAdded(entry, ghostKey, item, names) {
 }
 
 /**
- * The names of the in-scope collections holding `item`, or null when this
- * graph does not hold it at all. A graph is one collection -- and its
- * subcollections when `recursive` is on -- so a paper filed anywhere else is
- * in the library without being in the graph.
+ * The names of the collections holding `item` that this graph cares about, or
+ * null when the graph does not hold the item at all.
+ *
+ * A COLLECTION graph is one collection -- and its subcollections when
+ * `recursive` is on -- so a paper filed anywhere else is in the library without
+ * being in the graph, and gets null.
+ *
+ * A SELECTION graph is different in kind, and deliberately so. Its papers are
+ * the ones someone picked, and the only way a paper arrives afterwards is by
+ * being added FROM this graph -- the ghost's menu, its detail card, or the + in
+ * "what is missing". That is an explicit act about this graph, unlike filing
+ * something into an unrelated collection, so the paper joins: the key goes into
+ * the frozen pick and the ghost is adopted in place. Its names are every
+ * collection in the library holding it, which is what a selection colours by,
+ * and `[]` -- truthy, unlike null -- is the right answer for a paper that is on
+ * no shelf at all.
  */
 function scopeNames(entry, item) {
-	let scope = [entry.collection];
+	if (isSelection(entry.scope)) {
+		let names = [];
+		try {
+			for (let id of item.getCollections()) {
+				let c = Zotero.Collections.get(id);
+				if (c && c.name && !names.includes(c.name)) names.push(c.name);
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+		return names;
+	}
+	let scope = [entry.scope.collection];
 	if (entry.options.recursive) {
 		try {
-			for (let d of entry.collection.getDescendents(false, 'collection')) {
+			for (let d of entry.scope.collection.getDescendents(false, 'collection')) {
 				let c = Zotero.Collections.get(d.id);
 				if (c) scope.push(c);
 			}
@@ -1414,6 +1660,25 @@ function scopeNames(entry, item) {
 }
 
 /**
+ * Re-label a tab whose title carries a count -- which is every selection tab,
+ * and no collection tab. Called once per build, from the phase that first knows
+ * how many rows became papers, and again when an added paper joins the pick.
+ */
+function retitle(entry, count) {
+	if (!isSelection(entry.scope)) return;
+	try {
+		// rename() is async, so its rejection needs catching on the promise as
+		// well as here. A tab that keeps a stale count in the strip is worth a
+		// line in the log and nothing more, either way.
+		Promise.resolve(entry.win.Zotero_Tabs.rename(entry.tabID, tabTitle(entry.scope, count)))
+			.catch(e => Zotero.logError(e));
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/**
  * Write the tab's scope back to where a restart can read it.
  *
  * Zotero_Tabs.setTabData merges into tab.data and debounces a session save;
@@ -1422,7 +1687,15 @@ function scopeNames(entry, item) {
  */
 function saveTabData(entry) {
 	try {
-		entry.win.Zotero_Tabs.setTabData(entry.tabID, { options: { ...entry.options } });
+		entry.win.Zotero_Tabs.setTabData(entry.tabID, {
+			options: { ...entry.options },
+			// A selection's pick is not quite frozen on disk: restore drops keys
+			// whose items have gone, and adopting an added paper puts one in. So
+			// the list goes back with the options rather than being written once
+			// at open -- otherwise a restored tab would go on asking for a paper
+			// that no longer exists at every restart.
+			itemKeys: entry.scope.itemKeys ? [...entry.scope.itemKeys] : null,
+		});
 	}
 	catch (e) {
 		// A scope that will not persist is worth a line in the log and nothing
@@ -1720,13 +1993,16 @@ function forgetAll() {
 }
 
 module.exports = {
-	open, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
+	open, openSelection, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
 	watchChrome,
-	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection, selectItems,
+	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
+	selectedLibraryID, selectItems,
 	mergeEdges, toWireExternal, adoptAdded, rekeyByDoi,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.
-	tabData, restoreOptions, emptyReason,
+	tabData, restoreOptions, emptyReason, tabTitle,
+	// Exported for the scope tests: the two kinds of thing a graph can be of.
+	collectionScope, selectionScope, isSelection,
 	// Exported for the payload test: what a lookup pass may and may not change
 	// about the graph on screen is the whole reason it is not a rebuild.
 	pushData,

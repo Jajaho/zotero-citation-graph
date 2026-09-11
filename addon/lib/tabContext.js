@@ -13,11 +13,20 @@
  * open. Not one of them has a hook. So this wraps them, answers for the one tab
  * type it knows, and hands every other call straight through.
  *
- * They are all the same answer in the end. A graph tab is a view of ONE
- * collection, and everything below is that collection read a different way:
- * the node the user clicked is what is selected in it, its library is the
- * library, and whether it can be written to is whether the graph's own
- * collection can be.
+ * They are all the same answer in the end. A graph tab is a view of one PLACE
+ * in the library, and everything below is that place read a different way: the
+ * node the user clicked is what is selected in it, its library is the library,
+ * and whether it can be written to is whether the place itself can be.
+ *
+ * The place is a collection for a graph of one, and for a graph of a hand-picked
+ * SELECTION made inside one -- there the collection is not the scope (the nodes
+ * are the pick) but it is still the honest answer to every question below, and
+ * the useful one: files land beside the papers they came from. A selection made
+ * in My Library, a saved search, a tag view or unfiled items has no collection,
+ * and then the place is the LIBRARY. That fallback matters more than it looks:
+ * without it these wrappers would hand back core's own answer, which is the
+ * library tab's collection tree reading whatever it read when the graph opened
+ * -- the very bug this module exists to fix.
  *
  * WHICH ITEMS ARE SELECTED. Every Locate action ends up in
  * Zotero_LocateMenu._getSelectedItems(), which is one call to
@@ -37,7 +46,7 @@
  * or nothing at all, which throws on the first `collectionTreeRows[0]`. That
  * row decides whether what is on screen can be edited, whether its files can,
  * and half the labels in the item menu. A graph tab is looking at exactly one
- * collection, and that is the honest answer.
+ * collection, or at a pick out of one library, and either is an honest answer.
  *
  * WHICH LIBRARY. getSelectedLibraryIDs() reads the same tree, and it is what
  * decides where a new note is filed and which library's collections the "Add
@@ -95,9 +104,11 @@ let installed_ = new WeakMap();
  * @param {Window} win
  * @param {Object} graph  what the tab strip's graph tabs can be asked, by id:
  *        `itemIDs(tabID)` is the selection, newest click last,
- *        `collection(tabID)` the collection the tab is a view of, and
- *        `select(tabID, itemIDs)` shows one of them in the tab's own pane.
- *        See graphTab.selectedItemIDs(), selectedCollection() and selectItems().
+ *        `collection(tabID)` the collection the tab is a view of -- null for a
+ *        selection graph opened outside one -- `libraryID(tabID)` the library it
+ *        is in either way, and `select(tabID, itemIDs)` shows one of them in the
+ *        tab's own pane. See graphTab.selectedItemIDs(), selectedCollection(),
+ *        selectedLibraryID() and selectItems().
  */
 function install(win, graph) {
 	if (installed_.has(win)) return;
@@ -128,14 +139,21 @@ function install(win, graph) {
 
 	wrap(record, win, pane, 'getSelectedLibraryIDs',
 		(original, win_) => function () {
-			let collection = graphCollection(win_, record);
-			return collection ? [collection.libraryID] : original.call(this);
+			let libraryID = graphLibraryID(win_, record);
+			return libraryID ? [libraryID] : original.call(this);
 		});
 
+	// Empty rather than core's answer for a graph with no collection: this is
+	// the parent "Add to Collection -> New Collection" hangs the new one under,
+	// and no parent is what core itself reads as the library root. Handing back
+	// the collection tree's stale selection would file it under whatever
+	// collection happened to be open behind the graph -- possibly in another
+	// library, where it cannot be saved at all.
 	wrap(record, win, pane, 'getSelectedCollections',
 		(original, win_) => function (asID) {
+			if (!isGraphTab(win_, record)) return original.call(this, asID);
 			let collection = graphCollection(win_, record);
-			if (!collection) return original.call(this, asID);
+			if (!collection) return [];
 			return asID ? [collection.id] : [collection];
 		});
 
@@ -231,11 +249,19 @@ function isGraphTab(win, record) {
 }
 
 /** The collection the graph on screen is a view of, or null for every other
- *  tab and for a graph tab with no collection behind it -- one restored but
- *  never selected, or closed while something still held its id. */
+ *  tab, for a selection graph made outside a collection, and for a graph tab
+ *  with no scope behind it -- one restored but never selected, or closed while
+ *  something still held its id. */
 function graphCollection(win, record) {
 	if (!isGraphTab(win, record)) return null;
 	return record.graph.collection(win.Zotero_Tabs.selectedID) || null;
+}
+
+/** The library the graph on screen is in. Known whenever the collection is,
+ *  and known in the one case it is not. */
+function graphLibraryID(win, record) {
+	if (!isGraphTab(win, record)) return null;
+	return record.graph.libraryID(win.Zotero_Tabs.selectedID) || null;
 }
 
 /**
@@ -246,12 +272,32 @@ function graphCollection(win, record) {
  * would then answer differently depending on what the user had twisted open.
  * The constructor is core's own and the getters read `ref`, so a row built here
  * answers `editable` and `filesEditable` exactly as the tree's would.
+ *
+ * With no collection -- a selection graph opened from My Library, a saved
+ * search or a tag view -- the row is the LIBRARY's, built the same way. Core's
+ * `editable` getter branches on the row type, reading `ref.editable` for a
+ * group and answering `true` for a personal library, so the type has to be the
+ * one the tree itself would have used; `Zotero.Libraries.get()` returns the
+ * Zotero.Group for a group library, which is the ref that getter expects.
+ * Without this the wrappers would fall through to core, and core would answer
+ * from the collection tree behind the graph.
  */
 function graphRow(win, record) {
+	if (!isGraphTab(win, record)) return null;
 	let collection = graphCollection(win, record);
-	if (!collection) return null;
 	try {
-		return new Zotero.CollectionTreeRow(win.ZoteroPane.collectionsView, 'collection', collection);
+		if (collection) {
+			return new Zotero.CollectionTreeRow(
+				win.ZoteroPane.collectionsView, 'collection', collection);
+		}
+		let libraryID = graphLibraryID(win, record);
+		if (!libraryID) return null;
+		let library = Zotero.Libraries.get(libraryID);
+		if (!library) return null;
+		return new Zotero.CollectionTreeRow(
+			win.ZoteroPane.collectionsView,
+			library.libraryType === 'group' ? 'group' : 'library',
+			library);
 	}
 	catch (e) {
 		// Core's own answer is a poorer one than the right row would give, and a

@@ -157,6 +157,9 @@
 	let anchorNext = null;
 	let disabledVia = new Set();
 	let yearRange = null;
+	// Whether the cited-by threshold has already been fitted to the size of this
+	// graph. See applyScope(): it is a one-time correction, not a policy.
+	let citesClamped = false;
 	// The citation count that maps to the largest node: the 95th percentile of
 	// what is on screen, not the maximum. Recomputed every render, because
 	// filtering the graph should rescale it.
@@ -643,6 +646,7 @@
 	let elStrategies = el('strategies');
 	let elHideIsolated = el('hide-isolated');
 	let elRecursive = el('recursive');
+	let elRecursiveLabel = el('recursive-label');
 	let elIncludeExternal = el('include-external');
 	let elHideGhostNames = el('hide-ghost-names');
 	let elMinCites = el('min-cites');
@@ -687,6 +691,7 @@
 	let elLegend = el('legend');
 	let elLegendBody = el('legend-body');
 	let elEmpty = el('empty');
+	let elEmptyBody = el('empty-body');
 	let elEmptySub = el('empty-sub');
 	let elEmptyRecursive = el('empty-recursive');
 	let elFilterChips = el('filter-chips');
@@ -785,6 +790,7 @@
 			elEnrich.checked = !!raw.options.enrich;
 			elOpenAlexRefs.checked = !!raw.options.openalexRefs;
 		}
+		applyScope();
 		yearRange = null;
 		// The ghost the popover describes may not exist in this payload -- after
 		// an add it is a real item, and after a rebuild it may be filtered out.
@@ -796,6 +802,37 @@
 		syncEnabled();
 		render();
 	};
+
+	/**
+	 * What the graph is OF, applied to the controls that depend on it.
+	 *
+	 * Two things, and the second is the one that matters. A selection has no
+	 * subtree, so the Subcollections switch is not merely irrelevant but
+	 * unanswerable, and it goes.
+	 *
+	 * And the cited-by threshold has to be clamped, once, on the first payload
+	 * that says how many papers are held. It counts how many papers HERE cite an
+	 * outside work, so it cannot exceed the number of papers here at all: at a
+	 * graph of one the default of 2 hides every ghost there could ever be, which
+	 * is exactly the case a one-item selection turns outside refs ON for. The
+	 * result would be one dot and a control that looks like it does nothing.
+	 * Clamped rather than defaulted low across the board, because on a real
+	 * collection the 2 is doing the work it was added for -- 3,172 of the sample
+	 * library's outside works are cited exactly once.
+	 *
+	 * Once, and only upward-bounded: someone who has since moved the number is
+	 * answering for themselves and must not be overruled by the next push.
+	 */
+	function applyScope() {
+		let kind = (raw.scope && raw.scope.kind) || 'collection';
+		elRecursiveLabel.hidden = kind === 'selection';
+		if (citesClamped) return;
+		let held = (raw.items || []).length;
+		if (!held) return;
+		citesClamped = true;
+		let cap = Math.max(1, Math.min(2, held));
+		if (Number(elMinCites.value) > cap) elMinCites.value = String(cap);
+	}
 
 	window.zgSetStatus = function (text) {
 		elStatus.textContent = text || '';
@@ -1272,6 +1309,15 @@
 		let info = raw.meta && raw.meta.empty;
 		elEmpty.hidden = !info;
 		if (!info) return;
+		// A selection that came to nothing did so for a reason a collection
+		// never has: every row picked was a note, an attachment, or a record
+		// with no title. Saying "this collection has no regular items" over a
+		// pick of five papers-that-were-not would be answering a question
+		// nobody asked, so the body changes -- and the subcollection offer,
+		// which has nothing to widen, does not appear at all.
+		elEmptyBody.textContent = info.selection
+			? t('empty-body-selection', { count: info.picked || 0 })
+			: t('empty-body');
 		// Worth offering only what is not already on: with subcollections
 		// included, or with none to include, this button would change nothing.
 		let offer = info.subcollections > 0 && !info.recursive;
@@ -2199,6 +2245,14 @@
 		// the four are conditional, and a message with three holes that are
 		// usually empty is not a thing anyone can translate.
 		let stats = [t('stats-items', { shown: nodes.length - ghostCount, total: raw.items.length })];
+		// Only a selection can lose rows on the way in, and it loses them
+		// silently: a note, an attachment whose paper is already here, a record
+		// with no title. Said once, beside the count it qualifies, and only when
+		// the two numbers actually differ -- "10 of 10 selected" is noise.
+		let picked = raw.scope && raw.scope.picked;
+		if (picked && picked !== raw.items.length) {
+			stats.push(t('stats-of-picked', { shown: raw.items.length, picked }));
+		}
 		if (ghostCount) {
 			stats.push(t('stats-outside', { count: ghostCount })
 				+ (named ? ' ' + t('stats-named', { count: named }) : ''));

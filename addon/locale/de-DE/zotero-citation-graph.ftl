@@ -29,7 +29,7 @@ zotero-citation-graph-section-strategies = Referenzstrategien
 zotero-citation-graph-scope-subcollections = Untersammlungen
 zotero-citation-graph-scope-subcollections-hint = Einträge aus allen Untersammlungen einbeziehen
 zotero-citation-graph-scope-external = Externe Referenzen
-zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in der Sammlung sind
+zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in diesem Graphen sind
 zotero-citation-graph-scope-min-cites = Zitiert von ≥
 zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
@@ -92,7 +92,7 @@ zotero-citation-graph-min-confidence-hint = Kanten ausblenden, die unsicherer si
 zotero-citation-graph-hide-isolated-hint = Einträge weglassen, die im aktuell gefilterten Graphen keine Kante mehr haben.
 zotero-citation-graph-size-by-hint = Was die Größe eines Knotens zeigt: wie viele Einträge hier ihn zitieren oder wie oft er weltweit zitiert wird (schaltet „Knotenmetadaten abfragen“ ein).
 zotero-citation-graph-color-by-hint = Was die Farbe eines Knotens zeigt. Die Legende darunter listet die sichtbaren Farben.
-zotero-citation-graph-rebuild-hint = Den Graphen aus der Sammlung in ihrem jetzigen Stand neu aufbauen.
+zotero-citation-graph-rebuild-hint = Den Graphen aus diesen Einträgen in ihrem jetzigen Stand neu aufbauen.
 zotero-citation-graph-strategy-pdf-links-hint = DOI-Hyperlinks in deinen PDFs. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-text-doi-hint = DOIs in den Literaturverzeichnissen im indexierten Text deiner Einträge. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieser Sammlung, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
@@ -134,6 +134,7 @@ zotero-citation-graph-stats-outside = { $count } extern
 zotero-citation-graph-stats-named = ({ $count } benannt)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } Kante *[other] { $count } Kanten }
 zotero-citation-graph-stats-building = Wird aufgebaut…
+zotero-citation-graph-stats-of-picked = { $shown } von { $picked } ausgewählten
 
 
 ## Die Legende.
@@ -154,7 +155,7 @@ zotero-citation-graph-color-unknown-type = (Unbekannte Art)
 
 ## Kurzinfos an den Knoten.
 
-zotero-citation-graph-tooltip-not-in-collection = Nicht in der Sammlung — { $title }
+zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen — { $title }
 zotero-citation-graph-tooltip-cited-here = hier von { $count } zitiert
 zotero-citation-graph-tooltip-citations-total = { $count } Zitationen insgesamt
 zotero-citation-graph-tooltip-pinned = angeheftet
@@ -265,6 +266,7 @@ zotero-citation-graph-action-close = Schließen
 
 zotero-citation-graph-empty-title = Nichts zu zeichnen
 zotero-citation-graph-empty-body = Diese Sammlung enthält keine regulären Einträge – nur Anhänge, Notizen oder gar nichts.
+zotero-citation-graph-empty-body-selection = { $count -> [one] Die ausgewählte Zeile ist kein Aufsatz *[other] Keine der { $count } ausgewählten Zeilen ist ein Aufsatz } – nur Anhänge, Notizen oder Einträge ohne Titel.
 zotero-citation-graph-empty-sub = Nicht einbezogen: { $count -> [one] eine Untersammlung *[other] { $count } Untersammlungen }.
 zotero-citation-graph-empty-include-sub = Untersammlungen einbeziehen
 
@@ -273,6 +275,7 @@ zotero-citation-graph-empty-include-sub = Untersammlungen einbeziehen
 
 zotero-citation-graph-build-loading-collection = Sammlung wird geladen…
 zotero-citation-graph-build-loading-collection-recursive = Sammlung und Untersammlungen werden geladen…
+zotero-citation-graph-build-loading-selection = Ausgewählte Einträge werden geladen…
 zotero-citation-graph-build-reading-text = Indexierter Text wird gelesen…
 zotero-citation-graph-build-reading-text-progress = Indexierter Text wird gelesen… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = PDFs werden durchsucht…
@@ -304,6 +307,8 @@ zotero-citation-graph-add-rebuilding = „{ $title }“ hinzugefügt — wird ne
 ## Der Tab.
 
 zotero-citation-graph-tab-title = { $collection } — Zitationsgraph
+zotero-citation-graph-tab-title-selection = { $count -> [one] { $count } Eintrag *[other] { $count } Einträge } — Zitationsgraph
+zotero-citation-graph-tab-title-selection-in = { $collection } · { $count -> [one] { $count } Eintrag *[other] { $count } Einträge } — Zitationsgraph
 
 ## Fehlende Werke: was die Sammlung zitiert und nicht besitzt.
 
@@ -314,7 +319,7 @@ zotero-citation-graph-gaps-title = Fehlende Werke
 zotero-citation-graph-gaps-close = Schließen
 zotero-citation-graph-gaps-caption = Die Zahl sagt, wie viele deiner Einträge das Werk zitieren.
 zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Einträge zitiert und fehlt.
-zotero-citation-graph-gaps-building = Die Sammlung wird noch gelesen…
+zotero-citation-graph-gaps-building = Die Einträge werden noch gelesen…
 zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — klicken zum Hervorheben, doppelklicken zum Isolieren, Strg zum Hinzufügen
 zotero-citation-graph-gaps-off-screen = Dieses Werk ist nicht im Graphen — ein Filter blendet es aus.
 zotero-citation-graph-gaps-add = Zu Zotero hinzufügen

@@ -15,8 +15,10 @@
  *   getAttachmentText(attKey) -> string|null
  *   getPdfLinkUris(attKey)    -> string[]
  *
- * Scope: one collection, not the whole library. Edge counts therefore only
- * match the CLI's library-wide figures when the collection is the library.
+ * Scope: one collection, or one hand-picked set of items -- not the whole
+ * library. Edge counts therefore only match the CLI's library-wide figures when
+ * the scope is the whole library. See graphTab.js for the scope object; the one
+ * thing this file reads off it is which enumerator to use.
  */
 
 const FT_CACHE = '.zotero-ft-cache';
@@ -28,15 +30,24 @@ const MAX_PDF_BYTES = 256 * 1024 * 1024;
 
 class ZoteroAdapter {
 	/**
-	 * @param {Zotero.Collection} collection
+	 * @param {Object} scope             see graphTab.js: { kind, libraryID,
+	 *                                   collection, itemKeys }
 	 * @param {Object} [opts]
 	 * @param {Object} [opts.cache]      PdfLinkCache, or null to always rescan
-	 * @param {boolean} [opts.recursive] include items in subcollections
+	 * @param {boolean} [opts.recursive] include items in subcollections; a
+	 *                                   selection has no subtree, so it is
+	 *                                   ignored there
 	 */
-	constructor(collection, { cache = null, recursive = false } = {}) {
-		this.collection = collection;
+	constructor(scope, { cache = null, recursive = false } = {}) {
+		this.scope = scope;
+		this.collection = (scope && scope.collection) || null;
 		this.cache = cache;
 		this.recursive = recursive;
+		// How many rows the user picked, against how many became nodes. Only a
+		// selection can lose rows that way -- a note, an attachment's parent
+		// already picked, an untitled record -- and it loses them silently,
+		// since itemRecord() simply declines them. See graphTab.buildPhases().
+		this.picked = null;
 		this._items = null;
 		this._itemByKey = new Map();  // item key -> Zotero.Item
 		this._attsByItem = new Map(); // item key -> Attachment[]
@@ -47,7 +58,10 @@ class ZoteroAdapter {
 	async listItems() {
 		if (this._items) return this._items;
 
-		let { items: zItems, collectionsByKey } = await collectionItems(this.collection, this.recursive);
+		let { items: zItems, collectionsByKey, picked } = this.scope && this.scope.kind === 'selection'
+			? await selectionItems(this.scope.libraryID, this.scope.itemKeys)
+			: await collectionItems(this.collection, this.recursive);
+		this.picked = picked != null ? picked : null;
 		await Zotero.Items.loadDataTypes(zItems);
 
 		let out = [];
@@ -209,6 +223,72 @@ async function collectionItems(collection, recursive) {
 		}
 	}
 	return { items: [...byKey.values()], collectionsByKey };
+}
+
+/**
+ * The items a selection graph is of: exactly the keys the user right-clicked,
+ * read back out of the library rather than trusted.
+ *
+ * Three corrections on the way through, each of them something the item tree
+ * can hand us and the graph cannot draw:
+ *
+ *  - A key that no longer resolves is dropped. The keys are frozen when the tab
+ *    opens and a paper can be deleted out from under a graph that is still on
+ *    screen, so a stale one is routine rather than exceptional.
+ *  - A trashed item is dropped, for the reason a collection's own
+ *    getChildItems(false, false) leaves them out: the trash is not the library.
+ *  - A child row -- an attachment or a note under an expanded item -- stands for
+ *    its parent, which is the rule Locate already goes by (tabContext.resolve()).
+ *    Right-clicking a PDF is asking about the paper.
+ *
+ * `collections` is every collection in the library holding the item, not the
+ * in-scope ones: a selection has no scope to be in, and "which shelves is this
+ * on" is the useful answer for a pick that spans several. It is what colour-by
+ * and the `collection:` facet read.
+ *
+ * @returns {{items: Zotero.Item[], collectionsByKey: Map, picked: Number}}
+ *          `picked` is how many keys were asked for, which is what lets the
+ *          build say "7 of 10" when the rest were notes.
+ */
+async function selectionItems(libraryID, itemKeys) {
+	let keys = itemKeys || [];
+	let byKey = new Map();
+	for (let key of keys) {
+		let item = null;
+		try {
+			item = Zotero.Items.getByLibraryAndKey(libraryID, key) || null;
+		}
+		catch (e) {
+			item = null;
+		}
+		if (!item) continue;
+		if (item.parentItem) item = item.parentItem;
+		if (item.deleted) continue;
+		byKey.set(item.key, item);
+	}
+
+	let items = [...byKey.values()];
+	await Zotero.Items.loadDataTypes(items);
+
+	let collectionsByKey = new Map();
+	for (let item of items) {
+		let ids = [];
+		try {
+			ids = item.getCollections();
+		}
+		catch (e) {
+			// An item whose collections cannot be read still belongs in the
+			// graph; it simply has no colour to be given.
+			Zotero.logError(e);
+		}
+		let names = [];
+		for (let id of ids) {
+			let c = Zotero.Collections.get(id);
+			if (c && c.name && !names.includes(c.name)) names.push(c.name);
+		}
+		collectionsByKey.set(item.key, names);
+	}
+	return { items, collectionsByKey, picked: keys.length };
 }
 
 /**
@@ -398,11 +478,12 @@ function itemRecord(item, collections = []) {
 		// not what it says -- and someone grouping by "quantum sensing" does
 		// not care that the importer wrote it rather than they did.
 		tags: item.getTags().map(t => t.tag).filter(Boolean),
-		// Which of the in-scope collections hold this item. Only interesting
-		// once subcollections are included -- without them every item shares
-		// one name.
+		// Which collections hold this item: the in-scope ones for a collection
+		// graph -- only interesting once subcollections are included, since
+		// without them every item shares one name -- and every collection in
+		// the library for a selection, where they are the whole point.
 		collections,
 	};
 }
 
-module.exports = { ZoteroAdapter, itemRecord, scanUriAnnotations, bytesToBinaryString };
+module.exports = { ZoteroAdapter, itemRecord, selectionItems, scanUriAnnotations, bytesToBinaryString };

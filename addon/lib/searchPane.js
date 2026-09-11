@@ -92,7 +92,7 @@ function onGraph(entry, ids) {
 
 async function quickSearch(entry, text) {
 	let s = new Zotero.Search();
-	s.libraryID = entry.collection.libraryID;
+	s.libraryID = entry.scope.libraryID;
 	s.addCondition('quicksearch-' + mode(), 'contains', text);
 	return onGraph(entry, await s.search());
 }
@@ -251,7 +251,7 @@ function load(entry, search) {
 	let adv = entry.adv;
 	if (!search) {
 		search = new Zotero.Search();
-		search.libraryID = entry.collection.libraryID;
+		search.libraryID = entry.scope.libraryID;
 		// Top-level items, so a condition on a child maps up to its item.
 		search.addCondition('resultLevel', 'item');
 		search.addCondition('title', 'contains', '');
@@ -293,7 +293,7 @@ function reset(entry) {
 /** zoteroPane.js openAdvancedSearchFromQuickSearch(), onto this pane. */
 async function seed(entry, parts, m) {
 	let s = new Zotero.Search();
-	s.libraryID = entry.collection.libraryID;
+	s.libraryID = entry.scope.libraryID;
 	// Title, Creator, Year matches only top-level items, so the seeded search
 	// says so; the other two leave the result level to the user.
 	if (m === 'titleCreatorYear') s.addCondition('resultLevel', 'item');

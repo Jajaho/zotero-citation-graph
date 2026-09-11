@@ -926,6 +926,79 @@ check('label sizing shrinks to the node but never below the floor', () => {
 	if (Math.abs(long.w - long.px * 4) > 1e-9) throw new Error('width disagrees with size');
 });
 
+/**
+ * The cited-by threshold, fitted to a graph too small to meet it.
+ *
+ * It counts how many papers HERE cite an outside work, so it can never exceed
+ * the number of papers here. At a graph of one the default of 2 hides every
+ * ghost there is -- and one paper is exactly the selection that opens with
+ * outside refs switched on. So the first payload that says how many papers are
+ * held clamps it, once, and never again: a number the reader has since moved is
+ * theirs.
+ *
+ * applyScope() is a closure inside the page, so it is lifted out of graph.js by
+ * name and run against stand-ins for the three things it touches. The code
+ * under test is the code that ships, not a copy of it.
+ */
+check('a graph too small for the cited-by threshold has it fitted, once', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const m = js.match(/\n\tfunction applyScope\(\) \{[\s\S]*?\n\t\}\n/);
+	if (!m) throw new Error('applyScope() is no longer in graph.js under that name');
+
+	const run = () => {
+		const ctx = {
+			raw: null,
+			citesClamped: false,
+			elRecursiveLabel: { hidden: false },
+			elMinCites: { value: '2' },
+		};
+		vm.createContext(ctx);
+		// `let` bindings in the page become context globals here, which is all
+		// the function needs: it reads and writes them by name.
+		vm.runInContext(m[0].replace(/^\s*function applyScope/, 'this.applyScope = function'), ctx);
+		return ctx;
+	};
+
+	// One paper: the threshold drops to 1, or nothing outside could be drawn.
+	let c = run();
+	c.raw = { scope: { kind: 'selection' }, items: [{ key: 'A' }] };
+	c.applyScope();
+	if (c.elMinCites.value !== '1') throw new Error('one paper kept cited-by at ' + c.elMinCites.value);
+	if (!c.elRecursiveLabel.hidden) throw new Error('a selection kept its Subcollections switch');
+
+	// Once. The reader puts it back up; the next push -- a later phase, a
+	// rebuild -- must leave their number alone.
+	c.elMinCites.value = '3';
+	c.applyScope();
+	if (c.elMinCites.value !== '3') throw new Error('a later push overruled the reader');
+
+	// Two papers or more meet the default, so it is left exactly as it was: on a
+	// real collection the 2 is what keeps thousands of single-citation ghosts
+	// off the canvas.
+	c = run();
+	c.raw = { scope: { kind: 'collection' }, items: [{ key: 'A' }, { key: 'B' }, { key: 'C' }] };
+	c.applyScope();
+	if (c.elMinCites.value !== '2') throw new Error('a collection had its default moved');
+	if (c.elRecursiveLabel.hidden) throw new Error('a collection lost its Subcollections switch');
+
+	// The empty first payload of phase 1 is not the one to decide on: it says
+	// nothing about how many papers there are, so the clamp waits for one that
+	// does rather than spending its one go on nothing.
+	c = run();
+	c.raw = { scope: { kind: 'selection' }, items: [] };
+	c.applyScope();
+	if (c.citesClamped) throw new Error('an empty payload spent the clamp');
+	c.raw = { scope: { kind: 'selection' }, items: [{ key: 'A' }] };
+	c.applyScope();
+	if (c.elMinCites.value !== '1') throw new Error('the clamp never came');
+
+	// A payload from before scopes existed has no kind, and is a collection.
+	c = run();
+	c.raw = { items: [{ key: 'A' }, { key: 'B' }] };
+	c.applyScope();
+	if (c.elRecursiveLabel.hidden) throw new Error('a payload with no scope was taken for a selection');
+});
+
 check('the benchmark fixture is a payload the renderer can actually read', () => {
 	// The benchmark drives the real graph page through the real zgSetData
 	// bridge, so a fixture in the wrong shape does not fail loudly -- it draws
@@ -1886,7 +1959,12 @@ function fakeAddedTab() {
 	};
 	const entry = {
 		browser: { contentWindow: { wrappedJSObject: { zgSetData: j => sent.push(JSON.parse(j)) } } },
-		collection: { id: 11, key: 'C1', name: 'Reading list' },
+		scope: {
+			kind: 'collection',
+			libraryID: 1,
+			collection: { id: 11, key: 'C1', name: 'Reading list' },
+			itemKeys: null,
+		},
 		options: { recursive: false, includeExternal: true, enrich: true },
 		built: {
 			state,
@@ -1979,7 +2057,12 @@ check('naming a graph changes no node and no edge', () => {
 	const sent = [];
 	const entry = {
 		browser: { contentWindow: { wrappedJSObject: { zgSetData: j => sent.push(JSON.parse(j)) } } },
-		collection: { key: 'C1', name: 'Reading list' },
+		scope: {
+			kind: 'collection',
+			libraryID: 1,
+			collection: { key: 'C1', name: 'Reading list' },
+			itemKeys: null,
+		},
 		options: { recursive: false, includeExternal: true, enrich: true },
 	};
 	// One held item citing one work the collection does not hold.
@@ -2021,20 +2104,23 @@ check('naming a graph changes no node and no edge', () => {
  */
 
 check('a graph tab reduces to what session.json can hold, and reads back', () => {
-	const { tabData, restoreOptions } = require_('./lib/graphTab.js');
+	const { tabData, restoreOptions, collectionScope } = require_('./lib/graphTab.js');
 	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
 	const options = { recursive: true, includeExternal: true, enrich: false, openalexRefs: true };
 
-	const data = JSON.parse(JSON.stringify(tabData(collection, options)));
+	const data = JSON.parse(JSON.stringify(tabData(collectionScope(collection), options)));
 	if (data.collectionKey !== 'ABCD1234') throw new Error('key: ' + data.collectionKey);
 	if (data.libraryID !== 1) throw new Error('libraryID: ' + data.libraryID);
+	// null, not absent: it is what says "a collection graph" on the way back in,
+	// and it is exactly the shape a tab written before selections existed has.
+	if (data.itemKeys !== null) throw new Error('itemKeys: ' + JSON.stringify(data.itemKeys));
 	// tabs.js _update() goes looking for an item to take a type icon from when
 	// this is missing, and a graph tab has no item to find.
 	if (data.icon !== 'zotero-citation-graph') throw new Error('icon: ' + data.icon);
 	// Nothing derived: an edge list or a layout stored here would be reread
 	// stale, and is re-derived off the two caches far more cheaply than it
 	// could be invalidated honestly.
-	if (Object.keys(data).sort().join(',') !== 'collectionKey,icon,libraryID,options') {
+	if (Object.keys(data).sort().join(',') !== 'collectionKey,icon,itemKeys,libraryID,options') {
 		throw new Error('carries more than it should: ' + Object.keys(data).join(','));
 	}
 	if (JSON.stringify(restoreOptions(data)) !== JSON.stringify(options)) {
@@ -2044,6 +2130,40 @@ check('a graph tab reduces to what session.json can hold, and reads back', () =>
 	// silently rewrite what the last save recorded.
 	options.recursive = false;
 	if (!restoreOptions(data).recursive) throw new Error('the stored scope aliases the live one');
+});
+
+check('a selection graph persists its pick, and anchors itself where it can', () => {
+	const { tabData, selectionScope, isSelection } = require_('./lib/graphTab.js');
+	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
+	const keys = ['AAAAAAAA', 'BBBBBBBB'];
+	const options = { recursive: false, includeExternal: false, enrich: false, openalexRefs: false };
+
+	// Made inside a collection: the nodes are the pick, but the collection is
+	// kept as the anchor -- what "which collection is open" and the Add
+	// dialog's default target read. See lib/tabContext.js.
+	const anchored = selectionScope(1, keys, collection);
+	if (!isSelection(anchored)) throw new Error('not a selection');
+	const data = JSON.parse(JSON.stringify(tabData(anchored, options)));
+	if (data.itemKeys.join() !== 'AAAAAAAA,BBBBBBBB') throw new Error('keys: ' + data.itemKeys);
+	if (data.collectionKey !== 'ABCD1234') throw new Error('lost its anchor');
+	if (data.libraryID !== 1) throw new Error('libraryID: ' + data.libraryID);
+
+	// Made in My Library, a saved search or a tag view: no collection to anchor
+	// to, and inventing one would be worse than the library answering.
+	const loose = selectionScope(1, keys, null);
+	if (loose.collection !== null) throw new Error('invented a collection');
+	if (JSON.parse(JSON.stringify(tabData(loose, options))).collectionKey !== null) {
+		throw new Error('a loose selection claimed a collection');
+	}
+
+	// The pick is copied on the way in and on the way out. It is not frozen for
+	// the life of the tab -- restore drops keys whose items are gone, and an
+	// added paper joins -- so an alias here would let one of those rewrite what
+	// the last save recorded.
+	keys.push('CCCCCCCC');
+	if (anchored.itemKeys.length !== 2) throw new Error('the scope aliases the caller\'s array');
+	anchored.itemKeys.push('DDDDDDDD');
+	if (data.itemKeys.length !== 2) throw new Error('the stored copy aliases the live scope');
 });
 
 check('a scope written by an older version fills in from the defaults', () => {
@@ -2065,8 +2185,11 @@ check('a scope written by an older version fills in from the defaults', () => {
 });
 
 check('an empty collection reports why, and offers the switch only when it helps', () => {
-	const { emptyReason } = require_('./lib/graphTab.js');
-	const withKids = n => ({ getChildCollections: asIDs => Array(n).fill(asIDs ? 1 : {}) });
+	const { emptyReason, collectionScope, selectionScope } = require_('./lib/graphTab.js');
+	const withKids = n => collectionScope({
+		libraryID: 1,
+		getChildCollections: asIDs => Array(n).fill(asIDs ? 1 : {}),
+	});
 
 	// Something down there to include, and it is not included: worth offering.
 	const offer = emptyReason(withKids(3), { recursive: false });
@@ -2079,10 +2202,27 @@ check('an empty collection reports why, and offers the switch only when it helps
 	}
 	// A count that cannot be taken is a hint that cannot be offered, not a
 	// build that fails.
-	const throws = { getChildCollections: () => { throw new Error('not loaded'); } };
+	const throws = collectionScope({
+		libraryID: 1,
+		getChildCollections: () => { throw new Error('not loaded'); },
+	});
 	if (emptyReason(throws, { recursive: false }).subcollections !== 0) {
 		throw new Error('a throwing collection did not fall back to zero');
 	}
+
+	// A selection has no subtree, so there is nothing to widen to and the
+	// button must not appear -- even when the collection it was picked out of
+	// has plenty of children. What it reports instead is how many rows came to
+	// nothing, which is the only thing the card can honestly say.
+	const picked = selectionScope(1, ['AAAAAAAA', 'BBBBBBBB', 'CCCCCCCC'], {
+		libraryID: 1,
+		getChildCollections: asIDs => Array(4).fill(asIDs ? 1 : {}),
+	});
+	const sel = emptyReason(picked, { recursive: true });
+	if (!sel.selection) throw new Error('a selection did not say so');
+	if (sel.subcollections !== 0) throw new Error('a selection offered subcollections');
+	if (sel.recursive) throw new Error('a selection claimed to be recursive');
+	if (sel.picked !== 3) throw new Error('picked: ' + sel.picked);
 });
 
 /* --- the quit/restore round trip -----------------------------------------
@@ -2220,10 +2360,135 @@ function stubCollections(found = COLLECTION) {
  */
 const restoreReady = (async () => {
 	await l10nReady;
-	Zotero.MenuManager = { registerMenu() {}, unregisterMenu() {} };
+	Zotero.MenuManager = {
+		registerMenu(options) { MENUS.set(options.target, options); },
+		unregisterMenu() {},
+	};
 	Zotero.getMainWindows = () => [];
 	await require_('./lib/main.js').startup(CFG);
 })();
+
+/** target -> the MenuOptions startup() handed Zotero.MenuManager. */
+const MENUS = new Map();
+
+/**
+ * A menu entry, driven the way MenuManager drives it: a <menuitem> standing in
+ * for the element, and the context object zoteroPane.js builds for that target.
+ */
+function fireMenu(target, ctx, win) {
+	const options = MENUS.get(target);
+	if (!options) throw new Error('nothing registered for ' + target);
+	const entry = options.menus[0];
+	const attrs = {};
+	const el = {
+		hidden: undefined,
+		ownerGlobal: win || {},
+		getAttribute: name => (name in attrs ? attrs[name] : null),
+		setAttribute: (name, value) => { attrs[name] = value; },
+	};
+	entry.onShowing({ target: el }, ctx);
+	return { el, attrs, command: () => entry.onCommand({ target: el }, ctx) };
+}
+
+/**
+ * The item tree's entry: the same command as the collection tree's, pointed at
+ * the papers that are selected instead of at a whole shelf.
+ *
+ * What it has to get right is which rows it will act on, because the item tree
+ * hands over several things a citation graph cannot draw. Every reduction below
+ * is one of them, and the menu hides itself when nothing is left rather than
+ * opening a tab onto an empty canvas.
+ */
+check('the item menu offers a graph of the papers selected, and only of those', async () => {
+	await restoreReady;
+	const graphTab = require_('./lib/graphTab.js');
+	const paper = (key, over) => Object.assign({
+		key, libraryID: 1, deleted: false, parentItem: null, isRegularItem: () => true,
+	}, over);
+	const inCollection = { isCollection: () => true, isFeedsOrFeed: () => false, ref: COLLECTION };
+	const inLibraryRoot = { isCollection: () => false, isFeedsOrFeed: () => false, ref: null };
+
+	// The plain case: two papers picked out of a collection.
+	const two = fireMenu('main/library/item', {
+		collectionTreeRows: [inCollection],
+		items: [paper('AAAAAAAA'), paper('BBBBBBBB')],
+	});
+	if (two.el.hidden) throw new Error('two papers were not offered a graph');
+	// The same string as the collection entry, and the same fallback path for a
+	// window whose Fluent bundle never resolved it.
+	if (two.attrs.label !== 'View Citation Graph') throw new Error('label: ' + two.attrs.label);
+
+	// One paper is enough: with outside refs on it is the honest question "what
+	// does this cite", and openSelection() switches them on for exactly that.
+	if (fireMenu('main/library/item', {
+		collectionTreeRows: [inCollection], items: [paper('AAAAAAAA')],
+	}).el.hidden) throw new Error('a single paper was refused');
+
+	// Nothing selected, and nothing that is a paper: a note, an annotation, a
+	// row in the trash. An entry that opened an empty canvas would be worse
+	// than no entry.
+	const hiddenFor = items => fireMenu('main/library/item', {
+		collectionTreeRows: [inCollection], items,
+	}).el.hidden;
+	if (!hiddenFor([])) throw new Error('an empty selection was offered a graph');
+	if (!hiddenFor([paper('NNNNNNNN', { isRegularItem: () => false })])) {
+		throw new Error('a standalone note was offered a graph');
+	}
+	if (!hiddenFor([paper('DDDDDDDD', { deleted: true })])) {
+		throw new Error('a trashed paper was offered a graph');
+	}
+	// A feed's items are not library items and have no attachments to read.
+	if (!fireMenu('main/library/item', {
+		collectionTreeRows: [{ isCollection: () => false, isFeedsOrFeed: () => true }],
+		items: [paper('AAAAAAAA')],
+	}).el.hidden) throw new Error('a feed was offered a graph');
+
+	// An attachment or a note under an expanded item stands for its paper --
+	// the rule Locate already goes by -- and a paper reached twice that way is
+	// one node, not two.
+	const opened = [];
+	const realOpen = graphTab.openSelection;
+	graphTab.openSelection = async (...args) => { opened.push(args); };
+	try {
+		const parent = paper('AAAAAAAA');
+		fireMenu('main/library/item', {
+			collectionTreeRows: [inCollection],
+			items: [
+				paper('PDFPDFPD', { isRegularItem: () => false, parentItem: parent }),
+				parent,
+				paper('BBBBBBBB'),
+			],
+		}, { name: 'the window' }).command();
+		if (opened.length !== 1) throw new Error('opened ' + opened.length + ' tabs');
+		const [win, libraryID, keys, anchor] = opened[0];
+		if (win.name !== 'the window') throw new Error('opened in the wrong window');
+		if (libraryID !== 1) throw new Error('libraryID: ' + libraryID);
+		if (keys.join() !== 'AAAAAAAA,BBBBBBBB') throw new Error('keys: ' + keys.join());
+		// Picked inside a collection, so the collection is kept as the anchor --
+		// see lib/tabContext.js for what it is still the answer to.
+		if (anchor !== COLLECTION) throw new Error('lost the collection it was picked in');
+
+		// Picked in My Library, a saved search or a tag view: no anchor, and
+		// inventing one would file an added paper somewhere nobody asked for.
+		opened.length = 0;
+		fireMenu('main/library/item', {
+			collectionTreeRows: [inLibraryRoot], items: [paper('AAAAAAAA')],
+		}, {}).command();
+		if (opened[0][3] !== null) throw new Error('a loose selection invented an anchor');
+	}
+	finally {
+		graphTab.openSelection = realOpen;
+	}
+
+	// And the collection entry still answers for a collection alone -- one row,
+	// and a row that is a collection.
+	if (fireMenu('main/library/collection', { collectionTreeRows: [inCollection] }).el.hidden) {
+		throw new Error('the collection entry stopped offering a collection');
+	}
+	if (!fireMenu('main/library/collection', {
+		collectionTreeRows: [inCollection, inCollection],
+	}).el.hidden) throw new Error('the collection entry answered a multi-selection');
+});
 
 const t1 = check('a graph tab is still in the strip when Zotero.Session reads it', async () => {
 	await restoreReady;
@@ -2359,7 +2624,7 @@ const t4 = check('a restore that ran before the plugin loaded is picked up at wi
 	}
 });
 
-check('a tab whose collection is gone drops without costing the tabs after it', async () => {
+const t5 = check('a tab whose collection is gone drops without costing the tabs after it', async () => {
 	await t4;
 	const main = require_('./lib/main.js');
 	const { win } = fakeMainWindow();
@@ -2384,6 +2649,103 @@ check('a tab whose collection is gone drops without costing the tabs after it', 
 	}
 	// The whole point of not throwing: restoreState has no per-tab catch.
 	if (after !== 1) throw new Error('the tab after the dropped ones never restored');
+});
+
+/**
+ * A selection graph across a restart, which is a different bargain from a
+ * collection's.
+ *
+ * A collection tab is unrestorable the moment its collection is gone: the tab
+ * IS the graph of it. A selection names its own papers, so what kills it is
+ * running out of THEM -- and an anchor collection that has since been deleted
+ * costs it only the conveniences the anchor bought. In between is the case that
+ * matters most: some of the papers are gone, and the tab comes back one paper
+ * smaller rather than not at all.
+ *
+ * The dead key is dropped from the scope on the way in, so nothing goes on
+ * asking for it at every rebuild, and saveTabData() writes the shortened list
+ * back the first time anything else changes.
+ */
+const t6 = check('a selection tab restores its surviving papers, and dies only with the last', async () => {
+	await t5;
+	const main = require_('./lib/main.js');
+	const graphTab = require_('./lib/graphTab.js');
+	const { win } = fakeMainWindow();
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+	// AAAAAAAA and BBBBBBBB are still in the library; CCCCCCCC was deleted while
+	// the tab was closed. getIDFromLibraryAndKey throws on a falsy library id
+	// rather than missing, which is core's own behaviour and the reason every
+	// call to it here is guarded.
+	const live = { AAAAAAAA: 1, BBBBBBBB: 2 };
+	Zotero.Items = {
+		getIDFromLibraryAndKey: (libraryID, key) => {
+			if (!libraryID) throw new Error('Library ID not provided');
+			return libraryID === 1 && live[key] ? live[key] : false;
+		},
+	};
+
+	main.onMainWindowLoad(win);
+	let after = 0;
+	win.Zotero_Tabs.tabHooks.restoreState.reader = async () => { after++; return { itemID: null }; };
+
+	await win.Zotero_Tabs.restoreState([
+		{ type: 'library', title: 'My Library', data: { icon: 'collection' } },
+		{ type: 'graph', title: '2 items — Citation Graph', selected: true,
+			data: { libraryID: 1, collectionKey: 'ABCD1234',
+				itemKeys: ['AAAAAAAA', 'CCCCCCCC', 'BBBBBBBB'],
+				icon: 'zotero-citation-graph',
+				options: { recursive: false, includeExternal: true, enrich: false } } },
+		// Every paper gone: nothing left to draw, and no collection to fall back
+		// on -- a selection graph is not a graph of its anchor.
+		{ type: 'graph', title: 'gone', data: { libraryID: 1, collectionKey: 'ABCD1234',
+			itemKeys: ['CCCCCCCC'], icon: 'zotero-citation-graph' } },
+		{ type: 'reader', title: 'A paper', data: { itemID: 5 } },
+	]);
+
+	const back = win.Zotero_Tabs._tabs.filter(t => /^graph/.test(t.type));
+	if (back.length !== 1) throw new Error('restored ' + back.length + ' graph tabs');
+	if (after !== 1) throw new Error('the tab after the dropped one never restored');
+
+	await win.Zotero_Tabs.loading;
+	// Two survivors, and the dead key is not among them. The title is the proof:
+	// it is recomputed from the scope rather than read back off the session, and
+	// the scope is what a rebuild will ask about -- so a title of three would
+	// mean the tab was still carrying a paper that no longer exists.
+	// Anchored, so the collection leads and the count follows it -- the tab
+	// strip truncates from the right, and which shelf this is is the half worth
+	// keeping.
+	if (back[0].title !== 'Reading list · 2 items — Citation Graph') {
+		throw new Error('title: ' + back[0].title);
+	}
+	// The anchor survives with it, which is what keeps "which collection is
+	// open" answerable for a selection made inside one.
+	if (graphTab.selectedCollection(back[0].id) !== COLLECTION) {
+		throw new Error('the selection lost the collection it was made in');
+	}
+	if (graphTab.selectedLibraryID(back[0].id) !== 1) throw new Error('lost its library');
+});
+
+check('a selection graph is titled by its count, anchored or not', () => {
+	const { tabTitle, selectionScope, collectionScope } = require_('./lib/graphTab.js');
+	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
+	// Without the strings -- restore runs on a timeline of Zotero's choosing and
+	// is not guaranteed to be after startup -- every form still says something
+	// better than the bare message id.
+	const loose = tabTitle(selectionScope(1, ['AAAAAAAA', 'BBBBBBBB'], null));
+	if (!/2/.test(loose) || /tab-title/.test(loose)) throw new Error('loose: ' + loose);
+	const anchored = tabTitle(selectionScope(1, ['AAAAAAAA'], collection));
+	if (!/Reading list/.test(anchored) || /tab-title/.test(anchored)) {
+		throw new Error('anchored: ' + anchored);
+	}
+	// The count can be overridden by what the build actually found, since rows
+	// that were notes never became papers.
+	if (!/7/.test(tabTitle(selectionScope(1, ['AAAAAAAA'], null), 7))) {
+		throw new Error('the built count did not reach the title');
+	}
+	if (!/Reading list/.test(tabTitle(collectionScope(collection)))) {
+		throw new Error('a collection tab lost its name');
+	}
 });
 
 check('scanUriAnnotations reads links packed into compressed object streams', () => {
@@ -3327,25 +3689,64 @@ check('nothing hidden by attribute is left visible by its own display rule', () 
 	}
 	if (ids.size < 5) throw new Error('found only ' + ids.size + ' hidden elements; the scan is broken');
 
-	// One pass over the sheet, collecting for each id whether some rule gives it
-	// a display and whether some rule takes it away again while hidden.
-	const displayed = new Set();
-	const guarded = new Set();
+	// One pass over the sheet, collecting three things: which ids a rule names
+	// directly and gives a display to, which ids are guarded against it, and --
+	// because a display can reach an element without naming it -- which TAGS
+	// and CLASSES any rule gives a display to. #recursive-label is the case
+	// that wanted the third: it takes its display:flex from `.section label`,
+	// so a scan looking only for a `#recursive-label { display }` rule would
+	// have found nothing and passed while the control stayed on screen.
+	// Both halves are collected the same way, because a display and the guard
+	// that beats it can each reach an element by name, by tag or by class:
+	// #empty-recursive is guarded by its own id, #pane-toggle by
+	// `#bar > button[hidden]`, and #recursive-label takes its display from
+	// `.section label` and needs a guard of its own. The last simple selector
+	// is the part that has to match the element itself; everything before it is
+	// context, and context is not checked -- an over-strict miss here is a rule
+	// someone has to write, which is the safe direction.
+	const give = { ids: new Set(), tags: new Set(), classes: new Set() };
+	const guard = { ids: new Set(), tags: new Set(), classes: new Set() };
 	for (const rule of css.split('}')) {
 		const [selectors, body] = rule.split('{');
 		if (!body) continue;
-		const sels = selectors.split(',').map(s => s.trim());
-		for (const s of sels) {
-			if (/(^|[^-\w])display\s*:/.test(body) && ids.has(s.slice(1))) displayed.add(s.slice(1));
-			const m = s.match(/^#([\w-]+)\[hidden\]$/);
-			if (m) guarded.add(m[1]);
+		if (!/(^|[^-\w])display\s*:/.test(body)) continue;
+		const hides = /(^|[^-\w])display\s*:\s*none/.test(body);
+		for (const sel of selectors.split(',').map(s => s.trim())) {
+			const last = sel.split(/[\s>+~]+/).filter(Boolean).pop() || '';
+			const qualified = /\[hidden\]/.test(last);
+			// A rule that fires only while hidden and sets display:none IS the
+			// guard; anything else is a display the guard has to beat.
+			const into = qualified && hides ? guard : (qualified ? null : give);
+			if (!into) continue;
+			const bare = last.replace(/\[[^\]]*\]|:[\w-]+(\([^)]*\))?/g, '');
+			const id = bare.match(/^#([\w-]+)$/);
+			if (id) into.ids.add(id[1]);
+			const tag = bare.match(/^([a-z][\w-]*)/);
+			if (tag) into.tags.add(tag[1]);
+			for (const c of bare.matchAll(/\.([\w-]+)/g)) into.classes.add(c[1]);
 		}
+	}
+
+	// What each hidden element actually is, so a tag or class rule on either
+	// side can be seen to reach it.
+	const displayed = new Set();
+	const guarded = new Set();
+	for (const id of ids) {
+		const open = html.match(new RegExp('<[a-z][\\w-]*\\b[^>]*\\bid="' + id + '"[^>]*>'));
+		if (!open) continue;
+		const tag = open[0].match(/^<([a-z][\w-]*)/)[1];
+		const cls = open[0].match(/\bclass="([^"]*)"/);
+		const classes = cls ? cls[1].split(/\s+/).filter(Boolean) : [];
+		const reaches = set => set.ids.has(id) || set.tags.has(tag)
+			|| classes.some(c => set.classes.has(c));
+		if (reaches(give)) displayed.add(id);
+		if (reaches(guard)) guarded.add(id);
 	}
 
 	const bad = [...displayed].filter(id => !guarded.has(id));
 	if (bad.length) {
-		throw new Error('#' + bad.join(', #') + ': has a display rule but no #id[hidden] rule, '
-			+ 'so the hidden attribute will not hide it');
+		throw new Error('#' + bad.join(', #') + ': something gives it a display but no '
+			+ '#id[hidden] rule takes it away, so the hidden attribute will not hide it');
 	}
 });
 
@@ -4271,6 +4672,14 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 		this.filesEditable = !!ref.filesEditable;
 	};
 	const collection = { id: 3, libraryID: 7, editable: true, filesEditable: true };
+	// The libraries a graph with no collection falls back to. A personal one is
+	// writable; a group carries its own answer, which is what core's own
+	// `editable` getter reads off the ref for a 'group' row. Installed further
+	// down, right before the one block that reads it -- see there.
+	const libraries = {
+		7: { libraryID: 7, libraryType: 'user', editable: true, filesEditable: true },
+		12: { libraryID: 12, libraryType: 'group', editable: false, filesEditable: false },
+	};
 
 	// The sidenav hands buildLocateMenu a locateMode worked out from the
 	// tab type. 'tab' is what a graph tab produces, and it is the value that
@@ -4300,6 +4709,7 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	let shown = [];
 	let graphSelection = [7];
 	let graphCollection = collection;
+	let graphLibraryID = 7;
 	tabContext.install(win, {
 		select: async (tabID, ids) => {
 			shown.push({ tabID, ids });
@@ -4310,6 +4720,7 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 			return graphSelection;
 		},
 		collection: () => graphCollection,
+		libraryID: () => graphLibraryID,
 	});
 
 	// A library tab is core's business start to finish -- same items, and the
@@ -4407,9 +4818,46 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	// answer to everything else.
 	if (graphTab.selectedItemIDs('tab-nothing').length) throw new Error('an unknown tab claimed a selection');
 	if (graphTab.selectedCollection('tab-nothing')) throw new Error('an unknown tab claimed a collection');
+	if (graphTab.selectedLibraryID('tab-nothing')) throw new Error('an unknown tab claimed a library');
+
+	// A selection graph opened from My Library, a saved search or a tag view:
+	// no collection, and the LIBRARY is the honest answer to all four
+	// questions. Letting core answer instead would hand back the collection
+	// tree's own selection, which is the trash in another library -- the very
+	// bug this module exists to fix.
+	// Installed here rather than at the top of the test, and permissive about
+	// ids it has never heard of: every check in this file starts at once and
+	// interleaves at each await, so a stub left standing across one is a stub
+	// another test is reading. Nothing below this line awaits.
+	Zotero.Libraries = { get: id => libraries[id] || { editable: true, filesEditable: true } };
+
 	graphCollection = null;
-	if (pane.getCollectionTreeRows() !== libraryRows) throw new Error('a graph with no collection invented one');
-	if (pane.canEdit()) throw new Error('a graph with no collection answered for the trash');
+	const libRow = pane.getCollectionTreeRows()[0];
+	if (libRow === libraryRows[0]) throw new Error('a graph fell through to the tree behind it');
+	if (libRow.type !== 'library' || libRow.ref !== libraries[7]) {
+		throw new Error('the row is not the library: ' + JSON.stringify(libRow.type));
+	}
+	if (libRow.view !== pane.collectionsView) throw new Error('the library row was built without its tree');
+	if (pane.getSelectedLibraryIDs()[0] !== 7) throw new Error('a note would be filed in the wrong library');
+	if (!pane.canEdit() || !pane.canEditFiles()) throw new Error('a writable library said no');
+	// Nothing to hang a new collection under, which is core's own reading of
+	// "the library root". The tree's collection 55, in another library, is the
+	// answer that must not come back.
+	if (pane.getSelectedCollections().length) throw new Error('a new collection would go under the tree\'s');
+
+	// A read-only group answers from its own ref, the way core's 'group' row
+	// does -- not a blanket yes for being a library rather than a collection.
+	graphLibraryID = 12;
+	if (pane.getCollectionTreeRows()[0].type !== 'group') throw new Error('a group came back as a plain library');
+	if (pane.canEdit() || pane.canEditFiles()) throw new Error('a read-only group became writable');
+	graphLibraryID = 7;
+
+	// Neither one: a tab closed, or restored and never selected. Core's own
+	// answer is better than an invented anything.
+	graphLibraryID = null;
+	if (pane.getCollectionTreeRows() !== libraryRows) throw new Error('a graph with no scope invented one');
+	if (pane.canEdit()) throw new Error('a graph with no scope answered for the trash');
+	graphLibraryID = 7;
 	graphCollection = collection;
 
 	tabContext.uninstall(win);
@@ -4423,6 +4871,7 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	tabContext.install(win, {
 		itemIDs: () => [7],
 		collection: () => collection,
+		libraryID: () => 7,
 		select: async () => true,
 	});
 	const ours = pane.getSelectedItems;

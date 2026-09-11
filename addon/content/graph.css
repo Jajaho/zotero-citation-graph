@@ -1443,6 +1443,13 @@ body {
    screen, with the code that "hides" it setting an attribute nothing reads. */
 #empty[hidden],
 #empty-sub[hidden],
+/* A selection graph has no subcollections to include, so the switch goes.
+   Needed because .section label is display:flex, and an author rule beats the
+   UA stylesheet's [hidden] { display: none }. */
+#recursive-label[hidden] {
+	display: none;
+}
+
 #empty-recursive[hidden] {
 	display: none;
 }

@@ -11,7 +11,14 @@ let nodeMenu = require('./nodeMenu.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 
+// Two entry points, two registrations. MenuManager keys a menu by id and each
+// target gets its own popup, so the collection tree's entry and the item
+// tree's cannot be one record -- and should not be: they ask different
+// questions of the context they are shown in, and answer with different kinds
+// of graph. They carry the same label and the same icon, because to the reader
+// they are one command: graph what I am pointing at.
 const MENU_ID = 'zotero-citation-graph-collection';
+const ITEM_MENU_ID = 'zotero-citation-graph-item';
 
 // plugins.js REASONS.APP_SHUTDOWN, the reason Zotero passes when it is quitting
 // rather than when the plugin alone is going away. The two want opposite
@@ -76,6 +83,7 @@ module.exports = {
 		}
 
 		this.registerMenu();
+		this.registerItemMenu();
 	},
 
 	/**
@@ -89,11 +97,13 @@ module.exports = {
 					+ `  strip=[${graphTab.stripSummary(win)}]`);
 			}
 		}
-		try {
-			Zotero.MenuManager.unregisterMenu(MENU_ID);
-		}
-		catch (e) {
-			Zotero.logError(e);
+		for (let id of [MENU_ID, ITEM_MENU_ID]) {
+			try {
+				Zotero.MenuManager.unregisterMenu(id);
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
 		}
 
 		// The hooks first: nothing below should be able to call a load hook
@@ -198,7 +208,122 @@ module.exports = {
 			],
 		});
 	},
+
+	/**
+	 * The same command on the ITEM tree's context menu, over the papers the user
+	 * has selected -- which is the other unit anyone asks this question about.
+	 * A collection is the shelf; a selection is the handful you pulled off it,
+	 * and "what do these few cite in common" has had no way to be asked until
+	 * now except by building a collection and then filtering it back down.
+	 *
+	 * Note where it lands. MenuManager puts every plugin's entries after a
+	 * separator at the foot of the popup, and folds the overflow into a
+	 * submenu once the popup would run past 80% of the screen (_groupMenus,
+	 * _computeAvailableMenuNum). The item menu is long, so this will not sit
+	 * where the collection entry sits -- the icon is what carries it.
+	 */
+	registerItemMenu() {
+		Zotero.MenuManager.registerMenu({
+			menuID: ITEM_MENU_ID,
+			pluginID: _config.pluginID,
+			target: 'main/library/item',
+			menus: [
+				{
+					menuType: 'menuitem',
+					// The same string and the same icon as the collection entry:
+					// one command, two things to point it at.
+					l10nID: 'zotero-citation-graph-view-citation-graph',
+					icon: `resource://${_config.resRoot}/content/icons/graph.svg`,
+					onShowing: (event, ctx) => {
+						let el = event.target;
+						el.hidden = !graphableKeys(ctx).length;
+						if (!el.hidden && !el.getAttribute('label')) {
+							el.setAttribute('label', l10n.attr('view-citation-graph', 'label'));
+						}
+					},
+					onCommand: (event, ctx) => {
+						let keys = graphableKeys(ctx);
+						if (!keys.length) return;
+						let win = event.target.ownerGlobal;
+						graphTab.openSelection(
+							win, keys[0].libraryID, keys.map(k => k.key), anchorCollection(ctx), _config
+						).catch(e => Zotero.logError(e));
+					},
+				},
+			],
+		});
+	},
 };
+
+/**
+ * The selected rows reduced to the papers a graph could be built from, as
+ * { libraryID, key }. Empty means there is nothing to offer and the entry stays
+ * hidden.
+ *
+ * Four reductions, each of them something the item tree can hand us that the
+ * graph cannot draw:
+ *
+ *  - A FEED's items are not library items, have no attachments and cannot be
+ *    read for references. Checked on the tree row rather than per item, since
+ *    that is where the answer is cheap and unambiguous.
+ *  - A TRASHED item is left out, for the reason a collection's own
+ *    getChildItems(false, false) leaves them out: the trash is not the library.
+ *  - A CHILD row -- an attachment or note under an expanded item -- stands for
+ *    its parent. Right-clicking a PDF is asking about the paper, which is the
+ *    rule Locate already goes by (lib/tabContext.js resolve()).
+ *  - Anything that is still not a REGULAR item after that -- a standalone note,
+ *    an annotation -- has no place in a citation graph.
+ *
+ * Deliberately NOT reduced here: an item with no title. itemRecord() declines
+ * those, and the build reports the shortfall on the stats line rather than the
+ * menu quietly pretending the row was never picked. The menu's job is to say
+ * whether there is anything worth opening a tab for.
+ *
+ * One item is enough. A single paper with outside references on is the honest
+ * question "what does this cite", and graphTab.openSelection() switches them on
+ * for exactly that case.
+ */
+function graphableKeys(ctx) {
+	let rows = (ctx && ctx.collectionTreeRows) || [];
+	// Never read ctx.collectionTreeRow -- core defines it as a getter that
+	// throws for multi-selection.
+	if (rows.length === 1 && rows[0].isFeedsOrFeed && rows[0].isFeedsOrFeed()) return [];
+
+	let out = [];
+	let seen = new Set();
+	for (let item of (ctx && ctx.items) || []) {
+		try {
+			let it = item;
+			if (it.parentItem) it = it.parentItem;
+			if (it.deleted) continue;
+			if (!it.isRegularItem()) continue;
+			if (seen.has(it.key)) continue;
+			seen.add(it.key);
+			out.push({ libraryID: it.libraryID, key: it.key });
+		}
+		catch (e) {
+			// One row we cannot read is one row left out, not a menu that
+			// throws while it is being built.
+			Zotero.logError(e);
+		}
+	}
+	return out;
+}
+
+/**
+ * The collection a selection was made in, when it was made in one -- the anchor
+ * a selection graph keeps for every question that is about a place in the
+ * library rather than about the papers: where a newly added work is filed, and
+ * whether this can be written to at all. Null in My Library, a saved search, a
+ * tag view or unfiled items, where the library itself answers instead. See
+ * lib/tabContext.js.
+ */
+function anchorCollection(ctx) {
+	let rows = (ctx && ctx.collectionTreeRows) || [];
+	if (rows.length !== 1) return null;
+	let row = rows[0];
+	return row.isCollection && row.isCollection() ? row.ref : null;
+}
 
 /**
  * What session.json held for the main window, as a list of tab types.
@@ -281,6 +406,7 @@ function addTabContext(win) {
 	tabContext.install(win, {
 		itemIDs: graphTab.selectedItemIDs,
 		collection: graphTab.selectedCollection,
+		libraryID: graphTab.selectedLibraryID,
 		select: graphTab.selectItems,
 	});
 }
