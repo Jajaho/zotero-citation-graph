@@ -76,10 +76,35 @@ const pct = (x) => (x * 100).toFixed(0) + '%';
 const normDoi = (d) => String(d || '').toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '');
 const f1 = (p, r) => (p + r === 0 ? 0 : (2 * p * r) / (p + r));
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+// Seconds once a run stops being something you wait through and starts being
+// something you go and do something else during.
+const ms = (n) => (n == null ? '-' : n < 10000 ? n + 'ms' : (n / 1000).toFixed(1) + 's');
 
 function sh(cmd, args) {
 	try { return execFileSync(cmd, args, { encoding: 'utf8' }).trim(); }
 	catch (_) { return null; }
+}
+
+/**
+ * How long a run took, split into the part a strategy is answerable for and the
+ * part it is not.
+ *
+ * `deriveMs` is the strategy's own time, summed over its providers so a union
+ * row is the sum of its members. `buildMs` is the whole call, which also carries
+ * the collection index and the attachment reads -- work shared by every run and
+ * charged to whichever one happened to go first. Reporting only the total would
+ * make the first strategy in the list look slow forever.
+ *
+ * Wall-clock, so it measures this machine on this day and belongs beside the
+ * rest of `conditions` rather than in any comparison: the delta table
+ * deliberately does not diff it. It answers "which strategy costs the user the
+ * wait?", not "did this commit regress?".
+ */
+function timing(meta) {
+	const per = (meta && meta.perProvider) || {};
+	const deriveMs = Object.values(per).reduce((a, p) => a + ((p && p.ms) || 0), 0);
+	return { buildMs: (meta && meta.ms) || 0, deriveMs, perProviderMs: Object.fromEntries(
+		Object.entries(per).map(([k, v]) => [k, (v && v.ms) || 0])) };
 }
 
 /**
@@ -211,7 +236,7 @@ async function main() {
 	for (const id of ids) {
 		try {
 			const r = await cg.build(adapter, { enable: [id], includeExternal: !!ext, providers: providerOpts });
-			runs.push({ id, edges: r.edges, errors: (r.meta && r.meta.errors) || [] });
+			runs.push({ id, edges: r.edges, errors: (r.meta && r.meta.errors) || [], ...timing(r.meta) });
 		} catch (e) { runs.push({ id, error: e.message }); }
 	}
 	const unions = [['OFFLINE (union)', offlineIds], ['ALL (union)', ids]];
@@ -221,7 +246,7 @@ async function main() {
 		if (enable.length < 2 || (label === 'OFFLINE (union)' && enable.length === ids.length)) continue;
 		try {
 			const r = await cg.build(adapter, { enable, includeExternal: !!ext, providers: providerOpts });
-			runs.push({ id: label, union: true, edges: r.edges, errors: (r.meta && r.meta.errors) || [] });
+			runs.push({ id: label, union: true, edges: r.edges, errors: (r.meta && r.meta.errors) || [], ...timing(r.meta) });
 		} catch (e) { runs.push({ id: label, union: true, error: e.message }); }
 	}
 
@@ -237,6 +262,7 @@ async function main() {
 	const results = runs.map((r) => (r.error
 		? { id: r.id, union: !!r.union, error: r.error }
 		: { id: r.id, union: !!r.union, errors: r.errors, ...gradeCore(r.edges),
+			buildMs: r.buildMs, deriveMs: r.deriveMs, perProviderMs: r.perProviderMs,
 			external: ext ? gradeExternal(r.edges) : null }));
 
 	// What each strategy alone contributes: the true edges no other strategy in
@@ -376,7 +402,7 @@ async function main() {
 		console.log('');
 		console.log(pad('strategy', 16), rpad('pred', 5), rpad('TP', 4), rpad('uniq', 5), rpad('FP', 4),
 			rpad('prec', 6), rpad('recall', 7), rpad('F1', 6), rpad('dup', 4), rpad('traps', 6),
-			run.tier2 ? '  | ext TP  miss  unconf  defect' : '');
+			(run.tier2 ? '  | ext TP  miss  unconf  defect' : '') + rpad('derive', 9) + rpad('build', 8));
 		const bm = new Map((baseline && baseline.results || []).map((r) => [r.id, r]));
 		for (const r of run.results) {
 			if (r.error) { console.log(pad(r.id, 16), ' ERROR:', r.error); continue; }
@@ -385,7 +411,8 @@ async function main() {
 				rpad(r.union ? '-' : r.uniqueTp.length, 5), rpad(r.fp, 4),
 				rpad(pct(r.precision), 6), rpad(pct(r.recall), 7), rpad(r.f1.toFixed(2), 6),
 				rpad(r.duplicateSelfLoops, 4), rpad(r.trapsHit.length || '-', 6),
-				e ? '  | ' + rpad(e.tp, 6) + rpad(e.missed, 6) + rpad(e.unconfirmed, 8) + rpad(e.defects, 7) : '');
+				(e ? '  | ' + rpad(e.tp, 6) + rpad(e.missed, 6) + rpad(e.unconfirmed, 8) + rpad(e.defects, 7) : '')
+				+ rpad(ms(r.deriveMs), 9) + rpad(ms(r.buildMs), 8));
 			const b = bm.get(r.id);
 			if (b && !b.error) {
 				const d = (x, y) => (y - x === 0 ? null : (y - x > 0 ? '+' : '') + (y - x));
@@ -465,6 +492,20 @@ async function main() {
 				+ ' | ' + r.fp + ' | ' + pct(r.precision)
 				+ ' | ' + pct(r.recall) + ' | ' + pct(r.recallReachable) + ' | ' + r.f1.toFixed(2)
 				+ ' | ' + r.duplicateSelfLoops + ' | ' + (r.trapsHit.length || '—') + ' |');
+		}
+		L.push('');
+		L.push('### Time');
+		L.push('');
+		L.push('`derive` is the strategy\'s own work; `build` is the whole call, which also carries');
+		L.push('the collection index and the attachment reads — shared work, charged to whichever');
+		L.push('run went first. Wall-clock on the machine named above, so it is not comparable');
+		L.push('across runs and the baseline table deliberately does not diff it.');
+		L.push('');
+		L.push('| strategy | derive | build |');
+		L.push('|---|---|---|');
+		for (const r of run.results) {
+			if (r.error) continue;
+			L.push('| `' + r.id + '` | ' + ms(r.deriveMs) + ' | ' + ms(r.buildMs) + ' |');
 		}
 		L.push('');
 		const uniq = run.results.filter((r) => !r.union && !r.error && r.uniqueTp.length);

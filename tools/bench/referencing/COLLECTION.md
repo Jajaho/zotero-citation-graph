@@ -231,7 +231,7 @@ and its outgoing edges to `edges` — including `doi`/`title`/`authorYear` for
 each, since those flags are what make per-strategy ceilings computable rather
 than guessed. Read the citing PDF's reference list; do not resolve the references
 through a metadata API, or the answer key stops being independent of the thing it
-measures. Then `npm run accuracy:external` to rebuild tier 2, and update the
+measures. Then `npm run bench-ref:external` to rebuild tier 2, and update the
 counts in `summary`.
 
 If a probe flags a pair you then reject, put it in `expectedNonEdges` with the

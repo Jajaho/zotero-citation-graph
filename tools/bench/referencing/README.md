@@ -18,13 +18,13 @@ thrown at the plugin without touching a real library:
 `zotero.exe -datadir "C:\Users\you\Zotero citation_graph_testing"`.
 
 ```
-npm run accuracy -- --data-dir "C:/Users/me/Zotero citation_graph_testing"
-npm run accuracy -- --data-dir <dir> --db ./snap.sqlite      # Zotero running
-npm run accuracy -- --data-dir <dir> --enable openalex --api-key KEY
-npm run accuracy -- --data-dir <dir> --report REPORT.md --json baseline.json
-npm run accuracy -- --data-dir <dir> --baseline baseline.json
-npm run accuracy -- --data-dir <dir> --no-external           # tier 1 only
-npm run accuracy:external                                    # rebuild tier 2
+npm run bench-ref -- --data-dir "C:/Users/me/Zotero citation_graph_testing"
+npm run bench-ref -- --data-dir <dir> --db ./snap.sqlite      # Zotero running
+npm run bench-ref -- --data-dir <dir> --enable openalex --api-key KEY
+npm run bench-ref -- --data-dir <dir> --report REPORT.md --json baseline.json
+npm run bench-ref -- --data-dir <dir> --baseline baseline.json
+npm run bench-ref -- --data-dir <dir> --no-external           # tier 1 only
+npm run bench-ref:external                                    # rebuild tier 2
 ```
 
 Zotero holds a write lock on `zotero.sqlite` while it runs, so point `--db` at a
@@ -34,7 +34,7 @@ copy if it is open.
 network. To reproduce the committed standing:
 
 ```
-npm run accuracy -- --data-dir <dir> --db ./run.sqlite \
+npm run bench-ref -- --data-dir <dir> --db ./run.sqlite \
   --enable pdf-links,text-doi,title-match,ref-strings,openalex \
   --report tools/bench/referencing/REPORT.md --json tools/bench/referencing/baseline.json
 ```
