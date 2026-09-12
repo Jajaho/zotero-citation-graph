@@ -883,6 +883,14 @@ body {
  * section is open. That is the opposite of what this file used to do -- a
  * caret rotated -90 when closed -- and matching it costs one rule and one
  * swapped resting state.
+ *
+ * The turn has to pivot on the chevron itself, or the two states sit apart.
+ * Two things pulled it off: the icon comes out of Icons.svg at the menus'
+ * 16px, spilling out of this 12px box to the right and below (and sitting on
+ * the text baseline, as an inline <svg> does), so the box's centre was not the
+ * icon's; and the shape is not centred on its own grid either -- it spans y 5
+ * to 11.71 of 16, a middle of 8.35 rather than 8. So the icon fills the box as
+ * a block, and the pivot is the shape's middle: 8.35 / 16 = 52.2% down.
  */
 .section-chevron {
 	flex: 0 0 auto;
@@ -890,8 +898,14 @@ body {
 	height: 12px;
 	color: var(--fill-secondary);
 	transform: rotate(0deg);
-	transform-origin: center;
+	transform-origin: 50% 52.2%;
 	transition: transform 0.2s ease-in-out;
+}
+
+.section-chevron svg {
+	display: block;
+	width: 100%;
+	height: 100%;
 }
 
 .section:not(.collapsed) .section-chevron {
