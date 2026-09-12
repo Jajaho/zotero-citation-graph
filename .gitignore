@@ -4,4 +4,9 @@ dist/
 *.sqlite
 *.tmp
 CLAUDE.md
-/README.md
+
+# Whole-library benchmark output. Regenerating these is fine; committing them is
+# not -- they name DOIs from the real library. They live in the private docs repo.
+/tools/bench/referencing/baseline-library.json
+/tools/bench/referencing/REPORT-library.md
+/tools/bench/referencing/REPORT-library-misses.md

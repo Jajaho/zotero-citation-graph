@@ -5,6 +5,13 @@
 // It checks the unpacked directory too, which isolates the manifest from the
 // packaging entirely.
 
+// Both probes are read from these two lines, so a checkout somewhere else -- or a
+// version other than the one last built -- is a one-line edit rather than a hunt
+// through the file. ROOT takes forward slashes on every platform because it is
+// spliced into a file:// URI, not handed to the shell.
+var ROOT = "C:/Users/you/Repositories/zotero-graph-plugin";
+var XPI  = "zotero-citation-graph-0.68.2.xpi";
+
 var { ExtensionData } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 
 async function probe(label, uriStr) {
@@ -33,11 +40,11 @@ async function probe(label, uriStr) {
 var out = [];
 out.push(await probe(
 	"unpacked directory",
-	"file:///C:/Users/you/Repositories/zotero-graph-plugin/addon/"
+	"file:///" + ROOT + "/addon/"
 ));
 out.push(await probe(
 	"packed xpi",
-	"jar:file:///C:/Users/you/Repositories/zotero-graph-plugin/dist/zotero-citation-graph-0.1.0.xpi!/"
+	"jar:file:///" + ROOT + "/dist/" + XPI + "!/"
 ));
 
 return JSON.stringify(out, null, 1);
