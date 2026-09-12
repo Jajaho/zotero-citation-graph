@@ -997,9 +997,40 @@ body {
 	max-width: 60%;
 }
 
+/*
+ * The one push button in the panel, drawn rather than left to the widget.
+ *
+ * It used to be the platform's own, and that could not survive .pending. A
+ * button keeps its native drawing only for as long as nobody touches its
+ * background: the moment an author rule sets one, Gecko stops theming it and
+ * falls back to what the UA sheet says underneath -- `border: 2px outset
+ * ButtonBorder`, and no radius at all. So the lit button came out square and a
+ * pixel wider than the same button unlit, which is the shape changing to say
+ * something only the colour is meant to say.
+ *
+ * Both states are declared here instead, out of the same tokens every other
+ * control borrows, so that .pending changes three colours and nothing else. It
+ * is very nearly what Gecko was drawing anyway -- a hairline, a 4px radius, a
+ * near-white plate -- with one thing gained: the plain state now follows
+ * Zotero's View > Color Scheme like the rest of the page, where the themed
+ * widget was reading the OS.
+ */
 #rebuild {
 	font: inherit;
 	padding: 3px 8px;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	background: var(--zg-input-background);
+	color: var(--fill-primary);
+	cursor: pointer;
+}
+
+#rebuild:hover {
+	background: var(--zg-input-hover);
+}
+
+#rebuild:active {
+	background: var(--fill-quarternary);
 }
 
 /*
@@ -1018,6 +1049,20 @@ body {
 	background: var(--accent-blue);
 	border-color: var(--accent-blue);
 	color: #fff;
+}
+
+/* The plain hover and press are a plate under the label, which says nothing
+   once the button is already wearing one. Written out rather than mixed from
+   --accent-blue so it is one value in both schemes -- the token itself does
+   not change between them. */
+#rebuild.pending:hover {
+	background: #3461cc;
+	border-color: #3461cc;
+}
+
+#rebuild.pending:active {
+	background: #2d54b0;
+	border-color: #2d54b0;
 }
 
 .section-title {
