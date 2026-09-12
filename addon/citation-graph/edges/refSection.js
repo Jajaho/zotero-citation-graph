@@ -18,8 +18,10 @@ const { markerRun } = require('./refParse');
  */
 
 const HEADING = /^\s*(\d+\.?\s*)?(references|bibliography|literature cited|works cited|references and notes|reference list)\s*:?\s*$/i;
-// A numbered-entry run: several lines starting [1] / 1. / (1) close together.
-const NUMBERED = /^\s*[\[(]?\d{1,3}[\]).]\s+\S/;
+// A numbered entry: [1] / 1. / (1) at the head of a line. The marker's NUMBER
+// is captured, because what chains one entry to the next is that the numbers
+// climb rather than that the lines are adjacent -- see step 2.
+const NUMBERED = /^\s*[\[(]?(\d{1,3})[\]).]\s+\S/;
 
 function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFraction = 0.5 } = {}) {
 	if (!text || text.length < 200) return { text: '', flat: '', quality: 'none' };
@@ -35,20 +37,50 @@ function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFrac
 		}
 	}
 
-	// 2. No heading: find the last sustained run of numbered entries.
-	let runStart = -1, run = 0, bestStart = -1;
+	// 2. No heading: the last run of numbered entries, from where it really
+	//    starts.
+	//
+	//    Runs are chained by their MARKER NUMBERS rather than by the lines
+	//    between them, because what separates one entry from the next in a
+	//    bibliography is nothing at all -- an entry wraps onto a continuation
+	//    line, and whether that line is indented is a fact about the PDF
+	//    extractor, not about the document. Counting consecutive numbered
+	//    LINES made every unindented wrap end the run and start a new one, so
+	//    the last surviving run was whatever tail of the list happened to be
+	//    typeset without a wrap. Two Wiley papers in the sample library lost
+	//    references [1] through [21] that way: the section began at [22],
+	//    which is a reference list with its first twenty-one entries cut off.
+	//
+	//    Ascending, and by a small step, is what keeps this from chaining
+	//    across a document: a bibliography numbers 1, 2, 3 in order, while the
+	//    stray bracketed numbers in body text do not climb.
+	const marks = [];
 	for (let i = 0; i < lines.length; i++) {
-		if (NUMBERED.test(lines[i])) {
-			if (run === 0) runStart = i;
-			run++;
-			if (run >= minNumberedRun) bestStart = runStart;
+		const m = NUMBERED.exec(lines[i]);
+		if (m) marks.push({ line: i, n: Number(m[1]) });
+	}
+	const chains = [];
+	for (const mark of marks) {
+		const last = chains.length ? chains[chains.length - 1] : null;
+		const prev = last && last[last.length - 1];
+		// A gap in LINES is allowed and expected -- that is the wrapped text of
+		// the entry before -- but a gap of forty says the list ended and
+		// something else began.
+		if (prev && mark.n > prev.n && mark.n - prev.n <= 3 && mark.line - prev.line <= 40) {
+			last.push(mark);
 		}
-		else if (lines[i].trim() === '') {
-			// blank lines do not break a run
-		}
-		else if (run > 0 && !/^\s{2,}\S/.test(lines[i])) {
-			run = 0;
-		}
+		else { chains.push([mark]); }
+	}
+	// The last chain long enough to be a bibliography, preferring later ones:
+	// a paper's own reference list sits below any numbered list in its body.
+	// A chain whose start would claim most of the document is not one -- see
+	// the Bertet 2001 note below, which is the same failure a step earlier.
+	let bestStart = -1;
+	for (let i = chains.length - 1; i >= 0; i--) {
+		if (chains[i].length < minNumberedRun) continue;
+		const start = chains[i][0].line;
+		const t = lines.slice(start).join('\n');
+		if (t.length <= text.length * maxNumberedFraction) { bestStart = start; break; }
 	}
 	if (bestStart >= 0) {
 		const t = lines.slice(bestStart).join('\n');

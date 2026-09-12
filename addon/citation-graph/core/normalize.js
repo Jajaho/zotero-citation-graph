@@ -30,9 +30,35 @@ function normDoi(raw) {
 	let d = decodePercentEscapes(String(raw).trim()).toLowerCase()
 		.replace(/^https?:\/\/(dx\.)?doi\.org\//, '')
 		.replace(/^doi:\s*/, '')
-		.replace(/[.,;:)\]]+$/, '')
+		.replace(/[.,;:\]]+$/, '')
 		.replace(URL_TAIL_RE, '');
+	d = stripUnmatchedCloser(d);
 	return /^10\.\d{4,9}\//.test(d) ? d : null;
+}
+
+/**
+ * Drop a trailing `)` only when it closes nothing the DOI itself opened.
+ *
+ * Both spellings occur and they need opposite treatment. A DOI written inside
+ * a parenthesis -- "(see 10.1234/abc)" -- picks up a closer that is the
+ * sentence's, not its own. A 1960s Elsevier DOI carries its own:
+ * 10.1016/0017-9310(69)90011-8. Stripping unconditionally, as this did, cut
+ * that one to `10.1016/0017-9310(69` -- a string no resolver knows, minting a
+ * ghost node for a paper that does exist and is cited right there.
+ *
+ * Counting is enough to tell them apart: strip while there are more closers
+ * than openers. Measured against the 8,107 DOIs Crossref deposited for the
+ * sample library, not one has unbalanced parentheses.
+ */
+function stripUnmatchedCloser(d) {
+	let s = d;
+	for (;;) {
+		if (!s.endsWith(')')) return s;
+		const open = (s.match(/\(/g) || []).length;
+		const close = (s.match(/\)/g) || []).length;
+		if (close <= open) return s;
+		s = s.slice(0, -1).replace(/[.,;:\]]+$/, '');
+	}
 }
 
 /**
@@ -65,22 +91,72 @@ function decodePercentEscapes(s) {
  *                               ("10.1038/ and see...") from being swallowed
  *   after an interior . or / -- only when a DIGIT follows, so a reference ending
  *                               "...nature12373. Smith et al." is left alone
+ *   before a . and a digit   -- APS prints `10.1103/PhysRevLett .125.260502`,
+ *                               and a DOI followed by " .5" is not a sentence
+ *   after a BALANCED )       -- `10.1016/0017-9310(69) 90011-8` continues; the
+ *                               closer the DOI opened itself is the evidence,
+ *                               which is what keeps "(see 10.1234/abc) 5" out
+ *   after an interior .      -- when a word CARRYING A DIGIT follows, for
+ *                               Elsevier's `10.1016/j. ijthermalsci.2021` and
+ *                               OSA's `10.1364/CLEO_SI.2019. STu4O.7`. The
+ *                               digit is the whole guard: it has to fall before
+ *                               the next space, so "...nature12373. Smith et
+ *                               al." and "...nature12373. See also" are left
+ *                               alone, having none
+ *   before a ( that continues -- `10.1016/S1369-8001 (03)00075-1`, where the
+ *                               bracket group is followed by a digit. A year in
+ *                               parentheses is not: "nature12373 (2013)." ends
+ *                               at the closer, and is left alone
+ *
+ * These are not hypotheses. Each was read out of a PDF in the sample library
+ * whose citation went missing because of it, and each cost a real edge.
  */
 function healDoiLineBreaks(s) {
 	return String(s)
 		.replace(/(\b10\.)[ \t]+(?=\d{4,9})/g, '$1')
 		.replace(/(\b10\.\d{4,9}\/)[ \t]+(?=[-._;()\/:<>a-zA-Z0-9]*\d)/g, '$1')
-		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[.\/])[ \t]+(?=\d)/g, '$1');
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[.\/])[ \t]+(?=\d)/g, '$1')
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[a-zA-Z0-9])[ \t]+(?=\.\d)/g, '$1')
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*\))[ \t]+(?=\d)/g,
+			(m, doi) => ((doi.match(/\(/g) || []).length === (doi.match(/\)/g) || []).length ? doi : m))
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*\.)[ \t]+(?=[A-Za-z]{2,}[-._;()\/:<>A-Za-z0-9]*\d)/g, '$1')
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[a-zA-Z0-9])[ \t]+(?=\(\d{1,4}\)\d)/g, '$1');
 }
 
-/** All DOIs occurring in a blob of text, de-duplicated and normalized. */
+/**
+ * XML character entities, decoded.
+ *
+ * A link annotation is not always clean URL text. AIP deposits the legacy
+ * Wiley DOI 10.1002/1521-3978(200009)48:9/11<771::AID-PROP771>3.0.CO;2-E with
+ * its angle brackets written `&tnqx3c;` and `&tnqx3e;` -- their typesetting
+ * system's spelling of `&#x3c;` -- and the DOI pattern stops dead at the `&`,
+ * cutting the identifier in half. Numeric and named forms are decoded too,
+ * since the same round trip produces all three.
+ */
+function decodeXmlEntities(s) {
+	return String(s)
+		.replace(/&(?:tnqx|#x)([0-9a-fA-F]{2,4});/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)))
+		.replace(/&#(\d{2,5});/g, (m, dec) => String.fromCharCode(Number(dec)))
+		.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+}
+
+/**
+ * All DOIs occurring in a blob of text, de-duplicated and normalized.
+ *
+ * A match whose suffix carries no digit at all is dropped. Every DOI that
+ * reaches us cut short by an extraction artefact ends that way -- `10.1016/j`,
+ * `10.1103/physrevlett` -- and of the 8,107 DOIs Crossref deposited for the
+ * sample library, not one does. Emitting them is worse than emitting nothing:
+ * a truncated DOI is not a missing edge but a ghost node, a work that exists
+ * under no such identifier and that nobody can have cited.
+ */
 function findDois(text) {
 	if (!text) return [];
-	const prepared = healDoiLineBreaks(decodePercentEscapes(text));
+	const prepared = healDoiLineBreaks(decodeXmlEntities(decodePercentEscapes(text)));
 	const out = new Set();
 	for (const m of prepared.match(DOI_RE_G) || []) {
 		const d = normDoi(m);
-		if (d) out.add(d);
+		if (d && /\d/.test(d.slice(d.indexOf('/') + 1))) out.add(d);
 	}
 	return [...out];
 }

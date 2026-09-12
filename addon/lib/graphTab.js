@@ -32,7 +32,13 @@ let { externalKey } = require('../citation-graph/core/types.js');
 // Ordered fastest-first. Every EDGE strategy here is offline; `openalex` is
 // registered but never selected, so no edge build reaches the network. The
 // separate enrichment phase does, but only when the user has switched it on.
-const TEXT_STRATEGIES = ['text-doi', 'title-match'];
+// locator-match belongs here rather than in a phase of its own: it reads the
+// same reference sections the other two read, off the same per-build cache, and
+// costs about a second over three hundred PDFs. It is also the only one of the
+// three that can see a numeric-style reference, which prints no title and no
+// DOI -- so leaving it out of this list would leave whole fields' citations
+// undrawn while the strategy sat registered and never selected.
+const TEXT_STRATEGIES = ['text-doi', 'title-match', 'locator-match'];
 const PDF_STRATEGIES = ['pdf-links'];
 
 // Ghosts to name, most-locally-cited first. The payload cap below is 4,000, and

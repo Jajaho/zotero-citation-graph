@@ -12,6 +12,7 @@
 require('./edges/pdfLinks');
 require('./edges/textDoi');
 require('./edges/titleMatch');
+require('./edges/locatorMatch');
 require('./edges/refStrings');
 require('./edges/openalex');
 

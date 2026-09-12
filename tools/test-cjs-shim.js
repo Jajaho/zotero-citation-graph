@@ -167,7 +167,7 @@ check('every bundled strategy is registered via nested requires', () => {
 	// Ignore anything a later check registers -- the registry is process-wide and
 	// this must not depend on which check ran first.
 	const ids = cg.listStrategies().map(s => s.id).filter(id => !id.startsWith('test-')).sort();
-	const want = ['openalex', 'pdf-links', 'ref-strings', 'text-doi', 'title-match'];
+	const want = ['locator-match', 'openalex', 'pdf-links', 'ref-strings', 'text-doi', 'title-match'];
 	if (JSON.stringify(ids) !== JSON.stringify(want)) {
 		throw new Error('got ' + JSON.stringify(ids));
 	}
@@ -191,6 +191,101 @@ check('normalize behaves identically to the Node-loaded copy', () => {
 	for (const c of cases) {
 		if (viaShim.normDoi(c) !== viaNode.normDoi(c)) throw new Error('mismatch on ' + c);
 	}
+});
+
+check('a DOI a PDF broke in half is put back together, and prose is not', () => {
+	const { findDois } = require_('./citation-graph/core/normalize');
+	// Every left-hand string was read out of a real PDF in the sample library,
+	// and each one cost an edge or minted a ghost node before it was healed.
+	const heals = [
+		['https://doi.org/10.1016/0017-9310(69) 90011-8.', '10.1016/0017-9310(69)90011-8'],
+		['https://doi.org/10.1016/j. ijthermalsci.2021.107156.', '10.1016/j.ijthermalsci.2021.107156'],
+		['supplemental/10.1103/PhysRevLett .125.260502 for', '10.1103/physrevlett.125.260502'],
+		['https://doi.org/10.1364/CLEO_SI.2019. STu4O.7 (2019).', '10.1364/cleo_si.2019.stu4o.7'],
+		['https://doi.org/10.1016/S1369-8001 (03)00075-1 [XK11]', '10.1016/s1369-8001(03)00075-1'],
+		['10.1002/1521-3978(200009)48:9/11&tnqx3c;771::AID-PROP771&tnqx3e;3.0.CO;2-E',
+			'10.1002/1521-3978(200009)48:9/11<771::aid-prop771>3.0.co;2-e'],
+	];
+	for (const [text, want] of heals) {
+		const got = findDois(text);
+		if (!got.includes(want)) throw new Error(text + ' -> ' + JSON.stringify(got));
+	}
+	// The other half of the bargain: a sentence that merely follows a DOI must
+	// never be swallowed into it, and a year in parentheses is a year.
+	const leaveAlone = [
+		['see 10.1038/nature12373. Smith et al. report', '10.1038/nature12373'],
+		['Nature 499, 431 (2013), doi:10.1038/nature12373 (2013).', '10.1038/nature12373'],
+		['(see 10.1234/abc5) 2020 is the year', '10.1234/abc5'],
+	];
+	for (const [text, want] of leaveAlone) {
+		const got = findDois(text);
+		if (got.length !== 1 || got[0] !== want) throw new Error(text + ' -> ' + JSON.stringify(got));
+	}
+	// A suffix with no digit in it is what a truncation looks like, and what no
+	// real DOI looks like: 0 of the 8,107 Crossref deposited for the sample
+	// library. Emitting one mints a node for a work that does not exist.
+	if (findDois('the stub 10.1016/j is not a DOI').length) throw new Error('stub DOI emitted');
+});
+
+check('a numeric-style reference naming no title is still resolved', () => {
+	const cg = require_('./citation-graph/index.js');
+	// The citing paper prints the APS/AIP form: no title, no DOI, just the
+	// journal, the volume and the first page. Every other offline strategy is
+	// blind to it by construction.
+	const items = [
+		{ key: 'A', itemType: 'journalArticle', title: 'Heat transport in thin dielectric films',
+			doi: null, date: '1997', creators: ['Lee'], publication: 'Journal of Applied Physics',
+			journalAbbreviation: 'J. Appl. Phys.', volume: '81', pages: '2590-2595' },
+		{ key: 'B', itemType: 'journalArticle', title: 'A later paper citing it in a numeric style',
+			doi: null, date: '2002', creators: ['Cahill'], publication: 'Review of Scientific Instruments',
+			volume: '73', pages: '2959' },
+	];
+	const body = 'Introduction. '.repeat(30)
+		+ '\nReferences\n'
+		+ '12 R. Smith and K. Jones, High Temp.-High Press. 32, 135 (2000).\n'
+		+ '13 S.-M. Lee and D. G. Cahill, J. Appl. Phys. 81, 2590 (1997).\n';
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async k => (k === 'B' ? [{ key: 'B1', parentKey: 'B', contentType: 'application/pdf' }] : []),
+		getAttachmentText: async () => body,
+		getPdfLinkUris: async () => [],
+	};
+	return cg.build(adapter, { offline: true, enable: ['locator-match'] }).then((r) => {
+		if (!r.edges.some(e => e.from === 'B' && e.to === 'A')) {
+			throw new Error('expected B -> A from the locator, got ' + JSON.stringify(r.edges));
+		}
+	});
+});
+
+check('a locator with the wrong journal or the wrong year draws nothing', () => {
+	const cg = require_('./citation-graph/index.js');
+	const target = { key: 'A', itemType: 'journalArticle', title: 'Heat transport in thin dielectric films',
+		doi: null, date: '1997', creators: ['Lee'], publication: 'Journal of Applied Physics',
+		journalAbbreviation: 'J. Appl. Phys.', volume: '81', pages: '2590-2595' };
+	const citing = { key: 'B', itemType: 'journalArticle', title: 'A later paper citing something else entirely',
+		doi: null, date: '2002', creators: ['Cahill'], publication: 'Rev. Sci. Instrum.',
+		volume: '73', pages: '2959' };
+	// Same volume and page, a different journal -- and the same journal with a
+	// year that contradicts it. Volume and page alone are four digits of
+	// coincidence away from a wrong edge, which is why neither is enough.
+	const bodies = [
+		'13 S.-M. Lee, Phys. Rev. Lett. 81, 2590 (1997).\n',
+		'13 S.-M. Lee, J. Appl. Phys. 81, 2590 (2011).\n',
+	];
+	const runs = bodies.map((ref) => {
+		const body = 'Introduction. '.repeat(30) + '\nReferences\n' + ref;
+		return cg.build({
+			listItems: async () => [target, citing],
+			getAttachments: async k => (k === 'B' ? [{ key: 'B1', parentKey: 'B', contentType: 'application/pdf' }] : []),
+			getAttachmentText: async () => body,
+			getPdfLinkUris: async () => [],
+		}, { offline: true, enable: ['locator-match'] });
+	});
+	return Promise.all(runs).then((rs) => {
+		rs.forEach((r, i) => {
+			if (r.edges.length) throw new Error('case ' + i + ' drew ' + JSON.stringify(r.edges));
+		});
+	});
 });
 
 check('graphBuilder runs end-to-end against a stub adapter', () => {
@@ -253,8 +348,8 @@ function externalFixture() {
 		getPdfLinkUris: async (attKey) => {
 			// Both citing papers link the same outside work; only one links the
 			// second outside work. That difference is what citedBy has to capture.
-			const common = ['https://doi.org/10.1038/nature12373', 'https://doi.org/10.5555/shared'];
-			return attKey === 'AAAAAAAA1' ? common.concat('https://doi.org/10.5555/lonely') : common;
+			const common = ['https://doi.org/10.1038/nature12373', 'https://doi.org/10.5555/shared.1'];
+			return attKey === 'AAAAAAAA1' ? common.concat('https://doi.org/10.5555/lonely.1') : common;
 		},
 	};
 }
@@ -275,13 +370,13 @@ check('includeExternal adds ghost nodes with a citedBy count', () => {
 	const cg = require_('./citation-graph/index.js');
 	return cg.build(externalFixture(), { enable: ['pdf-links'], offline: true, includeExternal: true }).then((r) => {
 		const byKey = Object.fromEntries(r.externalNodes.map(x => [x.key, x]));
-		if (!byKey['doi:10.5555/shared']) throw new Error('missing shared external node');
-		if (byKey['doi:10.5555/shared'].citedBy !== 2) {
-			throw new Error('shared citedBy = ' + byKey['doi:10.5555/shared'].citedBy);
+		if (!byKey['doi:10.5555/shared.1']) throw new Error('missing shared external node');
+		if (byKey['doi:10.5555/shared.1'].citedBy !== 2) {
+			throw new Error('shared citedBy = ' + byKey['doi:10.5555/shared.1'].citedBy);
 		}
-		if (byKey['doi:10.5555/lonely'].citedBy !== 1) throw new Error('lonely citedBy wrong');
+		if (byKey['doi:10.5555/lonely.1'].citedBy !== 1) throw new Error('lonely citedBy wrong');
 		// Sorted most-cited first, which is what makes the payload cap safe.
-		if (r.externalNodes[0].key !== 'doi:10.5555/shared') throw new Error('not sorted by citedBy');
+		if (r.externalNodes[0].key !== 'doi:10.5555/shared.1') throw new Error('not sorted by citedBy');
 		// A work the collection DOES hold must stay a real node, never a ghost.
 		if (byKey['doi:10.1038/nature12373']) throw new Error('resolved DOI became a ghost');
 	});

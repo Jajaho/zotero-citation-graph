@@ -56,6 +56,9 @@ class LocalSqliteAdapter {
 				MAX(CASE WHEN d.fieldID=${F.date}  THEN v.value END) AS date,
 				MAX(CASE WHEN d.fieldID=${F.extra} THEN v.value END) AS extra,
 				MAX(CASE WHEN d.fieldID=${F.url}   THEN v.value END) AS url,
+				MAX(CASE WHEN d.fieldID=${F.volume} THEN v.value END) AS volume,
+				MAX(CASE WHEN d.fieldID=${F.pages}  THEN v.value END) AS pages,
+				MAX(CASE WHEN d.fieldID=${F.journalAbbreviation} THEN v.value END) AS journalAbbreviation,
 				${venueExpr} AS publication
 			FROM items i
 			JOIN itemTypes it USING (itemTypeID)
@@ -93,6 +96,12 @@ class LocalSqliteAdapter {
 			.map((r) => ({
 				key: r.key, itemType: r.itemType, title: r.title, doi: r.doi,
 				date: r.date, extra: r.extra, url: r.url, publication: r.publication || null,
+				// Where the work sits in its venue. A reference in a numeric
+				// style names nothing else -- no title, often no DOI -- so
+				// these three fields are the only thing that can identify it.
+				volume: r.volume || null,
+				pages: r.pages || null,
+				journalAbbreviation: r.journalAbbreviation || null,
 				creators: byItem.get(r.itemID) || [],
 				tags: tagsByItem.get(r.itemID) || [],
 			}));

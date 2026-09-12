@@ -9,6 +9,10 @@ how fast the graph draws; this measures whether it is right.)
 - **read the output** → [Reading the report](#reading-the-report)
 - **what is in the collection, and why** → [COLLECTION.md](COLLECTION.md)
 - **the current standing** → [REPORT.md](REPORT.md)
+- **against a whole real library** → [The whole-library run](#the-whole-library-run),
+  standing in [REPORT-library.md](REPORT-library.md)
+- **why an edge went missing** → [Attributing a miss](#attributing-a-miss),
+  standing in [REPORT-library-misses.md](REPORT-library-misses.md)
 
 ## Running it
 
@@ -142,6 +146,86 @@ which is worse than a missing edge: it is a node nobody cited.
 Crossref is deliberately not one of the graded strategies — the graded network
 one is OpenAlex — so tier 2 stays independent of what it measures, the same rule
 tier 1 follows.
+
+## The whole-library run
+
+The curated collection is 14 works chosen to be hard. A real library is 400
+works chosen by somebody's research interests, and the two disagree about what
+is common: the collection has no numeric-style references in it at all, and a
+physics library is mostly numeric-style. So there is a second run, against a
+whole Zotero profile, with Crossref supplying **both** halves of the key.
+
+```
+npm run bench-ref:library-key -- --data-dir "C:/Users/me/Zotero" --db ./lib.sqlite \
+  --cache /tmp/crossref --out /tmp/library-key.json          # ~4 min, one request per DOI
+npm run bench-ref:library -- --data-dir "C:/Users/me/Zotero" --db ./lib.sqlite \
+  --key /tmp/library-key.json --report REPORT-library.md
+```
+
+The key and its cache are deliberately **not committed**: they are one person's
+library, they are large, and unlike the curated collection they are not a
+fixture anybody else can reproduce. What is committed is the run —
+[`baseline-library.json`](baseline-library.json), the current standing — so
+`--baseline` can diff a later run against it and the report says out loud when
+the library or the key moved underneath the comparison.
+
+What changes about the grading, and it is not a detail:
+
+| | curated (`score.js`) | whole library (`score-library.js`) |
+|---|---|---|
+| internal key | hand-read, exhaustive | Crossref deposits, **incomplete** |
+| a predicted edge not in the key | a false positive | `susp` — suspect, never counted as wrong |
+| recall | honest | honest (a listed edge missed is a miss) |
+| precision | honest | a **floor**, printed as `prec*` |
+
+A work whose publisher deposited no reference list is excluded from grading on
+both sides. That exclusion is the whole ballgame: without it, every true edge
+out of those works would be scored as a false positive, and the strategy that
+found them would look like the worst one.
+
+Books, standards and theses are the visible cost of this. Crossref has no
+deposited list naming *Introduction to Solid State Physics*, so every citation
+of Kittel lands in `susp` — correctly drawn, unprovable. Read `susp` as "the
+pool precision's floor was taken out of", not as an error count.
+
+### Attributing a miss
+
+A recall figure says 95 edges went missing. It does not say whether the fix is
+a better parser or a better scanner, and those are different projects:
+
+```
+npm run bench-ref:misses -- --data-dir <dir> --db ./lib.sqlite \
+  --key /tmp/library-key.json --out /tmp/misses.md
+```
+
+For every missed edge this asks what the citing document actually carried, and
+files it under the **narrowest scope the evidence was found in** — link
+annotations, the reference section, the whole text — down to `absent`, meaning
+neither the DOI, the title nor a locator occurs anywhere in the file.
+
+The buckets are the fix list, in priority order by size, and the first run said
+something worth writing down: of 95 missed edges, **one** had evidence in the
+document. The strategies were not dropping signal. The signal was not there,
+because a numeric reference style prints neither a DOI nor a title — it prints
+`J. Appl. Phys. 81, 2590 (1997)`, which identifies the paper exactly and which
+nothing we had could read. That is what `locator-match` exists for.
+
+What the two rounds bought, on this library:
+
+| | before | after |
+|---|---|---|
+| internal edges drawn | 253 / 348 (73%) | **285 / 348 (82%)** |
+| suspect edges | 23 | 23 |
+| truncated-DOI defects | 8 | **0** |
+| missed with evidence in the document | 1 | 17 |
+
+The last row is the one to read twice. It went **up**, and that is the tool
+working: `locator-match` turned 32 edges that no strategy could see into edges
+one strategy can, which promoted their remaining cousins out of `absent` and
+into `textLocatorOutsideSection` — the reference is in the file, just outside
+the slice the splitter cut. Chaining numbered entries by their marker numbers
+rather than by adjacent lines recovered five of those. The rest are the next
+piece of work, and they now have an address.
 
 ## Reading the report
 

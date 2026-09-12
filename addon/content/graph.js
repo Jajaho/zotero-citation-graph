@@ -1481,6 +1481,7 @@
 			case 'pdf-links': return t('strategy-pdf-links-hint');
 			case 'text-doi': return t('strategy-text-doi-hint');
 			case 'title-match': return t('strategy-title-match-hint');
+			case 'locator-match': return t('strategy-locator-match-hint');
 			case 'openalex': return t('strategy-openalex-hint');
 			case 'ref-strings': return t('strategy-ref-strings-hint');
 			default: return t('strategy-other-hint');
@@ -1492,6 +1493,7 @@
 			case 'pdf-links': return '#4a90d9';
 			case 'text-doi': return '#3fa66a';
 			case 'title-match': return '#b0b0b0';
+			case 'locator-match': return '#c264a8';
 			case 'openalex': return '#8a7fd0';
 			case 'ref-strings': return '#d08a3f';
 			default: return '#8a7fd0';
@@ -1502,7 +1504,7 @@
 	// colour of the strongest evidence behind it. ref-strings sits above
 	// title-match because it matched a title inside ONE reference entry with the
 	// author beside it, where title-match matched anywhere in the section.
-	const VIA_RANK = ['pdf-links', 'text-doi', 'openalex', 'ref-strings', 'title-match'];
+	const VIA_RANK = ['pdf-links', 'text-doi', 'openalex', 'locator-match', 'ref-strings', 'title-match'];
 
 	function bestVia(via) {
 		for (let v of VIA_RANK) if (via.includes(v)) return v;

@@ -134,6 +134,7 @@ zotero-citation-graph-autobuild-hint = Rebuild as soon as an option that needs i
 zotero-citation-graph-strategy-pdf-links-hint = DOI hyperlinks inside your PDFs. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-text-doi-hint = DOIs printed in the reference lists of your papers' indexed text. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-title-match-hint = Titles of papers in this graph found in another paper's reference section. Untick to hide the edges only this strategy found.
+zotero-citation-graph-strategy-locator-match-hint = References that print no title and no DOI, matched by the journal, volume and page they do print. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-hint = The works OpenAlex lists as referenced by each paper. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-run = OpenAlex references
 zotero-citation-graph-strategy-openalex-run-hint = Ask OpenAlex which works each paper with a DOI cites, which finds references in PDFs that neither link nor print DOIs (uses the OpenAlex API; answers are cached for 30 days). The outside works it finds are named only with "Query node metadata" on.

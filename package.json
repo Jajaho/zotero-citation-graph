@@ -1,6 +1,6 @@
 {
   "name": "zotero-citation-graph",
-  "version": "0.67.1",
+  "version": "0.68.0",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
   "license": "AGPL-3.0-or-later",
@@ -18,6 +18,9 @@
     "build": "node tools/build-xpi.js",
     "bench-ref": "node tools/bench/referencing/score.js",
     "bench-ref:external": "node tools/bench/referencing/build-external.js",
+    "bench-ref:library": "node tools/bench/referencing/score-library.js",
+    "bench-ref:library-key": "node tools/bench/referencing/build-library-key.js",
+    "bench-ref:misses": "node tools/bench/referencing/explain-misses.js",
     "bench": "node tools/bench/rendering/run.js",
     "bench:report": "node tools/bench/rendering/run.js --md",
     "bench:sweep": "node tools/bench/rendering/run.js --matrix --md",

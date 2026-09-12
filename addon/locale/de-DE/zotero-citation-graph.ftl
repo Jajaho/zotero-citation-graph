@@ -99,6 +99,7 @@ zotero-citation-graph-autobuild-hint = Neu aufbauen, sobald sich eine Option än
 zotero-citation-graph-strategy-pdf-links-hint = DOI-Hyperlinks in deinen PDFs. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-text-doi-hint = DOIs in den Literaturverzeichnissen im indexierten Text deiner Einträge. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieser Sammlung, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
+zotero-citation-graph-strategy-locator-match-hint = Literaturangaben ohne Titel und ohne DOI, erkannt an Zeitschrift, Band und Seite, die sie sehr wohl nennen. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-openalex-hint = Die Werke, die OpenAlex als von einem Eintrag zitiert führt. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-openalex-run = OpenAlex-Referenzen
 zotero-citation-graph-strategy-openalex-run-hint = OpenAlex fragen, welche Arbeiten jeder Eintrag mit DOI zitiert. So findet sich auch die Literatur von PDFs, die keine DOIs verlinken oder abdrucken (nutzt die OpenAlex-API; Antworten werden 30 Tage zwischengespeichert). Die externen Arbeiten, die dabei gefunden werden, bekommen nur mit „Knotenmetadaten abfragen“ einen Namen.

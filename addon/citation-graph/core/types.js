@@ -13,6 +13,9 @@
  * @property {?string} extra
  * @property {?string} url
  * @property {?string} publication  venue: journal, proceedings or book title
+ * @property {?string} volume       venue coordinates. A numeric-style reference
+ * @property {?string} pages        prints no title and often no DOI, so these
+ * @property {?string} journalAbbreviation  are all that can identify the work.
  * @property {string[]} creators   surnames, in order
  * @property {string[]} tags       every tag on the item, manual and automatic alike
  *

@@ -472,6 +472,12 @@ function itemRecord(item, collections = []) {
 		// that has a venue at all instead of three that each cover a third of
 		// the library.
 		publication: field(item, 'publicationTitle', { baseMapped: true }) || null,
+		// Where the work sits in its venue. A reference in a numeric style names
+		// nothing else -- no title, often no DOI -- so for those references these
+		// three fields are the only thing that can identify the work cited.
+		volume: field(item, 'volume') || null,
+		pages: field(item, 'pages', { baseMapped: true }) || null,
+		journalAbbreviation: field(item, 'journalAbbreviation') || null,
 		creators: item.getCreators().map(c => c.lastName).filter(Boolean),
 		// Both kinds of tag, the ones typed by hand and the ones a translator
 		// attached. Which of the two a tag is describes where it came from,
