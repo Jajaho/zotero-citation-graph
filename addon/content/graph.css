@@ -908,7 +908,10 @@ body {
 	height: 100%;
 }
 
-.section:not(.collapsed) .section-chevron {
+/* Only the section's own header: sections nest, and an open Graph Physics
+   would otherwise turn the chevrons of Force Adjustment and Energy with it,
+   whatever their own state. */
+.section:not(.collapsed) > .section-toggle > .section-chevron {
 	transform: rotate(-180deg);
 }
 
