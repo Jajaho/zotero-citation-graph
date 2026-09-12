@@ -321,10 +321,35 @@
 	 * page registers three of its own -- so the centre pull notes it on the way
 	 * past and holdEnergy() reads it one tick later. Nothing is sampled or
 	 * estimated: it is the number the engine just used.
+	 *
+	 * This is what the slider asks for. Whether it can be granted is the next
+	 * function's answer.
 	 */
-	function holdLevel() {
+	function holdValue() {
 		let v = Number(elHold.value);
 		return Number.isFinite(v) && v > 0 ? v : 0;
+	}
+
+	/**
+	 * The hold actually in force, which is what the slider asks for only while
+	 * there is an engine to keep going.
+	 *
+	 * Performance mode strikes the layout once and stops it, and "keep it
+	 * simmering" is not a thing a stopped engine can be asked for: what it
+	 * would mean in practice is the two props that make the layout static --
+	 * cooldownTicks and the alpha floor -- being lifted again behind the mode's
+	 * back, so the next drag would leave the graph ticking for ever and every
+	 * node the user had placed would crawl away from where it was dropped.
+	 *
+	 * So the answer out here is no, and every caller gets the same no:
+	 * holdForCollide() keeps the floor the mode asked for, applySettle() stops
+	 * deferring to a hold that is not happening, and holdEnergy() was already
+	 * refusing on its own. The slider is disabled in the panel for the same
+	 * reason -- see syncEnergyEnabled() -- and its value is kept, not reset, so
+	 * turning the mode back off gives the hold back exactly as it was.
+	 */
+	function holdLevel() {
+		return PERF.physics ? holdValue() : 0;
 	}
 
 	/** The alpha d3 last ran the forces at. See holdLevel(). */
@@ -381,9 +406,17 @@
 	 * off.
 	 */
 	function applyHold() {
-		let level = holdLevel();
+		// The slider's own value, not holdLevel(): the readout says what the
+		// control is set to, and performance mode greys the control out rather
+		// than moving it.
+		let level = holdValue();
 		elHoldValue.textContent = level ? level.toFixed(2) : word('hold-off', 'off');
 		if (!fg) return;
+		// With the engine off the cooling schedule is perfEngine()'s, whole --
+		// writing a hold's half of it here is what left a static graph ticking
+		// after every drag. perfEngine() calls this back when physics returns,
+		// so nothing is lost by staying out of the way now. See holdLevel().
+		if (!PERF.physics) return;
 		if (level) {
 			fg.cooldownTime(Infinity).cooldownTicks(Infinity);
 			holdForCollide();
@@ -493,6 +526,9 @@
 		// else turns a switch -- chrome, or the benchmark. A partial set is
 		// reported honestly as not the mode, because it is not.
 		if (elPerf) elPerf.checked = perfModeOn();
+		// And the sliders that only mean something while the engine runs follow
+		// the engine, whoever turned it. See syncEnergyEnabled().
+		syncEnergyEnabled();
 		if (!fg) return;
 		if (engine) perfEngine();
 		// Everything else is read by an accessor or a draw function on the next
@@ -5365,6 +5401,40 @@
 
 	// --- controls ---------------------------------------------------------
 
+	/**
+	 * The energy sliders, live or greyed with the engine they speak to.
+	 *
+	 * All three ask about alpha -- how much of it a drag spends, how little of
+	 * it counts as stopped, how much of it to keep on the boil -- and
+	 * performance mode is the switch that decides whether the layout is given
+	 * any alpha at all. With the engine off there is nothing for them to move,
+	 * so they go out with it rather than being left live. A control that
+	 * answers a question the mode has already closed reads as a broken
+	 * control; and this one was worse than broken -- moving the hold slider
+	 * under a static layout lifted the two props that were keeping the graph
+	 * still, so the next drag left it ticking and every node the user had
+	 * placed crawled away from where it was dropped. See holdLevel().
+	 *
+	 * The values are left exactly where the user put them. Turning the mode off
+	 * hands all three back unchanged, and perfEngine() re-runs applyHold() on
+	 * the way out so the schedule follows.
+	 */
+	function syncEnergyEnabled() {
+		let off = !PERF.physics;
+		for (let [input, label] of [
+			[elDragAlpha, 'drag-alpha-label'],
+			[elSettle, 'settle-label'],
+			[elHold, 'hold-label'],
+		]) {
+			// Guarded for the reason perfSet() guards the checkbox: this runs
+			// for every caller of zgPerf, and a panel without the control is
+			// not a reason to refuse a switch chrome asked for.
+			if (!input) continue;
+			input.disabled = off;
+			el(label).classList.toggle('disabled', off);
+		}
+	}
+
 	function syncEnabled() {
 		// "cited by ≥" is a filter over outside refs and has nothing to act on
 		// without them. "query node metadata" is NOT gated the same way: with ghosts
@@ -6390,4 +6460,8 @@
 	if (elPerf.checked) applyPerfMode();
 
 	syncEnabled();
+	// After applyPerfMode(), which has already done it if the mode came back on
+	// -- this is for the other case, so the sliders are enabled by this rather
+	// than by the markup happening to say so.
+	syncEnergyEnabled();
 }());

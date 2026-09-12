@@ -322,8 +322,11 @@
 					     Alpha, in the engine's own terms: a multiplier every force is
 					     handed on every tick. A settled graph is a cooled one and not a
 					     still one -- its forces have not cancelled, they are simply being
-					     multiplied by almost nothing -- which is why all three of these
-					     are the same question asked at three moments. -->
+					     multiplied by almost nothing -- which is why the three sliders
+					     here are the same question asked at three moments.
+
+					     And above them, the one switch that decides whether there is
+					     any alpha to ask about at all. -->
 					<div class="section" id="sec-energy">
 						<button class="section-toggle" id="sec-energy-toggle" type="button" aria-expanded="true" aria-controls="sec-energy-body" title="Collapse this section">
 							<span class="section-chevron"></span>
@@ -331,6 +334,29 @@
 						</button>
 						<div class="section-body" id="sec-energy-body">
 							<div class="group">
+								<!-- What a big collection gives up in order to stay smooth, and
+								     the reason it stands at the head of THIS section rather than
+								     among the drawing options it also turns off: the first thing
+								     it gives up is the engine, and the engine is what the three
+								     sliders below are about. With it on the layout is struck once
+								     and stands still -- there is no energy left to stir with, to
+								     stop at, or to keep simmering -- so those three grey out
+								     rather than sit there looking as though they did something,
+								     and every force slider re-strikes the layout instead of
+								     setting it in motion. What it gives up in paint is the edges'
+								     arrows, their curve and their strategy colours; names are
+								     untouched, and a dragged node stays where it is dropped.
+
+								     A checkbox rather than a threshold that switches itself on:
+								     which of these losses is worth which gain depends on the
+								     graph and on the machine, and a mode that arrived uninvited
+								     at 2000 nodes would be a renderer that changes what it draws
+								     without being asked. What it costs, measured:
+								     docs/performance.md. -->
+								<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them -- and stay where you drop them. The sliders below have nothing to act on while it is on.">
+									<input id="perf" type="checkbox"/>
+									<span data-zg-str="perf-mode">Performance mode</span>
+								</label>
 								<!-- How much of the graph a drag sets in motion. force-graph holds
 								     the layout's energy at a third of a cold start's for as long as
 								     a node is carried -- not a push it spends and recovers from but
@@ -376,7 +402,9 @@
 
 				<!-- How the items that survived are drawn: which of them are drawn at
 				     all, which are labelled, how big each is and what its colour
-				     means, and what the renderer is allowed to stop drawing. -->
+				     means. What the renderer is allowed to STOP drawing is a question
+				     about the engine before it is one about paint, so it is asked
+				     under Energy -- see the performance mode checkbox there. -->
 				<div class="section" id="sec-display">
 					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
 						<span class="section-chevron"></span>
@@ -384,24 +412,6 @@
 					</button>
 					<div class="section-body" id="sec-display-body">
 						<div class="group">
-							<!-- What a big collection gives up to stay smooth. First in this
-							     section because it is the widest switch in it: it decides how
-							     much of everything below it the renderer still bothers with,
-							     and the first thing it turns off is the engine the force
-							     sliders drive -- with it on the graph is struck once and stands
-							     still, and each of those sliders re-strikes it rather than
-							     setting it in motion.
-
-							     A checkbox rather than a threshold that switches itself on:
-							     which of these losses is worth which gain depends on the
-							     graph and on the machine, and a mode that arrived uninvited
-							     at 2000 nodes would be a renderer that changes what it draws
-							     without being asked. What it costs, measured:
-							     docs/performance.md. -->
-							<label id="perf-label" data-zg-title="perf-hint" title="Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.">
-								<input id="perf" type="checkbox"/>
-								<span data-zg-str="perf-mode">Performance mode</span>
-							</label>
 							<label data-zg-title="hide-isolated-hint" title="Leave out papers that have no edge left on the graph as it is filtered now.">
 								<input id="hide-isolated" type="checkbox"/>
 								<span data-zg-str="hide-isolated">Hide unconnected</span>

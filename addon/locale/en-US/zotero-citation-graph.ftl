@@ -106,7 +106,7 @@ zotero-citation-graph-settle-never = never
 # losses rather than promising a gain: what it buys back depends on the graph and
 # the machine, and only the user can see both.
 zotero-citation-graph-perf-mode = Performance mode
-zotero-citation-graph-perf-hint = Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them.
+zotero-citation-graph-perf-hint = Draw a big graph faster: the layout is struck once and stands still instead of settling for fifteen seconds, and edges give up their arrows, their curve and their strategy colours. Names are untouched, and nodes still move when you drag them — and stay where you drop them. The sliders below have nothing to act on while it is on.
 
 zotero-citation-graph-item-pane-failed = Could not open Zotero's item pane here.
 
