@@ -21,7 +21,8 @@ thrown at the plugin without touching a real library:
 npm run bench-ref -- --data-dir "C:/Users/me/Zotero citation_graph_testing"
 npm run bench-ref -- --data-dir <dir> --db ./snap.sqlite      # Zotero running
 npm run bench-ref -- --data-dir <dir> --enable openalex --api-key KEY
-npm run bench-ref -- --data-dir <dir> --report REPORT.md --json baseline.json
+npm run bench-ref -- --data-dir <dir> --report REPORT.md    # -> REPORT-<date>-<time>.md
+npm run bench-ref -- --data-dir <dir> --report REPORT.md --overwrite   # replace it instead
 npm run bench-ref -- --data-dir <dir> --baseline baseline.json
 npm run bench-ref -- --data-dir <dir> --no-external           # tier 1 only
 npm run bench-ref:external                                    # rebuild tier 2
@@ -36,8 +37,19 @@ network. To reproduce the committed standing:
 ```
 npm run bench-ref -- --data-dir <dir> --db ./run.sqlite \
   --enable pdf-links,text-doi,title-match,ref-strings,openalex \
-  --report tools/bench/referencing/REPORT.md --json tools/bench/referencing/baseline.json
+  --report tools/bench/referencing/REPORT.md --overwrite \
+  --json tools/bench/referencing/baseline.json
 ```
+
+`--report` stamps the filename with the run's date and time and never replaces
+an earlier report: a report describes one commit against one database hash and
+one PDF set, and the run you most want to read is usually the one before the
+number moved. `--overwrite` is for the case above — deliberately refreshing the
+committed standing, which is the one report that has a fixed name because
+`REPORT.md` is what the repo shows.
+
+`--json` is not stamped. It is written to be read back by `--baseline`, so a
+name you chose has to be a name you can still type afterwards.
 
 ### The caches
 
