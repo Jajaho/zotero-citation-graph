@@ -486,7 +486,25 @@
 			     the sections you are. -->
 			<div id="panel-foot">
 				<span id="stats"></span>
-				<button id="rebuild" type="button" data-zg-str="rebuild" data-zg-title="rebuild-hint" title="Build the graph again from the collection as it is now.">Rebuild</button>
+				<!-- The switch and the button it stands in for, kept together on one
+				     line: they answer the same question -- who asks for the build --
+				     and a stats line long enough to wrap must not leave the switch
+				     stranded on a row of its own, away from the button it qualifies. -->
+				<div id="foot-actions">
+					<!-- On, every control that cannot be filtered into existence
+					     rebuilds the moment it is changed, which is how this panel has
+					     always behaved. Off, nothing is derived again until Rebuild is
+					     pressed: the controls go on recording what the next build
+					     should use, the graph on screen stays exactly as it was, and
+					     the button lights to say the two have parted. On a collection
+					     whose builds run to minutes, ticking three strategies used to
+					     be three builds. -->
+					<label id="autobuild-label" data-zg-title="autobuild-hint" title="Rebuild as soon as an option that needs it changes. Off, nothing is re-derived until you press Rebuild.">
+						<input id="autobuild" type="checkbox" checked="checked"/>
+						<span data-zg-str="autobuild">Autobuild</span>
+					</label>
+					<button id="rebuild" type="button" data-zg-str="rebuild" data-zg-title="rebuild-hint" title="Build the graph again from the collection as it is now.">Rebuild</button>
+				</div>
 			</div>
 
 			<!-- The width handle. Laid over the pane's own right edge, so the

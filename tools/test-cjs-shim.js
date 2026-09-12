@@ -4447,6 +4447,76 @@ check('lib/l10n.js resolves a locale, formats, and hands the page its source', a
 });
 
 /**
+ * Autobuild draws one line, and the line is control versus button.
+ *
+ * With the switch off the graph must not change until Rebuild is pressed, so
+ * every control that would spend a build on its own has to go through
+ * requestRebuild()/requestLookup(), which are where the switch is read. The
+ * buttons must NOT: Rebuild itself, "what is missing" and the empty card's
+ * "include subcollections" are each someone asking for the thing now, and one
+ * of them gated is a card that opens empty or a button that looks broken.
+ *
+ * Cheap to assert and invisible until it bites: a new scope checkbox wired
+ * straight to rebuildNow() would quietly rebuild under a user who had switched
+ * that off, and nothing on screen would say which control did it.
+ */
+check('autobuild gates the controls that build by themselves, and no button', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+
+	// The switch stands with the button it stands in for, so the two are read
+	// as one question.
+	const at = html.indexOf('<div id="foot-actions">');
+	if (at < 0) throw new Error('#foot-actions is gone from the panel foot');
+	const foot = html.slice(at, html.indexOf('</div>', html.indexOf('</label>', at)));
+	if (!foot.includes('<input id="autobuild" type="checkbox" checked="checked"/>')) {
+		throw new Error('#autobuild is not in the foot, or no longer starts on');
+	}
+	if (!foot.includes('id="rebuild"')) throw new Error('#rebuild left the foot');
+
+	// Both gates, each an early return that sends nothing.
+	for (const fn of ['requestRebuild', 'requestLookup']) {
+		const from = js.indexOf('function ' + fn + '() {');
+		if (from < 0) throw new Error(fn + '() is gone');
+		// One tab in is where a function of the page's IIFE closes; every brace
+		// inside its body is deeper than that.
+		const body = js.slice(from, js.indexOf('\n\t}', from));
+		if (!body.includes('!elAutobuild.checked')) {
+			throw new Error(fn + '() no longer reads the switch');
+		}
+	}
+
+	// The controls that state something, through the gate.
+	for (const [handle, fn] of [
+		['elRecursive', 'requestRebuild'],
+		['elIncludeExternal', 'requestRebuild'],
+		['elOpenAlexRefs', 'requestRebuild'],
+		['elRefStrings', 'requestRebuild'],
+		['elEnrich', 'requestLookup'],
+	]) {
+		if (!js.includes(handle + ".addEventListener('change', " + fn + ');')) {
+			throw new Error(handle + ' no longer goes through ' + fn + '()');
+		}
+	}
+
+	// And the buttons, past it.
+	if (!js.includes("elRebuild.addEventListener('click', rebuildNow);")) {
+		throw new Error('the Rebuild button no longer builds unconditionally');
+	}
+	// The two that tick a prerequisite on their way: the gap list, which has
+	// nothing to list without outside refs, and the empty card.
+	for (const [name, tick] of [
+		['what is missing', 'elIncludeExternal.checked = true;'],
+		['the empty card', 'elRecursive.checked = true;'],
+	]) {
+		const after = js.slice(js.indexOf(tick) + tick.length);
+		if (!after.slice(0, 400).includes('rebuildNow();')) {
+			throw new Error(name + ' no longer builds past the switch');
+		}
+	}
+});
+
+/**
  * The item pane's toggle is on the bar before anything has been clicked.
  *
  * It shipped hidden until the panel existed, on the reasoning that the pane

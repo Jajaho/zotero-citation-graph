@@ -1002,6 +1002,24 @@ body {
 	padding: 3px 8px;
 }
 
+/*
+ * The graph on screen is no longer what the panel is asking for.
+ *
+ * Only ever worn with Autobuild off, and it is the whole of the feedback for
+ * a click that deliberately did nothing: the checkbox in the scroller is a
+ * long way from the foot, and without this the panel would look broken. The
+ * foot is outside the scroller, so the button is on screen however far down
+ * the sections the change was made.
+ *
+ * Core's accent on a control that is asking to be pressed, not a warning: the
+ * graph being one build behind is a state the user chose, not an error.
+ */
+#rebuild.pending {
+	background: var(--accent-blue);
+	border-color: var(--accent-blue);
+	color: #fff;
+}
+
 .section-title {
 	font-weight: 600;
 	/* Takes the rest of the header row, so the chevron stays hard left. */
@@ -1054,6 +1072,10 @@ body {
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
+	/* The counts run to four clauses and the panel is 240px by default, so the
+	   row has to be allowed to become two. The switch and the button are one
+	   flex item between them and wrap as a pair -- see #foot-actions. */
+	flex-wrap: wrap;
 	gap: 6px;
 	padding: 6px 9px;
 	border-top: var(--material-panedivider);
@@ -1062,6 +1084,80 @@ body {
 #stats {
 	color: var(--muted);
 	font-variant-numeric: tabular-nums;
+}
+
+/* Hard right on a line of its own as well as on a shared one: on the wrapped
+   row space-between has nothing to distribute against. */
+#foot-actions {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+#autobuild-label {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--muted);
+	cursor: pointer;
+	/* The word is the switch's only explanation and must not be hyphenated
+	   away from it when the panel is dragged narrow. */
+	white-space: nowrap;
+}
+
+/*
+ * A switch rather than a checkbox, and the one in the page.
+ *
+ * Zotero has no HTML switch to copy -- core's is a XUL element behind a
+ * stylesheet this document cannot reach -- so it is drawn here, out of the same
+ * tokens every other control borrows: the track takes --fill-quarternary the
+ * way a disabled field does, and lit it takes --accent-blue, which is what core
+ * paints a checked box with.
+ *
+ * Sized in px rather than em on purpose. Every other control in the panel is
+ * em-sized so it tracks Zotero's font pref, but a 13px-tall track with a thumb
+ * inside it stops reading as a switch at the first half-pixel; this one stays
+ * the size it was drawn at and only the word beside it scales.
+ */
+#autobuild {
+	appearance: none;
+	-moz-appearance: none;
+	position: relative;
+	flex: 0 0 auto;
+	width: 26px;
+	height: 14px;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--color-border);
+	border-radius: 7px;
+	background: var(--fill-quarternary);
+	cursor: pointer;
+	transition: background 120ms ease, border-color 120ms ease;
+}
+
+#autobuild::before {
+	content: "";
+	position: absolute;
+	top: 1px;
+	left: 1px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--color-background);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+	transition: transform 120ms ease;
+}
+
+#autobuild:checked {
+	background: var(--accent-blue);
+	border-color: var(--accent-blue);
+}
+
+#autobuild:checked::before {
+	transform: translateX(12px);
+	background: #fff;
 }
 
 /* --- Filter masks ------------------------------------------------------ */

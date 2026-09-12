@@ -89,6 +89,12 @@
 	 *  reason they are: it is a statement about this machine and this window,
 	 *  not about the collection or the library. */
 	const PERF_KEY = 'zg.perf.mode';
+	/** And whether a control that costs a build is allowed to spend one by
+	 *  itself. Kept here rather than in a pref for the same reason the rest
+	 *  are: it is a statement about how this person works -- how long their
+	 *  builds run, how many options they change at once -- and not about any
+	 *  one collection. */
+	const AUTOBUILD_KEY = 'zg.autobuild';
 	/** Whether papers nothing in the collection cites are drawn at all. It used
 	 *  to be decided for the user -- ticked by the first payload that carried
 	 *  edges, and ticked again by every rebuild that had not been argued with in
@@ -672,6 +678,10 @@
 	// and the item IDs it found -- null while nothing is being searched.
 	let advState = 'closed';
 	let advMatch = null;
+	// Whether the panel is asking for a build it has not been given. Only ever
+	// set with Autobuild off, and worked out from the payload rather than
+	// remembered across one -- see syncPending().
+	let pending = false;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -708,6 +718,8 @@
 	let elAction = el('action');
 	let elMenu = el('menu');
 	let elIsolateDepth = el('isolate-depth');
+	let elAutobuild = el('autobuild');
+	let elRebuild = el('rebuild');
 	let elPerf = el('perf');
 	let elReframe = el('reframe');
 	let elFrame = el('frame');
@@ -821,7 +833,14 @@
 		raw.external = raw.external || [];
 		// Chrome owns the scope options; reflect what it actually used, which
 		// matters after a rebuild that was still in flight.
-		if (raw.options) {
+		//
+		// Except while the panel is deliberately ahead of the graph. With
+		// Autobuild off the controls are an order for the NEXT build, and
+		// payloads still arrive without one -- a lookup, or a paper adopted
+		// into the graph -- each carrying the options this build was made
+		// with. Copying those back would quietly untick what the user had just
+		// asked for. See syncPending().
+		if (raw.options && !pending) {
 			elRecursive.checked = !!raw.options.recursive;
 			elIncludeExternal.checked = !!raw.options.includeExternal;
 			elEnrich.checked = !!raw.options.enrich;
@@ -838,6 +857,8 @@
 		hoverNode = null;
 		renderStrategyToggles();
 		syncEnabled();
+		// The build that just landed may be the one the panel was waiting for.
+		syncPending();
 		render();
 	};
 
@@ -1263,9 +1284,15 @@
 		// request -- the same bargain "size by global citations" strikes with
 		// the lookup -- so it switches them on and rebuilds, rather than
 		// opening an empty card next to a checkbox the user is left to find.
+		// Through rebuildNow() rather than requestRebuild(), so Autobuild does
+		// not apply: that switch is about controls that STATE something --
+		// a checkbox, a menu -- spending a build on their own. This is a
+		// button, and a button is someone asking for the thing now. Gating it
+		// would open an empty card beside a lit Rebuild, which is the feature
+		// not working rather than the feature waiting.
 		if (!elIncludeExternal.checked) {
 			elIncludeExternal.checked = true;
-			requestRebuild();
+			rebuildNow();
 		}
 		emit({ type: 'gaps-open' });
 		renderGaps();
@@ -5456,20 +5483,78 @@
 		if (!elEnrich.checked && elSizeBy.value === 'global') elSizeBy.value = 'here';
 	}
 
-	/** Scope changes cannot be filtered into existence -- they need a new build. */
+	/** The scope the controls are currently asking for, in the shape chrome
+	 *  stores it in and pushes it back in. */
+	function scopeOptions() {
+		return {
+			recursive: elRecursive.checked,
+			includeExternal: elIncludeExternal.checked,
+			enrich: elEnrich.checked,
+			openalexRefs: elOpenAlexRefs.checked,
+			refStrings: elRefStrings.checked,
+		};
+	}
+
+	/**
+	 * Whether the panel is asking for something the graph on screen was not
+	 * built with.
+	 *
+	 * Derived rather than latched, by comparing the controls against the
+	 * options the last payload came stamped with, which has two consequences
+	 * worth having. A switch flicked on and off again leaves nothing pending,
+	 * because nothing about the order changed. And the state clears itself the
+	 * moment a build that used those options lands, with no separate signal
+	 * from chrome saying so.
+	 *
+	 * Only ever true with Autobuild off -- with it on the build is already on
+	 * its way, and lighting the button to ask for one would be asking for it
+	 * twice.
+	 */
+	function syncPending() {
+		let want = scopeOptions();
+		let built = raw && raw.options;
+		pending = !elAutobuild.checked && !!built
+			&& Object.keys(want).some(k => !!built[k] !== want[k]);
+		elRebuild.classList.toggle('pending', pending);
+		// The same bargain word() strikes, and for a tooltip the markup already
+		// carries the English: before the strings land t() answers with the id
+		// it was asked for, and writing that over the title would put
+		// "rebuild-hint" on screen. The onReady block calls this again.
+		if (ZGL10n.loaded()) {
+			elRebuild.title = t(pending ? 'rebuild-pending-hint' : 'rebuild-hint');
+		}
+	}
+
+	/**
+	 * Scope changes cannot be filtered into existence -- they need a new build.
+	 *
+	 * Every control that would build by itself comes through here, which is what
+	 * lets one switch answer for all of them: the scope checkboxes, and the
+	 * sizing menu turning the lookup on because it has no counts to size by.
+	 * With Autobuild off neither spends a build; the control still moves, and
+	 * the next build finds it moved.
+	 *
+	 * Buttons do not come through here. Rebuild, "what is missing" and the
+	 * empty card's "include subcollections" all call rebuildNow(), because a
+	 * button is a request to act now and gating one leaves it looking broken.
+	 */
 	function requestRebuild() {
+		if (!elAutobuild.checked) {
+			syncEnabled();
+			syncPending();
+			return;
+		}
+		rebuildNow();
+	}
+
+	/** The button's own path, which builds whatever the switch says. */
+	function rebuildNow() {
 		syncEnabled();
 		elStatus.textContent = t('status-rebuilding');
-		emit({
-			type: 'rebuild',
-			options: {
-				recursive: elRecursive.checked,
-				includeExternal: elIncludeExternal.checked,
-				enrich: elEnrich.checked,
-				openalexRefs: elOpenAlexRefs.checked,
-				refStrings: elRefStrings.checked,
-			},
-		});
+		emit({ type: 'rebuild', options: scopeOptions() });
+		// Still pending until the payload lands: the graph being read is the
+		// old one for as long as the new one takes.
+		syncPending();
 	}
 
 	/**
@@ -5482,6 +5567,14 @@
 	 */
 	function requestLookup() {
 		syncEnabled();
+		// Not a build, but it is still the graph changing under someone who
+		// asked it not to -- and the rebuild the button sends carries the
+		// lookup's option with the rest of the scope, so the names arrive with
+		// everything else that was waiting.
+		if (!elAutobuild.checked) {
+			syncPending();
+			return;
+		}
 		elStatus.textContent = t(elEnrich.checked ? 'status-looking-up' : 'status-dropping-names');
 		emit({ type: 'lookup', on: elEnrich.checked });
 	}
@@ -5490,7 +5583,10 @@
 	// own, so the control and the shortcut to it cannot drift apart.
 	elEmptyRecursive.addEventListener('click', () => {
 		elRecursive.checked = true;
-		requestRebuild();
+		// A button, so it builds whatever Autobuild says -- see openGaps().
+		// This one is the clearest case of all: it is on a card that exists
+		// only because there is no graph.
+		rebuildNow();
 	});
 
 	elRecursive.addEventListener('change', requestRebuild);
@@ -5500,7 +5596,20 @@
 	elRefStrings.addEventListener('change', requestRebuild);
 	el('ref-strings-dot').style.background = viaColor('ref-strings');
 	elEnrich.addEventListener('change', requestLookup);
-	el('rebuild').addEventListener('click', requestRebuild);
+	elRebuild.addEventListener('click', rebuildNow);
+	/**
+	 * Turning it on is a request to be up to date, so a panel that had run
+	 * ahead of the graph is made good on the spot rather than staying lit next
+	 * to a switch that now says builds happen by themselves.
+	 */
+	elAutobuild.addEventListener('change', () => {
+		try {
+			window.localStorage.setItem(AUTOBUILD_KEY, elAutobuild.checked ? '1' : '0');
+		}
+		catch (e) { /* no persistence, no problem */ }
+		if (elAutobuild.checked && pending) rebuildNow();
+		else syncPending();
+	});
 
 	elMinConf.addEventListener('input', render);
 	// Pure layout: no node or edge changes, so this reheats rather than renders.
@@ -6357,6 +6466,10 @@
 		// a state the markup cannot know, and a sidebar left open is the case
 		// where setSideOpen() never ran to say so in the user's language.
 		setSideOpen(!elFrame.classList.contains('side-closed'));
+		// applyStatic() has just put the plain hint back on the Rebuild button
+		// from its data-zg-title; if the panel is ahead of the graph, the
+		// button says so again, now in the user's language.
+		syncPending();
 		if (raw) render();
 	});
 
@@ -6455,6 +6568,17 @@
 		if (window.localStorage.getItem(PERF_KEY) === '1') elPerf.checked = true;
 	}
 	catch (e) { /* see setCollapsed */ }
+
+	try {
+		// Only a stored no turns it off. An empty store -- and a store that
+		// cannot be read at all -- leaves the panel doing what it has always
+		// done, which is the behaviour nobody has to be told about.
+		if (window.localStorage.getItem(AUTOBUILD_KEY) === '0') elAutobuild.checked = false;
+	}
+	catch (e) { /* see setCollapsed */ }
+	// Nothing is pending before the first payload; this is for the button's
+	// tooltip, which is the one thing here the markup cannot state on its own.
+	syncPending();
 	// Applied before the first payload arrives, so the very first layout is
 	// struck the way the mode asks for rather than annealed and then frozen.
 	if (elPerf.checked) applyPerfMode();

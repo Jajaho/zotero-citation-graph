@@ -118,6 +118,7 @@ zotero-citation-graph-hide-isolated = Hide unconnected
 zotero-citation-graph-isolate-depth = Isolation depth
 zotero-citation-graph-isolate-depth-hint = How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.
 zotero-citation-graph-rebuild = Rebuild
+zotero-citation-graph-autobuild = Autobuild
 
 # Tooltips for the sidebar controls that had none. One per strategy, because
 # the page only ever sees their ids; strategy-other-hint is for any new one.
@@ -126,6 +127,10 @@ zotero-citation-graph-hide-isolated-hint = Leave out papers that have no edge le
 zotero-citation-graph-size-by-hint = What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on "Query node metadata").
 zotero-citation-graph-color-by-hint = What a node's colour shows. The key underneath lists the colours on screen.
 zotero-citation-graph-rebuild-hint = Build the graph again from these items as they are now.
+# Worn by the same button while the panel is ahead of the graph, which only
+# happens with Autobuild off.
+zotero-citation-graph-rebuild-pending-hint = The options have moved since this graph was built. Build it again from these items as they are now.
+zotero-citation-graph-autobuild-hint = Rebuild as soon as an option that needs it changes. Off, nothing is re-derived until you press Rebuild.
 zotero-citation-graph-strategy-pdf-links-hint = DOI hyperlinks inside your PDFs. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-text-doi-hint = DOIs printed in the reference lists of your papers' indexed text. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-title-match-hint = Titles of papers in this graph found in another paper's reference section. Untick to hide the edges only this strategy found.

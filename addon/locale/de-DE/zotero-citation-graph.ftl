@@ -86,6 +86,7 @@ zotero-citation-graph-hide-isolated = Unverbundene ausblenden
 zotero-citation-graph-isolate-depth = Isolationstiefe
 zotero-citation-graph-isolate-depth-hint = Wie viele Kanten weit um einen isolierten Knoten herum hell bleibt. 0 zeigt nur die isolierten Knoten selbst.
 zotero-citation-graph-rebuild = Neu aufbauen
+zotero-citation-graph-autobuild = Autoaufbau
 
 # Kurzinfos für die Bedienelemente der Seitenleiste.
 zotero-citation-graph-min-confidence-hint = Kanten ausblenden, die unsicherer sind als dieser Wert. Jede Strategie bewertet, wie sicher sie sich jeder gefundenen Kante ist; bei 0 werden alle gezeichnet.
@@ -93,6 +94,8 @@ zotero-citation-graph-hide-isolated-hint = Einträge weglassen, die im aktuell g
 zotero-citation-graph-size-by-hint = Was die Größe eines Knotens zeigt: wie viele Einträge hier ihn zitieren oder wie oft er weltweit zitiert wird (schaltet „Knotenmetadaten abfragen“ ein).
 zotero-citation-graph-color-by-hint = Was die Farbe eines Knotens zeigt. Die Legende darunter listet die sichtbaren Farben.
 zotero-citation-graph-rebuild-hint = Den Graphen aus diesen Einträgen in ihrem jetzigen Stand neu aufbauen.
+zotero-citation-graph-rebuild-pending-hint = Die Optionen haben sich geändert, seit dieser Graph aufgebaut wurde. Ihn aus diesen Einträgen in ihrem jetzigen Stand neu aufbauen.
+zotero-citation-graph-autobuild-hint = Neu aufbauen, sobald sich eine Option ändert, die das erfordert. Aus wird nichts neu abgeleitet, bis du auf „Neu aufbauen“ drückst.
 zotero-citation-graph-strategy-pdf-links-hint = DOI-Hyperlinks in deinen PDFs. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-text-doi-hint = DOIs in den Literaturverzeichnissen im indexierten Text deiner Einträge. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieser Sammlung, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
