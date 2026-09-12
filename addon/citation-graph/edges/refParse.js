@@ -60,6 +60,29 @@ const MIN_ENTRIES = 3;
  * declined the document entirely.
  */
 const MARKER_G = /(^|[\s\f])[[(]?(\d{1,3})[\]).](?=\s*["'“‘]?[A-Z])/g;
+
+/**
+ * The same marker with NO punctuation after the digits -- "1 N. Wiener, ..."
+ * and, with no space either, "1H. Zhang, C. Belvin, ...".
+ *
+ * Demanding the period or bracket was costing whole bibliographies that are
+ * otherwise perfectly regular. Kalman 1960 numbers its entries "1 N. Wiener"
+ * and "22 R. E. Kalman"; the AIP house style sets the marker as a superscript,
+ * which the extractor renders flush against the first author, so Mariani 2022
+ * reads "1H. Zhang" and "8D. Le Sage". Neither yielded a single marker, and so
+ * neither yielded a single entry -- and in a physics library the AIP style is
+ * common enough to be the largest loss there is: across 336 PDFs this pattern
+ * rescues 24 documents and 1613 entries, 964 of which parse to a title.
+ *
+ * On its own it would be far too permissive. A bare digit against a capital is
+ * also a volume number, a page range, a figure label and half of a date. It is
+ * safe only because of the two rules around it: markerRun keeps a marker solely
+ * while it CONTINUES AN ASCENDING RUN, and markerRun tries both patterns and
+ * keeps the LONGER run -- so this can only ever add to what MARKER_G already
+ * found, never replace it with something worse.
+ */
+const MARKER_BARE_G = /(^|[\s\f])[[(]?(\d{1,3})(?:[\]).]|(?=\s?[A-Z]))(?=\s*["'“‘]?[A-Z])/g;
+
 // "Smith, J." / "Smith, John" -- an author-year entry opening at column 0.
 // Two forms because a style either abbreviates the given name or does not.
 const SURNAME_INITIAL = /^[A-Z][a-zA-Z'\u2019-]{1,20},\s+[A-Z]\./;
@@ -206,15 +229,35 @@ function clean(groups) {
  * @returns {?{index: number, n: number}[]} marker offsets into `s`, or null
  */
 function markerRun(s, { minRun = MIN_ENTRIES } = {}) {
+	// Both marker shapes, longer run wins. Not "the bare pattern if the
+	// punctuated one found nothing": the bare pattern sees a superset of the
+	// markers, and a superset can produce a DIFFERENT longest ascending run --
+	// measured on four documents, where a stray early number anchored a shorter
+	// sequence than the real list. Comparing the two is what keeps this change
+	// from ever taking anything away.
+	const a = longestRun(scan(s, MARKER_G), minRun);
+	const b = longestRun(scan(s, MARKER_BARE_G), minRun);
+	if (!a) return b;
+	if (!b) return a;
+	return b.length > a.length ? b : a;
+}
+
+/** Every marker `re` finds in `s`, in order. */
+function scan(s, re) {
 	const marks = [];
-	MARKER_G.lastIndex = 0;
+	re.lastIndex = 0;
 	let m;
-	while ((m = MARKER_G.exec(s))) {
+	while ((m = re.exec(s))) {
 		marks.push({ index: m.index + m[1].length, n: Number(m[2]) });
 		// The lookahead keeps the trailing space unconsumed, so a marker that
 		// directly abuts the next one is still seen.
-		MARKER_G.lastIndex = m.index + m[0].length;
+		re.lastIndex = m.index + m[0].length;
 	}
+	return marks;
+}
+
+/** The longest ascending run among `marks`, or null if none reaches `minRun`. */
+function longestRun(marks, minRun) {
 	let best = null;
 	for (let start = 0; start < marks.length; start++) {
 		// Never 0 -- that is an equation label or a footnote, and allowing it
@@ -450,8 +493,33 @@ const NATURE_TAIL = /\((?:19|20)\d\d[a-z]?\)\.?\s*$/;
  * all ("J.Q. You, F. Nori, Phys. Today 58, 42 (2005)."), where the field after
  * the authors is the journal. Nothing in the grammar separates those two cases,
  * so the title is required to look like one -- see parseElsevier.
+ *
+ * Three things the first version could not read, each of which cost the TITLE
+ * and not merely the author list: when this pattern misses, parseElsevier falls
+ * through to parseGeneric, and generic takes the longest title-shaped segment
+ * it can find -- which in a comma-delimited style is usually the venue.
+ *
+ *   a surname may carry a particle -- "D. Le Sage", "G. de Lange", "T. van der
+ *     Sar". The pattern stopped dead at the lowercase word and took the real
+ *     title with it: "Efficient photon detection from color centers in a
+ *     diamond optical waveguide" was being lost to an author's name. Two
+ *     particles are allowed, because "van der" is two words.
+ *   initials are not always spaced, nor always single -- "S.-M. Lee"
+ *     hyphenates, "D.G. Cahill" runs them together.
+ *   two authors may be joined by "and" with NO comma in front of it -- "L. M.
+ *     K. Vandersypen and I. L. Chuang" -- which a comma-anchored separator
+ *     cannot cross.
+ *
+ * Together these recover 268 author blocks and 120 titles across the library.
+ * The author group is spelled out twice rather than factored into a variable
+ * because every other pattern in this file is a literal, and a regex assembled
+ * from strings is a regex whose escaping no reader can check at a glance.
  */
-const ELSEVIER_AUTHORS = /^((?:[A-Z]\.\s*){1,4}[A-Z][a-zA-Z'’\-]+(?:\s*,\s*(?:and\s+)?(?:[A-Z]\.\s*){1,4}[A-Z][a-zA-Z'’\-]+)*)(?:\s*,\s*et\s+al\.)?\s*,\s+/;
+const ELSEVIER_AUTHORS = /^((?:[A-Z]\.(?:-?[A-Z]\.)*\s*){1,4}(?:(?:de|van|der|den|von|di|du|da|del|la|le|Le|Van|De|Von|El|St)\s+){0,2}[A-Z][a-zA-Z'’\-]+(?:(?:\s*,\s*(?:and\s+)?|\s+and\s+)(?:[A-Z]\.(?:-?[A-Z]\.)*\s*){1,4}(?:(?:de|van|der|den|von|di|du|da|del|la|le|Le|Van|De|Von|El|St)\s+){0,2}[A-Z][a-zA-Z'’\-]+)*)(?:\s*,?\s*et\s*\.?\s*al\.?)?\s*,\s+/;
+// An author's initial followed by a surname -- "K. Lalumiere", "J.-F. Roch".
+// What a title looks like when the author block stopped short and the rest of
+// it came through as the title. See parseElsevier.
+const AUTHOR_HEAD = /^[A-Z]\.(?:-?[A-Z]\.)*\s+[A-Z][a-z]/;
 // A volume or year token: where the venue's numbers start, and so the point the
 // title must already have ended.
 const VOLUME_AT = /(?:\(\s*(?:19|20)\d\d\s*\)|(?:^|\s)\d{1,4}(?:\s*\(|\s*,|\s+))/;
@@ -610,6 +678,26 @@ function parseElsevier(s) {
 	const upto = vol ? vol.index : rest.length;
 	const cut = rest.lastIndexOf(',', upto);
 	const title = (cut > 0 ? rest.slice(0, cut) : rest.slice(0, upto)).trim();
+	// The author block ended early and the rest of it is sitting at the front of
+	// the "title". Widening this pattern to read surname particles made that
+	// possible: it now matches "A. F. van Loo" and then stops at whatever broke
+	// the run after it -- an OCR artefact in "Lalumi`ere", a German "und" -- so
+	// the remaining authors lead the title.
+	//
+	// A too-LONG title is normally the safe direction here, because refSignature
+	// keys on the first eight words and a swallowed venue only adds a tail. This
+	// is the one case where it is not: the surplus is at the FRONT, so it lands
+	// the work on a slug no other reading of it will ever produce. Dropping the
+	// entry costs a ghost; keeping it mints a mis-named one, and a mis-named
+	// ghost never folds onto the node it belongs to.
+	//
+	// "E. coli ..." survives, and must: the guard demands a CAPITALIZED word
+	// after the initial, which is a surname and not a species.
+	if (AUTHOR_HEAD.test(title)) {
+		const o = blank(0);
+		o.authors = m[1];
+		return o;
+	}
 	// The compressed variant of this style prints no title, so the field here is
 	// the journal -- "Phys. Today", "Sens. Actuators A". A title is wordy; a
 	// journal abbreviation is not. Without this the venue becomes the node.

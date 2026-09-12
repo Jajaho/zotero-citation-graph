@@ -5599,6 +5599,116 @@ check('a titleless reference style yields no node rather than a venue', () => {
 	}
 });
 
+check('an entry marker is found without its punctuation', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Kalman 1960 numbers its bibliography "1 N. Wiener" -- a marker, a space,
+	// and no period at all. Against a pattern that demanded the punctuation this
+	// found nothing, and a perfectly regular list yielded no entries.
+	const bare = '1 N. Wiener, "The Extrapolation, Interpolation and Smoothing of Stationary Time Series," '
+		+ 'John Wiley & Sons, New York, 1949. 2 L. A. Zadeh and J. R. Ragazzini, "An Extension of Wiener\'s '
+		+ 'Theory of Prediction," Journal of Applied Physics, vol. 21, 1950, pp. 645-655. '
+		+ '3 R. E. Kalman and J. E. Bertram, "A Unified Approach to the Theory of Sampling Systems," '
+		+ 'Journal of the Franklin Institute, vol. 267, 1959, pp. 405-436.';
+	const run = R.markerRun(bare);
+	if (!run || run.length < 3) throw new Error('bare numeric markers: ' + (run ? run.length : 0));
+
+	// Mariani 2022: the AIP style sets the marker as a superscript, so the
+	// extractor renders it flush against the first author's initial -- no
+	// punctuation AND no space.
+	const aip = '1H. Zhang, C. Belvin, W. Li, and J. Wang, "Little bits of diamond," '
+		+ 'AIP Advances 12, 065321 (2022). 2D. Le Sage, L. M. Pham, and N. Bar-Gill, '
+		+ '"Efficient photon detection from color centers," Phys. Rev. B 85, 121202 (2012). '
+		+ '3J. F. Barry, M. J. Turner, and J. M. Schloss, "Optical magnetic detection," '
+		+ 'Proc. Natl. Acad. Sci. 113, 14133 (2016).';
+	const aipRun = R.markerRun(aip);
+	if (!aipRun || aipRun.length < 3) throw new Error('AIP superscript markers: ' + (aipRun ? aipRun.length : 0));
+});
+
+check('a looser marker never costs a run the strict one already found', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// The bare pattern sees a SUPERSET of the markers, and a superset can anchor
+	// a different -- shorter -- ascending run. markerRun therefore scans under
+	// both and keeps the longer, which is what makes the looser pattern additive
+	// rather than a trade.
+	const punctuated = [
+		'[1] A. Author, A first work with a title long enough to count, J. Ref. 1, 1 (2001).',
+		'[2] B. Author, A second work with a title long enough to count, J. Ref. 2, 2 (2002).',
+		'[3] C. Author, A third work with a title long enough to count, J. Ref. 3, 3 (2003).',
+		'[4] D. Author, A fourth work with a title long enough to count, J. Ref. 4, 4 (2004).',
+	].join('\n');
+	const run = R.markerRun(punctuated);
+	if (!run || run.length !== 4) throw new Error('punctuated run: ' + (run ? run.length : 0));
+
+	// The guards the looser pattern leans on, restated here because it is the
+	// pattern most able to break them: a bare digit against a capital is also a
+	// volume, a page range and a figure label.
+	if (R.markerRun('Nature 500, no. 7460, pp. 54-58, vol. 12 (2013), Fig 3A and Fig 4B here.')) {
+		throw new Error('made a run out of volume and page numbers');
+	}
+	// Descending and repeating sequences are not a bibliography.
+	if (R.markerRun('9 Apple then 4 Banana then 7 Cherry then 2 Damson then 5 Elder.')) {
+		throw new Error('made a run out of a non-ascending sequence');
+	}
+});
+
+check('an Elsevier author list survives particles, hyphens and a bare "and"', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// When the author block misses, parseElsevier falls through to parseGeneric,
+	// which takes the longest title-shaped segment -- in a comma-delimited style
+	// that is usually the venue. So each of these cost the TITLE, not the author.
+	const cases = [
+		// A surname particle: the pattern used to stop dead at the lowercase word.
+		['G. de Lange, T. van der Sar, M. Blok, Z.-H. Wang, V. Dobrovitski, and R. Hanson, '
+			+ 'Controlling the quantum dynamics of a mesoscopic spin bath in diamond, Sci. Rep. 2, 382 (2012).',
+			'Controlling the quantum dynamics of a mesoscopic spin bath in diamond', 'Lange'],
+		// "and" joining two authors with no comma in front of it.
+		['L. M. K. Vandersypen and I. L. Chuang, NMR techniques for quantum control and computation, '
+			+ 'Rev. Mod. Phys. 76, 1037 (2005).',
+			'NMR techniques for quantum control and computation', 'Vandersypen'],
+		// A two-word surname, and the title that was being lost to it.
+		['D. Le Sage, L. M. Pham, N. Bar-Gill, C. Belthangady, M. D. Lukin, A. Yacoby, and R. L. Walsworth, '
+			+ 'Efficient photon detection from color centers in a diamond optical waveguide, Phys. Rev. B 85, 121202 (2012).',
+			'Efficient photon detection from color centers in a diamond optical waveguide', 'Le'],
+		// Hyphenated and unspaced initials.
+		['S.-M. Lee, D.G. Cahill, Heat transport in thin dielectric film, J. Appl. Phys. 81 (6) (1997) 2590-2595.',
+			'Heat transport in thin dielectric film', 'Lee'],
+	];
+	for (const [entry, title, surname] of cases) {
+		const p = R.parseEntry(entry, 'elsevier');
+		if (p.title !== title) throw new Error('title: ' + JSON.stringify(p.title) + ' from ' + entry.slice(0, 40));
+		if (p.surname !== surname) throw new Error('surname: ' + JSON.stringify(p.surname));
+	}
+});
+
+check('an author list that leaked into the title yields no work at all', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Reading surname particles means the author block can now end in the middle
+	// of itself, on something the pattern cannot cross: a combining diacritic the
+	// extractor broke ("Lalumi`ere", "Salathe ́"), a German "und", a surname
+	// outside a-z ("Marinkovic"). The remaining authors then lead the title.
+	//
+	// This is the one place a too-long title is not the safe direction.
+	// refSignature keys on the FIRST eight words, so surplus at the front lands
+	// the work on a slug nothing else will ever produce -- a ghost that can never
+	// fold onto the node it belongs to. Better no node than a mis-named one.
+	const leaked = [
+		'A. F. van Loo, A. Fedorov, K. Lalumi`ere, B. Sanders, A. Blais, and A. Wallraff, '
+			+ 'Photon-mediated interactions between distant artificial atoms, Science 342, 1494 (2013).',
+		'T. Wolf, S. Chemerisov und D. Budker, Temperature and Magnetic-Field-Dependent Longitudinal '
+			+ 'Spin Relaxation in Nitrogen-Vacancy Ensembles, Phys. Rev. Lett. 108, 197601 (2012).',
+	];
+	for (const entry of leaked) {
+		const p = R.parseEntry(entry, 'elsevier');
+		if (p.title) throw new Error('kept a leaked author list as a title: ' + JSON.stringify(p.title));
+	}
+
+	// And the guard must not reach an ordinary title. A species abbreviation is
+	// the near miss it was written around -- "E. coli" has no capitalised word
+	// after the initial, where "K. Lalumiere" does.
+	const fine = 'J. Smith, E. coli growth under magnetic field gradients, J. Bacteriol. 12, 3 (2001).';
+	if (!R.parseEntry(fine, 'elsevier').title) throw new Error('guard swallowed an ordinary title');
+});
+
 check('an abbreviated venue is not mistaken for the end of the title', () => {
 	const R = require_('./citation-graph/edges/refParse.js');
 	// The boundary of the abbreviation-run rule, in both directions. The first
