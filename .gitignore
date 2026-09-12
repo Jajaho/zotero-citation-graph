@@ -1,7 +1,7 @@
 node_modules/
 docs/
-docs/private/
 dist/
 *.sqlite
 *.tmp
 CLAUDE.md
+/README.md
