@@ -10,6 +10,7 @@
  *   node tools/bench/referencing/score.js --report REPORT.md --json run.json  (REPORT-<date>.md)
  *   node tools/bench/referencing/score.js --baseline run.json     compare with an earlier run
  *   node tools/bench/referencing/score.js --no-external           in-collection edges only
+ *   node tools/bench/referencing/score.js --text-source pdfjs    read geometry, not ft-cache
  *
  * tools/bench measures how fast the graph draws. This measures whether the
  * edges in it are true, which needs a different instrument: a fixed collection
@@ -43,6 +44,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { LocalSqliteAdapter } = require('../../../addon/citation-graph/adapters/localSqlite');
 const cg = require('../../../addon/citation-graph/index');
+const pdfjsText = require('./pdfjsText');
 
 const GT_PATH = path.join(__dirname, 'ground-truth.json');
 const EXT_PATH = path.join(__dirname, 'external-refs.json');
@@ -52,7 +54,7 @@ const SUFFIX_RE = /\/(abstract|epdf|full|pdf|meta|html)$/;
 
 function parseArgs(argv) {
 	const a = { dataDir: null, db: null, enable: null, apiKey: null, json: null, report: null,
-		baseline: null, external: true, resolve: true, overwrite: false, help: false };
+		baseline: null, external: true, resolve: true, overwrite: false, textSource: 'ft-cache', help: false };
 	for (let i = 2; i < argv.length; i++) {
 		const k = argv[i];
 		const next = () => argv[++i];
@@ -64,6 +66,7 @@ function parseArgs(argv) {
 		else if (k === '--report') a.report = next();
 		else if (k === '--baseline') a.baseline = next();
 		else if (k === '--overwrite') a.overwrite = true;
+		else if (k === '--text-source') a.textSource = next();
 		else if (k === '--no-external') a.external = false;
 		else if (k === '--no-resolve') a.resolve = false;
 		else if (k === '--help' || k === '-h') a.help = true;
@@ -84,6 +87,39 @@ const ms = (n) => (n == null ? '-' : n < 10000 ? n + 'ms' : (n / 1000).toFixed(1
 function sh(cmd, args) {
 	try { return execFileSync(cmd, args, { encoding: 'utf8' }).trim(); }
 	catch (_) { return null; }
+}
+
+/**
+ * The same adapter, reading text from the PDF's geometry instead of from
+ * Zotero's reflowed cache, or null when pdfjs is not installed.
+ *
+ * A wrapper rather than a second adapter class: `getAttachmentText` is the ONLY
+ * method that differs, and the point of the exercise is that nothing else does.
+ * Every strategy, the index, the segmentation and the split all stay exactly as
+ * they are, so a change in the score is attributable to the input and to
+ * nothing else.
+ *
+ * Extraction is cached per attachment because reading a 400-page review with
+ * pdfjs costs seconds and the bench runs one build per strategy over the same
+ * documents.
+ */
+async function pdfjsSource(adapter) {
+	if (!(await pdfjsText.load())) return null;
+	const cache = new Map();
+	return Object.create(adapter, {
+		getAttachmentText: { value: async (attKey) => {
+			if (cache.has(attKey)) return cache.get(attKey);
+			let text = null;
+			const file = adapter.attachmentFile && adapter.attachmentFile(attKey);
+			if (file) text = await pdfjsText.extract(file);
+			// No PDF behind this attachment (a snapshot, a note): the ft-cache is
+			// the only text there is, and falling back keeps the two runs
+			// comparable on those items rather than silently scoring zero.
+			if (text == null) text = await adapter.getAttachmentText(attKey);
+			cache.set(attKey, text);
+			return text;
+		} },
+	});
 }
 
 /**
@@ -210,6 +246,7 @@ async function main() {
 		console.log('usage: node tools/bench/referencing/score.js --data-dir <zotero data dir> [--db <copy>]');
 		console.log('       [--enable a,b,c] [--api-key KEY] [--report out.md] [--json out.json]');
 		console.log('       [--baseline earlier.json] [--no-external] [--no-resolve] [--overwrite]');
+		console.log('       [--text-source ft-cache|pdfjs]');
 		console.log('');
 		console.log('--report writes out-<date>-<time>.md and never replaces an earlier one;');
 		console.log('--overwrite uses the name as given, for refreshing a committed standing.');
@@ -243,7 +280,20 @@ async function main() {
 	}
 	const extTotal = [...extDois.values()].reduce((a, s) => a + s.size, 0);
 
-	const adapter = new LocalSqliteAdapter({ dataDir: args.dataDir, dbPath: args.db || undefined });
+	let adapter = new LocalSqliteAdapter({ dataDir: args.dataDir, dbPath: args.db || undefined });
+	if (args.textSource === 'pdfjs') {
+		const wrapped = await pdfjsSource(adapter);
+		if (!wrapped) {
+			console.log('--text-source pdfjs: SKIPPED —', pdfjsText.loadError() || 'pdfjs-dist not installed');
+			console.log('  install it with `npm i -D pdfjs-dist`, or point PDFJS_PATH at a copy.');
+			console.log('  scoring against the ft-cache instead.\n');
+		}
+		else { adapter = wrapped; }
+	}
+	else if (args.textSource !== 'ft-cache') {
+		console.log('unknown --text-source', args.textSource, '(expected ft-cache or pdfjs)');
+		process.exit(1);
+	}
 	const ids = args.enable || cg.listStrategies().filter((p) => !p.requiresNetwork).map((p) => p.id);
 	const providerOpts = args.apiKey ? { openalex: { apiKey: args.apiKey } } : {};
 

@@ -25,5 +25,8 @@
     "bench:serve": "node tools/bench/rendering/serve.js",
     "strategies": "node tools/cli.js --list",
     "install-dev": "powershell -ExecutionPolicy Bypass -File tools/install-dev.ps1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "^6.3.289"
   }
 }

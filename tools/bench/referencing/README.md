@@ -51,6 +51,47 @@ committed standing, which is the one report that has a fixed name because
 `--json` is not stamped. It is written to be read back by `--baseline`, so a
 name you chose has to be a name you can still type afterwards.
 
+### Text sources, and a settled question
+
+`--text-source` chooses what the strategies read. `ft-cache` (the default) is
+Zotero's own extracted text. `pdfjs` re-reads the PDF with geometry and lays it
+back out as indented, column-ordered lines — see
+[pdfjsText.js](pdfjsText.js). It needs `npm i -D pdfjs-dist`; without it the run
+says so and scores against the ft-cache instead, so no install is ever required.
+
+It exists to answer one question. Every offline strategy reads reflowed text,
+and only 20 of 336 PDFs in the sample library keep even one indented line — so
+`byIndent` decides the layout for 7 documents out of 336 and 99 sections split
+into nothing. `muise-destiny-zotero-reference` extracts references entirely from
+geometry, which made it reasonable to suspect our splitter was short of *signal*
+rather than short of rules.
+
+Measured, it is not. On the benchmark collection, offline-union recall falls
+from **90% to 67%** when the same strategies read geometry-derived text instead:
+
+| strategy | TP (ft-cache) | TP (pdfjs) | ext TP (ft-cache) | ext TP (pdfjs) |
+|---|---|---|---|---|
+| `pdf-links` | 19 | 19 | 1039 | 1039 |
+| `text-doi` | 11 | 7 | 50 | 24 |
+| `title-match` | 19 | **5** | 0 | 0 |
+| `ref-strings` | 20 | **6** | 50 | 16 |
+| OFFLINE union | 27 | 20 | 1039 | 1039 |
+
+`pdf-links` is unchanged because it reads the file's bytes, not its text, which
+is the control that says the harness is behaving.
+
+The lesson is narrower than "geometry does not help". It is that geometry only
+helps an algorithm that **consumes** geometry. Their engine reads indent
+magnitudes and font-height runs directly off the text items; flattening those
+back into indented text discards exactly what made them useful and adds two new
+failures — columns interleaving into single lines, and spaces landing inside
+DOIs (`10.1063/1` became a graded defect). Zotero's reflow is doing real work
+recovering reading order across columns, and it is harder to beat than it looks.
+
+So the remaining split failures are probably not lost layout signal, and the way
+to test geometry properly would be to feed it to a splitter that reads
+coordinates — not to re-derive text from it.
+
 ### The caches
 
 `.crossref-cache/` (the raw deposited reference lists) and

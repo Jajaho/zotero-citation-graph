@@ -126,6 +126,22 @@ class LocalSqliteAdapter {
 		return (this._attCache.get(itemKey) || []).filter((a) => fs.existsSync(a.file));
 	}
 
+	/**
+	 * The PDF behind an attachment key, or null.
+	 *
+	 * Not part of the adapter contract the Zotero runtime implements -- it has
+	 * no business handing out filesystem paths. It exists for the bench, which
+	 * scores the same strategies against a different TEXT SOURCE (see
+	 * tools/bench/referencing/pdfjsText.js) and needs the file to read it a
+	 * second way.
+	 */
+	attachmentFile(attKey) {
+		this._loadAttachments();
+		const att = this._attCache.get('@' + attKey);
+		if (!att || att.contentType !== 'application/pdf') return null;
+		return fs.existsSync(att.file) ? att.file : null;
+	}
+
 	/** Prefers Zotero's own .zotero-ft-cache -- already extracted, free to read. */
 	async getAttachmentText(attKey) {
 		this._loadAttachments();
