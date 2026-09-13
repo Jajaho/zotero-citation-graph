@@ -2254,7 +2254,7 @@
 				// working one out per link per frame and running quadraticCurveTo.
 				// With batch on, force-graph's own heads are length 0 and one
 				// carrier link draws every head instead -- see drawArrows().
-				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? ARROW_PX / arrowScale : 0))
+				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? arrowLen(arrowScale) : 0))
 				.linkDirectionalArrowRelPos(1)
 				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
 				.linkCanvasObjectMode(l => (l === arrowCarrier ? 'after' : undefined))
@@ -3280,23 +3280,43 @@
 	 * PERF.batch hands the heads back to force-graph, for the benchmark.
 	 */
 	/**
-	 * How long a head is, in screen pixels rather than graph units.
+	 * How big a head is, in three numbers: a size in the graph, and a floor and
+	 * a ceiling in screen pixels that it is held between.
 	 *
-	 * It was four graph units, which is what force-graph had been given and
-	 * what its own pass still gets. But an edge is stroked at a width in screen
-	 * pixels -- force-graph divides linkWidth by the zoom -- so the two scaled
-	 * against each other: at 100% a head was four pixels long and two and a
-	 * half wide against a line one to three wide, which is not a head with a
-	 * line running into it, it is a line with a faint bulge. That is the shape
-	 * the edge appeared to run THROUGH, and it went away when a node was picked
-	 * only because a picked edge is stroked wide enough to swallow the bulge
-	 * whole.
+	 * The size is the middle one. ARROW_GU is graph units, so between the two
+	 * bounds a head belongs to the graph and zooms with it -- it grows as you
+	 * go in, like the circles and the gaps do, which is the whole reason to
+	 * zoom in on an arrow at all.
 	 *
-	 * Eight pixels against a line of one to three reads as an arrow at every
-	 * zoom, and the line stops being anything but its tail.
+	 * The floor is what an edge does NOT do. force-graph strokes a line at a
+	 * width in screen pixels, so a line holds its size however far you go out
+	 * while anything in graph units shrinks away under it: a head that kept
+	 * shrinking would sink into its own line and read as a bulge in it rather
+	 * than a head on it. Eight pixels is where it stops, which is a head
+	 * against a line of one to three.
+	 *
+	 * The ceiling is the other end of the same thought. A head in graph units
+	 * has nothing to stop it, and zoomed right in on two papers it would be a
+	 * wedge the size of the circle it points at. Twenty-eight pixels is where
+	 * it stops growing, and the graph can carry on getting bigger around it.
+	 *
+	 * So: physical between roughly 130% and 470%, and pinned outside that.
 	 */
-	const ARROW_PX = 8;
+	const ARROW_GU = 6;         // graph units, the size it is when nothing binds
+	const ARROW_MIN_PX = 8;     // never smaller on screen than this
+	const ARROW_MAX_PX = 28;    // never larger on screen than this
 	const LINK_CURVE = 0.08;    // bow of an edge, as a fraction of its length
+
+	/** A head's length in graph units at this zoom, which is the size above put
+	 *  back into the units the geometry is worked out in. Once a frame for the
+	 *  page's own pass; per link only for force-graph's, which is the
+	 *  benchmark's. */
+	function arrowLen(scale) {
+		let px = ARROW_GU * scale;
+		if (px < ARROW_MIN_PX) px = ARROW_MIN_PX;
+		else if (px > ARROW_MAX_PX) px = ARROW_MAX_PX;
+		return px / scale;
+	}
 
 	let arrowCarrier = null;    // the link whose canvas object draws the heads
 	let arrowScale = 1;         // the zoom, for the pass that is not handed it
@@ -3313,7 +3333,7 @@
 		arrowScale = globalScale;
 		if (!PERF.arrows || !PERF.batch) return;
 		let links = fg.graphData().links;
-		let full = ARROW_PX / globalScale;
+		let full = arrowLen(globalScale);
 		let last = null;
 		for (let i = 0; i < links.length; i++) {
 			let l = links[i];
