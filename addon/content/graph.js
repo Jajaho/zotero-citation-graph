@@ -3316,9 +3316,13 @@
 			let ang = Math.atan2(TIP.y - BASE.y, TIP.x - BASE.x) - Math.PI / 2;
 			let cx = half * Math.cos(ang);
 			let cy = half * Math.sin(ang);
+			// Flattened rather than the edge's own translucent colour: the edge
+			// is stroked under the head all the way to the target's circle, and
+			// a translucent head laid its alpha over it -- see flatten(). Asked
+			// once per colour change, which is a handful of times a frame.
 			let color = linkColor(l) || 'rgba(0,0,0,0.28)';
 			if (color !== last) {
-				ctx.fillStyle = color;
+				ctx.fillStyle = flatten(color);
 				last = color;
 			}
 			ctx.beginPath();
@@ -3608,12 +3612,64 @@
 	if (window.matchMedia) {
 		window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 			_theme = null;
+			// The flattened arrow colours are half background, so they go with it.
+			_flat = Object.create(null);
 			// A picked edge is drawn in the accent colour, which is read off the
 			// stylesheet -- so a cached one is the old theme's accent until
 			// something else recolours. See colorGen.
 			colorGen++;
 			repaint();
 		});
+	}
+
+	/**
+	 * A colour with whatever alpha it carries composited onto the page
+	 * background, so that filling with it covers what is underneath.
+	 *
+	 * For the arrow heads. An edge is stroked before its head is filled and it
+	 * runs the whole way to the target's circle, so a translucent head stacked
+	 * its alpha on the line beneath it and the line read as a darker streak
+	 * through the head -- on every edge except a picked one, which is opaque
+	 * already and so never showed it. Flat, the head hides the piece of line it
+	 * covers, and against the background it is the colour it always was.
+	 *
+	 * Cached per colour string and dropped with the theme, whose background is
+	 * half of the sum. It costs the fill that was there already: erasing under
+	 * the head with destination-out lands on the same pixels and costs two.
+	 */
+	let _flat = Object.create(null);
+	function flatten(color) {
+		let hit = _flat[color];
+		if (hit) return hit;
+		let c = parseColor(color);
+		let bg = c && c[3] < 1 ? parseColor(themeColors().halo) : null;
+		// An opaque colour is flat already, and one in a form parseColor does
+		// not read is left alone rather than guessed at.
+		if (!bg) return (_flat[color] = color);
+		let a = c[3];
+		let mix = i => Math.round(c[i] * a + bg[i] * (1 - a));
+		return (_flat[color] = 'rgb(' + mix(0) + ',' + mix(1) + ',' + mix(2) + ')');
+	}
+
+	/** Red, green, blue and alpha out of the two forms these colours come in: a
+	 *  hex literal from the palette, and the rgba() string withAlpha() builds
+	 *  out of one. Anything else -- a named colour, an hsl() -- returns null. */
+	function parseColor(color) {
+		if (!color) return null;
+		if (color.charAt(0) === '#') {
+			let h = color.slice(1);
+			if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+			if (h.length !== 6) return null;
+			let n = parseInt(h, 16);
+			if (!Number.isFinite(n)) return null;
+			return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+		}
+		let m = /^rgba?(([^)]*))/.exec(color);
+		if (!m) return null;
+		let p = m[1].split(/[s,/]+/).filter(t => t.length).map(Number);
+		if (p.length < 3 || !p.slice(0, 3).every(Number.isFinite)) return null;
+		let a = p.length > 3 && Number.isFinite(p[3]) ? p[3] : 1;
+		return [p[0], p[1], p[2], a];
 	}
 
 	function withAlpha(hex, a) {
