@@ -2254,7 +2254,7 @@
 				// working one out per link per frame and running quadraticCurveTo.
 				// With batch on, force-graph's own heads are length 0 and one
 				// carrier link draws every head instead -- see drawArrows().
-				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? ARROW_LEN : 0))
+				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? ARROW_PX / arrowScale : 0))
 				.linkDirectionalArrowRelPos(1)
 				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
 				.linkCanvasObjectMode(l => (l === arrowCarrier ? 'after' : undefined))
@@ -3279,21 +3279,41 @@
 	 *
 	 * PERF.batch hands the heads back to force-graph, for the benchmark.
 	 */
-	const ARROW_LEN = 4;        // graph units, as force-graph was given it
+	/**
+	 * How long a head is, in screen pixels rather than graph units.
+	 *
+	 * It was four graph units, which is what force-graph had been given and
+	 * what its own pass still gets. But an edge is stroked at a width in screen
+	 * pixels -- force-graph divides linkWidth by the zoom -- so the two scaled
+	 * against each other: at 100% a head was four pixels long and two and a
+	 * half wide against a line one to three wide, which is not a head with a
+	 * line running into it, it is a line with a faint bulge. That is the shape
+	 * the edge appeared to run THROUGH, and it went away when a node was picked
+	 * only because a picked edge is stroked wide enough to swallow the bulge
+	 * whole.
+	 *
+	 * Eight pixels against a line of one to three reads as an arrow at every
+	 * zoom, and the line stops being anything but its tail.
+	 */
+	const ARROW_PX = 8;
 	const LINK_CURVE = 0.08;    // bow of an edge, as a fraction of its length
 
 	let arrowCarrier = null;    // the link whose canvas object draws the heads
+	let arrowScale = 1;         // the zoom, for the pass that is not handed it
 	let frameCtx = null;        // the visible canvas's context, this frame
 
-	function drawArrows(link, ctx) {
+	function drawArrows(link, ctx, globalScale) {
 		// Once a frame, and on the canvas people look at: the hit-test canvas
 		// paints ids as colours, and a head in some other colour would be a
 		// click landing on the wrong thing.
 		if (link !== arrowCarrier || ctx !== frameCtx) return;
+		// Kept for force-graph's own pass, which is handed a length in graph
+		// units and has no zoom to divide it by -- and which runs later in this
+		// same frame. See the accessor on linkDirectionalArrowLength.
+		arrowScale = globalScale;
 		if (!PERF.arrows || !PERF.batch) return;
 		let links = fg.graphData().links;
-		let u = ARROW_LEN;
-		let half = u / 1.6 / 2;
+		let full = ARROW_PX / globalScale;
 		let last = null;
 		for (let i = 0; i < links.length; i++) {
 			let l = links[i];
@@ -3307,9 +3327,17 @@
 			let cp = l.__controlPoints;
 			let m = cp ? curveLength(a, cp, b) : Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
 			if (!(m > 0)) continue;
+			// Never longer than half the edge that is actually on show. Zoomed
+			// out far enough, a head fixed in screen pixels is longer in graph
+			// units than a short edge between two big circles, and without this
+			// it would grow back out of both of them.
+			let gap = m - ra - rb;
+			if (!(gap > 0)) continue;
+			let u = gap < 2 * full ? gap / 2 : full;
+			let half = u / 3.2;
 			// Tip where the edge meets the target's circle (relPos 1), base one
 			// head-length back along it, notch at four fifths of that.
-			let x = ra + u + (m - ra - rb - u);
+			let x = m - rb;
 			curveAt(a, cp, b, x / m, TIP);
 			curveAt(a, cp, b, (x - u) / m, BASE);
 			curveAt(a, cp, b, (x - 0.8 * u) / m, NOTCH);
