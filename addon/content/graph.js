@@ -213,10 +213,12 @@
 		// -- see colorGen. It is never in PERF_MODE; the benchmark turns it off
 		// to ask what it is worth, and nothing else ever should.
 		memo: true,      // node and edge colours worked out once, not per frame
-		// One more of memo's kind: it costs the picture nothing, and is a switch
-		// only so the benchmark can say what it is worth. See drawArrows().
-		// Never in PERF_MODE.
-		batch: true,     // arrow heads drawn by the page, not by force-graph
+		// A switch only so the benchmark can say what the page's own edge pass
+		// is worth. Unlike memo it is NOT free of the picture: off, force-graph
+		// strokes the lines and fills its own heads over the ends of them, and
+		// the overlay this pass exists to be rid of comes back with them. See
+		// drawEdge(). Never in PERF_MODE.
+		batch: true,     // edges drawn whole by the page, not stroked by force-graph
 	};
 
 	/**
@@ -234,10 +236,12 @@
 	 *   tint     -31%  the biggest single win in the renderer. Its cost is a
 	 *                  colour per link per frame and, worse, a stroke batch per
 	 *                  distinct colour -- flat edges are one path for all of them.
-	 *   arrows   -10%  a head filled per link per frame. It was -27% while
-	 *                  force-graph drew them, working out a Bezier length for
-	 *                  each one; drawArrows() works the same triangle out in
-	 *                  closed form, and what is left is the fill.
+	 *   arrows   -10%  a head filled per link per frame, when a head WAS a fill
+	 *                  of its own. It was -27% while force-graph drew them,
+	 *                  working out a Bezier length for each one; the head is
+	 *                  now three more points on the edge's own outline, and
+	 *                  what the switch takes off is those points -- see
+	 *                  drawEdge(), and remeasure.
 	 *   curves     ~   under the noise at rest and -9% on zoom: a control point
 	 *                  per link per frame, and quadraticCurveTo where a straight
 	 *                  line would be lineTo. It was -23% until the arrow heads
@@ -2252,13 +2256,14 @@
 				// trigonometry, and a curvature of 0 leaves the link with no control
 				// points at all -- so force-graph draws it with lineTo instead of
 				// working one out per link per frame and running quadraticCurveTo.
-				// With batch on, force-graph's own heads are length 0 and one
-				// carrier link draws every head instead -- see drawArrows().
+				// With batch on, force-graph's own heads are length 0 and neither
+				// pass runs: one carrier link draws every edge, head and all --
+				// see drawEdge().
 				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? arrowLen(arrowScale) : 0))
 				.linkDirectionalArrowRelPos(1)
 				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
-				.linkCanvasObjectMode(l => (l === arrowCarrier ? 'after' : undefined))
-				.linkCanvasObject(drawArrows)
+				.linkCanvasObjectMode(() => (PERF.batch ? 'replace' : undefined))
+				.linkCanvasObject(drawEdge)
 				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
@@ -3102,6 +3107,10 @@
 	function reserveLabels(ctx, globalScale) {
 		if (!fg) return;
 		frameCtx = ctx;
+		// Before anything is drawn: force-graph's own arrow pass is handed a
+		// length in graph units and has no zoom to divide it by, and with
+		// PERF.batch off the page's pass never runs to catch one.
+		arrowScale = globalScale;
 		pickCarrier();
 		// Names off: no pass, and nothing left over from the last one. The list
 		// has to be emptied rather than merely skipped, or drawLabels would go
@@ -3259,25 +3268,32 @@
 	// --- arrow heads ------------------------------------------------------
 
 	/**
-	 * Every arrow head in the frame, drawn by the page rather than by force-graph.
+	 * Every edge in the frame, each drawn as a single outline: down one side of
+	 * the line, out around the point of its head, back down the other.
 	 *
-	 * force-graph's arrow pass was the second-dearest thing in a frame (see
-	 * PERF_MODE). For every link, every frame, it builds a Bezier object out of
-	 * the link's control points, integrates its arc length numerically, walks it
-	 * three times, and fills the head in a path of its own after setting
-	 * fillStyle from a colour string. This draws the same triangle, from the
-	 * same geometry, at the same point in the frame -- after every edge, before
-	 * every circle, in link order -- but the arc length of a quadratic Bezier has
-	 * a closed form, nothing is allocated, and fillStyle is set only when the
-	 * colour changes, which on a graph coloured by strategy is rarely.
+	 * The reason is alpha. An edge is translucent -- that is how confidence is
+	 * drawn -- so anything laid ON an edge shows what is under it and counts
+	 * its alpha twice. force-graph strokes the line from centre to centre and
+	 * then fills a head over the end of it, which is two coats on the same
+	 * pixels: the line reads as running THROUGH the head, darker for the length
+	 * of it, and its own edges stand out past the sides of a head that tapers
+	 * where the line does not. Widening the head does not fix it. Flattening
+	 * the head's colour does not fix it. Cutting the line out from under the
+	 * head fixes it and takes the arrow with it. An outline has no under.
 	 *
-	 * Drawn from the linkCanvasObject of one link, the carrier, because that is
-	 * the only hook force-graph has between its edges and its circles: it runs
-	 * 'after' link objects once the batched strokes are done, and before its
-	 * own arrow pass and the node pass. The carrier is the first link of the
-	 * array being drawn, picked afresh every frame by pickCarrier().
+	 * It is also less work than what it replaces: force-graph stroked a path
+	 * per colour-and-width and then filled a head per link, where this fills
+	 * one path per colour with the heads already in it. Width stops being half
+	 * of the bucket key and becomes geometry, so there are fewer buckets too.
 	 *
-	 * PERF.batch hands the heads back to force-graph, for the benchmark.
+	 * Drawn from the linkCanvasObject of one link, the carrier. In 'replace'
+	 * mode force-graph strokes nothing itself and hands the page the whole link
+	 * layer, which it still runs before the node pass. The carrier is the first
+	 * link of the array being drawn, picked afresh every frame by
+	 * pickCarrier().
+	 *
+	 * PERF.batch hands the edges back to force-graph, for the benchmark: its
+	 * own stroke, its own arrow pass, and the overlay that comes with them.
 	 */
 	/**
 	 * How big a head is, in three numbers: a size in the graph, and a floor and
@@ -3318,75 +3334,156 @@
 		return px / scale;
 	}
 
-	let arrowCarrier = null;    // the link whose canvas object draws the heads
+	let edgeCarrier = null;     // the link whose canvas object draws the frame
 	let arrowScale = 1;         // the zoom, for the pass that is not handed it
 	let frameCtx = null;        // the visible canvas's context, this frame
 
-	function drawArrows(link, ctx, globalScale) {
-		// Once a frame, and on the canvas people look at: the hit-test canvas
-		// paints ids as colours, and a head in some other colour would be a
-		// click landing on the wrong thing.
-		if (link !== arrowCarrier || ctx !== frameCtx) return;
-		// Kept for force-graph's own pass, which is handed a length in graph
-		// units and has no zoom to divide it by -- and which runs later in this
-		// same frame. See the accessor on linkDirectionalArrowLength.
-		arrowScale = globalScale;
-		if (!PERF.arrows || !PERF.batch) return;
+	const edgeRuns = new Map();  // colour -> the links wearing it, kept between frames
+	const EDGE_HIT = 3;          // extra screen px of edge that still counts as a hover
+	let runCtx = null;           // what fillRun draws into, since forEach hands it nothing
+	let runScale = 1;
+
+	function drawEdge(link, ctx, globalScale) {
+		// The hit-test canvas, where force-graph paints ids as colours to find
+		// what the pointer is over. linkLabel hangs a tooltip off that, so an
+		// edge has to be findable -- but nothing there is ever looked at, so a
+		// plain stroke in the id colour will do, and each link draws its own.
+		if (ctx !== frameCtx) {
+			if (!link.__indexColor) return;
+			let a = link.source;
+			let b = link.target;
+			if (!a || !b || !a.hasOwnProperty('x') || !b.hasOwnProperty('x')) return;
+			let cp = link.__controlPoints;
+			ctx.beginPath();
+			ctx.moveTo(a.x, a.y);
+			if (!cp) ctx.lineTo(b.x, b.y);
+			else if (cp.length === 2) ctx.quadraticCurveTo(cp[0], cp[1], b.x, b.y);
+			else ctx.bezierCurveTo(cp[0], cp[1], cp[2], cp[3], b.x, b.y);
+			ctx.strokeStyle = link.__indexColor;
+			ctx.lineWidth = (linkWidth(link) + EDGE_HIT) / globalScale;
+			ctx.stroke();
+			return;
+		}
+		// One link does the frame, and the rest of the calls cost a comparison.
+		if (link !== edgeCarrier) return;
 		let links = fg.graphData().links;
-		let full = arrowLen(globalScale);
-		let last = null;
+		// Into runs of a colour. The arrays are kept and emptied rather than
+		// built, so a frame allocates nothing but the odd push.
+		edgeRuns.forEach(emptyRun);
 		for (let i = 0; i < links.length; i++) {
 			let l = links[i];
-			let a = l.source;
-			let b = l.target;
-			if (!a || !b || !a.hasOwnProperty('x') || !b.hasOwnProperty('x')) continue;
-			// Radii exactly as force-graph works them out, including its floor
-			// of 1 for a node with no value -- not nodeRadius(), which has none.
-			let ra = Math.sqrt(Math.max(0, nodeVal(a) || 1)) * NODE_REL_SIZE;
-			let rb = Math.sqrt(Math.max(0, nodeVal(b) || 1)) * NODE_REL_SIZE;
-			let cp = l.__controlPoints;
-			let m = cp ? curveLength(a, cp, b) : Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
-			if (!(m > 0)) continue;
-			// Never longer than half the edge that is actually on show. Zoomed
-			// out far enough, a head fixed in screen pixels is longer in graph
-			// units than a short edge between two big circles, and without this
-			// it would grow back out of both of them.
-			let gap = m - ra - rb;
-			if (!(gap > 0)) continue;
-			let u = gap < 2 * full ? gap / 2 : full;
-			let half = u / 3.2;
-			// Tip where the edge meets the target's circle (relPos 1), base one
-			// head-length back along it, notch at four fifths of that.
-			let x = m - rb;
-			curveAt(a, cp, b, x / m, TIP);
-			curveAt(a, cp, b, (x - u) / m, BASE);
-			curveAt(a, cp, b, (x - 0.8 * u) / m, NOTCH);
-			let ang = Math.atan2(TIP.y - BASE.y, TIP.x - BASE.x) - Math.PI / 2;
-			let cx = half * Math.cos(ang);
-			let cy = half * Math.sin(ang);
-			// Flattened rather than the edge's own translucent colour: the edge
-			// is stroked under the head all the way to the target's circle, and
-			// a translucent head laid its alpha over it -- see flatten(). Asked
-			// once per colour change, which is a handful of times a frame.
 			let color = linkColor(l) || 'rgba(0,0,0,0.28)';
-			if (color !== last) {
-				ctx.fillStyle = flatten(color);
-				last = color;
-			}
-			ctx.beginPath();
-			ctx.moveTo(TIP.x, TIP.y);
-			ctx.lineTo(BASE.x + cx, BASE.y + cy);
-			ctx.lineTo(NOTCH.x, NOTCH.y);
-			ctx.lineTo(BASE.x - cx, BASE.y - cy);
-			ctx.fill();
+			let run = edgeRuns.get(color);
+			if (!run) edgeRuns.set(color, run = []);
+			run.push(l);
 		}
+		runCtx = ctx;
+		runScale = globalScale;
+		edgeRuns.forEach(fillRun);
 	}
 
-	// Scratch points, written into rather than allocated: three per link per
-	// frame would be the allocation this whole function exists to avoid.
-	const TIP = { x: 0, y: 0 };
+	function emptyRun(run) {
+		run.length = 0;
+	}
+
+	/** One path, one fill, every edge of a colour in it -- heads and all. */
+	function fillRun(run, color) {
+		if (!run.length) return;
+		let ctx = runCtx;
+		ctx.beginPath();
+		for (let i = 0; i < run.length; i++) traceEdge(ctx, run[i], runScale);
+		ctx.fillStyle = color;
+		ctx.fill();
+	}
+
+	/**
+	 * One edge added to the open path: down one side of the line, out around
+	 * the point of the head, back down the other side.
+	 *
+	 * The line's width is in the geometry here, not in a stroke, so it has to
+	 * be put into graph units by hand -- force-graph divided linkWidth by the
+	 * zoom for the same reason, and a width in screen pixels is what an edge
+	 * has always been.
+	 *
+	 * The two sides are the piece of the curve between tail and base, offset by
+	 * a normal to the chord it spans rather than by a true offset curve. A bow
+	 * is LINK_CURVE of the edge's length and a line is a pixel or two wide, so
+	 * the difference between the two is a good deal less than the pixel it
+	 * would have to show up in.
+	 */
+	function traceEdge(ctx, l, scale) {
+		let a = l.source;
+		let b = l.target;
+		if (!a || !b || !a.hasOwnProperty('x') || !b.hasOwnProperty('x')) return;
+		// Radii exactly as force-graph works them out, including its floor of 1
+		// for a node with no value -- not nodeRadius(), which has none.
+		let ra = Math.sqrt(Math.max(0, nodeVal(a) || 1)) * NODE_REL_SIZE;
+		let rb = Math.sqrt(Math.max(0, nodeVal(b) || 1)) * NODE_REL_SIZE;
+		let cp = l.__controlPoints;
+		let m = cp ? curveLength(a, cp, b) : Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+		if (!(m > 0)) return;
+		// Two circles already touching leave nothing to draw: whatever this
+		// would add is inside one of them, and they are painted over it.
+		let gap = m - ra - rb;
+		if (!(gap > 0)) return;
+		let hw = linkWidth(l) / 2 / scale;
+		// The head takes its length off the end of the line, and at most half
+		// of what is on show. A head narrower than its own line would fold the
+		// outline back through itself, so below that there is simply no head.
+		let u = PERF.arrows ? arrowLen(scale) : 0;
+		if (2 * u > gap) u = gap / 2;
+		let half = u / 3.2;
+		if (half <= hw) u = 0;
+		// A hair inside the source's circle, so no seam shows where they meet.
+		let t0 = Math.max(0, ra - 1 / scale) / m;
+		let t1 = (m - rb - u) / m;
+		curveAt(a, cp, b, t0, TAIL);
+		curveAt(a, cp, b, t1, BASE);
+		let dx = BASE.x - TAIL.x;
+		let dy = BASE.y - TAIL.y;
+		let d = Math.sqrt(dx * dx + dy * dy);
+		if (!(d > 0)) return;
+		let nx = -dy / d * hw;
+		let ny = dx / d * hw;
+		// The control point of the piece between tail and base, so a side bows
+		// the way the edge does: de Casteljau, for the ordinary two-number bow.
+		// The four-number loop force-graph draws between two coincident nodes
+		// is left straight, which is all it is on screen anyway.
+		let bow = !!cp && cp.length === 2;
+		if (bow) {
+			let s0 = 1 - t0;
+			let s1 = 1 - t1;
+			CTRL.x = s0 * s1 * a.x + (s0 * t1 + s1 * t0) * cp[0] + t0 * t1 * b.x;
+			CTRL.y = s0 * s1 * a.y + (s0 * t1 + s1 * t0) * cp[1] + t0 * t1 * b.y;
+		}
+		ctx.moveTo(TAIL.x + nx, TAIL.y + ny);
+		if (bow) ctx.quadraticCurveTo(CTRL.x + nx, CTRL.y + ny, BASE.x + nx, BASE.y + ny);
+		else ctx.lineTo(BASE.x + nx, BASE.y + ny);
+		if (u > 0) {
+			curveAt(a, cp, b, (m - rb) / m, TIP);
+			let hx = TIP.x - BASE.x;
+			let hy = TIP.y - BASE.y;
+			let hd = Math.sqrt(hx * hx + hy * hy);
+			if (hd > 0) {
+				let px = -hy / hd * half;
+				let py = hx / hd * half;
+				ctx.lineTo(BASE.x + px, BASE.y + py);
+				ctx.lineTo(TIP.x, TIP.y);
+				ctx.lineTo(BASE.x - px, BASE.y - py);
+			}
+		}
+		ctx.lineTo(BASE.x - nx, BASE.y - ny);
+		if (bow) ctx.quadraticCurveTo(CTRL.x - nx, CTRL.y - ny, TAIL.x - nx, TAIL.y - ny);
+		else ctx.lineTo(TAIL.x - nx, TAIL.y - ny);
+		ctx.closePath();
+	}
+
+	// Scratch points, written into rather than allocated: four per link per
+	// frame would be the allocation this whole pass exists to avoid.
+	const TAIL = { x: 0, y: 0 };
 	const BASE = { x: 0, y: 0 };
-	const NOTCH = { x: 0, y: 0 };
+	const TIP = { x: 0, y: 0 };
+	const CTRL = { x: 0, y: 0 };
 
 	/** A point on the edge from a to b at parameter t. The control points are
 	 *  force-graph's own: none for a straight edge, two numbers for the
@@ -3452,7 +3549,7 @@
 	 *  not. */
 	function pickCarrier() {
 		let links = fg.graphData().links;
-		arrowCarrier = links.length ? links[0] : null;
+		edgeCarrier = links.length ? links[0] : null;
 	}
 
 	function drawNode(node, ctx, globalScale) {
@@ -3660,64 +3757,12 @@
 	if (window.matchMedia) {
 		window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 			_theme = null;
-			// The flattened arrow colours are half background, so they go with it.
-			_flat = Object.create(null);
 			// A picked edge is drawn in the accent colour, which is read off the
 			// stylesheet -- so a cached one is the old theme's accent until
 			// something else recolours. See colorGen.
 			colorGen++;
 			repaint();
 		});
-	}
-
-	/**
-	 * A colour with whatever alpha it carries composited onto the page
-	 * background, so that filling with it covers what is underneath.
-	 *
-	 * For the arrow heads. An edge is stroked before its head is filled and it
-	 * runs the whole way to the target's circle, so a translucent head stacked
-	 * its alpha on the line beneath it and the line read as a darker streak
-	 * through the head -- on every edge except a picked one, which is opaque
-	 * already and so never showed it. Flat, the head hides the piece of line it
-	 * covers, and against the background it is the colour it always was.
-	 *
-	 * Cached per colour string and dropped with the theme, whose background is
-	 * half of the sum. It costs the fill that was there already: erasing under
-	 * the head with destination-out lands on the same pixels and costs two.
-	 */
-	let _flat = Object.create(null);
-	function flatten(color) {
-		let hit = _flat[color];
-		if (hit) return hit;
-		let c = parseColor(color);
-		let bg = c && c[3] < 1 ? parseColor(themeColors().halo) : null;
-		// An opaque colour is flat already, and one in a form parseColor does
-		// not read is left alone rather than guessed at.
-		if (!bg) return (_flat[color] = color);
-		let a = c[3];
-		let mix = i => Math.round(c[i] * a + bg[i] * (1 - a));
-		return (_flat[color] = 'rgb(' + mix(0) + ',' + mix(1) + ',' + mix(2) + ')');
-	}
-
-	/** Red, green, blue and alpha out of the two forms these colours come in: a
-	 *  hex literal from the palette, and the rgba() string withAlpha() builds
-	 *  out of one. Anything else -- a named colour, an hsl() -- returns null. */
-	function parseColor(color) {
-		if (!color) return null;
-		if (color.charAt(0) === '#') {
-			let h = color.slice(1);
-			if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-			if (h.length !== 6) return null;
-			let n = parseInt(h, 16);
-			if (!Number.isFinite(n)) return null;
-			return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
-		}
-		let m = /^rgba?(([^)]*))/.exec(color);
-		if (!m) return null;
-		let p = m[1].split(/[s,/]+/).filter(t => t.length).map(Number);
-		if (p.length < 3 || !p.slice(0, 3).every(Number.isFinite)) return null;
-		let a = p.length > 3 && Number.isFinite(p[3]) ? p[3] : 1;
-		return [p[0], p[1], p[2], a];
 	}
 
 	function withAlpha(hex, a) {
