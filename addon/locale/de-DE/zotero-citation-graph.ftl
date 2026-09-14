@@ -151,6 +151,7 @@ zotero-citation-graph-legend-no-date = Ohne Datum
 zotero-citation-graph-legend-more = +{ $count } weitere
 zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $count } Knoten *[other] { $count } Knoten }
 zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } Teilgebiet *[other] { $count } Teilgebiete }, Modularität { $q }
+zotero-citation-graph-legend-collection-shared = { $count -> [one] { $count } Eintrag liegt in mehreren Sammlungen: er wird in Segmente geteilt und unter jeder gezählt *[other] { $count } Einträge liegen in mehreren Sammlungen: jeder wird in Segmente geteilt und unter jeder gezählt }
 
 zotero-citation-graph-color-no-collection = (Keine Sammlung)
 zotero-citation-graph-color-no-cluster = (Kein Teilgebiet)

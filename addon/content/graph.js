@@ -1053,7 +1053,7 @@
 
 	function colorKey(n) {
 		switch (colorMode) {
-			case 'collection': return (n.collections || [])[0] || t('color-no-collection');
+			case 'collection': return colorKeys(n)[0];
 			// A paper sharing no reference with any other cannot be placed in a
 			// subfield, and inventing one for it would be the one thing this
 			// mode must not do.
@@ -1065,11 +1065,43 @@
 		}
 	}
 
+	/**
+	 * Every key a node is coloured by. One for every mode but collection, where
+	 * a paper can sit on several shelves at once and picking one of them -- as
+	 * this used to, whichever Zotero happened to list first -- hid the rest.
+	 *
+	 * Sorted, so the same paper is cut into the same wedges in the same order
+	 * however the collections were walked to find it.
+	 */
+	function colorKeys(n) {
+		if (colorMode !== 'collection') return [colorKey(n)];
+		let names = n.collections || [];
+		if (!names.length) return [t('color-no-collection')];
+		if (names.length === 1) return names;
+		return names.slice().sort((a, b) => a.localeCompare(b));
+	}
+
 	function nodeColor(n) {
 		if (PERF.memo && n._colorGen === colorGen) return n._color;
 		let c = baseColor(n);
 		n._colorGen = colorGen;
+		n._slices = sliceColors(n);
 		return (n._color = dimmed(n) ? fade(c, DIM_NODE_ALPHA) : c);
+	}
+
+	/** The wedges a node in several collections is cut into, first one
+	 *  included, already faded if the node is; null for a node of one colour.
+	 *  Worked out with the fill and kept beside it, since drawNode asks for
+	 *  them every frame. */
+	function sliceColors(n) {
+		if (colorMode !== 'collection' || n.ghost || !n.collections || n.collections.length < 2) return null;
+		let dim = dimmed(n);
+		return colorKeys(n).map(key => (dim ? fade(keyColor(key), DIM_NODE_ALPHA) : keyColor(key)));
+	}
+
+	function nodeSlices(n) {
+		if (!PERF.memo || n._colorGen !== colorGen) nodeColor(n);
+		return n._slices;
 	}
 
 	function baseColor(n) {
@@ -1189,13 +1221,18 @@
 	}
 
 	/** The hashed modes: one swatch per key, commonest first, so the colours
-	 *  covering most of the screen are the ones explained first. */
+	 *  covering most of the screen are the ones explained first. A paper in
+	 *  three collections is counted under all three, which is what its three
+	 *  wedges say -- so the counts can add up to more than the nodes. */
 	function keyLegend(nodes) {
 		let counts = new Map();
+		let shared = 0;
 		for (let n of nodes) {
-			let key = colorKey(n);
-			counts.set(key, (counts.get(key) || 0) + 1);
+			let keys = colorKeys(n);
+			if (keys.length > 1) shared++;
+			for (let key of keys) counts.set(key, (counts.get(key) || 0) + 1);
 		}
+		if (shared) elLegend.title = t('legend-collection-shared', { count: shared });
 		let keys = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)
 			|| (a < b ? -1 : a > b ? 1 : 0));
 		for (let key of keys.slice(0, LEGEND_MAX)) {
@@ -2250,7 +2287,7 @@
 				.nodeRelSize(NODE_REL_SIZE)
 				.nodeVal(nodeVal)
 				.nodeColor(nodeColor)
-				.nodeCanvasObjectMode(() => 'after')
+				.nodeCanvasObjectMode(nodeMode)
 				.nodeCanvasObject(drawNode)
 				// Both read PERF live. An arrow of length 0 is skipped before any
 				// trigonometry, and a curvature of 0 leaves the link with no control
@@ -2443,7 +2480,8 @@
 
 	/**
 	 * Labels are drawn in 'after' mode, so force-graph still paints the node
-	 * circle and still owns hit-testing. Dividing by globalScale keeps the text
+	 * circle and still owns hit-testing -- except the circle of a paper cut
+	 * into collection wedges, which drawSlices() fills itself. Dividing by globalScale keeps the text
 	 * a constant size on screen at any zoom.
 	 */
 	const NODE_REL_SIZE = Scale.NODE_REL_SIZE;
@@ -3553,8 +3591,57 @@
 	}
 
 	function drawNode(node, ctx, globalScale) {
+		drawSlices(node, ctx);
 		drawPick(node, ctx, globalScale);
 		drawPin(node, ctx);
+	}
+
+	/**
+	 * A paper in several collections, cut into one equal wedge per collection,
+	 * clockwise from twelve o'clock in the order colorKeys() sorts them.
+	 *
+	 * Wedges rather than stripes: a wedge is the same share of the circle
+	 * wherever it falls, where the middle one of three parallel bands covers
+	 * more than the two either side of it and reads as the paper's main home.
+	 *
+	 * Such a node is drawn in 'replace' mode, so the circle is this function's
+	 * to fill -- see nodeMode(). Butting every wedge against its neighbour
+	 * leaves an antialiased seam of background along each cut, so an opaque
+	 * node is filled whole in the first colour and the rest laid over it,
+	 * which makes the seam the fill. A dimmed one cannot be: its colours are
+	 * translucent, the first would show through every other wedge, and on a
+	 * node faded that far a hairline seam is nothing anyone will see.
+	 *
+	 * Only on the visible canvas -- the hit-test one paints the whole circle in
+	 * its id colour and never calls this.
+	 */
+	function nodeMode(node) {
+		return nodeSlices(node) ? 'replace' : 'after';
+	}
+
+	function drawSlices(node, ctx) {
+		let slices = nodeSlices(node);
+		if (!slices) return;
+		// The radius exactly as force-graph works it out for a circle of its own.
+		let r = Math.sqrt(Math.max(0, nodeVal(node) || 1)) * NODE_REL_SIZE;
+		let step = 2 * Math.PI / slices.length;
+		let first = 0;
+		if (!dimmed(node)) {
+			ctx.beginPath();
+			ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+			ctx.fillStyle = slices[0];
+			ctx.fill();
+			first = 1;
+		}
+		for (let i = first; i < slices.length; i++) {
+			let from = -Math.PI / 2 + i * step;
+			ctx.beginPath();
+			ctx.moveTo(node.x, node.y);
+			ctx.arc(node.x, node.y, r, from, from + step);
+			ctx.closePath();
+			ctx.fillStyle = slices[i];
+			ctx.fill();
+		}
 	}
 
 	/**

@@ -198,6 +198,9 @@ zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $coun
 # How trustworthy the subfield split is: modularity below about 0.3 means the
 # clusters are more the algorithm than the library.
 zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } subfield *[other] { $count } subfields }, modularity { $q }
+# Colouring by collection: papers in more than one are cut into wedges and
+# counted under each, so the rows can add up to more than the nodes.
+zotero-citation-graph-legend-collection-shared = { $count -> [one] { $count } paper is in several collections: it is split into wedges and counted under each *[other] { $count } papers are in several collections: each is split into wedges and counted under each }
 
 # Colour keys for held items missing the facet being coloured by.
 zotero-citation-graph-color-no-collection = (No collection)
