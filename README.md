@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/Jajaho/zotero-citation-graph)](https://github.com/Jajaho/zotero-citation-graph/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Jajaho/zotero-citation-graph/total)](https://github.com/Jajaho/zotero-citation-graph/releases)
 ![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936)
-[![License: AGPL-3.0](https://img.shields.io/github/license/Jajaho/zotero-citation-graph)](../LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/github/license/Jajaho/zotero-citation-graph)](LICENSE)
 
 <!-- TODO: drop a screenshot or GIF of a settled graph here. Upload it to a GitHub
      issue or release and paste the user-attachments URL, the same way the videos
@@ -224,11 +224,11 @@ Bug reports, pull requests and especially **translations** are welcome. See
 ## License and Third-Party Code
 
 Citation Graph for Zotero is free software, licensed under the
-[GNU Affero General Public License v3.0 or later](../LICENSE). This guarantees to you that all current and future features will be free for everyone, now and forever. This plugin will never come with a paywall, you will always be able to verify the code's integrity and know exactly what it's doing.
+[GNU Affero General Public License v3.0 or later](LICENSE). This guarantees to you that all current and future features will be free for everyone, now and forever. This plugin will never come with a paywall, you will always be able to verify the code's integrity and know exactly what it's doing.
 
 It bundles and reuses material from the sources below, redistributed here in
 accordance with their respective licences. The full notices ship inside the XPI
-as [`addon/THIRD-PARTY-NOTICES.md`](../addon/THIRD-PARTY-NOTICES.md).
+as [`addon/THIRD-PARTY-NOTICES.md`](addon/THIRD-PARTY-NOTICES.md).
 
 | What | Where | Licence |
 |---|---|---|
