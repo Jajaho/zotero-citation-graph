@@ -3255,6 +3255,57 @@
 	}
 
 	/**
+	 * The top-left of the viewport, in screen pixels of graph.
+	 *
+	 * With it a node's position becomes its position on the canvas with a
+	 * multiply and a subtract, rather than a call per node into force-graph's
+	 * own converter. Filled into a scratch object for the reason the label
+	 * metrics are: every pass that works in screen pixels asks for it, every
+	 * frame, and none of them keeps it.
+	 */
+	const _origin = { ox: 0, oy: 0 };
+
+	function screenOrigin(globalScale) {
+		let tl = fg.screen2GraphCoords(0, 0);
+		_origin.ox = tl.x * globalScale;
+		_origin.oy = tl.y * globalScale;
+		return _origin;
+	}
+
+	/**
+	 * Take the graph's own transform off the canvas. The caller restores.
+	 *
+	 * Text is the whole reason. Everything about a name is decided in screen
+	 * pixels -- the size it is clamped to, the width measured once per name,
+	 * the box the placement pass reserves -- and painting it inside the graph's
+	 * transform meant handing the canvas every one of those divided by the
+	 * zoom. A font size is not a number the canvas carries faithfully at that
+	 * scale: Gecko keeps one as a whole count of app units, a sixtieth of a
+	 * pixel, so a 28px name zoomed far enough in is first rounded to the wrong
+	 * size and then, past a threshold, to nothing at all. Circles and edges are
+	 * paths and never notice, which is what made this look like the name pass
+	 * hiding things: the names go out together, at a zoom that has nothing to
+	 * do with crowding, and no amount of hovering brings one back.
+	 *
+	 * So text is painted in the space it was measured in. The matrix at this
+	 * point is the device-pixel scale with the zoom laid over it -- take the
+	 * zoom back out and what is left is CSS pixels, which is the space the
+	 * placement pass already put every box in.
+	 */
+	function enterScreenSpace(ctx, globalScale) {
+		let dpr = window.devicePixelRatio || 1;
+		// Read back off the matrix where the canvas will say, rather than
+		// asking the window a second time: it is force-graph that put that
+		// scale there, and what it actually used cannot disagree with itself.
+		if (ctx.getTransform && globalScale > 0) {
+			let m = ctx.getTransform();
+			if (m && m.a) dpr = m.a / globalScale;
+		}
+		ctx.save();
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	}
+
+	/**
 	 * The frame's placement pass, run before force-graph paints anything.
 	 *
 	 * Everything here is in SCREEN pixels: boxes from two different zoom levels
@@ -3281,9 +3332,9 @@
 		// Screen origin in graph coordinates, so a node's position can be put
 		// into screen space with a multiply and an add rather than a call per
 		// node into force-graph's own converter.
-		let tl = fg.screen2GraphCoords(0, 0);
-		let ox = tl.x * globalScale;
-		let oy = tl.y * globalScale;
+		let o = screenOrigin(globalScale);
+		let ox = o.ox;
+		let oy = o.oy;
 		labelPass.begin(
 			Math.max(24, 5 * LABEL_MIN_PX),
 			LabelLayout.capacity(w, h, 2 * LABEL_MIN_PX, LABEL_MIN_PX + LABEL_PAD),
@@ -3889,10 +3940,19 @@
 	 *
 	 * Before drawGroups, which keeps the flags above the names for the reason
 	 * they are above the graph: they are furniture, and you navigate by them.
+	 *
+	 * The whole batch is painted with the graph's transform taken off, in the
+	 * screen pixels the pass placed every one of these names in -- see
+	 * enterScreenSpace(), which is also why a name survives a deep zoom.
 	 */
 	function drawLabels(ctx, globalScale) {
-		if (!PERF.labels) return;
-		for (let n of labelDraw) drawLabel(n, ctx, globalScale);
+		if (!PERF.labels || !labelDraw.length) return;
+		let o = screenOrigin(globalScale);
+		let ox = o.ox;
+		let oy = o.oy;
+		enterScreenSpace(ctx, globalScale);
+		for (let n of labelDraw) drawLabel(n, ctx, globalScale, ox, oy);
+		ctx.restore();
 	}
 
 	/** Everything that goes over the graph rather than in it, in the order it
@@ -3902,7 +3962,7 @@
 		drawGroups(ctx, globalScale);
 	}
 
-	function drawLabel(node, ctx, globalScale) {
+	function drawLabel(node, ctx, globalScale, ox, oy) {
 		if (!node.label) return;
 		// Dimmed nodes lose their label entirely rather than fading it. A halo
 		// stroke is what makes a label readable over dense edges, and a faded
@@ -3915,11 +3975,14 @@
 		let lit = node._labelLit;
 		if (!lit) return;
 		let theme = themeColors();
-		// Everything here is reasoned in screen pixels and divided by
-		// globalScale on the way into the canvas, which is in graph units --
-		// that is what keeps the type a constant size at any zoom.
+		// Screen pixels, painted as screen pixels: the caller has taken the
+		// graph's transform off the canvas, so the size the placement pass
+		// reserved is the size this paints at, with nothing left for the zoom
+		// to round away. See enterScreenSpace().
 		let px = labelMetrics(node, ctx, globalScale).px;
-		ctx.font = (px / globalScale) + 'px sans-serif';
+		let x = node.x * globalScale - ox;
+		let y = node.y * globalScale - oy;
+		ctx.font = px + 'px sans-serif';
 		// save/restore rather than putting the alpha back to 1 by hand: 1 is
 		// what the canvas happens to be on today, not something this function
 		// is entitled to assert. Paid only during a fade, which is at most
@@ -3936,12 +3999,12 @@
 		// and joined round so the stroke does not spike off the glyphs.
 		if (PERF.halo) {
 			ctx.lineJoin = 'round';
-			ctx.lineWidth = (px * 0.3) / globalScale;
+			ctx.lineWidth = px * 0.3;
 			ctx.strokeStyle = theme.halo;
-			ctx.strokeText(node.label, node.x, node.y);
+			ctx.strokeText(node.label, x, y);
 		}
 		ctx.fillStyle = node.ghost ? theme.muted : theme.fg;
-		ctx.fillText(node.label, node.x, node.y);
+		ctx.fillText(node.label, x, y);
 		if (lit < 1) ctx.restore();
 	}
 
@@ -4946,47 +5009,56 @@
 	const FLAG_DOT = 2.5;      // screen px, the anchor point itself
 	const FLAG_LABEL_PX = 11;
 
+	/**
+	 * Drawn in screen pixels, with the graph's transform off the canvas -- see
+	 * enterScreenSpace(). Every number in a flag was already a screen pixel
+	 * divided back into graph units at the last moment, so this is the space it
+	 * was always written in; and the caption went out at a deep zoom before the
+	 * node names did, being the smaller type of the two.
+	 */
 	function drawGroups(ctx, globalScale) {
 		if (!groups.length) return;
 		let theme = themeColors();
-		// Screen pixels into graph units at this zoom -- the same trick the
-		// labels use, and the reason nothing here is in graph units to start.
-		let s = 1 / globalScale;
+		let o = screenOrigin(globalScale);
+		enterScreenSpace(ctx, globalScale);
 		for (let g of groups) {
-			let top = g.y - FLAG_MAST * s;
+			let gx = g.x * globalScale - o.ox;
+			let gy = g.y * globalScale - o.oy;
+			let top = gy - FLAG_MAST;
 			ctx.beginPath();
-			ctx.arc(g.x, g.y, FLAG_DOT * s, 0, 2 * Math.PI);
+			ctx.arc(gx, gy, FLAG_DOT, 0, 2 * Math.PI);
 			ctx.fillStyle = theme.fg;
 			ctx.fill();
 			ctx.beginPath();
-			ctx.moveTo(g.x, g.y);
-			ctx.lineTo(g.x, top);
-			ctx.lineWidth = 1.5 * s;
+			ctx.moveTo(gx, gy);
+			ctx.lineTo(gx, top);
+			ctx.lineWidth = 1.5;
 			ctx.strokeStyle = theme.fg;
 			ctx.stroke();
 			ctx.beginPath();
-			ctx.moveTo(g.x, top);
-			ctx.lineTo(g.x + FLAG_FLY * s, top + (FLAG_DROP / 2) * s);
-			ctx.lineTo(g.x, top + FLAG_DROP * s);
+			ctx.moveTo(gx, top);
+			ctx.lineTo(gx + FLAG_FLY, top + FLAG_DROP / 2);
+			ctx.lineTo(gx, top + FLAG_DROP);
 			ctx.closePath();
 			ctx.fillStyle = theme.fg;
 			ctx.fill();
 
 			let label = groupLabel(g);
-			ctx.font = (FLAG_LABEL_PX * s) + 'px sans-serif';
+			ctx.font = FLAG_LABEL_PX + 'px sans-serif';
 			ctx.textAlign = 'left';
 			ctx.textBaseline = 'middle';
-			let x = g.x + (FLAG_FLY + 4) * s;
-			let y = top + (FLAG_DROP / 2) * s;
+			let x = gx + FLAG_FLY + 4;
+			let y = top + FLAG_DROP / 2;
 			// Halo first, for the same reason the node labels have one: this
 			// text lands over whatever the anchor gathered.
 			ctx.lineJoin = 'round';
-			ctx.lineWidth = (FLAG_LABEL_PX * 0.3) * s;
+			ctx.lineWidth = FLAG_LABEL_PX * 0.3;
 			ctx.strokeStyle = theme.halo;
 			ctx.strokeText(label, x, y);
 			ctx.fillStyle = g.filters.length ? theme.fg : theme.muted;
 			ctx.fillText(label, x, y);
 		}
+		ctx.restore();
 	}
 
 	/** How much room a flag's own text takes, in screen px, for the placement
