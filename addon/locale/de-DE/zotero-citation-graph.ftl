@@ -91,7 +91,7 @@ zotero-citation-graph-autobuild = Autoaufbau
 
 # Kurzinfos für die Bedienelemente der Seitenleiste.
 zotero-citation-graph-min-confidence-hint = Kanten ausblenden, die unsicherer sind als dieser Wert. Jede Strategie bewertet, wie sicher sie sich jeder gefundenen Kante ist; bei 0 werden alle gezeichnet.
-zotero-citation-graph-color-edges-hint = Jede Kante in der Farbe der stärksten Strategie zeichnen, die sie gefunden hat. Aus: Kanten sind grau, und wie sicher sie sind, zeigt sich weiter daran, wie kräftig sie gezeichnet werden.
+zotero-citation-graph-color-edges-hint = Jede Kante in der Farbe der stärksten Strategie zeichnen, die sie gefunden hat. Aus: Jede Kante wird im selben Grau und in derselben Breite gezeichnet, egal wie sicher sie ist.
 zotero-citation-graph-hide-isolated-hint = Einträge weglassen, die im aktuell gefilterten Graphen keine Kante mehr haben.
 zotero-citation-graph-size-by-hint = Was die Größe eines Knotens zeigt: wie viele Einträge hier ihn zitieren oder wie oft er weltweit zitiert wird (schaltet „Knotenmetadaten abfragen“ ein).
 zotero-citation-graph-color-by-hint = Was die Farbe eines Knotens zeigt. Die Legende darunter listet die sichtbaren Farben.

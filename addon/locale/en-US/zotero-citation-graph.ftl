@@ -124,7 +124,7 @@ zotero-citation-graph-autobuild = Autobuild
 # Tooltips for the sidebar controls that had none. One per strategy, because
 # the page only ever sees their ids; strategy-other-hint is for any new one.
 zotero-citation-graph-min-confidence-hint = Hide edges less certain than this. Every strategy rates how sure it is of each edge it finds; at 0 all of them are drawn.
-zotero-citation-graph-color-edges-hint = Colour each edge by the strongest strategy that found it. Off, edges are gray, and how certain they are still shows in how strongly they are drawn.
+zotero-citation-graph-color-edges-hint = Colour each edge by the strongest strategy that found it. Off, every edge is drawn in the same gray at the same width, however certain it is.
 zotero-citation-graph-hide-isolated-hint = Leave out papers that have no edge left on the graph as it is filtered now.
 zotero-citation-graph-size-by-hint = What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on "Query node metadata").
 zotero-citation-graph-color-by-hint = What a node's colour shows. The key underneath lists the colours on screen.

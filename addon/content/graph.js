@@ -2651,16 +2651,18 @@
 	}
 
 	function linkTint(l) {
-		if (!PERF.tint) {
+		// The panel's switch draws the same flat edges the tint switch does.
+		// Confidence goes with the hue: a gray whose alpha still followed it
+		// left title-match lighter than the rest, which read as a colour that
+		// had not come off. Arrows and curves are the tint switch's neighbours,
+		// not its business, so they stay.
+		if (!PERF.tint || !colorEdges) {
 			// Pick and dim survive: they are not decoration, they are the
 			// answer to a question the user just asked the graph.
 			if (pickedLink(l)) return themeColors().accent;
 			return dimmedLink(l) ? PERF_EDGE_DIM : PERF_EDGE;
 		}
-		// The panel's switch takes the hue away and nothing else: confidence
-		// still sets the alpha and the width, which is the difference between
-		// it and the tint switch above.
-		return withAlpha(colorEdges ? viaColor(bestVia(l.via)) : PERF_EDGE,
+		return withAlpha(viaColor(bestVia(l.via)),
 			(pickedLink(l)
 				? HL_LINK_ALPHA
 				: l.confidence >= ASSERTED ? 0.85 : 0.45)
@@ -2673,7 +2675,7 @@
 	function linkWidth(l) {
 		if (PERF.memo && l._widthGen === colorGen) return l._width;
 		l._widthGen = colorGen;
-		return (l._width = !PERF.tint
+		return (l._width = !PERF.tint || !colorEdges
 			? (pickedLink(l) ? HL_LINK_WIDTH : 1)
 			: (l.confidence >= ASSERTED ? 1.4 : 0.8)
 				* (pickedLink(l) ? HL_LINK_WIDTH : 1));
