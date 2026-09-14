@@ -22,11 +22,12 @@
 
 	// Works we do not hold. Deliberately one flat colour: they carry no metadata
 	// to colour BY -- offline, a reference outside the collection is a DOI and
-	// nothing else.
-	const GHOST_COLOR = '#8e8e93';
+	// nothing else. Zotero's tag gray.
+	const GHOST_COLOR = '#999999';
 
 	// Held items with nothing to colour BY: no date, when colouring by year.
-	const NO_KEY_COLOR = '#9aa0a6';
+	// Zotero's annotation gray, a step lighter than the ghosts.
+	const NO_KEY_COLOR = '#aaaaaa';
 
 	// How far the graph outside the isolated neighbourhood is faded. Faded and
 	// not hidden: the whole point of isolating is to read one node's citations
@@ -514,7 +515,7 @@
 	/** Flat edge colours, built once. The point of switching the tint off is to
 	 *  stop building a colour string per link per frame -- doing it lazily and
 	 *  keeping it would be the same work in a different place. */
-	const PERF_EDGE = '#9aa0a6';
+	const PERF_EDGE = '#aaaaaa';
 	const PERF_EDGE_DIM = withAlpha(PERF_EDGE, DIM_LINK_FACTOR);
 
 	/** Set some switches. Anything not named is left alone, so chrome, the
@@ -1117,23 +1118,127 @@
 		return keyColor(key);
 	}
 
+	/**
+	 * The colours a category can wear, Zotero's own first.
+	 *
+	 * ZOTERO_COLORS is the tag colour picker (elements/colorPicker.js) without
+	 * its gray, which is already taken by outside references, plus the two
+	 * hues only the annotation palette (xpcom/annotations.js) has, yellow and
+	 * magenta. A reader who has coloured tags or highlights in Zotero sees the
+	 * same ten here. EXTRA_COLORS is what a graph with more categories than
+	 * that falls back on: three of Zotero's accent tokens that stand apart
+	 * from the ten, then the tag colours again a shade darker -- the same hues
+	 * one step down, so the overflow reads as part of the set rather than as a
+	 * second palette bolted on.
+	 */
+	const ZOTERO_COLORS = [
+		'#ff6666', '#ff8c19', '#5fb236', '#009980', '#2ea8e5',
+		'#576dd9', '#a28ae5', '#a6507b', '#ffd400', '#e56eee',
+	];
+	const EXTRA_COLORS = [
+		'#db2c3a', '#cc9200', '#cc7a52',
+		...['#ff6666', '#ff8c19', '#5fb236', '#009980', '#2ea8e5', '#576dd9', '#a28ae5', '#a6507b']
+			.map(c => mix(c, '#000000', 0.3)),
+	];
+
+	/** Old to new along Zotero's own hues: blue, through teal and green, to
+	 *  orange -- so old papers still read blue and recent ones orange. */
+	const YEAR_STOPS = ['#576dd9', '#2ea8e5', '#009980', '#5fb236', '#cc9200', '#ff8c19'];
+
 	/** Both palettes as functions of the thing being coloured, so the legend
 	 *  paints its swatches from the same source the nodes take their colour
 	 *  from and the two cannot drift apart. */
 	function yearColor(t) {
-		return 'hsl(' + Math.round(215 - 190 * t) + ', 62%, 52%)';
+		let x = Math.min(1, Math.max(0, t)) * (YEAR_STOPS.length - 1);
+		let i = Math.min(YEAR_STOPS.length - 2, Math.floor(x));
+		return mix(YEAR_STOPS[i], YEAR_STOPS[i + 1], x - i);
 	}
 
 	function keyColor(key) {
-		return 'hsl(' + hashHue(key) + ', 58%, 55%)';
+		let c = keySlots().get(key);
+		if (c) return c;
+		// A key the table was not built over -- nothing produces one today, but
+		// a colour for it is still better than none.
+		return ZOTERO_COLORS[hashIndex(key, ZOTERO_COLORS.length)];
 	}
 
-	/** Stable per-string hue: the same collection keeps its colour across
-	 *  renders, which force-graph's own nodeAutoColorBy does not guarantee. */
-	function hashHue(s) {
+	/**
+	 * Which colour each key of the current mode wears.
+	 *
+	 * A hash alone would be stable, but ten colours hashed over four
+	 * collections collide about half the time, and a hash over the whole hue
+	 * circle -- what this used to do -- is not Zotero's colours at all. So each
+	 * key takes the Zotero colour its hash points at, or the next one free,
+	 * and only once all ten are taken does anything wear an extra.
+	 *
+	 * Built over the whole payload rather than what the filters left, so
+	 * narrowing the graph never repaints what is still on it, and commonest
+	 * first, so the Zotero colours go to the keys covering most of the screen.
+	 * Rebuilt only when the payload, the mode or the clusters change.
+	 */
+	let slotMemo = { raw: null, mode: null, clusters: null, map: new Map() };
+
+	function keySlots() {
+		let clusterResult = colorMode === 'cluster' ? clusters() : null;
+		if (slotMemo.raw === raw && slotMemo.mode === colorMode && slotMemo.clusters === clusterResult) {
+			return slotMemo.map;
+		}
+		let counts = new Map();
+		for (let it of (raw ? raw.items : [])) {
+			let keys = colorKeys({
+				id: it.key,
+				collections: it.collections,
+				creators: it.creators,
+				publication: it.publication,
+				itemType: it.itemType,
+			});
+			for (let key of keys) counts.set(key, (counts.get(key) || 0) + 1);
+		}
+		let keys = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)
+			|| (a < b ? -1 : a > b ? 1 : 0));
+		let map = new Map();
+		let taken = new Set();
+		for (let key of keys) map.set(key, freeSlot(key, ZOTERO_COLORS, taken)
+			|| freeSlot(key, EXTRA_COLORS, taken)
+			|| ZOTERO_COLORS[hashIndex(key, ZOTERO_COLORS.length)]);
+		slotMemo = { raw, mode: colorMode, clusters: clusterResult, map };
+		return map;
+	}
+
+	/** The colour of `palette` the key hashes to, or the next one not yet
+	 *  taken; null once every one of them is. */
+	function freeSlot(key, palette, taken) {
+		let start = hashIndex(key, palette.length);
+		for (let i = 0; i < palette.length; i++) {
+			let c = palette[(start + i) % palette.length];
+			if (taken.has(c)) continue;
+			taken.add(c);
+			return c;
+		}
+		return null;
+	}
+
+	/** Stable per-string index: the same collection starts from the same slot
+	 *  on every render, which force-graph's own nodeAutoColorBy does not
+	 *  guarantee. */
+	function hashIndex(s, n) {
 		let h = 0;
 		for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-		return ((h % 360) + 360) % 360;
+		return ((h % n) + n) % n;
+	}
+
+	/** Two hex colours mixed, `t` of the way from a to b, as a hex colour --
+	 *  the one form withAlpha() can fade. */
+	function mix(a, b, t) {
+		let x = parseInt(a.slice(1), 16);
+		let y = parseInt(b.slice(1), 16);
+		let out = 0;
+		for (let shift of [16, 8, 0]) {
+			let p = (x >> shift) & 255;
+			let q = (y >> shift) & 255;
+			out |= Math.round(p + (q - p) * t) << shift;
+		}
+		return '#' + out.toString(16).padStart(6, '0');
 	}
 
 	// --- legend -----------------------------------------------------------
@@ -1529,15 +1634,17 @@
 		}
 	}
 
+	/** Zotero's tag colours, one per strategy. title-match, the weakest
+	 *  evidence, keeps the gray. */
 	function viaColor(via) {
 		switch (via) {
-			case 'pdf-links': return '#4a90d9';
-			case 'text-doi': return '#3fa66a';
-			case 'title-match': return '#b0b0b0';
-			case 'locator-match': return '#c264a8';
-			case 'openalex': return '#8a7fd0';
-			case 'ref-strings': return '#d08a3f';
-			default: return '#8a7fd0';
+			case 'pdf-links': return '#2ea8e5';
+			case 'text-doi': return '#5fb236';
+			case 'title-match': return '#999999';
+			case 'locator-match': return '#a6507b';
+			case 'openalex': return '#a28ae5';
+			case 'ref-strings': return '#ff8c19';
+			default: return '#576dd9';
 		}
 	}
 
@@ -3857,8 +3964,8 @@
 		return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
 	}
 
-	/** Lower a colour's alpha, in either form the palette produces: a hex
-	 *  literal, or the hsl() string the year ramp and the hash hues build. */
+	/** Lower a colour's alpha: a hex literal, which is every colour the
+	 *  palettes produce, or an hsl() string. */
 	function fade(color, a) {
 		if (color.charAt(0) === '#') return withAlpha(color, a);
 		return color.replace('hsl(', 'hsla(').replace(')', ', ' + a + ')');
