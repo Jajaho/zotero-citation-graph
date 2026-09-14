@@ -68,7 +68,7 @@ zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles an
 zotero-citation-graph-scope-hide-external-names = Hide outside names
 zotero-citation-graph-scope-hide-external-names-hint = Leave the names off every outside reference, so they are drawn as unlabelled dots.
 
-zotero-citation-graph-color-by = Colour
+zotero-citation-graph-color-by = Node Colour
 zotero-citation-graph-color-by-year = Year
 zotero-citation-graph-color-by-collection = Collection
 zotero-citation-graph-color-by-cluster = Subfield
@@ -76,7 +76,7 @@ zotero-citation-graph-color-by-author = First author
 zotero-citation-graph-color-by-publication = Publication
 zotero-citation-graph-color-by-type = Item type
 
-zotero-citation-graph-size-by = Size
+zotero-citation-graph-size-by = Node size
 zotero-citation-graph-size-by-here = Cited here
 zotero-citation-graph-size-by-global = Global citations
 
@@ -94,9 +94,9 @@ zotero-citation-graph-group-pull-hint = How hard every anchor pulls the papers i
 zotero-citation-graph-pin-pull = Pin pull
 zotero-citation-graph-pin-pull-hint = How much harder a pinned node's own citation links pull. At 0 a pin holds only the node it is on.
 zotero-citation-graph-drag-alpha = Drag energy
-zotero-citation-graph-drag-alpha-hint = How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout answers, which is what it did before this slider.
+zotero-citation-graph-drag-alpha-hint = How much a dragged node stirs the rest of the graph. At 0 only the node you carry moves; at 1 the whole layout adjusts.
 zotero-citation-graph-hold = Keep moving
-zotero-citation-graph-hold-hint = Keep the layout working at a constant energy, the way it does while a node is held. At 0 it is off; higher simmers harder. It never stops on its own.
+zotero-citation-graph-hold-hint = Keep the layout working at a constant energy, the way it does while a node is dragged. At 0 it is off; higher simmers harder. It never stops on its own.
 zotero-citation-graph-hold-off = off
 zotero-citation-graph-settle = Stop at energy
 zotero-citation-graph-settle-hint = The energy below which the layout stops moving. Higher stops sooner, before every node has found its place; at 0 it never stops.
