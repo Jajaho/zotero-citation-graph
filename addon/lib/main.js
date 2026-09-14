@@ -187,9 +187,9 @@ module.exports = {
 				{
 					menuType: 'menuitem',
 					l10nID: 'zotero-citation-graph-view-citation-graph',
-					// The same file the manifest lists as the plugin icon. It paints
-					// itself with context-fill, which is what Zotero sets on menu
-					// images, so it follows the menu's own colour in both themes.
+					// The monochrome mark, not the coloured one the manifest lists for the
+					// plugin page. It paints itself with context-fill, which is what Zotero
+					// sets on menu images, so it follows the menu's own colour in both themes.
 					icon: `resource://${_config.resRoot}/content/icons/graph.svg`,
 					onShowing: (event, ctx) => {
 						// Never read ctx.collectionTreeRow -- core defines it as a
