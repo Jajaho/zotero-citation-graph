@@ -115,6 +115,9 @@
 	 *  them off, and dropped the first time the new switch is touched. */
 	const HIDE_GHOST_NAMES_KEY = 'zg.ghost.names.hide';
 	const GHOST_NAMES_KEY = 'zg.ghost.names';
+	/** And whether edges wear their strategy's colour. On by default, so only a
+	 *  stored no turns it off -- an unreadable store leaves the colours on. */
+	const COLOR_EDGES_KEY = 'zg.edges.color';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
 	 *  live here beside the rest and not in a Zotero pref. */
@@ -504,6 +507,8 @@
 	 *  chrome, and reading chrome is not free. */
 	let sizeMode = 'here';
 	let colorMode = 'year';
+	/** The "Colour edges by strategy" box, kept here for the same reason. */
+	let colorEdges = true;
 
 	/** Everything that decides a colour may have changed. Paired with litCache
 	 *  because the dim state is one of those things. */
@@ -695,6 +700,7 @@
 	let elMinConf = el('min-conf');
 	let elConfValue = el('conf-value');
 	let elStrategies = el('strategies');
+	let elColorEdges = el('color-edges');
 	let elHideIsolated = el('hide-isolated');
 	let elRecursive = el('recursive');
 	let elRecursiveLabel = el('recursive-label');
@@ -2651,7 +2657,10 @@
 			if (pickedLink(l)) return themeColors().accent;
 			return dimmedLink(l) ? PERF_EDGE_DIM : PERF_EDGE;
 		}
-		return withAlpha(viaColor(bestVia(l.via)),
+		// The panel's switch takes the hue away and nothing else: confidence
+		// still sets the alpha and the width, which is the difference between
+		// it and the tint switch above.
+		return withAlpha(colorEdges ? viaColor(bestVia(l.via)) : PERF_EDGE,
 			(pickedLink(l)
 				? HL_LINK_ALPHA
 				: l.confidence >= ASSERTED ? 0.85 : 0.45)
@@ -6136,6 +6145,20 @@
 	});
 
 	/**
+	 * Edges in their strategy's colour, or all in one gray. A repaint, like the
+	 * names: every cached edge colour goes stale and nothing else changes.
+	 */
+	elColorEdges.addEventListener('change', () => {
+		colorEdges = elColorEdges.checked;
+		try {
+			window.localStorage.setItem(COLOR_EDGES_KEY, colorEdges ? '1' : '0');
+		}
+		catch (e) { /* see setCollapsed */ }
+		colorGen++;
+		repaint();
+	});
+
+	/**
 	 * How far an isolation reaches. Paint, not data, exactly like isolating
 	 * itself: the neighbourhood is recomputed and the canvas redrawn, and no
 	 * node moves while you widen or narrow what is lit.
@@ -6947,6 +6970,14 @@
 		let hide = window.localStorage.getItem(HIDE_GHOST_NAMES_KEY);
 		if (hide === null && window.localStorage.getItem(GHOST_NAMES_KEY) === '0') hide = '1';
 		if (hide === '1') elHideGhostNames.checked = true;
+	}
+	catch (e) { /* see setCollapsed */ }
+
+	try {
+		if (window.localStorage.getItem(COLOR_EDGES_KEY) === '0') {
+			elColorEdges.checked = false;
+			colorEdges = false;
+		}
 	}
 	catch (e) { /* see setCollapsed */ }
 

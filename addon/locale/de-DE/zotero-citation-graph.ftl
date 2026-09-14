@@ -82,6 +82,7 @@ zotero-citation-graph-filter-placeholder = Filter — Autor:, Jahr:, …
 zotero-citation-graph-filter-hint = Ein Begriff oder feld:wert. Filter stapeln sich: jeder engt weiter ein.
 
 zotero-citation-graph-min-confidence = Mindestkonfidenz
+zotero-citation-graph-color-edges = Kanten nach Strategie färben
 zotero-citation-graph-hide-isolated = Unverbundene ausblenden
 zotero-citation-graph-isolate-depth = Isolationstiefe
 zotero-citation-graph-isolate-depth-hint = Wie viele Kanten weit um einen isolierten Knoten herum hell bleibt. 0 zeigt nur die isolierten Knoten selbst.
@@ -90,6 +91,7 @@ zotero-citation-graph-autobuild = Autoaufbau
 
 # Kurzinfos für die Bedienelemente der Seitenleiste.
 zotero-citation-graph-min-confidence-hint = Kanten ausblenden, die unsicherer sind als dieser Wert. Jede Strategie bewertet, wie sicher sie sich jeder gefundenen Kante ist; bei 0 werden alle gezeichnet.
+zotero-citation-graph-color-edges-hint = Jede Kante in der Farbe der stärksten Strategie zeichnen, die sie gefunden hat. Aus: Kanten sind grau, und wie sicher sie sind, zeigt sich weiter daran, wie kräftig sie gezeichnet werden.
 zotero-citation-graph-hide-isolated-hint = Einträge weglassen, die im aktuell gefilterten Graphen keine Kante mehr haben.
 zotero-citation-graph-size-by-hint = Was die Größe eines Knotens zeigt: wie viele Einträge hier ihn zitieren oder wie oft er weltweit zitiert wird (schaltet „Knotenmetadaten abfragen“ ein).
 zotero-citation-graph-color-by-hint = Was die Farbe eines Knotens zeigt. Die Legende darunter listet die sichtbaren Farben.

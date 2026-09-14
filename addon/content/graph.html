@@ -240,6 +240,18 @@
 						</div>
 						<div id="strategies" class="group"></div>
 
+						<!-- Whether the dots above say anything on the canvas. Off, every
+						     edge is one gray and confidence still decides how strong it is
+						     drawn, so the lines read as structure rather than provenance.
+						     Here rather than among the display switches because the colours
+						     it takes away are the strategies' own. -->
+						<div class="group">
+							<label data-zg-title="color-edges-hint" title="Colour each edge by the strongest strategy that found it. Off, edges are gray, and how certain they are still shows in how strongly they are drawn.">
+								<input id="color-edges" type="checkbox" checked="checked"/>
+								<span data-zg-str="color-edges">Colour edges by strategy</span>
+							</label>
+						</div>
+
 						<div class="group">
 							<label id="conf-label" data-zg-title="min-confidence-hint" title="Hide edges less certain than this. Every strategy rates how sure it is of each edge it finds; at 0 all of them are drawn.">
 								<span data-zg-str="min-confidence">Min confidence</span>
