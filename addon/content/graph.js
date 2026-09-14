@@ -2029,11 +2029,12 @@
 		label.textContent = s.label;
 		b.appendChild(label);
 		// Which facet a value came from: a bare search spans all of them, and
-		// Nature the journal is not Nature the collection.
-		if (s.kind === 'value') {
+		// Nature the journal is not Nature the collection. Past "author:" every
+		// row is an author, so the chip is left off.
+		if (s.kind === 'value' && s.facet) {
 			let f = document.createElement('span');
 			f.className = 'suggest-field';
-			f.textContent = s.hint;
+			f.textContent = s.facet;
 			b.appendChild(f);
 		}
 		if (s.count != null) {

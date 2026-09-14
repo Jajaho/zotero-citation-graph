@@ -3360,6 +3360,15 @@ check('completions rank by coverage and offer the fields before the values', () 
 	}
 });
 
+check('a value row names its facet only while the search spans every facet', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	const bare = F.suggest('Nature', lib).filter((s) => s.kind === 'value');
+	if (!bare.length || bare.some((s) => !s.facet)) throw new Error(JSON.stringify(bare));
+	const scoped = F.suggest('author:', lib).filter((s) => s.kind === 'value');
+	if (!scoped.length || scoped.some((s) => s.facet)) throw new Error(JSON.stringify(scoped));
+});
+
 check('a picked completion pins the value where typed text stays a substring', () => {
 	const F = loadFilters();
 	const lib = library(F);

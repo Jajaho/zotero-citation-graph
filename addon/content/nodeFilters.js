@@ -422,7 +422,7 @@
 	 * @param {string} text        what is in the box
 	 * @param {Object[]} entries   facets() of each surviving item
 	 * @param {number} [limit]
-	 * @returns {Object[]} { kind, label, hint, count?, field?, term?, insert? }
+	 * @returns {Object[]} { kind, label, hint, facet?, count?, field?, term?, insert? }
 	 *   `insert` replaces the whole box; `term` is spliced in by spliceTerm().
 	 */
 	function suggest(text, entries, limit) {
@@ -519,6 +519,9 @@
 				// it: a bare search spans all of them, and Nature the journal is
 				// not Nature the collection.
 				hint: fieldLabel(ranked[s].field),
+				// Shown on the row only while the search spans every facet: once
+				// the mask names one, repeating it on each row says nothing.
+				facet: p.field ? null : fieldLabel(ranked[s].field),
 				count: ranked[s].count,
 				field: ranked[s].field,
 				term: quote(ranked[s].value),
