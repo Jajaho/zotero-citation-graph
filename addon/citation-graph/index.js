@@ -6,7 +6,7 @@
  *
  * Two populations, two registries, on purpose: an edge strategy answers "does A
  * cite B", an enricher answers "what is this identifier called". See
- * design/external-references.md.
+ * docs/external-references.md.
  */
 
 require('./edges/pdfLinks');

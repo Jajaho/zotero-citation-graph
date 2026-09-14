@@ -55,7 +55,7 @@
 	 * against. Note that the border ones are whole SHORTHANDS, not colours:
 	 * `border: 1px solid var(--material-panedivider)` expands to
 	 * `1px solid 1px solid #dadada` and is thrown away silently. This plugin has
-	 * shipped that bug twice -- see design/development.md -- and npm test scans for
+	 * shipped that bug twice -- see docs/development.md -- and npm test scans for
 	 * both shapes.
 	 */
 	--material-background: var(--color-background);

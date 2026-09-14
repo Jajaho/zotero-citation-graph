@@ -5,7 +5,7 @@ pref("extensions.zotero.zoteroCitationGraph.strategies", "pdf-links,text-doi,tit
 pref("extensions.zotero.zoteroCitationGraph.minConfidence", 0);
 pref("extensions.zotero.zoteroCitationGraph.usePdfLinks", true);
 
-// Metadata enrichment for outside references (design/external-references.md).
+// Metadata enrichment for outside references (docs/external-references.md).
 // Ordered: core/enrich.js merges fill-first, so this list is the ranking.
 pref("extensions.zotero.zoteroCitationGraph.enrichers", "openalex");
 // Optional. OpenAlex has required a key since 13 Feb 2026, but keyless access

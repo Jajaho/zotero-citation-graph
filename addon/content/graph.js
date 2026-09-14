@@ -191,7 +191,7 @@
 	 * about what is in front of the user, so it is switches rather than a
 	 * heuristic -- and named switches rather than one opaque "fast" flag,
 	 * because each is a different trade and each has to be measurable on its
-	 * own. tools/bench drives exactly these names; design/performance.md is what
+	 * own. tools/bench drives exactly these names; docs/performance.md is what
 	 * they cost.
 	 *
 	 * Every switch is TRUE in the default build, so the flags say what is ON
@@ -239,7 +239,7 @@
 	 * expected to change when the renderer does, which is why the matrix asks
 	 * the page what the mode is rather than restating it.
 	 *
-	 * At 1500 items and 2699 edges (design/performance.md):
+	 * At 1500 items and 2699 edges (docs/performance.md):
 	 *
 	 *   tint     -31%  the biggest single win in the renderer. Its cost is a
 	 *                  colour per link per frame and, worse, a stroke batch per
@@ -1029,7 +1029,7 @@
 	 * Tooltip for a ghost. Both counts appear, and both are named: `citedBy` is
 	 * citers inside this collection, `citedByGlobal` is the whole literature.
 	 * Conflating them would undo the reason ghosts are computed at all -- see
-	 * design/external-references.md part 4.
+	 * docs/external-references.md part 4.
 	 */
 	function ghostTooltip(n) {
 		let x = n.meta || {};

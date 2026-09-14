@@ -6,7 +6,7 @@ is a **strategy** behind one interface, so they can be enabled, disabled,
 weighted and compared independently.
 
 Background and the measurements these strategies are tuned against:
-[`design/development.md`](../../design/development.md). The headline figures are
+[`docs/development.md`](../../docs/development.md). The headline figures are
 restated below.
 
 ## Why strategies are switchable

@@ -30,7 +30,7 @@
  *     --no-wall            skip the time-to-a-settled-graph timing
  *     --matrix             every performance switch against a baseline, in one run
  *     --json <file>        write the full run to a file
- *     --md [file]          write a markdown report (default design/performance.md)
+ *     --md [file]          write a markdown report (default docs/performance.md)
  *     --baseline <file>    compare against an earlier --json and show deltas
  *     --firefox <path>     override the browser binary
  *     --headed             show the browser (for watching a scenario misbehave)
@@ -597,7 +597,7 @@ async function main() {
 	if (mdArg !== -1) {
 		const next = argv[mdArg + 1];
 		const mdPath = (next && !next.startsWith('--')) ? next
-			: path.join(__dirname, '..', '..', '..', 'design', 'performance.md');
+			: path.join(__dirname, '..', '..', '..', 'docs', 'performance.md');
 		fs.mkdirSync(path.dirname(mdPath), { recursive: true });
 		fs.writeFileSync(mdPath, markdown(run, baseline, basePath) + '\n');
 		console.log('  report written to ' + mdPath + '\n');
