@@ -5036,6 +5036,49 @@
 	}
 
 	/**
+	 * A click that wobbles is still a click.
+	 *
+	 * force-graph calls a mouse press a drag the moment the pointer moves at
+	 * all while a button is down -- one pixel is enough -- and a press it has
+	 * called a drag raises no click on the way up. So a hand that shifts on
+	 * the button while clicking a paper picks nothing. The node itself is more
+	 * forgiving: d3-drag does not report it carried until it has travelled
+	 * 5px. This lends the click the same allowance, by keeping the pointer
+	 * moves that stay inside it from reaching force-graph at all.
+	 *
+	 * Only force-graph's pointermove is held back. d3-drag and d3-zoom listen
+	 * for mousemove, so the node still follows the hand and a pan still pans;
+	 * and force-graph's hover keeps the spot the press landed on, which is the
+	 * node the click should go to anyway. Once the pointer has left the
+	 * allowance it is a drag for the rest of the press, whatever it does next.
+	 *
+	 * Registered after the flag's listeners, which swallow their own press
+	 * before it gets here.
+	 */
+	const CLICK_SLOP_PX = 5;  // screen px a press may travel and still click
+	let clickPress = null;    // { id, x, y }, until the pointer leaves the slop
+
+	elGraph.addEventListener('pointerdown', (e) => {
+		clickPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+	}, true);
+
+	elGraph.addEventListener('pointermove', (e) => {
+		if (!clickPress || e.pointerId !== clickPress.id) return;
+		if (Math.hypot(e.clientX - clickPress.x, e.clientY - clickPress.y) > CLICK_SLOP_PX) {
+			clickPress = null;
+			return;
+		}
+		e.stopImmediatePropagation();
+	}, true);
+
+	// On window, so a release outside the pane still ends the press.
+	for (let type of ['pointerup', 'pointercancel']) {
+		window.addEventListener(type, (e) => {
+			if (clickPress && e.pointerId === clickPress.id) clickPress = null;
+		}, true);
+	}
+
+	/**
 	 * A flag's own two entries: what it names, and whether it stays. Offered
 	 * both by a left click on the flag and by the canvas menu when the right
 	 * click landed on one, because they are the same question asked twice.
