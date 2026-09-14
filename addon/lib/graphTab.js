@@ -58,7 +58,7 @@ const REFERENCE_CACHE_FILE = cacheStore.FILES.references;
 
 // Ordered: core/enrich.js merges fill-first, so this list IS the ranking. A
 // second enricher added here is only ever asked about what the first could not
-// resolve. See docs/external-references.md part 3. Overridable by the
+// resolve. See design/external-references.md part 3. Overridable by the
 // zoteroCitationGraph.enrichers pref; see enricherList().
 const ENRICHERS = ['openalex'];
 
@@ -1905,7 +1905,7 @@ function toWireEdge(e) {
  *
  * `citedBy` (citers inside this collection) and `citedByGlobal` (citations in
  * the whole literature) are two different numbers and stay two different fields
- * all the way to the renderer. See docs/external-references.md part 4.
+ * all the way to the renderer. See design/external-references.md part 4.
  */
 function toWireExternal(x, m) {
 	let out = { key: x.key, ns: x.ns, id: x.id, citedBy: x.citedBy, via: x.via };

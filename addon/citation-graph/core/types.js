@@ -53,7 +53,7 @@
  * @property {?number} citedByGlobal citations in the WHOLE literature. Never to be
  *   confused with externalNodes[].citedBy, which counts citers inside this
  *   collection. That one is what the graph is about; see
- *   docs/external-references.md for why the distinction is load-bearing.
+ *   design/external-references.md for why the distinction is load-bearing.
  * @property {string[]} source       enricher ids that contributed a field
  *
  * @typedef {Object} Adapter

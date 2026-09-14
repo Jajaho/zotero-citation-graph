@@ -6,7 +6,8 @@ is a **strategy** behind one interface, so they can be enabled, disabled,
 weighted and compared independently.
 
 Background and the measurements these strategies are tuned against:
-[`../docs/citation-graph-feasibility.md`](../docs/citation-graph-feasibility.md).
+[`design/development.md`](../../design/development.md). The headline figures are
+restated below.
 
 ## Why strategies are switchable
 
