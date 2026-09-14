@@ -118,6 +118,10 @@
 	/** And whether edges wear their strategy's colour. On by default, so only a
 	 *  stored no turns it off -- an unreadable store leaves the colours on. */
 	const COLOR_EDGES_KEY = 'zg.edges.color';
+	/** And whether an edge says what found it when the pointer rests on it. On
+	 *  by default, like the colours, so only a stored no takes the tooltips
+	 *  away -- an unreadable store leaves the graph answering questions. */
+	const EDGE_TIPS_KEY = 'zg.edges.tips';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
 	 *  live here beside the rest and not in a Zotero pref. */
@@ -509,6 +513,11 @@
 	let colorMode = 'year';
 	/** The "Colour edges by strategy" box, kept here for the same reason. */
 	let colorEdges = true;
+	/** And the "Edge details on hover" box, read by linkLabel -- which force-graph
+	 *  calls on every hover -- and by the hit-test half of drawEdge, which runs
+	 *  per link per frame. Both are hot enough to want the answer in a variable
+	 *  rather than out of a checkbox. */
+	let edgeTips = true;
 
 	/** Everything that decides a colour may have changed. Paired with litCache
 	 *  because the dim state is one of those things. */
@@ -701,6 +710,7 @@
 	let elConfValue = el('conf-value');
 	let elStrategies = el('strategies');
 	let elColorEdges = el('color-edges');
+	let elEdgeTips = el('edge-tips');
 	let elHideIsolated = el('hide-isolated');
 	let elRecursive = el('recursive');
 	let elRecursiveLabel = el('recursive-label');
@@ -2415,7 +2425,15 @@
 				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
 				.linkCanvasObjectMode(() => (PERF.batch ? 'replace' : undefined))
 				.linkCanvasObject(drawEdge)
-				.linkLabel(l => l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : ''))
+				// A closure over the switch rather than a re-set accessor, for the
+				// reason the whole chain is: force-graph re-initialises on some
+				// props, and a tooltip must not cost a layout. Empty is how the
+				// tooltip is asked not to appear -- it hides itself on falsy
+				// content -- and drawEdge stops offering the edges to the
+				// hit-test canvas at the same time, so there is nothing to hover.
+				.linkLabel(l => (edgeTips
+					? l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : '')
+					: ''))
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
 				// title match. A picked node's own edges give up the
@@ -3557,6 +3575,12 @@
 		// edge has to be findable -- but nothing there is ever looked at, so a
 		// plain stroke in the id colour will do, and each link draws its own.
 		if (ctx !== frameCtx) {
+			// With the tooltips off nothing in the page asks what edge the
+			// pointer is over -- no click, no hover highlight, only the label --
+			// so this whole pass is a stroke per link per frame for an answer
+			// nobody reads. Leaving the edges out of the hit-test canvas is what
+			// makes the switch cost nothing rather than merely hide a tooltip.
+			if (!edgeTips) return;
 			if (!link.__indexColor) return;
 			let a = link.source;
 			let b = link.target;
@@ -6234,6 +6258,22 @@
 	});
 
 	/**
+	 * Whether an edge names its strategies under the pointer.
+	 *
+	 * A repaint for the hit-test canvas's sake, not the picture's: nothing
+	 * visible changes, but the shadow pass has to run again for the edges to
+	 * start or stop being findable. No colour goes stale, so colorGen stands.
+	 */
+	elEdgeTips.addEventListener('change', () => {
+		edgeTips = elEdgeTips.checked;
+		try {
+			window.localStorage.setItem(EDGE_TIPS_KEY, edgeTips ? '1' : '0');
+		}
+		catch (e) { /* see setCollapsed */ }
+		repaint();
+	});
+
+	/**
 	 * How far an isolation reaches. Paint, not data, exactly like isolating
 	 * itself: the neighbourhood is recomputed and the canvas redrawn, and no
 	 * node moves while you widen or narrow what is lit.
@@ -7052,6 +7092,15 @@
 		if (window.localStorage.getItem(COLOR_EDGES_KEY) === '0') {
 			elColorEdges.checked = false;
 			colorEdges = false;
+		}
+	}
+	catch (e) { /* see setCollapsed */ }
+
+	try {
+		// Same rule: only a stored no takes the tooltips away.
+		if (window.localStorage.getItem(EDGE_TIPS_KEY) === '0') {
+			elEdgeTips.checked = false;
+			edgeTips = false;
 		}
 	}
 	catch (e) { /* see setCollapsed */ }

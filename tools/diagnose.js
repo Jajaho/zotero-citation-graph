@@ -10,7 +10,7 @@
 // through the file. ROOT takes forward slashes on every platform because it is
 // spliced into a file:// URI, not handed to the shell.
 var ROOT = "C:/Users/you/Repositories/zotero-graph-plugin";
-var XPI  = "zotero-citation-graph-0.71.3.xpi";
+var XPI  = "zotero-citation-graph-0.72.0.xpi";
 
 var { ExtensionData } = ChromeUtils.importESModule("resource://gre/modules/Extension.sys.mjs");
 

@@ -115,6 +115,7 @@ zotero-citation-graph-filter-hint = Type a term, or field:value. Filters stack: 
 
 zotero-citation-graph-min-confidence = Min confidence
 zotero-citation-graph-color-edges = Colour edges by strategy
+zotero-citation-graph-edge-tips = Edge details on hover
 zotero-citation-graph-hide-isolated = Hide unconnected
 zotero-citation-graph-isolate-depth = Isolation depth
 zotero-citation-graph-isolate-depth-hint = How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.
@@ -125,6 +126,7 @@ zotero-citation-graph-autobuild = Autobuild
 # the page only ever sees their ids; strategy-other-hint is for any new one.
 zotero-citation-graph-min-confidence-hint = Hide edges less certain than this. Every strategy rates how sure it is of each edge it finds; at 0 all of them are drawn.
 zotero-citation-graph-color-edges-hint = Colour each edge by the strongest strategy that found it. Off, every edge is drawn in the same gray at the same width, however certain it is.
+zotero-citation-graph-edge-tips-hint = Name every strategy that found an edge, and its DOI, when the pointer rests on it. Off, edges are not hovered at all, so nothing follows the pointer across a dense graph.
 zotero-citation-graph-hide-isolated-hint = Leave out papers that have no edge left on the graph as it is filtered now.
 zotero-citation-graph-size-by-hint = What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on "Query node metadata").
 zotero-citation-graph-color-by-hint = What a node's colour shows. The key underneath lists the colours on screen.

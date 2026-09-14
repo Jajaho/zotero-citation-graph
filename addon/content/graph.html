@@ -250,6 +250,16 @@
 								<input id="color-edges" type="checkbox" checked="checked"/>
 								<span data-zg-str="color-edges">Colour edges by strategy</span>
 							</label>
+							<!-- And whether the same provenance is readable one edge at a
+							     time. The colours say which strategy is strongest; the
+							     tooltip says all of them, and the DOI. Its own switch
+							     because a tooltip that follows the pointer over a dense
+							     graph is in the way of reading the shape, which is the one
+							     thing the colours never are. -->
+							<label data-zg-title="edge-tips-hint" title="Name the strategies that found an edge, and its DOI, when the pointer rests on it. Off, edges are not hovered at all.">
+								<input id="edge-tips" type="checkbox" checked="checked"/>
+								<span data-zg-str="edge-tips">Edge details on hover</span>
+							</label>
 						</div>
 
 						<div class="group">
