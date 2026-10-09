@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "Citation Graph for Zotero",
-	"version": "0.72.3",
+	"version": "0.72.4",
 	"description": "Force-directed citation graph for a Zotero collection.",
 	"icons": {
 		"48": "content/icons/logo.svg",
