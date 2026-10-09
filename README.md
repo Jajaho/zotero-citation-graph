@@ -86,7 +86,6 @@ tag or collection is modified by uninstalling.
 ## Getting Started
 
 This is still a work in progress and will always lag behind the newest UI changes and feature additions, but it should provide a good overview of all functions and serve as a starting point in learning how to use this plugin effectively.
-Please turn on the audio on the videos below.
 
 ### Constructing a Graph
 
@@ -96,7 +95,7 @@ There are two ways to construct a graph, both accessible from the context menu (
 
 
 
-https://github.com/user-attachments/assets/da8b9b74-19a6-4155-9c91-7e1939c33b2c
+![Opening a citation graph from a selection of items and from a collection](docs/media/constructing-a-graph.gif)
 
 
 
@@ -112,7 +111,7 @@ Large graphs can have a lot of edges and nodes obfuscating a node you actually w
 To solve this, you can isolate a node and take a closer look at its references and the items that reference it.
 
 
-https://github.com/user-attachments/assets/79f0c8c2-b1de-490c-a257-d825b06df044
+![Isolating a node by double-clicking it, changing the isolation depth, and adding nodes with Ctrl + double-click](docs/media/isolating-nodes.gif)
 
 
 
@@ -121,7 +120,7 @@ https://github.com/user-attachments/assets/79f0c8c2-b1de-490c-a257-d825b06df044
 You can physically separate groups of nodes from the rest of the graph with *Groups*.
 Which nodes are attracted to the set location is masked with filters.
 
-https://github.com/user-attachments/assets/7fd185e2-5008-477c-a845-8d4b94e4a69e
+![Placing a group pin and filtering which nodes it attracts](docs/media/group-pins.gif)
 
 
 
