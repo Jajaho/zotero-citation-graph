@@ -189,12 +189,9 @@ async function open(entry, msg, reply) {
 		if (record.superseded) return;
 		if (!record.settled) {
 			record.settled = true;
-			// A menu opened over another node has already swept this one's
-			// entries and put its own there; they are not ours to take away.
-			if (open_.get(win) === record) {
-				open_.delete(win);
-				sweep(popup);
-			}
+			// Nothing comes off the popup here -- that waits for popuphidden;
+			// see onPick for why it cannot be done any sooner.
+			//
 			// Closed before picked, never the other way round: "Pin node here"
 			// fixes the node where the hold is keeping it, and a release
 			// arriving after that would undo the pin. It is the order the
@@ -212,12 +209,27 @@ async function open(entry, msg, reply) {
 	 * up first -- so a command is free to open a dialog or a second popup --
 	 * and dispatches the XUL `command` afterwards, later than the same turn of
 	 * the event loop. A listener on the POPUP hears that only by bubbling, and
-	 * by then this module has taken the row off the popup to leave Zotero's own
-	 * menu as it found it, so the event bubbles into nothing and the pick is
-	 * lost. Every entry this plugin adds was dead for exactly that reason.
+	 * by then popuphidden may have come and this module taken the row off the
+	 * popup to leave Zotero's own menu as it found it, so the event bubbles into
+	 * nothing and the pick is lost. Every entry this plugin adds was dead for
+	 * exactly that reason.
 	 *
 	 * A listener on the row itself fires at the target. It does not care what
 	 * the row is still attached to, or how much later the command arrives.
+	 *
+	 * But Gecko does, and that is why the row is never taken off from in here.
+	 * The roll-up before the command only makes the popup INVISIBLE: it stays
+	 * in the popup manager's open chain, and the close that takes it out comes
+	 * after the command, from the popup Gecko finds by walking up from the
+	 * picked row (nsXULMenuCommandEvent::Run, GetContainingPopupElement()).
+	 * A row taken off during its own command has no popup above it, so that
+	 * close never happens -- and a popup still in the chain is one Gecko
+	 * refuses to open again ("Refusing to show duplicate popup"). That is
+	 * Zotero's item menu dead in every tab of the window, the library's
+	 * included, until Zotero restarts. The trace has mostly shown popuphidden
+	 * arriving first, which is harmless; it is the pick that beats it that
+	 * kills the menu, and that is rare enough to look random. So the rows come
+	 * off in onHidden and nowhere else.
 	 */
 	let onPick = (event) => {
 		let id = event.currentTarget && event.currentTarget.dataset
@@ -233,6 +245,13 @@ async function open(entry, msg, reply) {
 		trace.log('menu popuphidden  mine=' + (event.target === popup) + '  settled=' + record.settled);
 		if (event.target !== popup) return;
 		popup.removeEventListener('popuphidden', onHidden);
+		// The one place this menu's rows come off -- see onPick. A menu opened
+		// over another node has already swept this one's entries and put its
+		// own there; they are not ours to take away.
+		if (open_.get(win) === record) {
+			open_.delete(win);
+			sweep(popup);
+		}
 		settle(null);
 	};
 	popup.addEventListener('popuphidden', onHidden);
