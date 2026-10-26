@@ -106,21 +106,31 @@ function splitEntries(sectionText) {
 	if (!text.trim()) return { entries: [], layout: 'none' };
 	const lines = text.split(/\r?\n/);
 
-	for (const [layout, split] of [
-		['numbered', () => byInlineMarker(text)],
-		['hanging', byIndent],
-		['blank', byBlankLine],
-		['hanging', byLooksLikeAuthor],
-	]) {
-		const raw = split(lines);
-		if (!raw) continue;
-		const { entries, lengths } = clean(raw);
-		// The section-level judgement is made on everything the split produced,
-		// so a section that is mostly not a bibliography is rejected outright
-		// rather than quietly reduced to whichever few entries look like one.
-		if (!accept(entries, lengths, text)) continue;
-		const dated = entries.filter(hasYear);
-		if (dated.length) return { entries: dated, layout };
+	// A numbered split already found its boundaries mid-line; the others only
+	// ever cut between lines, and a line can hold several entries. The cuts
+	// splitRunOns adds are applied AFTER a layout is chosen, so they never
+	// change which one is: they shorten entries, and judged on shortened entries
+	// a coarse layout passes the gate ahead of a finer one below it. Only when
+	// no layout passes as it is does the second round judge the refined splits.
+	const refine = (layout, raw) => (layout === 'numbered' ? raw : splitRunOns(raw));
+	for (const judgeRefined of [false, true]) {
+		for (const [layout, split] of [
+			['numbered', () => byInlineMarker(text)],
+			['hanging', byIndent],
+			['blank', byBlankLine],
+			['hanging', byLooksLikeAuthor],
+		]) {
+			const raw = split(lines);
+			if (!raw) continue;
+			const judged = clean(judgeRefined ? refine(layout, raw) : raw);
+			// The section-level judgement is made on everything the split produced,
+			// so a section that is mostly not a bibliography is rejected outright
+			// rather than quietly reduced to whichever few entries look like one.
+			if (!accept(judged.entries, judged.lengths, text)) continue;
+			const { entries } = judgeRefined ? judged : clean(refine(layout, raw));
+			const dated = entries.filter(hasYear);
+			if (dated.length) return { entries: dated, layout };
+		}
 	}
 	return { entries: [], layout: 'none' };
 }
@@ -347,6 +357,77 @@ function byLooksLikeAuthor(lines) {
 	return starts.length >= 2 ? groupAt(lines, starts) : null;
 }
 
+/**
+ * The head of an author-year entry inside a group: whitespace, then
+ * "SURNAME, X." -- surnames of up to four words, as in "GARCÍA DE LA CRUZ,
+ * J.M.". The captured group is the whitespace; isRunOnHead judges what comes
+ * before it.
+ */
+const RUN_ON_HEAD_G = /(\s+)(?=\p{Lu}[\p{L}'’-]*(?:[ \t]+\p{Lu}[\p{L}'’-]*){0,3},\s+\p{Lu}\.)/gu;
+// From the head to its year there is nothing but an author list: names,
+// initials, commas or AAAI's semicolons, "&", "and", "et al.", and APA's
+// opening parenthesis. Group 1 is the list.
+const AUTHOR_LIST_TO_YEAR = /^([\p{L}\s.,;&'’-]{4,400}?)\(?(?:19|20)\d\d[a-z]?\b/u;
+// A title with no digits in it passes the pattern above, so the list must also
+// read like names: lowercase words of four letters or more are title words.
+// Particles ("van", "de", "la") and "and" are shorter.
+const TITLE_WORD_G = /(?:^|\s)\p{Ll}{4,}/gu;
+const AUTHOR_LIST_OPEN = /(?:[,;&]|\band)\s*$/;
+// "J. Ba, T. Lillicrap": the period of an initial, not of a sentence.
+const ENDS_IN_INITIAL = /(?:^|[\s.,;(-])\p{Lu}$/u;
+
+// What an entry ends on: a sentence end, or an identifier, which APA prints
+// last and without a period ("... 12(1), 20687. https://doi.org/10.1038/...").
+const ENTRY_END = /(?:[.)]|https?:\/\/\S+|\b10\.\d{4,9}\/\S+)$/;
+
+/** Does the head RUN_ON_HEAD_G matched at `m` open a new entry? */
+function isRunOnHead(s, m, from) {
+	const at = m.index + m[1].length;
+	if (m.index <= from) return false;
+	const list = AUTHOR_LIST_TO_YEAR.exec(s.slice(at, at + 420));
+	if (!list || (list[1].match(TITLE_WORD_G) || []).length >= 2) return false;
+	const before = s.slice(from, m.index);
+	// An author list wrapped onto the next line: "Smith, J., &" / "Doe, K. (2019)".
+	if (m[1].includes('\n')) return !AUTHOR_LIST_OPEN.test(before);
+	return ENTRY_END.test(before) && !ENDS_IN_INITIAL.test(before);
+}
+
+/**
+ * Cut groups where a new author-year entry starts inside a line.
+ *
+ * Zotero's .zotero-ft-cache writes one line per text block, so a JFM-style
+ * bibliography reaches here as a dozen lines of several entries each --
+ * "... Annu. Rev. Fluid Mech. 34 (1), 503–529. GODA, K. 1979 ...". Cut only
+ * between lines, every line was one entry, and parseEntry read an arXiv id from
+ * one work and the title from another (Xia et al. 2024, J. Fluid Mech. 981).
+ *
+ * A head is accepted only after the end of an entry and when an author list
+ * runs from it to a year. That is what a reference opens with and what the
+ * middle of one almost never holds: a title, a venue or a page range puts
+ * digits or title words before the year, and an editor list follows "In" or
+ * "(ed.", not the end of an entry.
+ *
+ * Line breaks count as well as sentence ends, which separates a running page
+ * header ("C. Xia, J. Zhang, E.C. Kerrigan and G. Rigas") from the entry
+ * below it; the header has no year, so splitEntries then drops it.
+ */
+function splitRunOns(groups) {
+	const out = [];
+	for (const g of groups) {
+		const s = g.join('\n');
+		let from = 0;
+		RUN_ON_HEAD_G.lastIndex = 0;
+		let m;
+		while ((m = RUN_ON_HEAD_G.exec(s))) {
+			if (!isRunOnHead(s, m, from)) continue;
+			out.push([s.slice(from, m.index)]);
+			from = m.index + m[1].length;
+		}
+		out.push([s.slice(from)]);
+	}
+	return out;
+}
+
 /** Collect lines into one group per start index, dropping anything before the
  *  first -- a section heading, a page header, the tail of the body text. */
 function groupAt(lines, starts) {
@@ -461,6 +542,19 @@ const PAREN_YEAR = /\((?:19|20)\d\d[a-z]?\)/;
 const ACM_HEAD = /^(.+?)\.\s*((?:19|20)\d\d[a-z]?)\.\s+/;
 
 /**
+ * Cambridge author-year style (J. Fluid Mech. and the other CUP journals):
+ * "SONODA, T., LIU, Z., ITOH, T. & HASEGAWA, Y. 2023 Reinforcement learning of
+ * control strategies for reducing skin friction drag in a fully developed
+ * turbulent channel flow. J. Fluid Mech. 960, A30."
+ *
+ * The year is bare and the title follows it directly, with no period between
+ * them as in ACM and no parentheses as in APA. Without its own branch the style
+ * fell to parseGeneric, which never reads the first sentence -- and here the
+ * first sentence is the authors, the year AND the title.
+ */
+const CAMBRIDGE_HEAD = /^([\p{L}\s.,&'\u2019-]{2,400}?)\s((?:19|20)\d\d)[a-z]?\s+(?=[\p{Lu}\d"“‘'])/u;
+
+/**
  * Nature/Science style: "Anderson, P. W. The resonating valence bond state in
  * La2CuO4 and superconductivity. Science 235, 1196-1198 (1987)."
  *
@@ -539,7 +633,7 @@ const VANCOUVER_TAIL = /(?:19|20)\d\d\s*;\s*\d/;
 function detectStyle(entries) {
 	const n = (entries || []).length;
 	if (!n) return 'generic';
-	let quoted = 0, parenYear = 0, acm = 0, vancouver = 0, nature = 0, elsevier = 0;
+	let quoted = 0, parenYear = 0, acm = 0, vancouver = 0, nature = 0, elsevier = 0, cambridge = 0;
 	for (const e of entries) {
 		const bare = stripMarker(e);
 		if (QUOTED.test(e)) quoted++;
@@ -548,6 +642,7 @@ function detectStyle(entries) {
 		if (VANCOUVER_TAIL.test(e)) vancouver++;
 		if (NATURE_TAIL.test(bare) && NATURE_AUTHORS.test(bare)) nature++;
 		if (ELSEVIER_AUTHORS.test(bare) && hasYear(bare)) elsevier++;
+		if (CAMBRIDGE_HEAD.test(bare)) cambridge++;
 	}
 	const most = 0.4 * n;
 	// Order matters: a quoted title is the strongest signal there is, because it
@@ -568,6 +663,8 @@ function detectStyle(entries) {
 	// APA entry never matches ACM_HEAD, so a tie cannot go the wrong way.
 	if (acm >= most) return 'acm';
 	if (parenYear >= most) return 'apa';
+	// Last, so it only ever takes entries that used to fall to parseGeneric.
+	if (cambridge >= most) return 'cambridge';
 	return 'generic';
 }
 
@@ -622,6 +719,7 @@ function byStyle(s, style) {
 		case 'elsevier': return parseElsevier(s);
 		case 'acm': return parseAcm(s);
 		case 'apa': return parseApa(s);
+		case 'cambridge': return parseCambridge(s);
 		case 'vancouver': return parseVancouver(s);
 		default: return parseGeneric(s);
 	}
@@ -741,6 +839,20 @@ function parseApa(s) {
 	o.year = Number(m[0].slice(1, 5));
 	let from = m.index + m[0].length;
 	while (from < s.length && /[.\s]/.test(s[from])) from++;
+	const end = nextSentenceBreak(s, from);
+	o.title = end < 0 ? s.slice(from) : s.slice(from, end);
+	if (end >= 0) o.venue = s.slice(end + 1).replace(/^[,.\s]+/, '') || null;
+	return o;
+}
+
+/** Cambridge: "SMITH, J. & JONES, K. 2019 Title of the work. J. Name 12, 54–58." */
+function parseCambridge(s) {
+	const m = CAMBRIDGE_HEAD.exec(s);
+	if (!m) return parseGeneric(s);
+	const o = blank(0.8);
+	o.authors = m[1].replace(/[,.\s]+$/, '') || null;
+	o.year = Number(m[2]);
+	const from = m[0].length;
 	const end = nextSentenceBreak(s, from);
 	o.title = end < 0 ? s.slice(from) : s.slice(from, end);
 	if (end >= 0) o.venue = s.slice(end + 1).replace(/^[,.\s]+/, '') || null;

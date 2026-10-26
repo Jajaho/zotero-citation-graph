@@ -5946,6 +5946,66 @@ check('a reference with no usable title is dropped rather than keyed', () => {
 	if (R.refSignature({ title: 'Introduction' }) !== null) throw new Error('keyed a short title');
 });
 
+/**
+ * A J. Fluid Mech. bibliography as .zotero-ft-cache has it (Xia et al. 2024):
+ * one line per text block, several entries to a line, a running footer that
+ * carries the citing paper's own DOI, and a running header on the next page.
+ */
+const JFM_BLOCKS = [
+	'REFERENCES',
+	'GLEZER, A. & AMITAY, M. 2002 Synthetic jets. Annu. Rev. Fluid Mech. 34 (1), 503–529. GODA, K. 1979 A multistep technique with implicit difference schemes for calculating two- or three-dimensional cavity flows. J. Comput. Phys. 30 (1), 76–95.',
+	'981 A17-31',
+	'https://doi.org/10.1000/citing Published online by Cambridge University Press',
+	'',
+	'\fC. Xia, J. Zhang, E.C. Kerrigan and G. Rigas',
+	'HAARNOJA, T., ZHOU, A., ABBEEL, P. & LEVINE, S. 2018a Soft actor–critic: off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International Conference on Machine Learning, pp. 1861–1870. HAARNOJA, T., ZHOU, A., HARTIKAINEN, K., TUCKER, G., HA, S., TAN, J., KUMAR, V., ZHU, H., GUPTA, A. & ABBEEL, P. 2018b Soft actor–critic algorithms and applications. arXiv:1812.05905.',
+	'SCHULMAN, J., WOLSKI, F., DHARIWAL, P., RADFORD, A. & KLIMOV, O. 2017 Proximal policy optimization algorithms. arXiv:1707.06347. SHANNON, C.E. 1948 A mathematical theory of communication. Bell Syst. Tech. J. 27 (3), 379–423. SILVER, D., LEVER, G., HEESS, N., DEGRIS, T., WIERSTRA, D. & RIEDMILLER, M. 2014 Deterministic policy gradient algorithms. In International Conference on Machine Learning (ed. E.P. Xing & T. Jebara), pp. 387–395. PMLR. SONODA, T., LIU, Z., ITOH, T. & HASEGAWA, Y. 2023 Reinforcement learning of control strategies for reducing skin friction drag in a fully developed turbulent channel flow. J. Fluid Mech. 960, A30.',
+].join('\n');
+
+check('entries sharing a line in an author-year list are separate entries', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Cut only between lines, the PPO entry ran on into Sonoda et al., and its
+	// node carried the arXiv id of one work and the title of the other.
+	const { entries } = R.splitEntries(JFM_BLOCKS.split('\n').slice(1).join('\n'));
+	const heads = entries.map(e => e.split(',')[0]);
+	const want = ['GLEZER', 'GODA', 'HAARNOJA', 'HAARNOJA', 'SCHULMAN', 'SHANNON', 'SILVER', 'SONODA'];
+	if (JSON.stringify(heads) !== JSON.stringify(want)) throw new Error('heads: ' + heads.join(' | '));
+	const style = R.detectStyle(entries);
+	if (style !== 'cambridge') throw new Error('style: ' + style);
+	const ppo = R.parseEntry(entries[4], style);
+	if (ppo.arxivId !== '1707.06347' || ppo.title !== 'Proximal policy optimization algorithms'
+			|| ppo.surname !== 'SCHULMAN' || ppo.year !== 2017) {
+		throw new Error('PPO: ' + JSON.stringify(ppo));
+	}
+	const sonoda = R.parseEntry(entries[7], style);
+	if (sonoda.arxivId || !/^Reinforcement learning of control strategies/.test(sonoda.title)) {
+		throw new Error('Sonoda: ' + JSON.stringify(sonoda));
+	}
+	// "2018b" is a year too: the second Haarnoja entry keeps its own arXiv id.
+	if (R.parseEntry(entries[2], style).arxivId) throw new Error('2018a took the 2018b arXiv id');
+});
+
+check('a run-on cut needs an entry end before it and names after it', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// "J. Ba, T. Lillicrap Mastering ..." looks like a head after a period, but
+	// the period is an initial's and the "authors" run on into title words.
+	const sd = 'Hafner et al., 2023 D. Hafner, J. Pasukonis, J. Ba, T. Lillicrap Mastering diverse domains through world models (2023) arXiv preprint arXiv:2301.04104\n\n'
+		+ 'Gens and Domingos, 2014 R. Gens, P.M. Domingos Deep symmetry networks NeurIPS (2014), pp. 2537-2545';
+	const a = R.splitEntries(sd).entries;
+	if (a.length !== 2) throw new Error('split inside an entry: ' + JSON.stringify(a));
+	// An author list wrapped onto the next line is not a new entry at that line.
+	const wrapped = 'Smith, J., &\nDoe, K. (2019). A title of the cited work. Journal of Things, 1, 2–3.\n\n'
+		+ 'Roe, P. (2020). Another title of a cited work. Journal of Things, 4, 5–6.';
+	const b = R.splitEntries(wrapped).entries;
+	if (b.length !== 2 || !/^Smith, J., & Doe, K\./.test(b[0])) throw new Error('wrapped list: ' + JSON.stringify(b));
+	// APA ends an entry on its DOI, with no period after it.
+	const apa = 'Alifu, H., & Imada, Y. (2022). Enhancement of river flooding due to global warming. Scientific Reports, 12(1), 20687. https://doi.org/10.1038/s41598-022-25182-6 '
+		+ 'Araya, S. N., & Ghezzehei, T. A. (2019). Using machine learning for prediction of saturated hydraulic conductivity. Water Resources Research, 55(7), 5715–5737. https://doi.org/10.1029/2018wr024357\n\n'
+		+ 'Belfadil, A., & Modesto, D. (2024). Leveraging deep reinforcement learning for water distribution systems. Journal of Water, 150(5), 1–12.';
+	const c = R.splitEntries(apa).entries;
+	if (c.length !== 3 || !/^Araya/.test(c[1])) throw new Error('APA: ' + JSON.stringify(c));
+});
+
 // --- the ref-strings strategy end to end ------------------------------------
 
 /**
@@ -6013,6 +6073,27 @@ check('ref-strings adds no outside nodes with includeExternal off', () => {
 		}
 		// The in-collection edges it finds are still worth having.
 		if (r.edges.length !== 2) throw new Error('held edges: ' + r.edges.length);
+	});
+});
+
+check('a running footer with the citing paper\'s own DOI does not key the entry above it', () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [{ key: 'AAAAAAAA', itemType: 'journalArticle', title: 'Active flow control by RL', doi: '10.1000/citing', date: '2024', creators: ['Xia'] }];
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async k => [{ key: k + '1', parentKey: k, contentType: 'application/pdf' }],
+		getAttachmentText: async () => JFM_BLOCKS,
+		getPdfLinkUris: async () => [],
+	};
+	return cg.build(adapter, { enable: ['ref-strings'], offline: true, includeExternal: true }).then((r) => {
+		const keys = r.externalNodes.map(x => x.key);
+		if (keys.some(k => k.includes('10.1000/citing'))) throw new Error('keyed on own DOI: ' + keys.join(', '));
+		// GODA carries the footer, and is still cited -- by its title.
+		const goda = keys.find(k => k.startsWith('ref:a-multistep-technique'));
+		if (!goda) throw new Error('GODA dropped: ' + keys.join(', '));
+		if (r.described[goda].doi) throw new Error('GODA described with a DOI: ' + r.described[goda].doi);
+		const ppo = r.described['arxiv:1707.06347'];
+		if (!ppo || ppo.title !== 'Proximal policy optimization algorithms') throw new Error('PPO: ' + JSON.stringify(ppo));
 	});
 });
 

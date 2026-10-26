@@ -117,6 +117,12 @@ function resolve(item, p, ctx) {
 	const { index, options, includeExternal, citingYear, factor, where, describe } = ctx;
 	if (!factor) return null;
 
+	// The citing paper's own DOI is a running page footer ("https://doi.org/
+	// 10.1017/jfm.2024.69 Published online by Cambridge University Press") that
+	// the split left on the entry above it. The entry is still a reference, so
+	// it is resolved by its other fields.
+	if (p.doi && index.lookupDoi(p.doi) === item.key) p = { ...p, doi: null };
+
 	// 1-2. A printed DOI. Self-validating, so it outranks everything parsed.
 	if (p.doi) {
 		const held = index.lookupDoi(p.doi);
