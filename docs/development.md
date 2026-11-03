@@ -411,6 +411,40 @@ the one that wrote it, and checks what Zotero cares about: `manifest.json` and `
 the archive root, every CRC intact, the Node-only `citation-graph/adapters/` left out, and the
 third-party notices present.
 
+### Release
+
+Bump the version in `package.json`, `addon/manifest.json` and `updates.json` on `dev`. CI does not run
+on `dev` by itself, so check it first with **Run workflow** on `dev`. Then bring `main` up to
+`dev` with a fast-forward from your machine:
+
+```
+git push origin dev:main
+```
+
+If you opened a PR from `dev` to `main`, GitHub marks it merged when its commits reach `main`.
+Do not use the PR's merge buttons. A
+merge commit is what `main` must not have: a ruleset requires linear history on `main`, and merge
+commits are turned off for the repository. *Squash* and *Rebase and merge* stay linear, but they
+create copies of `dev`'s commits under new hashes. `dev` would then no longer be an ancestor of
+`main`, and the next release PR would carry old commits again.
+
+Then publish a GitHub release tagged `v<version>`, with title and notes written by hand as before.
+Publishing triggers `.github/workflows/release.yml`. It checks out the tag, runs the version gate
+with `--tag`, the tests and `verify-xpi`, builds twice to prove the bytes are reproducible, checks
+that `updates.json`'s `update_link` is the URL the asset will have, and attaches the XPI. Only the
+XPI is attached: GitHub shows each asset's SHA-256 on the release page. Afterwards it downloads
+the asset through that link and compares hashes.
+
+It never overwrites an asset. If the release already has the XPI with the same bytes, it does
+nothing; if the bytes differ, it fails and leaves the release alone. To attach the XPI to a
+release that is missing it, run the workflow by hand (**Run workflow**, with the tag). v0.72.4
+was first published without its XPI ([#3](https://github.com/Jajaho/zotero-citation-graph/issues/3)).
+Because `updates.json` sends every installed copy to that asset, a release without it breaks
+auto-update.
+
+If *immutable releases* is ever turned on for the repository, GitHub will refuse assets added
+after publishing, and this would have to move to publishing from a draft.
+
 ## The frame
 
 The tab has the shape of Zotero's own library tab: a bar across the top, and under it a side

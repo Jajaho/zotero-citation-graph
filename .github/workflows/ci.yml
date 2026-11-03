@@ -42,8 +42,9 @@ jobs:
       # The published checksum is the whole point: a user has to be able to
       # rebuild the tag and get the same bytes. Building twice and comparing
       # proves the packer is not smuggling in a timestamp or a directory order.
-      # This runs on Linux while releases are cut from a Windows desktop, so it
-      # is also the cross-platform half of the claim.
+      # This runs on Linux while day-to-day builds happen on a Windows desktop, so
+      # it is also the cross-platform half of the claim. The released XPI itself
+      # comes from release.yml, which repeats this check on the tag.
       - name: Build again and compare
         run: |
           set -euo pipefail

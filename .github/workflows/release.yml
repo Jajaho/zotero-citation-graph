@@ -1,0 +1,132 @@
+# Attach the XPI to a GitHub release.
+#
+# Releases are still written by hand -- title, notes, tag -- and this runs when one
+# is published. v0.72.4 went out with no asset at all (issue #3), and because
+# updates.json points every installed copy at that asset, auto-update hit a 404:
+# a release page without its XPI does not merely look unfinished, it breaks
+# updating. So the upload is no longer something a person has to remember.
+#
+# Run it by hand (Run workflow, with a tag) to backfill a release that predates it.
+#
+# Only the XPI is attached. GitHub shows every asset's SHA-256 on the release page,
+# so a SHA256SUMS file would only repeat it. The checksum we care about is the one
+# anyone gets by rebuilding the tag, and the double build below holds us to it.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the XPI to (e.g. v0.72.4)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    name: Build and attach XPI
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      # Build what the tag names, not whatever branch the run happens to start on.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # package.json, addon/manifest.json, the tag and updates.json must all
+      # name the same version, or the asset lands under the wrong name.
+      - name: Version gate
+        run: node tools/check-version.js --tag "$TAG"
+
+      - name: Tests
+        run: npm test
+
+      - name: Build XPI
+        run: npm run build
+
+      - name: Check the XPI is loadable
+        run: node tools/verify-xpi.js
+
+      - name: Build again and compare
+        run: |
+          set -euo pipefail
+          first=$(sha256sum dist/*.xpi | cut -d' ' -f1)
+          rm -rf dist
+          npm run build >/dev/null
+          second=$(sha256sum dist/*.xpi | cut -d' ' -f1)
+          if [ "$first" != "$second" ]; then
+            echo "::error::the build is not reproducible: $first then $second"
+            exit 1
+          fi
+          echo "reproducible: $first"
+
+      # The asset has to be at the URL updates.json gives Zotero. Check that
+      # before uploading, so a link pointing at a different name fails here
+      # and not as a 404 on every user's update check.
+      - name: Check updates.json points at this asset
+        run: |
+          node -e '
+            const fs = require("fs");
+            const { readVersions, xpiName } = require("./tools/check-version.js");
+            const { version } = readVersions({ assert: true });
+            const id = JSON.parse(fs.readFileSync("addon/manifest.json", "utf8")).applications.zotero.id;
+            const entry = JSON.parse(fs.readFileSync("updates.json", "utf8"))
+              .addons[id].updates.find(u => u.version === version);
+            const want = `https://github.com/${process.env.REPO}/releases/download/${process.env.TAG}/${xpiName(version)}`;
+            if (entry.update_link !== want) {
+              console.error(`::error::updates.json update_link is ${entry.update_link}, expected ${want}`);
+              process.exit(1);
+            }
+            console.log(`update_link ok: ${want}`);
+          '
+
+      # Never overwrite an asset that is already there. If it holds the same
+      # bytes there is nothing to do. If it holds different bytes, something
+      # other than the tag produced it, and that is for a person to look at.
+      - name: Attach to release
+        run: |
+          set -euo pipefail
+          file=$(ls dist/*.xpi)
+          name=$(basename "$file")
+          local_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+          existing=$(gh api "repos/$REPO/releases/tags/$TAG" \
+            --jq ".assets[] | select(.name == \"$name\") | .digest")
+          if [ -z "$existing" ]; then
+            gh release upload "$TAG" "$file" --repo "$REPO"
+            echo "attached $name ($local_digest)"
+          elif [ "$existing" = "$local_digest" ]; then
+            echo "$name already attached with the same bytes ($local_digest)"
+          else
+            echo "::error::$name is already attached with $existing, but the tag builds $local_digest"
+            exit 1
+          fi
+
+      # Fetch it the way Zotero will, through the link updates.json gives, and
+      # check those are the bytes we built.
+      - name: Download via update_link and compare
+        run: |
+          set -euo pipefail
+          file=$(ls dist/*.xpi)
+          url="https://github.com/$REPO/releases/download/$TAG/$(basename "$file")"
+          curl -sSLf --retry 5 --retry-delay 3 -o /tmp/published.xpi "$url"
+          want=$(sha256sum "$file" | cut -d' ' -f1)
+          got=$(sha256sum /tmp/published.xpi | cut -d' ' -f1)
+          if [ "$want" != "$got" ]; then
+            echo "::error::$url serves $got, expected $want"
+            exit 1
+          fi
+          echo "published asset matches: $got"
