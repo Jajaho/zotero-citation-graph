@@ -373,8 +373,14 @@ const AUTHOR_LIST_TO_YEAR = /^([\p{L}\s.,;&'’-]{4,400}?)\(?(?:19|20)\d\d[a-z]?
 // Particles ("van", "de", "la") and "and" are shorter.
 const TITLE_WORD_G = /(?:^|\s)\p{Ll}{4,}/gu;
 const AUTHOR_LIST_OPEN = /(?:[,;&]|\band)\s*$/;
-// "J. Ba, T. Lillicrap": the period of an initial, not of a sentence.
-const ENDS_IN_INITIAL = /(?:^|[\s.,;(-])\p{Lu}$/u;
+// "J. Ba, T. Lillicrap" / "Y. A. Pashkin, Y. Nakamura": the period of an
+// initial, not of a sentence. It is tested on text ENTRY_END has already found
+// ending in a period, so the period is part of the pattern.
+const ENDS_IN_INITIAL = /(?:^|[\s.,;(-])\p{Lu}\.$/u;
+// Every test on the text before a head is anchored at its end, so only the
+// tail is read: a rejected head leaves `from` where it was, and re-reading
+// everything from there made a long group quadratic.
+const BEFORE_TAIL_CHARS = 300;
 
 // What an entry ends on: a sentence end, or an identifier, which APA prints
 // last and without a period ("... 12(1), 20687. https://doi.org/10.1038/...").
@@ -386,7 +392,7 @@ function isRunOnHead(s, m, from) {
 	if (m.index <= from) return false;
 	const list = AUTHOR_LIST_TO_YEAR.exec(s.slice(at, at + 420));
 	if (!list || (list[1].match(TITLE_WORD_G) || []).length >= 2) return false;
-	const before = s.slice(from, m.index);
+	const before = s.slice(Math.max(from, m.index - BEFORE_TAIL_CHARS), m.index);
 	// An author list wrapped onto the next line: "Smith, J., &" / "Doe, K. (2019)".
 	if (m[1].includes('\n')) return !AUTHOR_LIST_OPEN.test(before);
 	return ENTRY_END.test(before) && !ENDS_IN_INITIAL.test(before);

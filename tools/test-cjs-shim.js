@@ -6006,6 +6006,29 @@ check('a run-on cut needs an entry end before it and names after it', () => {
 	if (c.length !== 3 || !/^Araya/.test(c[1])) throw new Error('APA: ' + JSON.stringify(c));
 });
 
+check('a run-on cut is never made after an initial inside an author list', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Rev. Mod. Phys. prints later authors initials-first, so "Pashkin, Y." looks
+	// like a head right after the period of "Y. A.". Cut there, the leading
+	// authors had no year and were dropped with it.
+	const rmp = 'Abdo, B., et al., 2019, Nat. Commun. 10, 3154.\n\n'
+		+ 'Abdumalikov, A. A., O. Astafiev, A. M. Zagoskin, Y. A. Pashkin, Y. Nakamura, and J. S. Tsai, 2010, Phys. Rev. Lett. 104, 193601.\n\n'
+		+ 'Abragam, A., 1961, Principles of Nuclear Magnetism (Oxford University Press, New York).';
+	const heads = R.splitEntries(rmp).entries.map(e => e.split(',')[0]);
+	if (JSON.stringify(heads) !== JSON.stringify(['Abdo', 'Abdumalikov', 'Abragam'])) throw new Error('heads: ' + heads.join(' | '));
+});
+
+check('a long group of rejected run-on heads splits in linear time', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// Every head here is rejected (a comma, not an entry end, precedes it). Read
+	// from the start of the group each time, 20000 of them took seconds.
+	const run = Array.from({ length: 20000 }, (_, i) => 'Smith' + String.fromCharCode(65 + i % 26) + ', J., 2001,').join(' ');
+	const t0 = Date.now();
+	R.splitEntries(['References', 'Kim, J. 2001 A thing. J. X 1, 2.', '', run, '', 'Lee, K. 1999 Other. J. Y 3, 4.'].join('\n'));
+	const ms = Date.now() - t0;
+	if (ms > 1500) throw new Error('took ' + ms + 'ms');
+});
+
 // --- the ref-strings strategy end to end ------------------------------------
 
 /**
