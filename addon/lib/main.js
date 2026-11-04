@@ -82,6 +82,7 @@ module.exports = {
 		// nothing -- it is what covers a window opened later.
 		for (let win of Zotero.getMainWindows()) {
 			if (!win.ZoteroPane) continue;
+			unhideContextMenus(win);
 			addTabIconStyle(win);
 			addTabContext(win);
 			graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
@@ -196,7 +197,8 @@ module.exports = {
 						// getter that throws for multi-selection.
 						let rows = (ctx && ctx.collectionTreeRows) || [];
 						let ok = rows.length === 1 && rows[0].isCollection && rows[0].isCollection();
-						let el = event.target;
+						let el = entryElement(ctx);
+						if (!el) return;
 						el.hidden = !ok;
 						// Fallback if the FTL string didn't resolve through the
 						// window's own bundle -- the same message, read straight
@@ -243,7 +245,8 @@ module.exports = {
 					l10nID: 'zotero-citation-graph-view-citation-graph',
 					icon: `resource://${_config.resRoot}/content/icons/graph.svg`,
 					onShowing: (event, ctx) => {
-						let el = event.target;
+						let el = entryElement(ctx);
+						if (!el) return;
 						el.hidden = !graphableKeys(ctx).length;
 						if (!el.hidden && !el.getAttribute('label')) {
 							el.setAttribute('label', l10n.attr('view-citation-graph', 'label'));
@@ -262,6 +265,42 @@ module.exports = {
 		});
 	},
 };
+
+/**
+ * The menuitem an onShowing hook is about -- which is NOT event.target.
+ *
+ * ZoteroPane builds the collection and item menus without handing MenuManager
+ * an event, and MenuManager then runs onShowing from a popupshowing listener on
+ * the POPUP, filtered to `ev.target === ev.currentTarget` (menuManager.js
+ * _updateMenuEvents / _addMenuHook). So event.target is #zotero-collectionmenu
+ * or #zotero-itemmenu itself, and `event.target.hidden = true` hid Zotero's
+ * whole context menu the first time it opened over something this entry does
+ * not apply to -- My Library, a saved search, a standalone note. A hidden popup
+ * never opens again, so the popupshowing that would have un-hidden it never
+ * came either: the menu was gone until Zotero restarted.
+ *
+ * The context's menuElem is MenuManager's own handle on the row it created.
+ * Without it, nothing is touched: a row left showing is a smaller fault than a
+ * guess that lands on the popup.
+ */
+function entryElement(ctx) {
+	let el = ctx && ctx.menuElem;
+	if (!el || el.localName !== 'menuitem') return null;
+	return el;
+}
+
+/**
+ * Give back a context menu an earlier version of this plugin hid -- see
+ * entryElement(). Core never sets `hidden` on either popup, so taking it off is
+ * only ever undoing that. Run per window at startup, which is what an upgrade
+ * without a restart goes through.
+ */
+function unhideContextMenus(win) {
+	for (let id of ['zotero-collectionmenu', 'zotero-itemmenu']) {
+		let popup = win.document.getElementById(id);
+		if (popup && popup.hasAttribute('hidden')) popup.removeAttribute('hidden');
+	}
+}
 
 /**
  * The selected rows reduced to the papers a graph could be built from, as

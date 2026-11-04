@@ -2586,6 +2586,12 @@ const MENUS = new Map();
 /**
  * A menu entry, driven the way MenuManager drives it: a <menuitem> standing in
  * for the element, and the context object zoteroPane.js builds for that target.
+ *
+ * onShowing is handed the POPUP's popupshowing event -- ZoteroPane passes
+ * MenuManager no event for these two menus, so the hook is a listener on the
+ * popup, filtered to the popup itself -- and the row only as ctx.menuElem. An
+ * entry that hides event.target hides Zotero's whole context menu, for good;
+ * that is checked on every call.
  */
 function fireMenu(target, ctx, win) {
 	const options = MENUS.get(target);
@@ -2593,13 +2599,22 @@ function fireMenu(target, ctx, win) {
 	const entry = options.menus[0];
 	const attrs = {};
 	const el = {
+		localName: 'menuitem',
 		hidden: undefined,
 		ownerGlobal: win || {},
 		getAttribute: name => (name in attrs ? attrs[name] : null),
 		setAttribute: (name, value) => { attrs[name] = value; },
 	};
-	entry.onShowing({ target: el }, ctx);
-	return { el, attrs, command: () => entry.onCommand({ target: el }, ctx) };
+	const popup = {
+		localName: 'menupopup',
+		hidden: false,
+		getAttribute: () => null,
+		setAttribute: () => { throw new Error('an entry wrote an attribute onto the popup'); },
+	};
+	const showingCtx = Object.assign({ menuElem: el }, ctx);
+	entry.onShowing({ target: popup, currentTarget: popup }, showingCtx);
+	if (popup.hidden) throw new Error('an entry hid the context menu itself');
+	return { el, attrs, command: () => entry.onCommand({ target: el }, showingCtx) };
 }
 
 /**
