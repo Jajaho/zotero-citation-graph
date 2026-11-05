@@ -4342,7 +4342,8 @@ check('the release that ends a right-clicked drag is not a click', () => {
 	}
 	// A release that lands on the menu raises no click at all, so the flag needs
 	// a second way out or it eats the next real one.
-	if (!/pointerdown', \(\) => \{\s*menuPress = false;/.test(js)) {
+	if (!/function notePress\(\) \{\s*menuPress = false;/.test(js)
+		|| !js.includes("window.addEventListener('pointerdown', notePress, true);")) {
 		throw new Error('a spent press with no click of its own is never cleared');
 	}
 });
@@ -4378,6 +4379,296 @@ check('a double click rings the node once, not on and off again', () => {
 	// must not leave the next real one to be eaten.
 	if (!after('function armDouble()', 140).includes('requestAnimationFrame')) {
 		throw new Error('an armed swallow has no way out but the click it is waiting for');
+	}
+});
+
+/**
+ * Page functions and constants, lifted out of graph.js by name and run in a
+ * context of their own -- applyScope()'s trick, for several at once. `globals`
+ * stands in for the page-level state they read; a function declared here
+ * becomes a property of the returned context, and so does anything they write
+ * to a name `globals` gave them.
+ */
+function liftPage({ functions = [], consts = [], globals = {} }) {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	let src = '';
+	for (const name of consts) {
+		const m = js.match(new RegExp('\\n\\t(const ' + name + ' = [^\\n]*;)'));
+		if (!m) throw new Error('const ' + name + ' is no longer in graph.js under that name');
+		src += m[1] + '\n';
+	}
+	for (const name of functions) {
+		const m = js.match(new RegExp('\\n\\tfunction ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}\\n'));
+		if (!m) throw new Error(name + '() is no longer in graph.js under that name');
+		src += m[0] + '\n';
+	}
+	const ctx = Object.assign({}, globals);
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'graph.js (lifted)' });
+	return ctx;
+}
+
+const COLLIDE_LIFT = {
+	functions: ['collide', 'cellKey'],
+	consts: ['COLLIDE_PAD', 'COLLIDE_PASSES', 'COLLIDE_GRID_QUANTILE', 'CELL_OFF', 'CELL_SPAN', 'COLLIDE_SLOP'],
+};
+
+/** 1500 papers sized by local citations, most cited by nobody, scattered over a
+ *  square -- and, if asked, one landmark paper cited by 400 of them. */
+function collideCrowd(hubAt) {
+	let seed = 7;
+	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+	const nodes = [];
+	for (let i = 0; i < 1500; i++) {
+		const inDeg = Math.floor(Math.pow(rnd(), 6) * 12);
+		nodes.push({ r: Math.sqrt(1 + 2 * inDeg) * 4, x: rnd() * 1200, y: rnd() * 1200, vx: 0, vy: 0 });
+	}
+	if (hubAt) nodes.push({ r: Math.sqrt(1 + 2 * 400) * 4, x: hubAt.x, y: hubAt.y, vx: 0, vy: 0 });
+	return nodes;
+}
+
+/**
+ * The grid is sized for the ordinary node, and the few too big for a cell
+ * search it themselves -- so a pair with a big end is found by a different
+ * path from a pair of two small ones, and a pair of two big ones by a third.
+ * Missing any of them leaves circles inside each other, which is exactly the
+ * thing this force exists to prevent. So every one is checked against brute
+ * force: a hub landed in the middle of the crowd, a second big node on top of
+ * it, run until nothing moves, and then every pair measured.
+ */
+check('the collision force leaves no two circles overlapping, a hub among them', () => {
+	const page = liftPage(Object.assign({ globals: { collideBusy: false, nodeRadius: n => n.r } }, COLLIDE_LIFT));
+	const nodes = collideCrowd({ x: 600, y: 600 });
+	nodes.push({ r: 60, x: 640, y: 610, vx: 0, vy: 0 });
+	const force = page.collide();
+	force.initialize(nodes);
+	for (let t = 0; t < 600; t++) {
+		force(1);
+		for (const n of nodes) {
+			n.x += n.vx;
+			n.y += n.vy;
+			n.vx = 0;
+			n.vy = 0;
+		}
+	}
+	let worst = 0;
+	let pair = '';
+	for (let i = 0; i < nodes.length; i++) {
+		for (let j = i + 1; j < nodes.length; j++) {
+			const depth = nodes[i].r + nodes[j].r - Math.hypot(nodes[j].x - nodes[i].x, nodes[j].y - nodes[i].y);
+			if (depth > worst) {
+				worst = depth;
+				pair = `r=${nodes[i].r.toFixed(1)} and r=${nodes[j].r.toFixed(1)}`;
+			}
+		}
+	}
+	if (worst > 0.5) throw new Error(`circles still ${worst.toFixed(2)} deep in each other (${pair})`);
+});
+
+/**
+ * And a hub must not cost the whole crowd. The grid used to be sized for the
+ * biggest node, so one paper cited by 400 widened every cell until each held a
+ * neighbourhood, and a tick went from 4.8ms to 69ms. Work is counted rather
+ * than timed -- reads of a node's position, which every pair test makes -- so
+ * the answer is the same on every machine: the old grid did 21 times the work
+ * with the hub parked in a far corner, the new one does 1.1 times.
+ */
+check('one landmark paper does not make the collision force quadratic', () => {
+	const work = (hubAt) => {
+		const page = liftPage(Object.assign({ globals: { collideBusy: false, nodeRadius: n => n.r } }, COLLIDE_LIFT));
+		const nodes = collideCrowd(hubAt);
+		let reads = 0;
+		for (const n of nodes) {
+			let x = n.x;
+			Object.defineProperty(n, 'x', { get() { reads++; return x; }, set(v) { x = v; } });
+		}
+		const force = page.collide();
+		force.initialize(nodes);
+		force(1);
+		return reads;
+	};
+	const plain = work(null);
+	const hub = work({ x: 2000, y: 2000 });
+	if (hub > 2 * plain) {
+		throw new Error(`one hub multiplied the work by ${(hub / plain).toFixed(1)} (${plain} -> ${hub} reads)`);
+	}
+});
+
+/**
+ * force-graph finds what the pointer is over by giving every node and link a
+ * colour of its own from a pool of 2^18, and empties the pool only when a
+ * graphData() arrives with nothing in it already coloured. Nodes come back out
+ * of nodeCache coloured, so the pool never empties -- and render() used to make
+ * every link afresh, which spent a colour per link per render. About 130 moves
+ * of the confidence slider ran it dry on the benchmark's graph: edges lost
+ * their tooltips, and a paper just added could not be clicked at all.
+ *
+ * So a link is the same object every time its edge is drawn, and what is
+ * asserted is that: same pair, same object, same colour; its fields kept
+ * current; a node replaced under it let go of; and the signature that decides
+ * whether force-graph is told anything still able to tell two edges apart
+ * once d3 has turned their ends into node objects -- an object stringifies
+ * the same whichever node it is.
+ */
+check('an edge is drawn by the same link object every render, so it keeps its hit colour', () => {
+	const page = liftPage({
+		functions: ['linkFor', 'endStale', 'pruneLinks', 'structureSig', 'endId'],
+		consts: ['SIG_SEP'],
+		globals: { linkCache: new Map(), linkCacheRaw: null, linkRender: 0, nodeCache: new Map(), raw: null },
+	});
+	const AB = { from: 'A', to: 'B', confidence: 0.9, doi: null };
+	const AC = { from: 'A', to: 'C', confidence: 0.5, doi: '10.1/c' };
+	page.raw = { edges: [AB, AC] };
+	const render = () => {
+		page.pruneLinks();
+		page.linkRender++;
+	};
+
+	render();
+	const first = page.linkFor(AB, ['text-doi']);
+	// What force-graph and d3 do to it once it is drawn.
+	const A = { id: 'A' };
+	const B = { id: 'B' };
+	page.nodeCache.set('A', A);
+	page.nodeCache.set('B', B);
+	first.source = A;
+	first.target = B;
+	first.__indexColor = '#000101';
+
+	render();
+	const again = page.linkFor(AB, ['text-doi', 'pdf-links']);
+	if (again !== first) throw new Error('a second render made the link afresh');
+	if (again.__indexColor !== '#000101') throw new Error('the link lost its hit colour');
+	if (again.via.length !== 2) throw new Error('a reused link kept the old via list');
+	if (again.source !== A) throw new Error('a live end was handed back as an id');
+	// The same pair twice in one payload is two objects, not one counted twice.
+	if (page.linkFor(AB, ['text-doi']) === first) throw new Error('one render handed out one link twice');
+
+	// The node under an end replaced -- a ghost adopted and back again.
+	render();
+	page.nodeCache.set('A', { id: 'A' });
+	if (page.linkFor(AB, ['text-doi']).source !== 'A') throw new Error('a link kept a node nobody draws');
+
+	// Resolved ends still tell two edges apart.
+	const C = { id: 'C' };
+	const sig = page.structureSig([], [
+		{ source: A, target: B, confidence: 0.9, via: ['x'], doi: null },
+	]);
+	const other = page.structureSig([], [
+		{ source: A, target: C, confidence: 0.9, via: ['x'], doi: null },
+	]);
+	if (sig === other) throw new Error('the structure signature cannot see which node an edge ends at');
+
+	// Hidden by a filter is kept; gone from the payload is forgotten.
+	page.raw = { edges: [AC] };
+	render();
+	if (page.linkCache.has('A' + String.fromCharCode(1) + 'B')) throw new Error('an edge gone from the payload was kept');
+});
+
+/**
+ * force-graph runs its resize on every set of width or height, changed or not,
+ * and the resize reallocates both of its canvases. render() asked for that on
+ * every call -- every slider step, every build phase -- so remeasure() sets
+ * only what moved, and everything that sizes the graph goes through it.
+ */
+check('the canvas is resized only when its size changed', () => {
+	let sets = 0;
+	const fg = { w: 800, h: 600 };
+	fg.width = (v) => {
+		if (v === undefined) return fg.w;
+		sets++;
+		fg.w = v;
+		return fg;
+	};
+	fg.height = (v) => {
+		if (v === undefined) return fg.h;
+		sets++;
+		fg.h = v;
+		return fg;
+	};
+	const page = liftPage({ functions: ['remeasure'], globals: { fg, elGraph: { clientWidth: 800, clientHeight: 600 } } });
+	page.remeasure();
+	if (sets) throw new Error('an unchanged size was set ' + sets + ' times');
+	page.elGraph.clientWidth = 820;
+	page.remeasure();
+	if (sets !== 1 || fg.w !== 820) throw new Error('a new width took ' + sets + ' sets');
+
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const direct = js.match(/fg\.(width|height)\(elGraph/g);
+	if (direct) throw new Error('graph.js still sizes the canvas around remeasure(): ' + direct.join(', '));
+});
+
+/**
+ * A settle fixes every free node with fx/fy for a few ticks. force-graph's
+ * drag start records whatever fx it finds as where the node "was" fixed, and
+ * on release only clears an fx that was undefined -- so a press landing inside
+ * a settle took the freeze for a pin, and once thaw() had dropped the node
+ * from `frozen` nothing could tell it apart from one. Grabbing a second node
+ * straight after dropping the first pinned it, every time. The press takes the
+ * node out of the freeze before d3 can read it.
+ */
+check('pressing a node while a settle has the graph frozen does not pin it', () => {
+	const frozenNode = { id: 'F', fx: 10, fy: 20 };
+	const pinned = { id: 'P', fx: 1, fy: 2 };
+	const page = liftPage({
+		functions: ['notePress'],
+		globals: {
+			menuPress: true, pressNode: null, pressPinned: null, hoverNode: frozenNode,
+			frozen: new Set([frozenNode]),
+			isPinned: n => n.fx != null && !page.frozen.has(n),
+		},
+	});
+	page.notePress();
+	if (frozenNode.fx !== undefined || page.frozen.has(frozenNode)) throw new Error('the pressed node is still frozen');
+	if (page.pressNode !== frozenNode || page.pressPinned !== null) throw new Error('a frozen node was taken for a pin');
+	// A real pin is the user's and stays.
+	page.hoverNode = pinned;
+	page.notePress();
+	if (pinned.fx !== 1 || page.pressPinned !== pinned) throw new Error('pressing a pinned node unpinned it');
+});
+
+/**
+ * The subfield partition is coupling plus Louvain over the whole collection,
+ * keyed on the confidence slider -- and itemFacets() used to ask for it for
+ * every item on every render, so each step of the slider re-ran it whether or
+ * not anything was coloured or filtered by subfield. 17.5ms of a 21.9ms render
+ * on the benchmark's graph. It is asked for now only when a facet is read.
+ */
+check('the subfield facet is only worked out when something reads it', () => {
+	let asked = 0;
+	const page = liftPage({
+		functions: ['itemFacets', 'year'],
+		globals: {
+			Filters: loadFilters(),
+			clusters: () => {
+				asked++;
+				return { of: new Map([['K1', 'Magnetometry']]) };
+			},
+		},
+	});
+	const f = page.itemFacets({ key: 'K1', title: 'A paper', creators: ['Kucsko'], date: '2013', tags: [] });
+	if (asked) throw new Error('building the facets ran the partition');
+	if (f.author[0] !== 'Kucsko' || f.year[0] !== '2013') throw new Error('the other facets went missing');
+	if (!page.Filters.matches(page.Filters.parse('cluster: magneto'), f)) throw new Error('a subfield mask does not match');
+	if (!page.Filters.matches(page.Filters.parse('magneto'), f)) throw new Error('a bare term does not reach the subfield');
+	if (asked !== 1) throw new Error('reading the facet asked ' + asked + ' times, not once');
+});
+
+/**
+ * The hit-test canvas is a graph of its own, and linkCanvasObject never
+ * reaches it -- the branch drawEdge() had for it never ran once, so switching
+ * edge tooltips off took nothing off it. linkPointerAreaPaint is the prop that
+ * does, and has to be set both when the graph is built and when the switch
+ * moves.
+ */
+check('switching edge tooltips off takes the edges off the hit-test canvas', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes('.linkPointerAreaPaint(edgeHitArea())')) {
+		throw new Error('the graph is built without a say in what the hit-test canvas draws for an edge');
+	}
+	const handler = js.slice(js.indexOf("elEdgeTips.addEventListener('change'"));
+	if (!handler.slice(0, 400).includes('fg.linkPointerAreaPaint(edgeHitArea())')) {
+		throw new Error('the edge tooltip switch does not reach the hit-test canvas');
 	}
 });
 

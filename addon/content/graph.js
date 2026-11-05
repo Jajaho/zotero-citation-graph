@@ -166,10 +166,16 @@
 	let fg = null;
 	let raw = null;
 	let nodeCache = new Map(); // id -> node object, so x/y survive a re-render
+	// The same for links, keyed by both ends -- and for a reason nodeCache does
+	// not have to state. See linkFor().
+	let linkCache = new Map();
+	let linkCacheRaw = null;   // the payload linkCache was last pruned against
+	let linkRender = 0;        // stamps the links handed out by one render
 	// The node an incoming payload wants placed without disturbing the rest.
 	// Consumed by render(); see holdStill().
 	let anchorNext = null;
 	let disabledVia = new Set();
+	let viaGen = 0;            // bumped whenever disabledVia changes; see believedSig()
 	let yearRange = null;
 	// Whether the cited-by threshold has already been fitted to the size of this
 	// graph. See applyScope(): it is a one-time correction, not a policy.
@@ -514,9 +520,8 @@
 	/** The "Colour edges by strategy" box, kept here for the same reason. */
 	let colorEdges = true;
 	/** And the "Edge details on hover" box, read by linkLabel -- which force-graph
-	 *  calls on every hover -- and by the hit-test half of drawEdge, which runs
-	 *  per link per frame. Both are hot enough to want the answer in a variable
-	 *  rather than out of a checkbox. */
+	 *  calls on every hover -- and by edgeHitArea(). Hot enough to want the
+	 *  answer in a variable rather than out of a checkbox. */
 	let edgeTips = true;
 
 	/** Everything that decides a colour may have changed. Paired with litCache
@@ -1036,7 +1041,10 @@
 		let head = x.title ? escapeHtml(x.title) : escapeHtml(n.name);
 		let bits = [];
 		if (x.creators && x.creators.length) bits.push(escapeHtml(creatorList(x.creators)));
-		if (x.year) bits.push(x.year);
+		// Escaped although every source today hands over a number: force-graph
+		// sets this as innerHTML, and part of what a ghost says comes off the
+		// network.
+		if (x.year) bits.push(escapeHtml(x.year));
 		bits.push(t('tooltip-cited-here', { count: n.inDeg }));
 		if (x.citedByGlobal != null) {
 			bits.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
@@ -1624,6 +1632,7 @@
 			cb.addEventListener('change', () => {
 				if (cb.checked) disabledVia.delete(via);
 				else disabledVia.add(via);
+				viaGen++;
 				render();
 			});
 			let dot = document.createElement('span');
@@ -1694,9 +1703,10 @@
 	 * edges the user has switched off would describe a graph nobody is looking
 	 * at.
 	 *
-	 * Memoised on exactly those inputs: itemFacets() runs this per item per
+	 * Memoised on exactly those inputs: itemFacets() can run this per item per
 	 * keystroke in the filter box, and Louvain over a few hundred nodes is not
-	 * something to redo between two characters.
+	 * something to redo between two characters. And only asked for when
+	 * something reads a subfield -- see itemFacets() for what that saves.
 	 */
 	let clusterMemo = { raw: null, sig: null, result: null };
 	const NO_CLUSTERS = { of: new Map(), sizes: new Map(), count: 0, unassigned: 0, modularity: 0 };
@@ -1723,8 +1733,17 @@
 	 */
 	let believedMemo = { raw: null, sig: null, edges: null };
 
+	/** Kept, because it is asked once per item whenever the subfield facet is
+	 *  read, and building it is a sort and a join. Rebuilt when the slider or
+	 *  the strategy switches move -- see viaGen. */
+	let sigMemo = { conf: null, via: -1, sig: '' };
+
 	function believedSig() {
-		return elMinConf.value + '|' + [...disabledVia].sort().join(',');
+		let conf = elMinConf.value;
+		if (conf !== sigMemo.conf || viaGen !== sigMemo.via) {
+			sigMemo = { conf, via: viaGen, sig: conf + '|' + [...disabledVia].sort().join(',') };
+		}
+		return sigMemo.sig;
 	}
 
 	function believedEdges() {
@@ -1742,16 +1761,37 @@
 
 	/** A raw item in the shape nodeFilters.js matches against. */
 	function itemFacets(it) {
-		return Filters.facets({
+		let f = Filters.facets({
 			creators: it.creators,
 			tags: it.tags,
-			cluster: clusters().of.get(it.key),
 			year: year(it),
 			itemType: it.itemType,
 			publication: it.publication,
 			collections: it.collections,
 			title: it.title,
 		});
+		// The subfield is worked out only if something reads it -- a mask that
+		// names it, a bare term (which is asked of every facet), the completion
+		// list. Asked for up front, it put the whole partition on every render:
+		// the memo above is keyed on the confidence slider, so each step of it
+		// re-ran the coupling and Louvain over the collection -- 17.5ms of a
+		// 21.9ms render on the benchmark's 1500 papers -- for a graph with no
+		// mask on it and not coloured by subfield, which is nearly every graph.
+		// Kept once read: a facet set lives no longer than the render it came
+		// from, and nothing a partition reads changes without a render.
+		Object.defineProperty(f, 'cluster', {
+			configurable: true,
+			enumerable: true,
+			get() {
+				let c = clusters().of.get(it.key);
+				let value = c ? [c] : [];
+				Object.defineProperty(this, 'cluster', {
+					configurable: true, enumerable: true, writable: true, value,
+				});
+				return value;
+			},
+		});
+		return f;
 	}
 
 	/** The chip is clipped to the panel width, so the long form -- every value,
@@ -2197,9 +2237,11 @@
 		let outDegree = Object.create(null);
 		let links = [];
 		adjacency = new Map();
+		pruneLinks();
+		linkRender++;
 		for (let { e, via } of candidates) {
 			if (!inCollection.has(e.to) && !visibleGhosts.has(e.to)) continue;
-			links.push({ source: e.from, target: e.to, confidence: e.confidence, via, doi: e.doi });
+			links.push(linkFor(e, via));
 			inDegree[e.to] = (inDegree[e.to] || 0) + 1;
 			outDegree[e.from] = (outDegree[e.from] || 0) + 1;
 			relate(e.from, e.to);
@@ -2429,11 +2471,12 @@
 				// reason the whole chain is: force-graph re-initialises on some
 				// props, and a tooltip must not cost a layout. Empty is how the
 				// tooltip is asked not to appear -- it hides itself on falsy
-				// content -- and drawEdge stops offering the edges to the
-				// hit-test canvas at the same time, so there is nothing to hover.
+				// content -- and edgeHitArea() takes the edges off the hit-test
+				// canvas at the same time, so there is nothing to hover.
 				.linkLabel(l => (edgeTips
 					? l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : '')
 					: ''))
+				.linkPointerAreaPaint(edgeHitArea())
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
 				// title match. A picked node's own edges give up the
@@ -2468,7 +2511,7 @@
 
 		// The pane can be resized without a window resize event -- a Zotero
 		// layout change, or the tab coming back into view.
-		fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
+		remeasure();
 
 		updateGraph(nodes, links);
 		// After updateGraph, which is what handed force-graph the changed node
@@ -2596,10 +2639,75 @@
 		for (let node of nodes) out.push(node.id);
 		out.push('|');
 		for (let l of links) {
-			out.push(l.source + '>' + l.target + ':' + l.confidence
+			// Through endId(): a link handed back out of linkCache has already
+			// had its ends resolved to node objects, and an object stringifies
+			// to the same thing whichever node it is.
+			out.push(endId(l.source) + '>' + endId(l.target) + ':' + l.confidence
 				+ ':' + l.via.join('+') + ':' + (l.doi || ''));
 		}
 		return out.join(SIG_SEP);
+	}
+
+	/**
+	 * The link object for one edge, the same one every render hands out.
+	 *
+	 * Not for the coordinates, which is nodeCache's reason: for the hit test.
+	 * force-graph tells what the pointer is over by painting every node and link
+	 * in a colour of its own on a hidden canvas, and it draws those colours from
+	 * a fixed pool of 2^18 that it only empties when a graphData() arrives with
+	 * NOTHING in it already coloured. The nodes always are -- nodeCache hands the
+	 * same ones back -- so the pool never empties, and a fresh link object per
+	 * render took a fresh colour per render. Measured on the benchmark's 1500
+	 * papers, the pool ran dry after about 130 moves of the confidence slider:
+	 * every edge lost its tooltip, and anything new -- a paper just added, an
+	 * outside reference just shown -- could not be hovered, clicked or dragged.
+	 * The pool also held every link object ever made, so it leaked as it went.
+	 *
+	 * Reused, a link keeps its colour, and the pool grows only by edges it has
+	 * never seen. Its fields are rewritten each time because what is drawn can
+	 * change under one id pair -- a strategy switched off shortens `via` -- and
+	 * when the structure did not change they are rewritten with what they
+	 * already were, which is what lets updateGraph() go on skipping graphData.
+	 */
+	function linkFor(e, via) {
+		let key = e.from + SIG_SEP + e.to;
+		let l = linkCache.get(key);
+		// A payload with the same pair twice would otherwise hand force-graph one
+		// object twice, which d3 would count as two edges of one link.
+		if (!l || l._render === linkRender) {
+			l = { source: e.from, target: e.to };
+			if (!linkCache.has(key)) linkCache.set(key, l);
+		}
+		else {
+			// d3 resolved the ends to node objects the last time this link was
+			// drawn. One of those can have been replaced since -- a ghost that was
+			// adopted, then came back -- and d3 keeps an end that is already an
+			// object, so a stale one would tie this edge to a node nobody draws.
+			// Handing back the id lets it look the node up again. Never the case
+			// for a link force-graph is holding right now: replacing a node
+			// changes the structure, and that path calls graphData.
+			if (endStale(l.source, e.from)) l.source = e.from;
+			if (endStale(l.target, e.to)) l.target = e.to;
+		}
+		l._render = linkRender;
+		l.confidence = e.confidence;
+		l.via = via;
+		l.doi = e.doi;
+		return l;
+	}
+
+	function endStale(end, id) {
+		return typeof end === 'object' && end !== null && nodeCache.get(id) !== end;
+	}
+
+	/** Forget links whose edge is not in the payload any more. A link hidden
+	 *  by a filter is kept -- showing it again must not cost another colour. */
+	function pruneLinks() {
+		if (linkCacheRaw === raw) return;
+		linkCacheRaw = raw;
+		let keep = new Set();
+		for (let e of raw.edges) keep.add(e.from + SIG_SEP + e.to);
+		for (let key of linkCache.keys()) if (!keep.has(key)) linkCache.delete(key);
 	}
 
 	/** The other thing the layout is built from. Rounded, because a radius that
@@ -2885,9 +2993,20 @@
 	 * way. Run at full strength over two passes -- overlap is a hard constraint
 	 * here, not a preference.
 	 *
-	 * Candidate pairs come from a uniform grid whose cell is the largest
-	 * distance at which any two nodes can touch, so only the 3x3 neighbourhood
-	 * has to be searched and the tick stays linear in node count.
+	 * Candidate pairs come from a uniform grid sized for the ordinary node, so
+	 * two of those can only touch from neighbouring cells and the 3x3 around
+	 * each is the whole search. The few nodes too big for that are kept out of
+	 * the grid and search it themselves, over every cell their own reach
+	 * covers, and test each other directly.
+	 *
+	 * It used to be one grid sized for the BIGGEST node, which is correct and,
+	 * with one landmark paper on screen, quadratic. Sized by local citations a
+	 * radius has no ceiling -- a paper cited by 400 here is drawn 28 times the
+	 * area of one cited by none -- and a cell that wide holds a whole
+	 * neighbourhood of ordinary papers, every one tested against every other:
+	 * on the benchmark's 1500 papers, one such hub took a tick from 4.8ms to
+	 * 69ms. The search is the same set of pairs either way, and each is still
+	 * resolved once.
 	 *
 	 * The grid is kept from tick to tick and keyed by a number, not rebuilt
 	 * as a Map of "x,y" strings. That string was built once per node and nine
@@ -2895,11 +3014,14 @@
 	 * strings a tick at 1500 nodes, handed straight to the collector. Buckets
 	 * carry the pass that filled them, so a stale one reads as empty and
 	 * nothing is cleared between passes: the trick labelLayout.js's Pass plays,
-	 * for the same reason. The pairs visited, their order and the arithmetic
-	 * are what they were.
+	 * for the same reason.
 	 */
 	const COLLIDE_PAD = 3; // graph units of clear space left between circles
 	const COLLIDE_PASSES = 2;
+	// Which node the grid's cell is sized for, as a quantile of the radii. The
+	// tenth of the graph above it searches more cells, and pays for it with a
+	// cell small enough to hold a handful of everyone else.
+	const COLLIDE_GRID_QUANTILE = 0.9;
 
 	// A cell's key: its column and row, each offset to be non-negative, packed
 	// into one integer well inside 2^53. Two cells over a million apart would
@@ -2924,9 +3046,67 @@
 	function collide() {
 		let nodes = [];
 		let radii = [];
+		let small = [];        // indices of the nodes the grid holds
+		let big = [];          // indices of the nodes too large for a cell
+		let rGrid = 0;         // the largest radius the grid holds
+		let rMax = 0;          // the largest radius there is
+		let sweepX = null;     // projected x of each big node, for the sweep
 		let cell = 1;
 		let grid = new Map();  // cell key -> { gen, items }
 		let gen = 0;           // which pass the live buckets were filled in
+
+		/** Push one pair apart if their circles meet, by area: the heavier
+		 *  circle stays put. Symmetric, so which end is `i` does not matter. */
+		function resolve(i, j) {
+			let a = nodes[i];
+			let b = nodes[j];
+			let ri = radii[i];
+			let rj = radii[j];
+			let r = ri + rj + COLLIDE_PAD;
+			let dx = (b.x + b.vx) - (a.x + a.vx);
+			let dy = (b.y + b.vy) - (a.y + a.vy);
+			let l2 = dx * dx + dy * dy;
+			if (l2 >= r * r) return;
+			// Exactly coincident: no line of centres to push along, so pick an
+			// arbitrary one.
+			if (l2 < 1e-12) {
+				dx = (Math.random() - 0.5) * 1e-4;
+				dy = (Math.random() - 0.5) * 1e-4;
+				l2 = dx * dx + dy * dy;
+			}
+			let l = Math.sqrt(l2);
+			if (r - l > COLLIDE_SLOP) collideBusy = true;
+			let push = (r - l) / l;
+			dx *= push;
+			dy *= push;
+			// Share of the correction taken by b, weighted by a's area.
+			let wb = (ri * ri) / (ri * ri + rj * rj);
+			b.vx += dx * wb;
+			b.vy += dy * wb;
+			a.vx -= dx * (1 - wb);
+			a.vy -= dy * (1 - wb);
+		}
+
+		/** Every pair between node i and the grid within `reach` cells of it.
+		 *  `after` skips the grid's nodes at or below i, so a pair the grid
+		 *  holds both ends of is resolved once, from its lower index. */
+		function search(i, reach, after) {
+			let a = nodes[i];
+			let cx = Math.floor((a.x + a.vx) / cell);
+			let cy = Math.floor((a.y + a.vy) / cell);
+			for (let gx = cx - reach; gx <= cx + reach; gx++) {
+				for (let gy = cy - reach; gy <= cy + reach; gy++) {
+					let b = grid.get(cellKey(gx, gy));
+					if (!b || b.gen !== gen) continue;
+					let bucket = b.items;
+					for (let k = 0; k < bucket.length; k++) {
+						let j = bucket[k];
+						if (after && j <= i) continue;
+						resolve(i, j);
+					}
+				}
+			}
+		}
 
 		function force() {
 			collideBusy = false;
@@ -2937,7 +3117,8 @@
 			if (grid.size > 4 * nodes.length) grid = new Map();
 			for (let pass = 0; pass < COLLIDE_PASSES; pass++) {
 				gen++;
-				for (let i = 0; i < nodes.length; i++) {
+				for (let s = 0; s < small.length; s++) {
+					let i = small[s];
 					let n = nodes[i];
 					let key = cellKey(Math.floor((n.x + n.vx) / cell), Math.floor((n.y + n.vy) / cell));
 					let b = grid.get(key);
@@ -2949,48 +3130,30 @@
 					}
 					else b.items.push(i);
 				}
-				for (let i = 0; i < nodes.length; i++) {
-					let a = nodes[i];
-					let ri = radii[i];
-					let cx = Math.floor((a.x + a.vx) / cell);
-					let cy = Math.floor((a.y + a.vy) / cell);
-					for (let gx = cx - 1; gx <= cx + 1; gx++) {
-						for (let gy = cy - 1; gy <= cy + 1; gy++) {
-							let b = grid.get(cellKey(gx, gy));
-							if (!b || b.gen !== gen) continue;
-							let bucket = b.items;
-							for (let k = 0; k < bucket.length; k++) {
-								let j = bucket[k];
-								// Each pair is resolved once, by its lower index.
-								if (j <= i) continue;
-								let b = nodes[j];
-								let rj = radii[j];
-								let r = ri + rj + COLLIDE_PAD;
-								let dx = (b.x + b.vx) - (a.x + a.vx);
-								let dy = (b.y + b.vy) - (a.y + a.vy);
-								let l2 = dx * dx + dy * dy;
-								if (l2 >= r * r) continue;
-								// Exactly coincident: no line of centres to push
-								// along, so pick an arbitrary one.
-								if (l2 < 1e-12) {
-									dx = (Math.random() - 0.5) * 1e-4;
-									dy = (Math.random() - 0.5) * 1e-4;
-									l2 = dx * dx + dy * dy;
-								}
-								let l = Math.sqrt(l2);
-								if (r - l > COLLIDE_SLOP) collideBusy = true;
-								let push = (r - l) / l;
-								dx *= push;
-								dy *= push;
-								// Share of the correction taken by b, weighted by
-								// a's area: the heavier circle stays put.
-								let wb = (ri * ri) / (ri * ri + rj * rj);
-								b.vx += dx * wb;
-								b.vy += dy * wb;
-								a.vx -= dx * (1 - wb);
-								a.vy -= dy * (1 - wb);
-							}
-						}
+				// Two grid nodes touch at under 2 * rGrid + COLLIDE_PAD, which is
+				// one cell: the 3x3 around either one holds the other.
+				for (let s = 0; s < small.length; s++) search(small[s], 1, true);
+				// A big node reaches its own radius past the cell, and the grid
+				// holds none of the others -- so it searches out as far as that
+				// takes.
+				for (let p = 0; p < big.length; p++) {
+					let i = big[p];
+					search(i, Math.ceil((radii[i] + rGrid + COLLIDE_PAD) / cell), false);
+				}
+				// And meets the other big nodes in a sweep along x: sorted by
+				// where they are headed, a pair further apart in x than the two
+				// biggest radii allow ends the scan. Not every pair against every
+				// other -- a tenth of a large graph is still a large number.
+				if (big.length > 1) {
+					for (let p = 0; p < big.length; p++) {
+						let i = big[p];
+						sweepX[i] = nodes[i].x + nodes[i].vx;
+					}
+					big.sort((p, q) => sweepX[p] - sweepX[q]);
+					for (let p = 0; p < big.length; p++) {
+						let i = big[p];
+						let limit = sweepX[i] + radii[i] + rMax + COLLIDE_PAD;
+						for (let q = p + 1; q < big.length && sweepX[big[q]] < limit; q++) resolve(i, big[q]);
 					}
 				}
 			}
@@ -3000,9 +3163,14 @@
 			nodes = ns;
 			collideBusy = false;
 			radii = nodes.map(nodeRadius);
-			let maxR = 0;
-			for (let r of radii) if (r > maxR) maxR = r;
-			cell = 2 * maxR + COLLIDE_PAD;
+			let sorted = radii.slice().sort((a, b) => a - b);
+			rGrid = sorted.length ? sorted[Math.floor(COLLIDE_GRID_QUANTILE * (sorted.length - 1))] : 0;
+			rMax = sorted.length ? sorted[sorted.length - 1] : 0;
+			small = [];
+			big = [];
+			for (let i = 0; i < radii.length; i++) (radii[i] > rGrid ? big : small).push(i);
+			sweepX = new Float64Array(nodes.length);
+			cell = 2 * rGrid + COLLIDE_PAD;
 		};
 		return force;
 	}
@@ -3255,6 +3423,13 @@
 	let labelPass = LabelLayout.pass();
 	let labelFading = false;    // any node mid-fade, so the canvas stays dirty
 	let labelClock = 0;         // timestamp the current frame's fade steps from
+	// Read off the page once a frame by reserveLabels(), for placeLabel() to use
+	// per node. Both are DOM reads, and per node they were three thousand a
+	// frame at 1500 papers -- each a call into layout, and the first of them a
+	// reflow whenever anything earlier in the frame had touched the page.
+	let labelViewW = 0;
+	let labelViewH = 0;
+	let labelHideGhosts = false;
 
 	/**
 	 * Rank the nodes once, not once per frame. Called from updateGraph, which
@@ -3332,7 +3507,6 @@
 	 */
 	function reserveLabels(ctx, globalScale) {
 		if (!fg) return;
-		frameCtx = ctx;
 		// Before anything is drawn: force-graph's own arrow pass is handed a
 		// length in graph units and has no zoom to divide it by, and with
 		// PERF.batch off the page's pass never runs to catch one.
@@ -3345,8 +3519,9 @@
 			labelDraw.length = 0;
 			return;
 		}
-		let w = elGraph.clientWidth;
-		let h = elGraph.clientHeight;
+		let w = labelViewW = elGraph.clientWidth;
+		let h = labelViewH = elGraph.clientHeight;
+		labelHideGhosts = elHideGhostNames.checked;
 		// Screen origin in graph coordinates, so a node's position can be put
 		// into screen space with a multiply and an add rather than a call per
 		// node into force-graph's own converter.
@@ -3380,6 +3555,13 @@
 		labelDraw.length = 0;
 		for (let n of labelOrder) {
 			if (!labelForced(n)) placeLabel(n, ctx, globalScale, ox, oy, false);
+			// Off screen there is no verdict, so there is nothing to ease toward
+			// and nothing to paint -- see placeLabel(). The clock is still stamped,
+			// for the reason fadeLabel() stamps it on every frame.
+			if (n._labelOff) {
+				n._labelAt = labelClock;
+				continue;
+			}
 			fadeLabel(n);
 			// Gathered here rather than walked for again at paint time: this
 			// loop is over the whole graph, and the list it builds is the few
@@ -3408,6 +3590,7 @@
 	 */
 	function placeLabel(node, ctx, globalScale, ox, oy, force) {
 		node._labelWant = 0;
+		node._labelOff = false;
 		if (!node.label) return;
 		// Outside references, when the panel says to hide their names.
 		// Here rather than by clearing n.label in render(): the label is what the
@@ -3418,7 +3601,7 @@
 		// It holds for a hovered or picked ghost too, which are otherwise forced.
 		// A setting that says don't draw these names has to mean it, and a ghost
 		// under the pointer is already answering with its tooltip.
-		if (node.ghost && elHideGhostNames.checked) return;
+		if (node.ghost && labelHideGhosts) return;
 		// Dimmed nodes lose their label entirely rather than fading it -- see
 		// drawLabel -- so they must not take up room either.
 		if (dimmed(node)) return;
@@ -3429,9 +3612,14 @@
 		let boxY = m.px * LABEL_INK / 2 + LABEL_PAD;
 		// Off screen: no verdict at all. Not "hidden" -- a node scrolled back
 		// into view must not have to earn its name a second time by fading in.
-		let w = elGraph.clientWidth;
-		let h = elGraph.clientHeight;
-		if (x + box < 0 || x - box > w || y + boxY < 0 || y - boxY > h) return;
+		// Flagged rather than left at want 0, which is what it used to be: the
+		// fade read that as "hide", so a pan faded every name it carried off the
+		// edge and faded them all back in on the way home -- painting the
+		// off-screen ones for the length of the fade, too.
+		if (x + box < 0 || x - box > labelViewW || y + boxY < 0 || y - boxY > labelViewH) {
+			node._labelOff = true;
+			return;
+		}
 		if (force) {
 			labelPass.claim(x - box, y - boxY, x + box, y + boxY);
 			node._labelWant = 1;
@@ -3562,40 +3750,31 @@
 
 	let edgeCarrier = null;     // the link whose canvas object draws the frame
 	let arrowScale = 1;         // the zoom, for the pass that is not handed it
-	let frameCtx = null;        // the visible canvas's context, this frame
 
 	const edgeRuns = new Map();  // colour -> the links wearing it, kept between frames
-	const EDGE_HIT = 3;          // extra screen px of edge that still counts as a hover
 	let runCtx = null;           // what fillRun draws into, since forEach hands it nothing
 	let runScale = 1;
 
+	/**
+	 * What the hit-test canvas draws for an edge: force-graph's own stroke in
+	 * the edge's id colour, or -- with the tooltips off -- nothing at all.
+	 *
+	 * That canvas is how force-graph finds what the pointer is over, and it is
+	 * a separate graph of its own: linkCanvasObject never reaches it, which is
+	 * why the page's old attempt at this, a branch at the top of drawEdge(),
+	 * never once ran. linkPointerAreaPaint is the one prop that does. Nothing in
+	 * the page asks which edge is under the pointer except the tooltip, so with
+	 * that off the edges are a stroke per link, redrawn every 800ms while the
+	 * graph moves, for an answer nobody reads. A painter that paints nothing,
+	 * in force-graph's default 'replace' mode, is how they are left out.
+	 */
+	function edgeHitArea() {
+		return edgeTips ? null : noEdgeHit;
+	}
+
+	function noEdgeHit() {}
+
 	function drawEdge(link, ctx, globalScale) {
-		// The hit-test canvas, where force-graph paints ids as colours to find
-		// what the pointer is over. linkLabel hangs a tooltip off that, so an
-		// edge has to be findable -- but nothing there is ever looked at, so a
-		// plain stroke in the id colour will do, and each link draws its own.
-		if (ctx !== frameCtx) {
-			// With the tooltips off nothing in the page asks what edge the
-			// pointer is over -- no click, no hover highlight, only the label --
-			// so this whole pass is a stroke per link per frame for an answer
-			// nobody reads. Leaving the edges out of the hit-test canvas is what
-			// makes the switch cost nothing rather than merely hide a tooltip.
-			if (!edgeTips) return;
-			if (!link.__indexColor) return;
-			let a = link.source;
-			let b = link.target;
-			if (!a || !b || !a.hasOwnProperty('x') || !b.hasOwnProperty('x')) return;
-			let cp = link.__controlPoints;
-			ctx.beginPath();
-			ctx.moveTo(a.x, a.y);
-			if (!cp) ctx.lineTo(b.x, b.y);
-			else if (cp.length === 2) ctx.quadraticCurveTo(cp[0], cp[1], b.x, b.y);
-			else ctx.bezierCurveTo(cp[0], cp[1], cp[2], cp[3], b.x, b.y);
-			ctx.strokeStyle = link.__indexColor;
-			ctx.lineWidth = (linkWidth(link) + EDGE_HIT) / globalScale;
-			ctx.stroke();
-			return;
-		}
 		// One link does the frame, and the rest of the calls cost a comparison.
 		if (link !== edgeCarrier) return;
 		let links = fg.graphData().links;
@@ -4532,13 +4711,28 @@
 	let pressNode = null;
 
 	// A new press means the last one is spent, whatever became of its release.
-	window.addEventListener('pointerdown', () => {
+	// Capture on window, so this runs ahead of d3's own drag start -- which
+	// fixes the node's coordinates on this very press, not 5px later.
+	function notePress() {
 		menuPress = false;
-		// Capture on window, so this runs ahead of d3's own drag start -- which
-		// fixes the node's coordinates on this very press, not 5px later.
 		pressNode = hoverNode || null;
 		pressPinned = hoverNode && isPinned(hoverNode) ? hoverNode : null;
-	}, true);
+		// A press that lands while a settle has the graph frozen would otherwise
+		// pin the node for good. force-graph's drag start records the fx/fy it
+		// finds as where the node "was" fixed, and on release puts back only an
+		// fx that was undefined -- so it took the freeze for a pin. thaw() then
+		// dropped the node from `frozen`, leaving nothing to say it was ever
+		// anything else: the node stayed nailed where it was let go, badge and
+		// boosted links included. Measured: grabbing a second node straight
+		// after dropping the first did this every time. The pressed node leaves
+		// the freeze here, before d3 can read it; the rest of the settle runs on.
+		if (pressNode && frozen.delete(pressNode)) {
+			delete pressNode.fx;
+			delete pressNode.fy;
+		}
+	}
+
+	window.addEventListener('pointerdown', notePress, true);
 
 	window.addEventListener('mouseup', (e) => {
 		if (e.button === 0) endDrag();
@@ -6107,7 +6301,27 @@
 		else syncPending();
 	});
 
-	elMinConf.addEventListener('input', render);
+	/**
+	 * render(), at most once a frame.
+	 *
+	 * For the two sliders that filter the graph. A range input fires `input`
+	 * for every step the thumb crosses, and a fast drag crosses several between
+	 * two frames -- each of which was a whole render, and, since a filter
+	 * changes which edges are drawn, a graphData() that re-anneals the layout.
+	 * Only the last of them was ever going to be seen.
+	 */
+	let renderQueued = false;
+
+	function renderSoon() {
+		if (renderQueued) return;
+		renderQueued = true;
+		requestAnimationFrame(() => {
+			renderQueued = false;
+			render();
+		});
+	}
+
+	elMinConf.addEventListener('input', renderSoon);
 	// Pure layout: no node or edge changes, so this reheats rather than renders.
 	elLinkPull.addEventListener('input', () => {
 		applyLinkPull();
@@ -6160,7 +6374,7 @@
 		}
 		catch (e) { /* no persistence, no problem */ }
 	});
-	elMinCites.addEventListener('input', render);
+	elMinCites.addEventListener('input', renderSoon);
 	// Paint, not data: the graph only has to be recoloured and its legend
 	// rebuilt. Going through render() would hand force-graph the same nodes and
 	// edges back and re-anneal the layout, moving every node on screen to
@@ -6262,7 +6476,8 @@
 	 *
 	 * A repaint for the hit-test canvas's sake, not the picture's: nothing
 	 * visible changes, but the shadow pass has to run again for the edges to
-	 * start or stop being findable. No colour goes stale, so colorGen stands.
+	 * start or stop being findable -- see edgeHitArea(). No colour goes stale,
+	 * so colorGen stands.
 	 */
 	elEdgeTips.addEventListener('change', () => {
 		edgeTips = elEdgeTips.checked;
@@ -6270,6 +6485,7 @@
 			window.localStorage.setItem(EDGE_TIPS_KEY, edgeTips ? '1' : '0');
 		}
 		catch (e) { /* see setCollapsed */ }
+		if (fg) fg.linkPointerAreaPaint(edgeHitArea());
 		repaint();
 	});
 
@@ -6340,9 +6556,20 @@
 	 * column changing under it leaves it drawing at the old width -- the nodes
 	 * stay put and the canvas is simply the wrong shape. The window's own
 	 * resize listener does not fire for this: nothing about the window changed.
+	 *
+	 * Only what moved is set, and that is not tidiness. force-graph runs its
+	 * resize on every set of either prop, changed or not, and the resize writes
+	 * width and height onto the visible canvas AND the hit-test one -- each
+	 * write throws the bitmap away and allocates a new one. Unguarded, every
+	 * render() reallocated both canvases four times over: every step of a
+	 * slider, every build phase landing, every pointermove of a sidebar drag.
 	 */
 	function remeasure() {
-		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
+		if (!fg) return;
+		let w = elGraph.clientWidth;
+		let h = elGraph.clientHeight;
+		if (w !== fg.width()) fg.width(w);
+		if (h !== fg.height()) fg.height(h);
 	}
 
 	/**
@@ -6435,7 +6662,8 @@
 
 		let move = (ev) => {
 			// Live, so the graph reflows under the hand rather than jumping
-			// when it is let go. remeasure() is cheap: it sets two numbers.
+			// when it is let go. Only the width moves here, so remeasure() leaves
+			// the height alone and reallocates each canvas once, not twice.
 			setSideWidth(startW + (ev.clientX - startX));
 			remeasure();
 		};
@@ -7000,7 +7228,7 @@
 	});
 
 	window.addEventListener('resize', () => {
-		if (fg) fg.width(elGraph.clientWidth).height(elGraph.clientHeight);
+		remeasure();
 		// All of these were positioned against the viewport they opened in.
 		hideMenu();
 		hideAction();
