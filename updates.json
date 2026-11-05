@@ -3,8 +3,8 @@
 		"zotero-citation-graph@jajaho.dev": {
 			"updates": [
 				{
-					"version": "0.73.3",
-					"update_link": "https://github.com/Jajaho/zotero-citation-graph/releases/download/v0.73.3/zotero-citation-graph-0.73.3.xpi",
+					"version": "0.74.0",
+					"update_link": "https://github.com/Jajaho/zotero-citation-graph/releases/download/v0.74.0/zotero-citation-graph-0.74.0.xpi",
 					"applications": {
 						"zotero": {
 							"strict_min_version": "10.0.0",

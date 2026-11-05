@@ -36,6 +36,7 @@ Scholarship. "Zotero" appears in the name only to say what this works with.
 | 18 | The gap list: what the collection cites and does not hold, ranked | built |
 | 19 | One `group pull` for every anchor; the pin drawn as a pin, and a `pin pull` towards pinned nodes | built |
 | 20 | A second entry point: the item menu, graphing the selected items | built |
+| 21 | Settings belong to the tab: the panel, filters, groups and pins survive a restart | built |
 
 Steps 4–7 are statically verified (`npm test`) but **not yet confirmed against a real collection
 in a running Zotero**. The number to check them against is the CLI's: run `tools/cli.js` over the
@@ -318,8 +319,9 @@ Only one control has no meaning over a selection: **Subcollections**. A pick of 
 subtree, so the switch is hidden rather than left doing nothing, and the empty card never offers
 *Include subcollections*. Everything else — outside refs, the lookup, OpenAlex references, the
 strategy toggles, confidence, the physics, isolation, groups, search, the item pane, *what is
-missing* — is scope-blind and applies unchanged. The `zg.*` settings in `localStorage` were
-always facts about the screen rather than about a collection, so they carry across too.
+missing* — is scope-blind and applies unchanged. Settings belong to the tab, not to what it
+graphs (see *Settings belong to the tab*), so a selection tab keeps them exactly as a collection
+tab does.
 
 **Colour by collection** reads better than before. Over a collection it means "which in-scope
 subcollection"; over a selection it means **every collection in the library that holds the
@@ -496,9 +498,9 @@ it fails silently, so `npm test` holds it.
 
 **The sidebar's width is dragged, not split.** There is no `<splitter>` in an HTML document,
 which is exactly why the reader carries a resizer of its own; this does the same with pointer
-events, clamped between core's own 200px collections-pane floor and 420px, and remembers the
-width and the open state in `localStorage` beside the collapse, pull and depth keys — all of
-them facts about this screen rather than about this collection. The canvas is re-measured on
+events, clamped between core's own 200px collections-pane floor and 420px. The width and the
+open state are kept with the tab's other settings, and a new tab opens with the last ones used
+(see *Settings belong to the tab*). The canvas is re-measured on
 every change, because `force-graph` is told its size in pixels rather than reading it, and a grid
 column changing under it is not something the window's `resize` event fires for.
 
@@ -531,10 +533,52 @@ Payloads arrive without a rebuild — a lookup, a paper adopted into the graph �
 the options *that* build was made with, which would quietly untick what the user had just asked
 for.
 
-The switch is remembered in `localStorage` as `zg.autobuild`, beside the pull, depth and
-collapse keys, and for the same reason: how long your builds run and how many options you change
-at once is a fact about how you work, not about any one collection. Turning it back **on** while
-something is pending builds at once — it is a request to be up to date.
+The switch is kept with the tab, and a new tab opens with the last answer given (`zg.autobuild`
+in `localStorage`): how long your builds run and how many options you change at once is a fact
+about how you work, not about any one collection. Turning it back **on** while something is
+pending builds at once — it is a request to be up to date.
+
+## Settings belong to the tab
+
+Every setting in the panel — the collapsed sections, the sidebar's width and open state, the
+physics and energy sliders, performance mode, Autobuild, the display switches, *size* and
+*colour*, isolation depth — and the graph's own filters, strategy toggles, confidence and
+*cited by ≥*, its groups and its pins, are the **tab's**. Two tabs of one collection can be set up
+two different ways, a restart brings each back as it was left, and closing a tab throws its
+settings away with it, as closing a tab does.
+
+**How it is stored.** The page sends its whole view — `snapshotView()` in `graph.js`, one plain,
+versioned object — as a `view` message 300ms after the last change. Chrome keeps it on the tab
+entry and writes it into `tab.data.view` through `Zotero_Tabs.setTabData()`, beside the scope
+options and item keys already there, so it reaches `session.json` by the same road (see *What
+survives a restart* under the design notes). The scope options are deliberately not in the view:
+chrome already keeps them with the tab as the options the graph was built with.
+
+**How it comes back.** `ready()` pushes `zgSetView` once the bridge is up and before the first
+build, so the first render already has the tab's filters, groups and pins. `applyView()` checks
+every field and leaves a control alone if its field is missing or malformed. A pin whose node is
+not drawn yet waits in `pendingPins` until `newNode()` first meets that id — outside references
+only arrive with the OpenAlex pass — and is saved back as it was until then.
+
+**The page stays quiet until chrome has spoken.** Nothing is reported before `zgSetView` has
+arrived (`viewKnown`): a page that reported first would hand a restored tab the last-used settings
+it was loaded with, over the ones it was saved with. And it answers `zgSetView` straight away,
+saved view or not, so a new tab — or one saved before this existed — keeps the settings it opened
+with rather than following whatever some other tab touches next.
+
+**A new tab opens with the last values used.** The `zg.*` keys in `localStorage` survive as
+exactly that: written only by a user's gesture (`remember()`), read only at page load. That is
+why `setCollapsed()` and `setSideOpen()` no longer write anything themselves — restoring a tab and
+re-wording a tooltip both run them, and neither is anyone choosing a setting. The graph's own
+filters, strategy toggles, confidence, *cited by ≥*, groups and pins are not seeded: they are
+about one graph's papers, and a new tab starts without them. The scope options start at their
+defaults, for the reasons given under *Outside references*.
+
+**Not stored, on purpose:** the zoom, a search, an isolation and the pick. They are where the
+reader happens to be looking, not how the graph is set up, and a tab that came back isolated on
+one paper would look broken rather than remembered. Nor is the width of the item pane beside the
+graph, which chrome's splitter keeps in the `paneWidth` pref (`splitPane.js`), or the Quick Search
+mode, which is core's own pref.
 
 ## Reading the graph
 
@@ -747,8 +791,8 @@ at a time, and it tests the floor before it ticks — so a layout that had come 
 rest was stopped again on the very frame the drag restarted it, and the node
 moved with not one neighbour answering.
 
-All seven are remembered across windows, like `isolation depth`: they are settings
-about this screen rather than about this graph. None reaches the simulation
+All seven are kept with the tab, and a new tab opens with the last values used —
+see *Settings belong to the tab*. None reaches the simulation
 through a rebuild — `edge pull` and `pin pull` both reinstall the link force's
 strength function, since d3 evaluates those once and caches them, `centre pull` is
 read live on every tick, and `group pull` goes through the pass that recomputes
@@ -937,9 +981,9 @@ and at least one of them reached before the last step out. Without that second
 condition a two-step isolation of a dense cluster would light every edge among
 the fringe as well and come back looking like the whole graph. At zero there is
 no step out for that rule to talk about, so both ends lit is the whole test and
-a link between two isolated nodes stays lit. The setting is remembered across
-windows, like `edge pull`: someone who reads their graph two steps out reads
-every graph two steps out.
+a link between two isolated nodes stays lit. The setting is kept with the tab,
+and a new tab opens with the last depth used, like `edge pull`: someone who
+reads their graph two steps out reads every graph two steps out.
 
 **Pinning** holds a node where you dragged it. Drag it into place, right-click,
 `Pin node here`; the pin itself appears over the node's upper-right shoulder and
@@ -1491,11 +1535,13 @@ tools/
   `select()` holds `ZoteroContextPane`'s loading cover over the tab until it settles. And `graph` is
   deliberately **not** pushed into core's `_loadableTypes`: that list is what `unloadUnusedTabs()`
   reads, and a built graph must not be discarded after a day unselected.
-- **What survives a restart is the scope, and nothing derived.**
+- **What survives a restart is the scope and the settings, and nothing derived.**
   `Zotero_Tabs.getState()` serialises `tab.data` wholesale into `session.json`, so `tabData()` is the
   persisted form: `libraryID`, `collectionKey` (null for a selection made outside a collection),
-  `itemKeys` (null for a collection graph), `icon`, and the scope options, written back through
-  `Zotero_Tabs.setTabData()` whenever they change. See *Graphing a selection*. Edges and layout are **not** stored — a
+  `itemKeys` (null for a collection graph), `icon`, the scope options, and `view` — every setting on
+  the page — written back through `Zotero_Tabs.setTabData()` whenever they change. See *Graphing a
+  selection* and *Settings belong to the tab*. Edges and layout are **not** stored (pins are the
+  one exception: a pin is something the user placed, not something derived) — a
   graph blob has no honest invalidation key, whereas `pdfLinkCache` (the ~30s phase) and
   `metadataCache` already survive restarts invalidated per input, which leaves a warm rebuild at
   the ~1–2s of phase 1 plus the text strategies.

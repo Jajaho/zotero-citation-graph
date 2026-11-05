@@ -2331,10 +2331,13 @@ check('a graph tab reduces to what session.json can hold, and reads back', () =>
 	if (data.icon !== 'zotero-citation-graph') throw new Error('icon: ' + data.icon);
 	// Nothing derived: an edge list or a layout stored here would be reread
 	// stale, and is re-derived off the two caches far more cheaply than it
-	// could be invalidated honestly.
-	if (Object.keys(data).sort().join(',') !== 'collectionKey,icon,itemKeys,libraryID,options') {
+	// could be invalidated honestly. `view` is the page's settings, which are
+	// the user's rather than derived -- see the per-tab settings check.
+	if (Object.keys(data).sort().join(',') !== 'collectionKey,icon,itemKeys,libraryID,options,view') {
 		throw new Error('carries more than it should: ' + Object.keys(data).join(','));
 	}
+	// A new tab has no settings of its own until its page reports them.
+	if (data.view !== null) throw new Error('a new tab came with a view: ' + JSON.stringify(data.view));
 	if (JSON.stringify(restoreOptions(data)) !== JSON.stringify(options)) {
 		throw new Error('scope did not survive: ' + JSON.stringify(restoreOptions(data)));
 	}
@@ -2342,6 +2345,110 @@ check('a graph tab reduces to what session.json can hold, and reads back', () =>
 	// silently rewrite what the last save recorded.
 	options.recursive = false;
 	if (!restoreOptions(data).recursive) throw new Error('the stored scope aliases the live one');
+});
+
+/**
+ * Settings belong to the tab (#4). The page's whole view goes into tab.data and
+ * comes back through zgSetView, so a field the page saves but never reads back
+ * is a setting that silently resets at every restart -- the bug this exists to
+ * fix, reintroduced one control at a time. Read off the source, because the
+ * page needs a DOM to run.
+ */
+check('every setting the page saves with its tab, it reads back', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const body = (sig) => {
+		const from = js.indexOf(sig);
+		if (from < 0) throw new Error(sig + ' is gone');
+		// One tab in is where a function of the page's IIFE closes.
+		return js.slice(from, js.indexOf('\n\t}\n', from));
+	};
+	const snap = body('function snapshotView() {');
+	const literal = snap.slice(snap.indexOf('return {'));
+	// Three tabs in is a key of the returned object; continuation lines are deeper.
+	const keys = [...literal.matchAll(/^\t\t\t([A-Za-z]+)\b(?=[:,])/gm)].map(m => m[1]);
+	if (keys.length < 20) throw new Error('read only ' + keys.length + ' keys out of snapshotView()');
+	const apply = body('function applyView(view) {');
+	// `v` is the format's version, read by nobody yet.
+	const unread = keys.filter(k => k !== 'v' && !apply.includes('view.' + k));
+	if (unread.length) throw new Error('saved but never restored: ' + unread.join(', '));
+	// And the other way: a field restored that is never saved can only ever
+	// come back as whatever an older build wrote.
+	const saved = new Set(keys);
+	const unsaved = [...new Set([...apply.matchAll(/\bview\.([A-Za-z]+)/g)].map(m => m[1]))]
+		.filter(k => !saved.has(k));
+	if (unsaved.length) throw new Error('restored but never saved: ' + unsaved.join(', '));
+});
+
+/**
+ * A restored view sets state that a gesture would have set, so it owes what
+ * the gesture's handler pays. Three of those were missed when per-tab settings
+ * met the 0.73 audit, and each is silent: new strategy switches that the
+ * cluster memo never hears of (believedSig() is keyed on viaGen), an
+ * edge-tips switch the hit-test canvas does not follow, and a restored pin
+ * that a running settle frees when it lifts its freeze.
+ */
+check('a restored view pays what the controls it sets would have', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const lines = js.split('\n');
+	lines.forEach((l, i) => {
+		if (!/\bdisabledVia(\s*=[^=]|\.(add|delete|clear)\()/.test(l) || /\blet disabledVia\b/.test(l)) return;
+		if (!lines.slice(i, i + 5).some(x => /\bviaGen\+\+/.test(x))) {
+			throw new Error('line ' + (i + 1) + ' changes the strategy switches without bumping viaGen: ' + l.trim());
+		}
+	});
+	const from = js.indexOf('function applyView(view) {');
+	if (from < 0) throw new Error('applyView is gone');
+	const apply = js.slice(from, js.indexOf('\n\t}\n', from));
+	if (!/edgeTips = view\.edgeTips;[\s\S]{0,200}linkPointerAreaPaint\(edgeHitArea\(\)\)/.test(apply)) {
+		throw new Error('a restored edge-tips switch leaves the hit-test canvas as it was');
+	}
+	if (!/frozen\.delete\(n\);\s*n\.x = n\.fx = p\.x;/.test(apply)) {
+		throw new Error('a restored pin can be freed by the settle it lands in');
+	}
+});
+
+/**
+ * localStorage is now only what a NEW tab opens with: the last value the user
+ * gave a control. So restoring a tab must write nothing there -- otherwise
+ * merely selecting an old tab would change how the next new one opens -- and
+ * the setters a restore runs must not write either. The tooltip refresh runs
+ * the same two setters, for the same reason.
+ */
+check('restoring a tab does not rewrite what a new tab opens with', () => {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	for (const sig of ['function setCollapsed(name, on) {', 'function setSideOpen(on) {',
+		'function setSideWidth(px) {', 'function applyView(view) {']) {
+		const from = js.indexOf(sig);
+		if (from < 0) throw new Error(sig + ' is gone');
+		const fn = js.slice(from, js.indexOf('\n\t}\n', from));
+		if (/localStorage|remember\(/.test(fn)) throw new Error(sig + ' writes the last-used values');
+	}
+	// And nothing is reported until chrome has said which view the tab has.
+	const from = js.indexOf('function viewChanged() {');
+	if (from < 0 || !js.slice(from, from + 120).includes('if (!viewKnown) return;')) {
+		throw new Error('viewChanged() reports before zgSetView has arrived');
+	}
+});
+
+check('chrome hands the page its settings before the build, and keeps what comes back', () => {
+	const src = fs.readFileSync(path.join(addonDir, 'lib/graphTab.js'), 'utf8');
+	const { restoreView } = require_('./lib/graphTab.js');
+	// After the listener, so the page's answer is heard.
+	const ready = src.slice(src.indexOf('async function ready('), src.indexOf('\n}\n', src.indexOf('async function ready(')));
+	const listen = ready.indexOf("cw.addEventListener('zg-event'");
+	const push = ready.indexOf("send(entry, 'zgSetView'");
+	if (listen < 0 || push < 0 || push < listen) throw new Error('zgSetView is not sent after the listener is up');
+	if (!/case 'view': \{[\s\S]{0,200}entry\.view = msg\.view;[\s\S]{0,40}saveTabData\(entry\);/.test(src)) {
+		throw new Error("a 'view' message is not stored and saved");
+	}
+	const save = src.slice(src.indexOf('function saveTabData('), src.indexOf('\n}\n', src.indexOf('function saveTabData(')));
+	if (!save.includes('view: entry.view')) throw new Error('saveTabData() does not write the view');
+
+	const view = { v: 1, linkPull: 0.5 };
+	if (restoreView({ view }) !== view) throw new Error('a saved view does not come back');
+	for (const data of [null, {}, { view: null }, { view: [1] }, { view: 'x' }]) {
+		if (restoreView(data) !== null) throw new Error('restoreView(' + JSON.stringify(data) + ') is not null');
+	}
 });
 
 check('a selection graph persists its pick, and anchors itself where it can', () => {

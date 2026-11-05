@@ -163,18 +163,24 @@ function isSelection(scope) {
  * What a graph tab is, reduced to what has to survive a restart.
  *
  * Zotero_Tabs.getState() serialises tab.data wholesale into session.json, so
- * this IS the persisted form: where the graph is, what it is of, and the scope
- * options the user set. Everything else about a graph -- its edges, its layout,
- * its names -- is derived, and re-derived far more cheaply than it could be
- * stored honestly. See pdfLinkCache.js and metadataCache.js, which are where the
- * expensive phases already survive a restart, invalidated per input rather than
+ * this IS the persisted form: where the graph is, what it is of, the scope
+ * options the user set, and `view` -- every setting on the page, its filters,
+ * groups and pins, as content/graph.js reports them (see zgSetView there).
+ * Settings belong to the tab rather than to the collection, so two tabs of one
+ * collection can be set up two ways, and closing a tab is discarding it.
+ * Everything else about a graph -- its edges, its layout, its names -- is
+ * derived, and re-derived far more cheaply than it could be stored honestly.
+ * See pdfLinkCache.js and metadataCache.js, which are where the expensive
+ * phases already survive a restart, invalidated per input rather than
  * wholesale.
  *
  * `itemKeys: null` is what says "a collection graph", which is exactly the
  * shape every tab written before selections existed already has -- so old
  * session data restores unchanged, with no migration and no version stamp.
+ * The same goes for `view`: a tab without one opens on the last-used settings,
+ * exactly as a new tab does, and has a view of its own from then on.
  */
-function tabData(scope, options) {
+function tabData(scope, options, view) {
 	return {
 		collectionKey: scope.collection ? scope.collection.key : null,
 		libraryID: scope.libraryID,
@@ -186,7 +192,15 @@ function tabData(scope, options) {
 		// stylesheet main.js injects paints. See TAB_ICON_CSS there.
 		icon: 'zotero-citation-graph',
 		options: { ...options },
+		view: view || null,
 	};
+}
+
+/** The settings a restored tab was saved with, or null for none. Handed to
+ *  the page as they are: graph.js checks every field on the way in. */
+function restoreView(data) {
+	let view = data && data.view;
+	return view && typeof view === 'object' && !Array.isArray(view) ? view : null;
 }
 
 /**
@@ -393,7 +407,7 @@ function openScope(win, scope, options, config) {
 	});
 
 	trace.log(`opened a graph tab for ${scopeSummary(scope)}  strip=[${stripSummary(win)}]`);
-	mount(win, id, container, scope, config, options)
+	mount(win, id, container, scope, config, options, null)
 		.catch(e => Zotero.logError(e));
 }
 
@@ -558,7 +572,7 @@ async function load(win, tab, config) {
 		if (!container || container.querySelector('.zg-split')) return;
 
 		await Promise.race([
-			mount(win, tab.id, container, scope, config, restoreOptions(tab.data)),
+			mount(win, tab.id, container, scope, config, restoreOptions(tab.data), restoreView(tab.data)),
 			// A page that never fires DOMContentLoaded must not leave the
 			// loading cover over the tab for the rest of the session.
 			Zotero.Promise.delay(15000),
@@ -659,7 +673,7 @@ function finishScope(data, collection) {
  * @returns {Promise} resolved when the chrome<->content bridge is up. The build
  *          runs on after that, deliberately unawaited -- see load().
  */
-function mount(win, tabID, container, scope, config, options) {
+function mount(win, tabID, container, scope, config, options, view) {
 	// The graph goes inside a horizontal box rather than straight into the tab
 	// container, because splitPane.js appends a splitter and the side panel
 	// beside it.
@@ -694,6 +708,9 @@ function mount(win, tabID, container, scope, config, options) {
 		itemPane: null,
 		generation: 0,
 		options,
+		// Every setting on the page, as it last reported them -- see tabData().
+		// Null until the page has said, for a tab that was saved without one.
+		view,
 		built: null,
 		building: false,
 		// The nodes the user has pointed at, as item IDs. Empty until the
@@ -765,6 +782,13 @@ async function ready(win, tabID, cw, scope) {
 		}
 		handleMessage(win, tabID, scope, msg).catch(e => Zotero.logError(e));
 	});
+
+	// The tab's own settings, after the listener rather than with the strings
+	// above: the page answers this with a 'view' message, and until it has had
+	// this it reports nothing at all. Before the build, so the first render is
+	// already the tab's -- its filters, its groups, its pins.
+	entry = open_.get(tabID);
+	if (entry) send(entry, 'zgSetView', entry.view || null);
 }
 
 /**
@@ -803,6 +827,15 @@ async function handleMessage(win, tabID, scope, msg) {
 			// running and will pick the option up itself.
 			if (!entry.built || entry.building) await runBuild(tabID);
 			else await runLookup(tabID);
+			break;
+		}
+		// The page's settings changed -- see snapshotView() in graph.js. Kept
+		// whole: the page always sends all of it, so there is nothing to merge.
+		case 'view': {
+			let entry = open_.get(tabID);
+			if (!entry || !msg.view || typeof msg.view !== 'object') break;
+			entry.view = msg.view;
+			saveTabData(entry);
 			break;
 		}
 		case 'add-item':
@@ -1825,7 +1858,7 @@ function retitle(entry, count) {
 }
 
 /**
- * Write the tab's scope back to where a restart can read it.
+ * Write the tab's scope and settings back to where a restart can read it.
  *
  * Zotero_Tabs.setTabData merges into tab.data and debounces a session save;
  * the save at quit reads the live tab strip regardless, so this is about the
@@ -1841,6 +1874,9 @@ function saveTabData(entry) {
 			// at open -- otherwise a restored tab would go on asking for a paper
 			// that no longer exists at every restart.
 			itemKeys: entry.scope.itemKeys ? [...entry.scope.itemKeys] : null,
+			// Null until the page has reported, which leaves what a restored
+			// tab came back with in place rather than wiping it.
+			...(entry.view ? { view: entry.view } : null),
 		});
 	}
 	catch (e) {
@@ -2151,7 +2187,7 @@ module.exports = {
 	ghostKeysOf, describeNode, consolidateRefs,
 	// Exported for the restore tests: what a graph tab is once reduced to what
 	// session.json can hold, and how that reads back.
-	tabData, restoreOptions, emptyReason, tabTitle,
+	tabData, restoreOptions, restoreView, emptyReason, tabTitle,
 	// Exported for the scope tests: the two kinds of thing a graph can be of.
 	collectionScope, selectionScope, isSelection,
 	// Exported for the payload test: what a lookup pass may and may not change

@@ -56,6 +56,13 @@
 	// Graph Physics holding two of them changes nothing about any of it.
 	const SECTIONS = ['items', 'strategies', 'physics', 'forces', 'energy', 'display'];
 
+	// The keys below are what a NEW graph tab opens with: the last value the
+	// user gave each control, in whichever tab they gave it. Nothing reads them
+	// after that. Each tab keeps its own copy of every setting in its session
+	// data and gets it back through zgSetView() -- see "the tab's own view"
+	// further down -- so a tab restored after a restart is the tab it was, not
+	// the one most recently touched.
+	//
 	// Whether a section was left collapsed, remembered across openings, one
 	// answer per section: putting the forces away is not putting the strategies
 	// away, and a single flag for the lot could not say so.
@@ -122,6 +129,11 @@
 	 *  by default, like the colours, so only a stored no takes the tooltips
 	 *  away -- an unreadable store leaves the graph answering questions. */
 	const EDGE_TIPS_KEY = 'zg.edges.tips';
+	/** And what a node's size and colour say. Not remembered at all until each
+	 *  tab kept its own settings; now a new tab opens with the last ones used,
+	 *  like everything above. */
+	const SIZE_BY_KEY = 'zg.size.by';
+	const COLOR_BY_KEY = 'zg.color.by';
 	/** Whether the sidebar is showing, and how wide it was left. Both are facts
 	 *  about this screen rather than about this collection, which is why they
 	 *  live here beside the rest and not in a Zotero pref. */
@@ -180,6 +192,19 @@
 	// Whether the cited-by threshold has already been fitted to the size of this
 	// graph. See applyScope(): it is a one-time correction, not a policy.
 	let citesClamped = false;
+	// Pins a restored tab came back with, for nodes not drawn yet: node id ->
+	// { x, y }. A pin is taken out of here by newNode() the first time its node
+	// appears, which may be several build phases in -- outside references only
+	// arrive with the OpenAlex pass.
+	let pendingPins = new Map();
+	// Whether chrome has said which settings this tab has. Until it has, the
+	// page reports none back: a page that spoke first would hand the tab the
+	// last-used settings it opened with, over the ones it was saved with. See
+	// zgSetView().
+	let viewKnown = false;
+	let viewTimer = null;
+	// The sidebar's width in px, or null while it is the stylesheet's own.
+	let sideWidth = null;
 	// The citation count that maps to the largest node: the 95th percentile of
 	// what is on screen, not the maximum. Recomputed every render, because
 	// filtering the graph should rescale it.
@@ -809,6 +834,8 @@
 		if (was && was.fx != null) n.fx = was.fx;
 		if (was && was.fy != null) n.fy = was.fy;
 		nodeCache.set(adopted.now, n);
+		// The tab's saved pins name the ghost's key, which no longer exists.
+		if (isPinned(n)) viewChanged();
 		return true;
 	}
 
@@ -1634,6 +1661,7 @@
 				else disabledVia.add(via);
 				viaGen++;
 				render();
+				viewChanged();
 			});
 			let dot = document.createElement('span');
 			dot.className = 'dot';
@@ -2185,10 +2213,31 @@
 		candidates: skip => masked(skip).facets,
 		// These masks decide what is on screen at all, so a change to them is a
 		// change to the graph itself.
-		onChange: render,
+		onChange: () => {
+			render();
+			viewChanged();
+		},
 	});
 
 	// --- rendering --------------------------------------------------------
+
+	/**
+	 * A node seen for the first time, put in the cache. If the tab came back
+	 * with a pin for it, it starts out pinned in place instead of near the
+	 * origin. The layout then forms around the pins the way it did when they
+	 * were set.
+	 */
+	function newNode(id) {
+		let n = { id };
+		let at = pendingPins.get(id);
+		if (at) {
+			pendingPins.delete(id);
+			n.x = n.fx = at.x;
+			n.y = n.fy = at.y;
+		}
+		nodeCache.set(id, n);
+		return n;
+	}
 
 	function render() {
 		if (!raw) return;
@@ -2268,8 +2317,7 @@
 			let deg = (inDegree[it.key] || 0) + (outDegree[it.key] || 0);
 			if (elHideIsolated.checked && !deg) continue;
 			facetCache.set(it.key, heldFacets[i]);
-			let n = nodeCache.get(it.key);
-			if (!n) nodeCache.set(it.key, n = { id: it.key });
+			let n = nodeCache.get(it.key) || newNode(it.key);
 			n.ghost = false;
 			n.name = it.title;
 			n.itemID = it.itemID;
@@ -2287,8 +2335,7 @@
 			nodes.push(n);
 		}
 		for (let [key, { x, cites }] of visibleGhosts) {
-			let n = nodeCache.get(key);
-			if (!n) nodeCache.set(key, n = { id: key });
+			let n = nodeCache.get(key) || newNode(key);
 			n.ghost = true;
 			n.name = x.id;
 			n.itemID = null;
@@ -2407,6 +2454,10 @@
 			fg.onNodeDragEnd((n) => {
 				dragNode = null;
 				undamp();
+				// Dragging a pinned node moves its pin. Told for every drop
+				// rather than worked out here: the snapshot is taken after the
+				// drop has settled, and an unpinned drop changes nothing in it.
+				viewChanged();
 				// A drop that ends in the menu is not a drop: the node is held
 				// where it was put for as long as the menu is up, and settling
 				// the graph under it would move the thing being asked about.
@@ -4816,6 +4867,7 @@
 			n.fx = n.x;
 			n.fy = n.y;
 		}
+		viewChanged();
 		repaint();
 		// With the pin pull turned up this node's links have just become the
 		// strengthened ones, and d3 has the old prices cached. At 0 nothing
@@ -4836,6 +4888,7 @@
 			delete n.fx;
 			delete n.fy;
 		}
+		viewChanged();
 		repaint();
 		// Before the settle, not after: a settle fixes every free node in place
 		// for a couple of ticks, and re-pricing the links while it holds would
@@ -5193,6 +5246,11 @@
 	 * position, and this asks it to answer a force that was not there before.
 	 */
 	function groupsChanged() {
+		// Every change to an anchor the tab would save comes through here --
+		// named, re-masked, moved, removed, or pulled harder -- so this is
+		// where the tab is told. A flag just planted names nothing yet, and is
+		// not saved until it does.
+		viewChanged();
 		let before = groupOf;
 		assignGroups();
 		if (!fg) return;
@@ -6297,10 +6355,7 @@
 	 * to a switch that now says builds happen by themselves.
 	 */
 	elAutobuild.addEventListener('change', () => {
-		try {
-			window.localStorage.setItem(AUTOBUILD_KEY, elAutobuild.checked ? '1' : '0');
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(AUTOBUILD_KEY, elAutobuild.checked ? '1' : '0');
 		if (elAutobuild.checked && pending) rebuildNow();
 		else syncPending();
 	});
@@ -6325,60 +6380,49 @@
 		});
 	}
 
-	elMinConf.addEventListener('input', renderSoon);
+	// Confidence, like "cited by" further down and the strategy toggles and the
+	// chips, is saved with the tab and never made a new tab's starting point:
+	// it is about this graph's papers, not about how anyone likes to read a
+	// graph. Hence viewChanged() and not remember().
+	elMinConf.addEventListener('input', () => {
+		renderSoon();
+		viewChanged();
+	});
 	// Pure layout: no node or edge changes, so this reheats rather than renders.
 	elLinkPull.addEventListener('input', () => {
 		applyLinkPull();
-		try {
-			window.localStorage.setItem(PULL_KEY, elLinkPull.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(PULL_KEY, elLinkPull.value);
 	});
 	// Same again for the middle of the canvas: layout, not data.
 	elCenterPull.addEventListener('input', () => {
 		applyCenterPull();
-		try {
-			window.localStorage.setItem(CENTER_KEY, elCenterPull.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(CENTER_KEY, elCenterPull.value);
 	});
 	// And for the anchors, and for the pins.
 	elGroupPull.addEventListener('input', () => {
 		applyGroupPull();
-		try {
-			window.localStorage.setItem(GROUP_PULL_KEY, elGroupPull.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(GROUP_PULL_KEY, elGroupPull.value);
 	});
 	elPinPull.addEventListener('input', () => {
 		applyPinPull();
-		try {
-			window.localStorage.setItem(PIN_PULL_KEY, elPinPull.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(PIN_PULL_KEY, elPinPull.value);
 	});
 	elDragAlpha.addEventListener('input', () => {
 		applyDragAlpha();
-		try {
-			window.localStorage.setItem(DRAG_ALPHA_KEY, elDragAlpha.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(DRAG_ALPHA_KEY, elDragAlpha.value);
 	});
 	elHold.addEventListener('input', () => {
 		applyHold();
-		try {
-			window.localStorage.setItem(HOLD_KEY, elHold.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(HOLD_KEY, elHold.value);
 	});
 	elSettle.addEventListener('input', () => {
 		applySettle();
-		try {
-			window.localStorage.setItem(SETTLE_KEY, elSettle.value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		remember(SETTLE_KEY, elSettle.value);
 	});
-	elMinCites.addEventListener('input', renderSoon);
+	elMinCites.addEventListener('input', () => {
+		renderSoon();
+		viewChanged();
+	});
 	// Paint, not data: the graph only has to be recoloured and its legend
 	// rebuilt. Going through render() would hand force-graph the same nodes and
 	// edges back and re-anneal the layout, moving every node on screen to
@@ -6393,6 +6437,7 @@
 	// wearing its old colour, until the next rebuild.
 	elColorBy.addEventListener('change', () => {
 		colorMode = elColorBy.value;
+		remember(COLOR_BY_KEY, colorMode);
 		recoloured();
 		if (!fg) return;
 		renderLegend(drawnNodes);
@@ -6414,33 +6459,28 @@
 		// nothing (picking "global citations" before any counts have arrived)
 		// costs nothing.
 		render();
+		remember(SIZE_BY_KEY, elSizeBy.value);
 	});
 	/**
 	 * The whole mode, from one checkbox.
 	 *
 	 * Through zgPerf rather than by calling perfSet directly, so the panel goes
 	 * in by the same door chrome and the benchmark use and there is one place
-	 * where a switch can be turned. Remembered per screen: a laptop that needs
-	 * this needs it every time it opens a graph, and being asked again each
-	 * time is the whole cost of the feature paid twice.
+	 * where a switch can be turned. A new tab opens with the last answer given:
+	 * a laptop that needs this needs it every time it opens a graph, and being
+	 * asked again each time is the whole cost of the feature paid twice.
 	 */
 	function applyPerfMode() {
 		window.zgPerf(JSON.stringify(!!elPerf.checked));
 	}
 
 	elPerf.addEventListener('change', () => {
-		try {
-			window.localStorage.setItem(PERF_KEY, elPerf.checked ? '1' : '0');
-		}
-		catch (e) { /* see setCollapsed */ }
+		remember(PERF_KEY, elPerf.checked ? '1' : '0');
 		applyPerfMode();
 	});
 
 	elHideIsolated.addEventListener('change', () => {
-		try {
-			window.localStorage.setItem(HIDE_ISOLATED_KEY, elHideIsolated.checked ? '1' : '0');
-		}
-		catch (e) { /* see setCollapsed */ }
+		remember(HIDE_ISOLATED_KEY, elHideIsolated.checked ? '1' : '0');
 		render();
 	});
 
@@ -6453,11 +6493,11 @@
 	 * graph where the ghosts were crowding the papers out of their own names.
 	 */
 	elHideGhostNames.addEventListener('change', () => {
+		remember(HIDE_GHOST_NAMES_KEY, elHideGhostNames.checked ? '1' : '0');
 		try {
-			window.localStorage.setItem(HIDE_GHOST_NAMES_KEY, elHideGhostNames.checked ? '1' : '0');
 			window.localStorage.removeItem(GHOST_NAMES_KEY);
 		}
-		catch (e) { /* see setCollapsed */ }
+		catch (e) { /* see remember() */ }
 		repaint();
 	});
 
@@ -6467,10 +6507,7 @@
 	 */
 	elColorEdges.addEventListener('change', () => {
 		colorEdges = elColorEdges.checked;
-		try {
-			window.localStorage.setItem(COLOR_EDGES_KEY, colorEdges ? '1' : '0');
-		}
-		catch (e) { /* see setCollapsed */ }
+		remember(COLOR_EDGES_KEY, colorEdges ? '1' : '0');
 		colorGen++;
 		repaint();
 	});
@@ -6485,10 +6522,7 @@
 	 */
 	elEdgeTips.addEventListener('change', () => {
 		edgeTips = elEdgeTips.checked;
-		try {
-			window.localStorage.setItem(EDGE_TIPS_KEY, edgeTips ? '1' : '0');
-		}
-		catch (e) { /* see setCollapsed */ }
+		remember(EDGE_TIPS_KEY, edgeTips ? '1' : '0');
 		if (fg) fg.linkPointerAreaPaint(edgeHitArea());
 		repaint();
 	});
@@ -6513,12 +6547,9 @@
 
 	elIsolateDepth.addEventListener('input', () => {
 		applyIsolateDepth();
-		try {
-			// The clamped depth, not the box: what gets stored is what was acted
-			// on, so a reopened graph never shows a number it is not using.
-			window.localStorage.setItem(DEPTH_KEY, String(isolateDepth));
-		}
-		catch (e) { /* no persistence, no problem */ }
+		// The clamped depth, not the box: what gets stored is what was acted
+		// on, so a reopened graph never shows a number it is not using.
+		remember(DEPTH_KEY, String(isolateDepth));
 	});
 
 	// Typing is left alone until it is finished -- rewriting the box on every
@@ -6594,14 +6625,16 @@
 		elSideToggle.title = t(on ? 'side-toggle-hide' : 'side-toggle-show');
 		elSideToggle.setAttribute('aria-label', t(on ? 'side-toggle-hide' : 'side-toggle-show'));
 		remeasure();
-		try {
-			window.localStorage.setItem(SIDE_KEY, on ? '1' : '0');
-		}
-		catch (e) { /* no persistence, no problem */ }
 	}
 
+	// Remembered by the click and not by setSideOpen(), which also runs to
+	// restore a tab and to re-word the tooltip. Neither of those is the user
+	// choosing anything, and a new tab should not open the way some old tab
+	// was merely restored.
 	elSideToggle.addEventListener('click', () => {
-		setSideOpen(elFrame.classList.contains('side-closed'));
+		let on = elFrame.classList.contains('side-closed');
+		setSideOpen(on);
+		remember(SIDE_KEY, on ? '1' : '0');
 	});
 
 	/**
@@ -6643,6 +6676,7 @@
 	function setSideWidth(px) {
 		let w = Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, px)));
 		document.documentElement.style.setProperty('--zg-side-width', w + 'px');
+		sideWidth = w;
 		return w;
 	}
 
@@ -6676,12 +6710,10 @@
 			elSideGrip.removeEventListener('pointerup', up);
 			elSideGrip.removeEventListener('pointercancel', up);
 			// Written back only on release: a pref written sixty times a second
-			// is a pref written sixty times a second.
-			try {
-				window.localStorage.setItem(SIDE_WIDTH_KEY,
-					String(Math.round(elSide.getBoundingClientRect().width)));
-			}
-			catch (e2) { /* no persistence, no problem */ }
+			// is a pref written sixty times a second. The width as laid out,
+			// which is the one the next opening should get.
+			sideWidth = Math.round(elSide.getBoundingClientRect().width);
+			remember(SIDE_WIDTH_KEY, String(sideWidth));
 		};
 
 		elSideGrip.addEventListener('pointermove', move);
@@ -6710,12 +6742,12 @@
 		let saved = window.localStorage.getItem(SIDE_WIDTH_KEY);
 		if (saved !== null && Number.isFinite(Number(saved))) setSideWidth(Number(saved));
 	}
-	catch (e) { /* see setSideOpen */ }
+	catch (e) { /* see remember() */ }
 
 	try {
 		if (window.localStorage.getItem(SIDE_KEY) === '0') setSideOpen(false);
 	}
-	catch (e) { /* see setSideOpen */ }
+	catch (e) { /* see remember() */ }
 
 	// --- the search field -------------------------------------------------
 
@@ -7180,12 +7212,6 @@
 		let toggle = el('sec-' + name + '-toggle');
 		toggle.setAttribute('aria-expanded', on ? 'false' : 'true');
 		toggle.title = t(on ? 'section-expand' : 'section-collapse');
-		// Storage is a nicety, not a requirement: a resource:// page can be
-		// denied it, and the panel still works when the write throws.
-		try {
-			window.localStorage.setItem(sectionKey(name), on ? '1' : '0');
-		}
-		catch (e) { /* no persistence, no problem */ }
 	}
 
 	function isCollapsed(name) {
@@ -7193,13 +7219,300 @@
 	}
 
 	for (let name of SECTIONS) {
+		// Remembered by the click, for the reason the sidebar toggle is.
 		el('sec-' + name + '-toggle').addEventListener('click', () => {
-			setCollapsed(name, !isCollapsed(name));
+			let on = !isCollapsed(name);
+			setCollapsed(name, on);
+			remember(sectionKey(name), on ? '1' : '0');
 		});
 		try {
 			if (window.localStorage.getItem(sectionKey(name)) === '1') setCollapsed(name, true);
 		}
-		catch (e) { /* see setCollapsed */ }
+		catch (e) { /* see remember() */ }
+	}
+
+	// --- the tab's own view -----------------------------------------------
+
+	/**
+	 * Every setting this page has, as one object chrome keeps with the tab.
+	 *
+	 * Chrome writes it into tab.data, which Zotero saves into session.json with
+	 * the tab -- so a graph tab comes back from a restart with the panel, the
+	 * filters, the groups and the pins it was left with, and two tabs of the
+	 * same collection can be set up two different ways. Closing a tab throws its
+	 * settings away with it. See saveTabData() in lib/graphTab.js.
+	 *
+	 * The scope options -- subcollections, outside references, the lookup, the
+	 * two strategies that add nodes -- are not in here. Chrome already keeps
+	 * those with the tab, as the options the graph was built with, and pushes
+	 * them back with every payload.
+	 *
+	 * Nor, on purpose, are the zoom, a search, an isolation or the pick. Those
+	 * are where the reader happens to be looking rather than how the graph is
+	 * set up, and a tab that came back still isolated on one paper would look
+	 * broken rather than remembered.
+	 *
+	 * Plain JSON, versioned so a later build that changes what a field means can
+	 * tell an old one apart. Every field is optional on the way back in: see
+	 * applyView().
+	 */
+	const VIEW_VERSION = 1;
+
+	// Long enough that dragging a slider is one save, not sixty a second.
+	const VIEW_SAVE_MS = 300;
+
+	function snapshotView() {
+		let sections = {};
+		for (let name of SECTIONS) sections[name] = isCollapsed(name);
+		let pins = [];
+		for (let n of nodeCache.values()) {
+			if (!isPinned(n)) continue;
+			pins.push({ id: n.id, x: n.fx != null ? n.fx : n.x, y: n.fy != null ? n.fy : n.y });
+		}
+		// Pins the tab came back with whose nodes have not been drawn yet. Left
+		// out, they would be lost for good the first time anything was saved
+		// before the build phase that brings their nodes landed.
+		for (let [id, at] of pendingPins) {
+			if (!nodeCache.has(id)) pins.push({ id, x: at.x, y: at.y });
+		}
+		return {
+			v: VIEW_VERSION,
+			sections,
+			sideOpen: !elFrame.classList.contains('side-closed'),
+			sideWidth,
+			linkPull: Number(elLinkPull.value),
+			centerPull: Number(elCenterPull.value),
+			groupPull: Number(elGroupPull.value),
+			pinPull: Number(elPinPull.value),
+			dragAlpha: Number(elDragAlpha.value),
+			settle: Number(elSettle.value),
+			hold: Number(elHold.value),
+			perf: elPerf.checked,
+			autobuild: elAutobuild.checked,
+			isolateDepth,
+			hideIsolated: elHideIsolated.checked,
+			hideGhostNames: elHideGhostNames.checked,
+			colorEdges,
+			edgeTips,
+			sizeBy: elSizeBy.value,
+			colorBy: elColorBy.value,
+			minCites: Number(elMinCites.value) || null,
+			minConf: Number(elMinConf.value),
+			disabledVia: [...disabledVia],
+			filters: panelBox.filters().slice(),
+			// A flag that names nothing is a gesture half-made, not a group --
+			// see closeGroup() -- so an open card's new flag is not saved.
+			groups: groups.filter(g => g.filters.length)
+				.map(g => ({ x: g.x, y: g.y, filters: g.filters })),
+			pins,
+		};
+	}
+
+	/** A <select> set to `v` only if it offers `v`. Anything else -- a value
+	 *  some later build added, or one an older build had -- would select
+	 *  nothing and leave the menu blank. */
+	function selectIfOffered(select, v) {
+		if (typeof v !== 'string') return;
+		for (let o of select.options) {
+			if (o.value === v) {
+				select.value = v;
+				return;
+			}
+		}
+	}
+
+	/** Whether `f` has the shape Filters.parse() gives a mask. Saved data is
+	 *  read back rather than trusted: a mask the matcher cannot read would take
+	 *  the whole render down with it. */
+	function isFilter(f) {
+		return !!f && typeof f === 'object'
+			&& (f.field === null || typeof f.field === 'string')
+			&& Array.isArray(f.terms) && f.terms.length > 0
+			&& f.terms.every(term => !!term && typeof term === 'object' && typeof term.op === 'string');
+	}
+
+	/**
+	 * Put a saved view back on the page.
+	 *
+	 * Arrives before the first payload, so most of this only has to set the
+	 * controls and the first render picks them up. A field that is missing or
+	 * of the wrong type leaves that control as it was: at the last-used value a
+	 * new tab would have opened with.
+	 */
+	function applyView(view) {
+		let num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+		let bool = v => (typeof v === 'boolean' ? v : null);
+		// A range input drops a value outside its own min/max by itself.
+		let setRange = (input, v) => {
+			if (num(v) !== null) input.value = String(v);
+		};
+		let setCheck = (input, v) => {
+			if (bool(v) !== null) input.checked = v;
+		};
+
+		if (view.sections && typeof view.sections === 'object') {
+			for (let name of SECTIONS) {
+				let on = bool(view.sections[name]);
+				if (on !== null) setCollapsed(name, on);
+			}
+		}
+		if (num(view.sideWidth) !== null) {
+			setSideWidth(view.sideWidth);
+		}
+		else if (view.sideWidth === null) {
+			// Saved at the stylesheet's width; the last-used one is not this tab's.
+			document.documentElement.style.removeProperty('--zg-side-width');
+			sideWidth = null;
+		}
+		if (bool(view.sideOpen) !== null) setSideOpen(view.sideOpen);
+		else remeasure();
+
+		setRange(elLinkPull, view.linkPull);
+		applyLinkPull();
+		setRange(elCenterPull, view.centerPull);
+		applyCenterPull();
+		// Applied after the groups, below: it is what re-matches them.
+		setRange(elGroupPull, view.groupPull);
+		setRange(elPinPull, view.pinPull);
+		applyPinPull();
+		setRange(elDragAlpha, view.dragAlpha);
+		applyDragAlpha();
+		setRange(elSettle, view.settle);
+		applySettle();
+		// After the settle slider, which it overrules -- as at startup.
+		setRange(elHold, view.hold);
+		applyHold();
+
+		let perf = bool(view.perf);
+		if (perf !== null && perf !== elPerf.checked) {
+			elPerf.checked = perf;
+			applyPerfMode();
+		}
+		setCheck(elAutobuild, view.autobuild);
+
+		if (num(view.isolateDepth) !== null) {
+			elIsolateDepth.value = String(view.isolateDepth);
+			applyIsolateDepth();
+			elIsolateDepth.value = String(isolateDepth);
+		}
+		setCheck(elHideIsolated, view.hideIsolated);
+		setCheck(elHideGhostNames, view.hideGhostNames);
+		if (bool(view.colorEdges) !== null) {
+			elColorEdges.checked = colorEdges = view.colorEdges;
+			colorGen++;
+		}
+		if (bool(view.edgeTips) !== null) {
+			elEdgeTips.checked = edgeTips = view.edgeTips;
+			// The hit-test canvas follows the switch -- see edgeHitArea(). A
+			// graph not built yet reads it when it is.
+			if (fg) fg.linkPointerAreaPaint(edgeHitArea());
+		}
+		// "Global citations" falls back to "cited here" if the lookup is off --
+		// but that is syncEnabled()'s call to make once the first payload has
+		// said whether it is, not this one's before it has.
+		selectIfOffered(elSizeBy, view.sizeBy);
+		selectIfOffered(elColorBy, view.colorBy);
+		colorMode = elColorBy.value;
+
+		if (num(view.minCites) !== null) {
+			elMinCites.value = String(view.minCites);
+			// The user's own number, so the one-time fit to a small graph must
+			// not overrule it. See applyScope().
+			citesClamped = true;
+		}
+		setRange(elMinConf, view.minConf);
+		elConfValue.textContent = Number(elMinConf.value).toFixed(2);
+		if (Array.isArray(view.disabledVia)) {
+			disabledVia = new Set(view.disabledVia.filter(v => typeof v === 'string'));
+			// Or believedSig() goes on vouching for the subfield clusters of the
+			// strategies that were switched on before.
+			viaGen++;
+			// The toggles are built from the payload's strategies, and would
+			// otherwise keep the boxes they were drawn with.
+			renderedVias = '';
+		}
+		if (Array.isArray(view.filters)) panelBox.load(view.filters.filter(isFilter));
+
+		if (Array.isArray(view.groups)) {
+			groups = [];
+			for (let g of view.groups) {
+				if (!g || num(g.x) === null || num(g.y) === null || !Array.isArray(g.filters)) continue;
+				let filters = g.filters.filter(isFilter);
+				if (filters.length) groups.push({ id: ++groupSeq, x: g.x, y: g.y, filters });
+			}
+		}
+		applyGroupPull();
+
+		if (Array.isArray(view.pins)) {
+			pendingPins = new Map();
+			for (let p of view.pins) {
+				if (!p || typeof p.id !== 'string' || num(p.x) === null || num(p.y) === null) continue;
+				let n = nodeCache.get(p.id);
+				if (n) {
+					// As in pinAll(): a settle's freeze must not free it on lifting.
+					frozen.delete(n);
+					n.x = n.fx = p.x;
+					n.y = n.fy = p.y;
+				}
+				else pendingPins.set(p.id, { x: p.x, y: p.y });
+			}
+		}
+
+		syncEnergyEnabled();
+		syncPending();
+		if (raw) {
+			renderStrategyToggles();
+			render();
+		}
+	}
+
+	/**
+	 * Chrome's answer to "which settings does this tab have" -- the view saved
+	 * with it, or null for a tab that has none.
+	 */
+	window.zgSetView = function (json) {
+		let view = null;
+		try {
+			view = JSON.parse(json);
+		}
+		catch (e) {
+			view = null;
+		}
+		if (view && typeof view === 'object' && !Array.isArray(view)) applyView(view);
+		viewKnown = true;
+		// Reported straight back, saved view or not. A tab with none -- a new
+		// one, or one saved by a build from before tabs kept their settings --
+		// is open on the last-used settings, and has to keep THOSE: otherwise a
+		// slider moved in some other tab would change how this one came back.
+		viewChanged();
+	};
+
+	/** Something in the view changed; send the tab the whole of it, once the
+	 *  changes stop coming. */
+	function viewChanged() {
+		if (!viewKnown) return;
+		window.clearTimeout(viewTimer);
+		viewTimer = window.setTimeout(() => {
+			viewTimer = null;
+			emit({ type: 'view', view: snapshotView() });
+		}, VIEW_SAVE_MS);
+	}
+
+	/**
+	 * The user set a control a new tab should open with. Stored as the
+	 * last-used value, and this tab's own view is saved as well.
+	 *
+	 * Only ever called from a gesture. Restoring a tab and re-wording a tooltip
+	 * run the same setters, and neither is the user choosing anything.
+	 */
+	function remember(key, value) {
+		// Storage is a nicety, not a requirement: a resource:// page can be
+		// denied it, and the panel still works when the write throws.
+		try {
+			window.localStorage.setItem(key, value);
+		}
+		catch (e) { /* no persistence, no problem */ }
+		viewChanged();
 	}
 
 	/**
@@ -7247,42 +7560,42 @@
 		// silently drops one outside its own min/max, so read back what stuck.
 		if (saved !== null) elLinkPull.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyLinkPull();
 
 	try {
 		let saved = window.localStorage.getItem(CENTER_KEY);
 		if (saved !== null) elCenterPull.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyCenterPull();
 
 	try {
 		let saved = window.localStorage.getItem(GROUP_PULL_KEY);
 		if (saved !== null) elGroupPull.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyGroupPull();
 
 	try {
 		let saved = window.localStorage.getItem(PIN_PULL_KEY);
 		if (saved !== null) elPinPull.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyPinPull();
 
 	try {
 		let saved = window.localStorage.getItem(DRAG_ALPHA_KEY);
 		if (saved !== null) elDragAlpha.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyDragAlpha();
 
 	try {
 		let saved = window.localStorage.getItem(SETTLE_KEY);
 		if (saved !== null) elSettle.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applySettle();
 
 	// After the settle slider, which it overrules: a hold restored from an
@@ -7291,14 +7604,14 @@
 		let saved = window.localStorage.getItem(HOLD_KEY);
 		if (saved !== null) elHold.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyHold();
 
 	try {
 		let saved = window.localStorage.getItem(DEPTH_KEY);
 		if (saved !== null) elIsolateDepth.value = saved;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	applyIsolateDepth();
 	// A number box keeps a stored value its own min/max would reject, so the
 	// clamp above has to be written back before it is ever read as the truth.
@@ -7309,7 +7622,7 @@
 		// everything it was asked to draw.
 		if (window.localStorage.getItem(HIDE_ISOLATED_KEY) === '1') elHideIsolated.checked = true;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 
 	try {
 		// Only a stored yes hides the names, and a store that cannot be read
@@ -7318,7 +7631,7 @@
 		if (hide === null && window.localStorage.getItem(GHOST_NAMES_KEY) === '0') hide = '1';
 		if (hide === '1') elHideGhostNames.checked = true;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 
 	try {
 		if (window.localStorage.getItem(COLOR_EDGES_KEY) === '0') {
@@ -7326,7 +7639,7 @@
 			colorEdges = false;
 		}
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 
 	try {
 		// Same rule: only a stored no takes the tooltips away.
@@ -7335,14 +7648,24 @@
 			edgeTips = false;
 		}
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
+
+	try {
+		// Nothing stored leaves the markup's own defaults. A stored "global
+		// citations" is undone by syncEnabled() below while the lookup is off,
+		// which on a new tab it is.
+		selectIfOffered(elSizeBy, window.localStorage.getItem(SIZE_BY_KEY));
+		selectIfOffered(elColorBy, window.localStorage.getItem(COLOR_BY_KEY));
+		colorMode = elColorBy.value;
+	}
+	catch (e) { /* see remember() */ }
 
 	try {
 		// Same rule, and it matters more here: an unreadable store must leave
 		// the picture whole rather than quietly serving a degraded one.
 		if (window.localStorage.getItem(PERF_KEY) === '1') elPerf.checked = true;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 
 	try {
 		// Only a stored no turns it off. An empty store -- and a store that
@@ -7350,7 +7673,7 @@
 		// done, which is the behaviour nobody has to be told about.
 		if (window.localStorage.getItem(AUTOBUILD_KEY) === '0') elAutobuild.checked = false;
 	}
-	catch (e) { /* see setCollapsed */ }
+	catch (e) { /* see remember() */ }
 	// Nothing is pending before the first payload; this is for the button's
 	// tooltip, which is the one thing here the markup cannot state on its own.
 	syncPending();
