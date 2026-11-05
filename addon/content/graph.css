@@ -192,10 +192,20 @@ body {
  * The sidebar's width is a custom property rather than a width on #side so
  * that closing it is one value changing, and the canvas is 1fr so it takes
  * whatever is left instead of being told a number.
+ *
+ * The second row is minmax(0, 1fr) and not a bare 1fr, because a bare 1fr is
+ * minmax(auto, 1fr): its floor is the tallest thing in it, and the tallest
+ * thing in it is the sidebar with every section open. So the row grew to the
+ * sidebar's content rather than to the window, #side-body was never shorter
+ * than what it held and never scrolled, and on any screen shorter than the
+ * four sections the bottom of the pane -- Rebuild included -- went off the
+ * bottom of the tab, under body's overflow: hidden, with the canvas dragged
+ * down after it (#5). A zero floor makes the row the height the window has
+ * left, and the overflow becomes #side-body's to scroll, as it was meant to.
  */
 #frame {
 	display: grid;
-	grid-template-rows: auto 1fr;
+	grid-template-rows: auto minmax(0, 1fr);
 	grid-template-columns: var(--zg-side-width) 1fr;
 	grid-template-areas: "bar bar" "side canvas";
 	height: 100%;
