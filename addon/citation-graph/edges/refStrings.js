@@ -71,9 +71,10 @@ module.exports.id = register({
 		maxGhostConfidence: 0.55,
 	},
 
-	async *derive({ adapter, items, index, options, includeExternal, onProgress, refSection, describe }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress, refSection, describe, signal }) {
 		let done = 0;
 		for (const item of items) {
+			if (signal && signal.aborted) return;
 			onProgress && onProgress(++done, items.length, item.key);
 			const citingYear = yearOf(item.date);
 

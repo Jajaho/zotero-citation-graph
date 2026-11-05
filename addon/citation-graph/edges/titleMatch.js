@@ -134,11 +134,12 @@ module.exports.id = register({
 		rejectImpossibleYear: true,
 	},
 
-	async *derive({ adapter, items, index, options, onProgress, refSection }) {
+	async *derive({ adapter, items, index, options, onProgress, refSection, signal }) {
 		const targets = index.titleTargets.filter((t) => t.nt.length >= options.minTitleLength);
 		const sc = screen(targets);
 		let done = 0;
 		for (const item of items) {
+			if (signal && signal.aborted) return;
 			onProgress && onProgress(++done, items.length, item.key);
 			const citingYear = firstYear(item.date);
 			for (const att of await adapter.getAttachments(item.key)) {

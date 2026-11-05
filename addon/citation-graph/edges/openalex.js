@@ -48,7 +48,7 @@ module.exports.id = register({
 		metadataCache: null,
 	},
 
-	async derive({ items, index, options, includeExternal, onProgress }) {
+	async derive({ items, index, options, includeExternal, onProgress, signal }) {
 		const keyByDoi = new Map();
 		for (const it of items) {
 			const d = normDoi(it.doi);
@@ -74,6 +74,10 @@ module.exports.id = register({
 			if (options.apiKey) headers.Authorization = 'Bearer ' + options.apiKey;
 
 			for (let i = 0; i < ask.length; i += options.batchSize) {
+				// Between requests, and not handed to fetch: build() documents
+				// `signal` as something with an `aborted`, which is all the
+				// plugin's own is. What has been fetched is in the cache either way.
+				if (signal && signal.aborted) return [];
 				const batch = ask.slice(i, i + options.batchSize);
 				const url = new URL(options.endpoint);
 				url.searchParams.set('per-page', String(options.batchSize));

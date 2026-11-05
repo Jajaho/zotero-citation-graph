@@ -87,6 +87,12 @@ generators are preferred for the file-scanning strategies so results stream and
 progress is reportable. A strategy that throws is caught and reported in
 `meta.errors`; the others still complete.
 
+A long-running strategy should check `ctx.signal && ctx.signal.aborted` once
+per item and stop when it is set: the plugin rebuilds when a scope option
+changes, and a build that has been replaced is otherwise scanned to the end for
+nothing. It is only promised to have `aborted` — the plugin's is not an
+`AbortSignal` — so do not hand it to `fetch()`.
+
 Obvious next ones: `crossref` (free, no key, DOIs directly), `opencitations`
 (free, returns DOI *and* OpenAlex ID per edge), `cita` (read citation notes a
 user's Cita plugin already stored), `zotero-relations` (honour manually

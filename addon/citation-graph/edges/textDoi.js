@@ -26,10 +26,11 @@ module.exports.id = register({
 		minSegmentQuality: 'tail',
 	},
 
-	async *derive({ adapter, items, index, options, includeExternal, onProgress, refSection }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress, refSection, signal }) {
 		const rank = { heading: 3, numbered: 2, tail: 1, none: 0 };
 		let done = 0;
 		for (const item of items) {
+			if (signal && signal.aborted) return;
 			onProgress && onProgress(++done, items.length, item.key);
 			for (const att of await adapter.getAttachments(item.key)) {
 				const seg = await readSection(adapter, att.key, refSection);

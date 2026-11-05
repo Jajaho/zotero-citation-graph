@@ -1058,6 +1058,13 @@ async function buildPhases(entry, alive) {
 		state.edges = edges;
 		pushData(entry, state, meta);
 	};
+	// Read by every strategy between papers. alive() was only asked between
+	// phases, so a build replaced mid-phase -- three scope boxes ticked with
+	// Autobuild on -- went on reading every PDF in the collection for a payload
+	// it was never going to push, alongside the build that replaced it. Not an
+	// AbortSignal, which this sandbox is not promised to have; build() asks for
+	// nothing but `aborted`, and is told not to hand it to fetch().
+	let signal = { get aborted() { return !alive(); } };
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
 	};
@@ -1099,6 +1106,7 @@ async function buildPhases(entry, alive) {
 	// --- phase 2: text strategies ---------------------------------------
 	status(l10n.t('build-reading-text'));
 	let textResult = await cg.build(adapter, {
+		signal,
 		enable: TEXT_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
@@ -1119,6 +1127,7 @@ async function buildPhases(entry, alive) {
 		? l10n.t('build-scanning-pdfs-count', { count: pdfs })
 		: l10n.t('build-scanning-pdfs'));
 	let pdfResult = await cg.build(adapter, {
+		signal,
 		enable: PDF_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
@@ -1146,6 +1155,7 @@ async function buildPhases(entry, alive) {
 			MetadataCache.forProfile().load(),
 		]);
 		oaResult = await cg.build(adapter, {
+			signal,
 			enable: ['openalex'],
 			includeExternal: options.includeExternal,
 			providers: {
@@ -1181,6 +1191,7 @@ async function buildPhases(entry, alive) {
 		});
 		status(l10n.t('build-reading-references'));
 		refResult = await cg.build(adapter, {
+			signal,
 			enable: ['ref-strings'],
 			offline: true,
 			includeExternal: options.includeExternal,

@@ -21,6 +21,14 @@ const { refSignature } = require('../edges/refParse');
  * there are far too many to show unfiltered -- 4,564 distinct DOIs across 127
  * PDFs on the sample library. The count is the useful filter: a work several of
  * your papers cite but you do not hold is a gap; one cited once is noise.
+ *
+ * `config.signal`, when given, is anything with an `aborted` flag -- an
+ * AbortSignal will do, and so will the plugin's own, which is derived from
+ * whether a newer build has replaced this one. Strategies read it between
+ * papers and stop; build() reads it between strategies. What comes back from
+ * a build stopped that way is partial and is meant to be thrown away. Not
+ * every signal handed in is an AbortSignal, so a strategy must not pass it on
+ * to fetch().
  */
 async function build(adapter, config = {}) {
 	const t0 = Date.now();
@@ -76,6 +84,7 @@ async function build(adapter, config = {}) {
 	};
 
 	for (const p of providers) {
+		if (config.signal && config.signal.aborted) break;
 		const started = Date.now();
 		let produced = 0;
 		let unique = 0;

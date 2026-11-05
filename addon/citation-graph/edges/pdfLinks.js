@@ -26,9 +26,10 @@ module.exports.id = register({
 		ignoreSelfOnly: true,
 	},
 
-	async *derive({ adapter, items, index, options, includeExternal, onProgress }) {
+	async *derive({ adapter, items, index, options, includeExternal, onProgress, signal }) {
 		let done = 0;
 		for (const item of items) {
+			if (signal && signal.aborted) return;
 			onProgress && onProgress(++done, items.length, item.key);
 			const atts = await adapter.getAttachments(item.key);
 			for (const att of atts) {

@@ -5829,6 +5829,36 @@ check('the text strategies read each attachment once per build, not once each', 
 	if (reads !== sections.size) throw new Error(sections.size + ' attachments, ' + reads + ' reads');
 });
 
+/**
+ * The plugin rebuilds when a scope option changes, and only ever checked
+ * whether a build had been replaced between phases -- so ticking three boxes
+ * with Autobuild on scanned every PDF three times over, side by side, for two
+ * payloads nobody would see. The strategies now read `signal` between papers,
+ * and build() reads it between strategies.
+ */
+check('a build that has been replaced stops reading papers', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const { items, sections } = screenFixture(21);
+	const signal = { aborted: false };
+	let opened = 0;
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async (k) => {
+			// Replaced while the third paper is being read.
+			if (++opened === 3) signal.aborted = true;
+			return sections.has(k) ? [{ key: k + 'a', parentKey: k, contentType: 'application/pdf' }] : [];
+		},
+		getAttachmentText: async attKey => sections.get(attKey.slice(0, -1)) || null,
+		getPdfLinkUris: async () => [],
+	};
+	for (const enable of [['pdf-links'], ['text-doi', 'title-match'], ['ref-strings']]) {
+		opened = 0;
+		signal.aborted = false;
+		await cg.build(adapter, { enable, offline: true, includeExternal: true, signal });
+		if (opened !== 3) throw new Error(enable.join('+') + ' opened ' + opened + ' of ' + items.length + ' papers after it was replaced at the third');
+	}
+});
+
 // --- parsed reference strings (citation-graph/edges/refParse.js) ------------
 
 /** The same four works, written the four ways real bibliographies write them. */
