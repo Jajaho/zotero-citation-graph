@@ -21,7 +21,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const addonDir = path.join(__dirname, '..', '..', 'addon');
+const addonDir = path.join(__dirname, '..', '..', '..', 'addon');
 
 const TYPES = {
 	'.html': 'text/html; charset=utf-8',

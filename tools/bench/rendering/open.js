@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RES_ROOT = 'zotero-citation-graph';
-const page = path.join(__dirname, '..', '..', 'addon', 'content', 'bench', 'bench.html');
+const page = path.join(__dirname, '..', '..', '..', 'addon', 'content', 'bench', 'bench.html');
 if (!fs.existsSync(page)) {
 	console.error('missing ' + page);
 	process.exit(1);
