@@ -3130,12 +3130,13 @@
 					}
 					else b.items.push(i);
 				}
-				// Two grid nodes touch at under 2 * rGrid + COLLIDE_PAD, which is
-				// one cell: the 3x3 around either one holds the other.
-				for (let s = 0; s < small.length; s++) search(small[s], 1, true);
 				// A big node reaches its own radius past the cell, and the grid
 				// holds none of the others -- so it searches out as far as that
-				// takes.
+				// takes. Before the grid's own pairs rather than after: a big
+				// node shoves the small ones it meets into their neighbours, and
+				// resolved last that left fresh overlaps behind every tick -- the
+				// layout read as still busy and ran a second longer before it
+				// stopped. See holdForCollide().
 				for (let p = 0; p < big.length; p++) {
 					let i = big[p];
 					search(i, Math.ceil((radii[i] + rGrid + COLLIDE_PAD) / cell), false);
@@ -3156,6 +3157,9 @@
 						for (let q = p + 1; q < big.length && sweepX[big[q]] < limit; q++) resolve(i, big[q]);
 					}
 				}
+				// Two grid nodes touch at under 2 * rGrid + COLLIDE_PAD, which is
+				// one cell: the 3x3 around either one holds the other.
+				for (let s = 0; s < small.length; s++) search(small[s], 1, true);
 			}
 		}
 
