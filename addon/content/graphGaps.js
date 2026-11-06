@@ -105,6 +105,12 @@
 		var rows = [];
 		for (var x = 0; x < (externals || []).length; x++) {
 			var g = externals[x];
+			// A work the lookup was told does not exist -- an OpenAlex ID
+			// OpenAlex has deleted or merged away -- has no name to list and
+			// nothing to add, and with no fame to discount by it would rank at
+			// face value, above every work that does have a name. The graph
+			// still draws it: the papers do cite something there.
+			if (g.gone) continue;
 			var who = citers.get(g.key);
 			if (!who || who.length < floor) continue;
 			who = who.slice().sort();

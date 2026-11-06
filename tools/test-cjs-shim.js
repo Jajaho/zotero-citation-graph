@@ -572,6 +572,35 @@ check('openalex references resolve to held papers, and a warm cache asks nothing
 	if (pairs(warm) !== 'AAAAAAAA>BBBBBBBB') throw new Error('without outside refs: ' + pairs(warm));
 });
 
+check('an OpenAlex ID OpenAlex does not return is marked gone, and a DOI is not', () => {
+	const cg = require_('./citation-graph/index.js');
+	// W4285719527 and friends: references a paper's OpenAlex record still
+	// lists, for works OpenAlex has since deleted. Asked for by that very ID,
+	// OpenAlex answers with nothing -- which is an answer, unlike a DOI it has
+	// never heard of, whose work exists all the same.
+	const fetchImpl = async (url) => fakeOpenAlex(/ids.openalex/.test(decodeURIComponent(url)) ? [
+		{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/one',
+			display_name: 'Still here', publication_year: 2001, authorships: [], cited_by_count: 7 },
+		// Asked for by ID, matched back to the DOI's key because that was asked
+		// for too -- and still not gone.
+		{ id: 'https://openalex.org/W3', doi: 'https://doi.org/10.1000/three',
+			display_name: 'Both ways', publication_year: 2003, authorships: [], cited_by_count: 2 },
+	] : [])(url);
+	return cg.enrich(['openalex:W1', 'openalex:W2', 'openalex:W3', 'doi:10.1000/three', 'doi:10.1000/nobody'], {
+		enable: ['openalex'],
+		providers: { openalex: { fetchImpl } },
+	}).then((r) => {
+		const m = r.metadata;
+		if (!m['openalex:W2'] || m['openalex:W2'].gone !== true) throw new Error('W2 not gone: ' + JSON.stringify(m['openalex:W2']));
+		if (m['openalex:W2'].title) throw new Error('a gone work was named');
+		if (m['openalex:W1'].gone || m['openalex:W1'].title !== 'Still here') throw new Error('W1: ' + JSON.stringify(m['openalex:W1']));
+		if (m['openalex:W3'] && m['openalex:W3'].gone) throw new Error('W3 came back under its DOI and was called gone');
+		if (m['doi:10.1000/nobody']) throw new Error('an unknown DOI was judged: ' + JSON.stringify(m['doi:10.1000/nobody']));
+		// Answered, not named: the count of names stays a count of names.
+		if (r.meta.resolved !== 2) throw new Error('resolved ' + r.meta.resolved);
+	});
+});
+
 check('the API key travels in a header, never in the URL', () => {
 	const cg = require_('./citation-graph/index.js');
 	let seenUrl = null;
@@ -3878,6 +3907,24 @@ check('a gap says which subfield is leaning on it, or that several are', () => {
 	// owned it would be picking one at random.
 	if (by.get('doi:both').top !== null) throw new Error('named an owner for a split gap');
 	if (by.get('doi:both').spread !== 2) throw new Error('spread ' + by.get('doi:both').spread);
+});
+
+check('a work its source has no record of is left out of the gap list', () => {
+	const G = loadGaps();
+	// Four papers cite a deleted OpenAlex work. With no name it is a bare ID,
+	// and with no fame to discount by it would top the list.
+	const edges = [];
+	for (let i = 0; i < 4; i++) edges.push({ from: 'HELD000' + i, to: 'openalex:W4285719527' });
+	for (let i = 0; i < 3; i++) edges.push({ from: 'HELD000' + i, to: 'doi:real' });
+	const r = G.rank(edges, [
+		{ key: 'openalex:W4285719527', ns: 'openalex', id: 'W4285719527', gone: true },
+		{ key: 'doi:real', ns: 'doi', id: '10.1/real', title: 'A real paper', citedByGlobal: 50 },
+	]);
+	if (r.rows.map(x => x.key).join() !== 'doi:real') throw new Error(r.rows.map(x => x.key).join());
+	if (r.total !== 1) throw new Error('total counted a gone work: ' + r.total);
+	// Not yet looked up is not gone: with the lookup off, a bare ID is listed.
+	const off = G.rank(edges, [{ key: 'openalex:W4285719527', ns: 'openalex', id: 'W4285719527' }]);
+	if (off.rows.length !== 1) throw new Error('an unlooked-up ID was dropped');
 });
 
 check('the list is capped but says what it is not showing', () => {

@@ -1974,6 +1974,9 @@ function toWireExternal(x, m) {
 		out.citedByGlobal = m.citedByGlobal != null ? m.citedByGlobal : null;
 		// Only ever set by ref-strings, for a node with no identifier to show.
 		out.venue = m.venue || null;
+		// The lookup's word that this ID names a work its source no longer
+		// has: the gap list leaves such a work out rather than rank a bare ID.
+		if (m.gone && !m.title) out.gone = true;
 		out.source = m.source || [];
 	}
 	return out;

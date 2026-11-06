@@ -7,7 +7,7 @@ const { parseExternalKey } = require('./types');
  * Which Metadata fields the fill-first merge carries. `key` is the identity and
  * `source` is provenance, so neither is merged.
  */
-const FIELDS = ['title', 'creators', 'year', 'itemType', 'doi', 'url', 'citedByGlobal'];
+const FIELDS = ['title', 'creators', 'year', 'itemType', 'doi', 'url', 'citedByGlobal', 'gone'];
 
 /**
  * Resolve identifiers to names, running the selected enrichers in order.
@@ -114,7 +114,8 @@ async function enrich(keys, config = {}) {
 			perProvider,
 			errors,
 			requested: allRefs.length,
-			resolved: Object.keys(metadata).length,
+			// A work the source says it has no record of is answered, not named.
+			resolved: Object.keys(metadata).filter(k => !metadata[k].gone).length,
 			fromCache: cached.size,
 			ms: Date.now() - t0,
 		},

@@ -90,9 +90,26 @@ module.exports.id = register({
 				const res = await fetch_(url.toString(), { headers, signal });
 				if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
 				const json = await res.json();
+				// By the ID each work came back under, not by the key it was
+				// matched to: a work asked for by ID is matched to its DOI's key
+				// when that was asked for too.
+				const answered = new Set();
 				for (const w of (json && json.results) || []) {
+					if (w && w.id) answered.add(shortOpenAlexId(w.id));
 					const m = toMetadata(w, byFilterValue);
 					if (m) out.push(m);
+				}
+				// An OpenAlex ID that OpenAlex itself, asked by that ID, did not
+				// return is a work it no longer has a record of -- deleted, or
+				// merged away -- that a paper's reference list still points at.
+				// Said so, because "not looked up yet" and "looked up and gone"
+				// read the same from a missing title, and only the second can
+				// never be named or added. A DOI is not judged the same way: it
+				// exists whether or not OpenAlex has heard of it.
+				if (ns === 'openalex') {
+					for (const id of ids) {
+						if (!answered.has(id)) out.push({ key: byFilterValue.get('openalex:' + id), gone: true });
+					}
 				}
 			}
 			onProgress && onProgress(Math.min(i + options.batchSize, values.length), values.length);

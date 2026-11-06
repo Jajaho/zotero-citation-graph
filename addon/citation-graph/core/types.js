@@ -55,6 +55,9 @@
  *   collection. That one is what the graph is about; see
  *   docs/external-references.md for why the distinction is load-bearing.
  * @property {string[]} source       enricher ids that contributed a field
+ * @property {boolean} [gone]        the source was asked by its own identifier
+ *   and has no record of it: an OpenAlex ID for a work OpenAlex has since
+ *   deleted or merged away. Never names anything; never cached.
  *
  * @typedef {Object} Adapter
  * Everything a provider is allowed to touch. Two implementations exist:
