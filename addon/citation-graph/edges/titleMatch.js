@@ -37,14 +37,16 @@ const LEAD = (() => {
 
 /** Rolling hash of every FRAGMENT-long window of s, in order. */
 function fragmentHashes(s) {
-	if (s.length < FRAGMENT) return new Int32Array(0);
-	const out = new Int32Array(s.length - FRAGMENT + 1);
+	// Copied in for the reason candidates() gives.
+	const F = FRAGMENT, B = BASE, L = LEAD, imul = Math.imul;
+	if (s.length < F) return new Int32Array(0);
+	const out = new Int32Array(s.length - F + 1);
 	let h = 0;
-	for (let i = 0; i < FRAGMENT; i++) h = (Math.imul(h, BASE) + s.charCodeAt(i)) | 0;
+	for (let i = 0; i < F; i++) h = (imul(h, B) + s.charCodeAt(i)) | 0;
 	out[0] = h;
-	for (let i = FRAGMENT; i < s.length; i++) {
-		h = (Math.imul((h - Math.imul(s.charCodeAt(i - FRAGMENT), LEAD)) | 0, BASE) + s.charCodeAt(i)) | 0;
-		out[i - FRAGMENT + 1] = h;
+	for (let i = F; i < s.length; i++) {
+		h = (imul((h - imul(s.charCodeAt(i - F), L)) | 0, B) + s.charCodeAt(i)) | 0;
+		out[i - F + 1] = h;
 	}
 	return out;
 }
@@ -83,20 +85,32 @@ function screen(targets) {
 	return { byFragment, always, mark: new Uint8Array(targets.length) };
 }
 
-/** Flag, by target index, every title whose fragment occurs in `flat`. The
- *  flags are reused from section to section rather than allocated per one. */
+/**
+ * Flag, by target index, every title whose fragment occurs in `flat`. The
+ * flags are reused from section to section rather than allocated per one.
+ *
+ * Every name the loop reads once per character is a local, and that is not
+ * style. Inside Zotero, lib/cjs.js loads this file into a plain-object scope,
+ * and there SpiderMonkey looks up a module-level constant -- or a global such
+ * as Math -- by name each time it is read. Five such reads per character made
+ * this loop about 1 s of title-match's 1.1 s on a 500-paper library; with the
+ * same names copied into locals it is 0.07 s (Gecko 159). Node resolves them
+ * statically, so the CLI benchmark never showed the difference.
+ */
 function candidates(sc, flat) {
+	const F = FRAGMENT, B = BASE, L = LEAD, imul = Math.imul;
 	const mark = sc.mark;
+	const byFragment = sc.byFragment;
 	mark.fill(0);
 	for (const i of sc.always) mark[i] = 1;
-	if (flat.length < FRAGMENT) return mark;
+	if (flat.length < F) return mark;
 	let h = 0;
-	for (let i = 0; i < FRAGMENT; i++) h = (Math.imul(h, BASE) + flat.charCodeAt(i)) | 0;
-	for (let i = FRAGMENT - 1; ; ) {
-		const list = sc.byFragment.get(h);
+	for (let i = 0; i < F; i++) h = (imul(h, B) + flat.charCodeAt(i)) | 0;
+	for (let i = F - 1; ; ) {
+		const list = byFragment.get(h);
 		if (list) for (let k = 0; k < list.length; k++) mark[list[k]] = 1;
 		if (++i >= flat.length) break;
-		h = (Math.imul((h - Math.imul(flat.charCodeAt(i - FRAGMENT), LEAD)) | 0, BASE) + flat.charCodeAt(i)) | 0;
+		h = (imul((h - imul(flat.charCodeAt(i - F), L)) | 0, B) + flat.charCodeAt(i)) | 0;
 	}
 	return mark;
 }

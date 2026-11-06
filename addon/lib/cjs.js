@@ -11,6 +11,14 @@
  * requires, so with a working `require` it loads into Zotero unmodified -- no
  * bundler, no build step, and the same source keeps running under Node for the
  * benchmark CLI.
+ *
+ * The cost of loading into a plain object rather than a global: SpiderMonkey
+ * resolves a module's top-level names, and globals such as Math, by a dynamic
+ * lookup each time they are read. Nothing notices that once per call, but a
+ * loop that reads one per character pays it per character -- title-match's
+ * screen ran fourteen times slower for it. Copy them into locals before such a
+ * loop (see titleMatch.js candidates()). Node resolves the same names
+ * statically, so neither the tests nor the CLI benchmark can show it.
  */
 
 this.makeRequire = function (rootURI, globals) {

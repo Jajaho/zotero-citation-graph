@@ -1065,6 +1065,12 @@ async function buildPhases(entry, alive) {
 	// AbortSignal, which this sandbox is not promised to have; build() asks for
 	// nothing but `aborted`, and is told not to hand it to fetch().
 	let signal = { get aborted() { return !alive(); } };
+	// The reference sections the text phase reads, handed on to the ref-strings
+	// phase so that it does not read and segment every file a second time --
+	// see build()'s cache. Only when that phase is going to run: what they hold
+	// is kept through the PDF scan in between, and with ref-strings off nothing
+	// would ever read it.
+	let sections = options.refStrings ? new Map() : null;
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
 	};
@@ -1107,6 +1113,7 @@ async function buildPhases(entry, alive) {
 	status(l10n.t('build-reading-text'));
 	let textResult = await cg.build(adapter, {
 		signal,
+		sections,
 		enable: TEXT_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
@@ -1192,11 +1199,15 @@ async function buildPhases(entry, alive) {
 		status(l10n.t('build-reading-references'));
 		refResult = await cg.build(adapter, {
 			signal,
+			sections,
 			enable: ['ref-strings'],
 			offline: true,
 			includeExternal: options.includeExternal,
 			onProgress: throttle(p => status(l10n.t('build-reading-references-progress', p))),
 		});
+		// Nothing reads them after this, and this function runs on through the
+		// lookup, which can take a while.
+		sections = null;
 		if (!alive()) return;
 		logMeta('ref-strings', refResult);
 	}

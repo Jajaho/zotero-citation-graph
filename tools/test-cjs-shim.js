@@ -5815,6 +5815,28 @@ check('title-match yields exactly the edges of the unscreened loop, in its order
 	}
 });
 
+/**
+ * Inside Zotero, lib/cjs.js loads a module into a plain-object scope, and
+ * SpiderMonkey then resolves a module-level name -- or a global such as Math --
+ * by a dynamic lookup each time it is read. title-match's per-character loops
+ * read five of them per character, which made its screen about 1 s of a 1.1 s
+ * strategy on a 500-paper library (Gecko 159), and 0.07 s with them copied
+ * into locals. Node resolves the same names statically, so no timing taken
+ * here could show it; the check reads the source instead.
+ */
+check("title-match's per-character loops read only locals", () => {
+	const src = fs.readFileSync(path.join(addonDir, 'citation-graph/edges/titleMatch.js'), 'utf8');
+	for (const name of ['fragmentHashes', 'candidates']) {
+		const m = new RegExp('\\nfunction ' + name + '\\([^)]*\\) \\{\\n([\\s\\S]*?)\\n\\}\\n').exec(src);
+		if (!m) throw new Error(name + ' is not in titleMatch.js');
+		const body = m[1].split('\n').filter(l => !/^\s*\/\//.test(l));
+		const at = body.findIndex(l => /const F = FRAGMENT, B = BASE, L = LEAD, imul = Math\.imul;/.test(l));
+		if (at < 0) throw new Error(name + ' does not copy its constants into locals');
+		const late = body.slice(at + 1).find(l => /\b(FRAGMENT|BASE|LEAD|Math)\b/.test(l));
+		if (late) throw new Error(name + ' reads a module-level name after copying them: ' + late.trim());
+	}
+});
+
 check('the text strategies read each attachment once per build, not once each', async () => {
 	const cg = require_('./citation-graph/index.js');
 	const { items, sections } = screenFixture(21);
@@ -5829,6 +5851,111 @@ check('the text strategies read each attachment once per build, not once each', 
 	if (reads !== sections.size) throw new Error(sections.size + ' attachments, ' + reads + ' reads');
 });
 
+/** screenFixture behind an adapter that counts its reads, plus one paper whose
+ *  attachment has no text and one whose read fails -- in the first build only,
+ *  unless `failAlways` -- and ten with a bibliography ref-strings can parse,
+ *  which the fixture's bare bracketed titles are not. */
+function sectionAdapter(seed, { failAlways = false } = {}) {
+	const { items, sections } = screenFixture(seed);
+	for (let i = 42; i < 52; i++) {
+		const entries = [0, 1, 2].map(j => '[' + (j + 1) + '] A. Author and B. Writer, "'
+			+ items[(i * 7 + j * 13) % items.length].title + '," J. Test, vol. ' + (j + 3) + ', pp. 1-9, 2001.');
+		entries.push('[4] C. Other, "An outside work on spin coherence that nobody here holds, number ' + i
+			+ '," Phys. Rev., vol. 9, pp. 1-2, 2002.');
+		sections.set('T' + i, 'Introduction. '.repeat(20) + '\nReferences\n' + entries.join('\n'));
+	}
+	const reads = new Map();
+	let builds = 0;
+	const adapter = {
+		reads,
+		total: () => [...reads.values()].reduce((a, b) => a + b, 0),
+		listItems: async () => { builds++; return items; },
+		getAttachments: async k => (sections.has(k) || k === 'T118' || k === 'T119'
+			? [{ key: k + 'a', parentKey: k, contentType: 'application/pdf' }] : []),
+		getAttachmentText: async (attKey) => {
+			reads.set(attKey, (reads.get(attKey) || 0) + 1);
+			if (attKey === 'T119a' && (failAlways || builds === 1)) throw new Error('disk went away');
+			return sections.get(attKey.slice(0, -1)) || null;
+		},
+		getPdfLinkUris: async () => [],
+	};
+	return adapter;
+}
+
+const sortedEdges = r => JSON.stringify(r.edges.map(e => [e.from, e.to, e.confidence, e.via]).sort());
+
+/**
+ * The plugin's text phase and its ref-strings phase are separate builds with
+ * the PDF scan between them, and ref-strings read and segmented every file the
+ * text phase had just read -- about 400 ms of a 1.1 s phase on a
+ * 500-paper library. A Map handed to both now carries the sections across.
+ */
+check('the ref-strings phase reads no file the text phase already read', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const TEXT = ['text-doi', 'title-match', 'locator-match'];
+	const run = async (sections) => {
+		const a = sectionAdapter(21, { failAlways: true });
+		const text = await cg.build(a, { enable: TEXT, offline: true, includeExternal: true, sections });
+		const afterText = a.total();
+		const ref = await cg.build(a, { enable: ['ref-strings'], offline: true, includeExternal: true, sections });
+		return { a, text, ref, second: a.total() - afterText };
+	};
+	const fresh = await run(undefined);
+	const carried = await run(new Map());
+	if (!fresh.ref.edges.length) throw new Error('the fixture gave ref-strings nothing to find');
+	// The failed read is the one read a carried build still makes, every time.
+	if (carried.second !== 1 || carried.a.reads.get('T119a') !== 2) {
+		throw new Error('the second build made ' + carried.second + ' reads, against ' + fresh.second + ' without the Map');
+	}
+	if (sortedEdges(carried.ref) !== sortedEdges(fresh.ref)) throw new Error('carried sections changed what ref-strings found');
+	if (sortedEdges(carried.text) !== sortedEdges(fresh.text)) throw new Error('carrying changed what the text phase found');
+});
+
+/**
+ * What crosses over is `text` and `quality`, not `flat` -- ref-strings reads
+ * nothing else, and leaving the flattened copy behind nearly halves what is
+ * held through the PDF scan. A later build that does read `flat` must get the
+ * one a fresh read would have made, and a read that failed must be tried again
+ * rather than carried as "no text".
+ */
+check('a section carried to a later build reads as it would have read fresh', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const TEXT = ['text-doi', 'title-match', 'locator-match'];
+	const sections = new Map();
+	const a = sectionAdapter(22);
+	await cg.build(a, { enable: TEXT, offline: true, includeExternal: true, sections });
+	if ([...sections.values()].some(s => s && 'flat' in s)) throw new Error('the flattened copy was carried');
+	if (sections.get('T118a') !== null) throw new Error('an attachment with no text was not carried as none');
+	if (sections.has('T119a')) throw new Error('a failed read was carried');
+
+	const before = a.total();
+	const again = await cg.build(a, { enable: TEXT, offline: true, includeExternal: true, sections });
+	if (a.total() - before !== 1 || a.reads.get('T119a') !== 2) {
+		throw new Error((a.total() - before) + ' reads in the second build; only the failed one should be read again');
+	}
+	const fresh = await cg.build(sectionAdapter(22), { enable: TEXT, offline: true, includeExternal: true });
+	// The fresh adapter fails T119a, which the carried one has now read: drop
+	// what that paper cites before comparing.
+	const notT119 = r => ({ edges: r.edges.filter(e => e.from !== 'T119') });
+	if (!again.edges.length) throw new Error('the fixture gave the text strategies nothing to find');
+	if (sortedEdges(notT119(again)) !== sortedEdges(notT119(fresh))) throw new Error('a carried section scanned differently from a fresh one');
+});
+
+check('the plugin carries sections from the text phase to ref-strings, and only when ref-strings runs', () => {
+	const src = fs.readFileSync(path.join(addonDir, 'lib/graphTab.js'), 'utf8');
+	if (!/let sections = options\.refStrings \? new Map\(\) : null;/.test(src)) {
+		throw new Error('the Map is not made only for a build that runs ref-strings');
+	}
+	const builds = [...src.matchAll(/cg\.build\(adapter, \{([\s\S]*?)\n\t+\}\);/g)].map(m => m[1]);
+	const handed = builds.filter(b => /^\s*sections,$/m.test(b)).map(b => (/enable: ([^,\n]+)/.exec(b) || [])[1]);
+	if (JSON.stringify(handed) !== JSON.stringify(['TEXT_STRATEGIES', "['ref-strings']"])) {
+		throw new Error('sections handed to ' + JSON.stringify(handed) + ' of ' + builds.length + ' builds');
+	}
+	if (!/sections,\n\t+enable: \['ref-strings'\][\s\S]*?\}\);\n(\t+\/\/[^\n]*\n)*\t+sections = null;/.test(src)) {
+		throw new Error('the sections outlive the ref-strings phase');
+	}
+});
+
 /**
  * The plugin rebuilds when a scope option changes, and only ever checked
  * whether a build had been replaced between phases -- so ticking three boxes
@@ -5841,8 +5968,12 @@ check('a build that has been replaced stops reading papers', async () => {
 	const { items, sections } = screenFixture(21);
 	const signal = { aborted: false };
 	let opened = 0;
+	// locator-match only reads at all when some held work has a locator to be
+	// found by, and the fixture's have none.
+	const located = items.map((it, i) => ({ ...it, volume: '7', pages: String(100 + i), journalAbbreviation: 'J. Test' }));
+	let list = items;
 	const adapter = {
-		listItems: async () => items,
+		listItems: async () => list,
 		getAttachments: async (k) => {
 			// Replaced while the third paper is being read.
 			if (++opened === 3) signal.aborted = true;
@@ -5851,9 +5982,10 @@ check('a build that has been replaced stops reading papers', async () => {
 		getAttachmentText: async attKey => sections.get(attKey.slice(0, -1)) || null,
 		getPdfLinkUris: async () => [],
 	};
-	for (const enable of [['pdf-links'], ['text-doi', 'title-match'], ['ref-strings']]) {
+	for (const enable of [['pdf-links'], ['text-doi', 'title-match'], ['ref-strings'], ['locator-match']]) {
 		opened = 0;
 		signal.aborted = false;
+		list = enable[0] === 'locator-match' ? located : items;
 		await cg.build(adapter, { enable, offline: true, includeExternal: true, signal });
 		if (opened !== 3) throw new Error(enable.join('+') + ' opened ' + opened + ' of ' + items.length + ' papers after it was replaced at the third');
 	}

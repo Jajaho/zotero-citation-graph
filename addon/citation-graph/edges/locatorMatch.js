@@ -110,7 +110,7 @@ module.exports.id = register({
 		confidenceBySegment: { heading: 0.85, numbered: 0.8, tail: 0.5 },
 	},
 
-	async *derive({ adapter, items, index, options, onProgress, refSection }) {
+	async *derive({ adapter, items, index, options, onProgress, refSection, signal }) {
 		// Locator -> the works that claim it. Built once: the targets are the
 		// same for every document, and only the sections change.
 		const byLocator = locatorIndex(items);
@@ -118,6 +118,7 @@ module.exports.id = register({
 
 		let done = 0;
 		for (const item of items) {
+			if (signal && signal.aborted) return;
 			onProgress && onProgress(++done, items.length, item.key);
 			for (const att of await adapter.getAttachments(item.key)) {
 				const seg = await readSection(adapter, att.key, refSection);
