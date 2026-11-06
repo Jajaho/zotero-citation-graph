@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo-concepts/01-z-graph.svg" width="120" height="120" alt="Citation Graph for Zotero">
+<img src="addon/content/icons/logo.svg" width="120" height="120" alt="Citation Graph for Zotero">
 
 # Citation Graph for Zotero
 
@@ -12,18 +12,16 @@
 ![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936)
 [![License: AGPL-3.0](https://img.shields.io/github/license/Jajaho/zotero-citation-graph)](LICENSE)
 
-<!-- TODO: drop a screenshot or GIF of a settled graph here. Upload it to a GitHub
-     issue or release and paste the user-attachments URL, the same way the videos
-     further down are embedded. -->
+<img src="docs/media/trailer-studio.gif" width="880" alt="A Zotero collection's citation graph rising out of the Zotero window, then zooming in, lighting up one paper's citations, and listing the works the collection cites but does not hold">
 
 </div>
 
-Have you ever looked at your library and felt the fear that you might be missing an important work in the field?
+Have you ever looked at your library and feared you might be missing an important work?
 Have you wondered how the research in your field is related, who is building on the same work and who is developing separate ideas?
 
-Have you looked at all the cool tools like ConnectedPapers, Research Rabbit and Inciteful but hoped there was a FOSS solution that is native to your Zotero library, something that integrates seamlessly with your existing workflow?
+Have you admired tools like Connected Papers, ResearchRabbit and Inciteful, but wished for a free and open-source one that lives inside Zotero and fits the way you already work?
 
-Then fear no longer, Citation Graph for Zotero is for you.
+Then fear no longer: *Citation Graph for Zotero* is for you.
 
 ## Features
 
@@ -216,9 +214,9 @@ Zotero version, your OS and what you clicked.
 
 ## Contributing
 
-Bug reports, pull requests and especially **translations** are welcome. See
+Feature requests, bug reports, pull requests and especially **translations** are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md), and
-[Translations](CONTRIBUTING.md#translations) if you want to add a language.
+[Translations](CONTRIBUTING.md#translations) if you want to add a language. I'm looking forward to hearing from you on how you use the plugin, likes/dislikes and so forth. Your feedback is very welcome.
 
 ## License and Third-Party Code
 
