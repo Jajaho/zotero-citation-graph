@@ -2,7 +2,7 @@
  * The menu icons.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * Twenty-three of the twenty-four icons below are Copyright (c) Corporation for Digital
+ * Twenty-four of the twenty-five icons below are Copyright (c) Corporation for Digital
  * Scholarship, taken from Zotero (AGPL-3.0) and carried here under that same
  * licence; `isolate` is this plugin's own drawing. See THIRD-PARTY-NOTICES.md
  * section 2 for the file-by-file provenance table.
@@ -112,6 +112,10 @@
 			'M6.32325 4.20211L5.51471 3.39357C6.29703 3.13812 7.13239 3 8.00002 3C11.3574 3 14.2317 5.06818 15.4185 8.00001C14.9335 9.19806 14.1668 10.2519 13.2004 11.0793L12.491 10.3699C13.2612 9.72513 13.8907 8.91767 14.3267 8.00001C13.2025 5.6336 10.7909 4 8.00002 4C7.42214 4 6.86053 4.07004 6.32325 4.20211Z',
 			'M11 8C11 8.26879 10.9647 8.52933 10.8983 8.77721L9.99616 7.87502C9.93419 6.87 9.13 6.06581 8.12498 6.00384L7.22279 5.10165C7.47067 5.03535 7.73121 5 8 5C9.65685 5 11 6.34315 11 8Z',
 			'M5.1016 7.22298L6.00386 8.12524C6.06594 9.13005 6.86995 9.93406 7.87476 9.99614L8.77702 10.8984C8.52919 10.9647 8.26872 11 8 11C6.34315 11 5 9.65685 5 8C5 7.73128 5.03533 7.47081 5.1016 7.22298Z',
+		]],
+		// 16/export -- the arrow out of the tray, as File > Export Library uses.
+		'export': [16, [
+			'M16 10V15H1V10H2V14H15V10H16ZM8 2.707V11H9V2.707L11.293 5L12 4.293L8.5 0.792999L5 4.293L5.707 5L8 2.707Z',
 		]],
 		// 16/new-collection -- a collection being made, which is what an anchor is.
 		'group-here': [16, [

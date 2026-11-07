@@ -413,6 +413,25 @@ zotero-citation-graph-gaps-mixed = across { $count } subfields
 zotero-citation-graph-gaps-more = +{ $count } more below the cut
 zotero-citation-graph-gaps-lookup-hint = With "query node metadata" on, these are ranked by how specific each one is to your library rather than by count alone.
 
+## Export: the canvas menu's two entries, the file picker they open, and the
+## status line after it.
+#
+# export-default-name is the file name offered for a graph with no collection
+# behind it. export-legend-edges heads the edge colours in an exported figure's
+# legend; the node colours are headed by the Colour menu's own option.
+
+zotero-citation-graph-menu-export-svg = Export as SVG…
+zotero-citation-graph-menu-export-svg-hint = save the graph as drawn, with its legend, as a figure — names stay editable text
+zotero-citation-graph-menu-export-graphml = Export as GraphML…
+zotero-citation-graph-menu-export-graphml-hint = save the nodes, edges and layout for yEd, Gephi or a script
+zotero-citation-graph-export-title = Export Citation Graph
+zotero-citation-graph-export-default-name = citation graph
+zotero-citation-graph-export-filter-svg = SVG image
+zotero-citation-graph-export-filter-graphml = GraphML graph
+zotero-citation-graph-export-legend-edges = Edges, by strongest evidence
+zotero-citation-graph-export-saved = Saved { $file }
+zotero-citation-graph-export-failed = The graph could not be exported.
+
 ## The plugin's page in Zotero's Settings window.
 #
 # The title is the pane's name in the Settings sidebar and its heading. The

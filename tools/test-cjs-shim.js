@@ -4945,6 +4945,7 @@ function referencedIds() {
 		'lib/addDialog.js',
 		'lib/main.js',
 		'lib/prefsPane.js',
+		'lib/exportFile.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;
@@ -6853,6 +6854,246 @@ check('a ref: node never spends the metadata lookup budget', () => {
 	const keys = ghostKeysOf(state);
 	if (keys.includes('ref:a-parsed-title-of-some-work')) throw new Error('ref: key queued for lookup');
 	if (!keys.includes('doi:10.5555/x')) throw new Error('dropped the DOI ghost too');
+});
+
+// --- export (content/graphExport.js, lib/exportFile.js) --------------------
+
+/** Same trick as loadLinks(): evaluate the content-page script as a browser would. */
+function loadExport() {
+	const src = fs.readFileSync(path.join(addonDir, 'content/graphExport.js'), 'utf8');
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(src, ctx, { filename: 'graphExport.js' });
+	if (!ctx.ZGExport) throw new Error('graphExport.js did not publish ZGExport');
+	return ctx.ZGExport;
+}
+
+/**
+ * Well-formed XML, checked by hand: Node has no XML parser, and a file one
+ * stray '&' away from well-formed opens in no tool at all -- not Inkscape, not
+ * yEd, not Gephi. Every tag closes in order, no attribute is repeated, and
+ * every '&' in text or in an attribute starts an entity.
+ */
+function assertWellFormed(xml) {
+	const body = xml.replace(/^<\?xml[^?]*\?>\s*/, '');
+	if (/<\?|<!/.test(body)) throw new Error('a declaration or comment past the prolog');
+	const stack = [];
+	let last = 0;
+	const tag = /<(\/?)([A-Za-z_][\w:.-]*)((?:\s+[\w:.-]+="[^"<]*")*)\s*(\/?)>/g;
+	const checkText = (t, where) => {
+		if (/[<>]/.test(t)) throw new Error('a bare < or > ' + where + ': ' + JSON.stringify(t.slice(0, 60)));
+		for (const a of t.matchAll(/&/g)) {
+			if (!/^&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i.test(t.slice(a.index))) {
+				throw new Error('a bare & ' + where + ': ' + JSON.stringify(t.slice(a.index, a.index + 20)));
+			}
+		}
+		// eslint-disable-next-line no-control-regex
+		if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(t)) throw new Error('a control character ' + where);
+	};
+	let m;
+	while ((m = tag.exec(body))) {
+		checkText(body.slice(last, m.index), 'in text');
+		for (const v of m[3].matchAll(/="([^"]*)"/g)) checkText(v[1], 'in an attribute');
+		const names = [...m[3].matchAll(/\s([\w:.-]+)=/g)].map(x => x[1]);
+		if (new Set(names).size !== names.length) throw new Error('<' + m[2] + '> repeats an attribute');
+		if (m[1]) {
+			const open = stack.pop();
+			if (open !== m[2]) throw new Error('</' + m[2] + '> closes <' + open + '>');
+		}
+		else if (!m[4]) stack.push(m[2]);
+		last = tag.lastIndex;
+	}
+	if (body.slice(last).trim()) throw new Error('text after the root element');
+	if (stack.length) throw new Error('left open: ' + stack.join(' > '));
+}
+
+const EXPORT_SCENE = {
+	scale: 2,
+	theme: { bg: 'rgb(255, 255, 255)', fg: 'rgba(0, 0, 0, 0.9)', muted: '#6b6b6b', accent: '#0a67c2' },
+	edges: [
+		{ d: 'M0 0L10 0L10 1Z', fill: 'rgba(46,168,229,0.85)' },
+		{ d: 'M0 0Q5 2 10 10Z', fill: '#999999' },
+	],
+	nodes: [
+		{ x: 0, y: 0, r: 4, fill: '#ff6666', slices: null, solid: true, ring: null, title: 'Fish & <Chips>' },
+		{
+			x: 40, y: 10, r: 6, fill: '#5fb236',
+			slices: ['#ff6666', '#5fb236', 'rgba(87,109,217,0.1)'], solid: false,
+			ring: { r: 9, width: 1, color: '#0a67c2' }, title: 'Three shelves',
+		},
+		{ x: -20, y: 30, r: 3, fill: 'rgba(153,153,153,0.1)', slices: null, solid: false, ring: null, title: null },
+	],
+	labels: [
+		{ x: 0, y: 0, px: 7, w: 30, text: 'Smith&Jones2020', fill: 'rgba(0, 0, 0, 0.9)', halo: true },
+		{ x: 40, y: 10, px: 7, w: 20, text: 'Bad\u0007Name\u0000', fill: '#6b6b6b', halo: false },
+	],
+	legend: {
+		title: 'Year',
+		ramp: { stops: ['#576dd9', '#ff8c19'], lo: 1998, hi: 2024 },
+		rows: [
+			{ color: '#aaaaaa', label: 'No date', count: 3 },
+			{ color: '#999999', label: 'Outside <refs>', count: 12 },
+		],
+		more: null,
+		edges: { title: 'Edges', rows: [{ color: '#2ea8e5', label: 'pdf-links' }] },
+	},
+	title: 'My "Collection" & co',
+};
+
+check('an exported figure is well-formed SVG 1.1 a print pipeline can read', () => {
+	const X = loadExport();
+	const svg = X.svg(EXPORT_SCENE, (text, px) => String(text).length * px * 0.5);
+	assertWellFormed(svg);
+	if (!/^<\?xml[^>]*\?>\n<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(svg)) throw new Error('no SVG root');
+	// rgba() in a paint attribute is SVG 2, which Inkscape reads as black.
+	if (/rgba?\(/.test(svg)) throw new Error('an rgba() colour got into the file');
+	if (!/fill="#2ea8e5" fill-opacity="0\.85"/.test(svg)) throw new Error('an edge lost its alpha');
+	for (const id of ['background', 'edges', 'nodes', 'labels', 'legend']) {
+		if (!svg.includes('id="' + id + '"')) throw new Error('no #' + id + ' group');
+	}
+	// Names stay text, so `inkscape --export-latex` can typeset them.
+	const texts = [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map(m => m[1]);
+	if (!texts.includes('Smith&amp;Jones2020')) throw new Error('a name is not a <text>: ' + texts.join(' | '));
+	if (!texts.includes('BadName')) throw new Error('control characters survived in a name');
+	if (!texts.includes('1998') || !texts.includes('2024')) throw new Error('the ramp lost its ends');
+	if (!svg.includes('paint-order="stroke"')) throw new Error('the halo is not under the name');
+	// A dimmed paper on three shelves: three wedges and no whole circle under them.
+	const wedges = svg.match(/<path d="M40 10L[^"]*A6 6 0 0 1 [^"]*Z"/g) || [];
+	if (wedges.length !== 3) throw new Error(wedges.length + ' wedges for three collections');
+	if (!svg.includes('stroke="#0a67c2" stroke-width="1"')) throw new Error('the pick ring is gone');
+	// The viewBox is in graph units and the size in px at the zoom it was taken
+	// at, so the file opens at the size it was on screen.
+	const [, vw, vh] = svg.match(/viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"/) || [];
+	const [, pw, ph] = svg.match(/ width="(\d+)" height="(\d+)"/) || [];
+	if (Math.abs(vw * 2 - pw) > 1 || Math.abs(vh * 2 - ph) > 1) {
+		throw new Error('viewBox ' + vw + 'x' + vh + ' is not ' + pw + 'x' + ph + ' at zoom 2');
+	}
+});
+
+check('an empty graph still exports a valid figure and a valid GraphML', () => {
+	const X = loadExport();
+	assertWellFormed(X.svg({ scale: 1, theme: {}, edges: [], nodes: [], labels: [], legend: null }));
+	assertWellFormed(X.graphml({ nodes: [], edges: [] }));
+});
+
+check('export colours come out as an opaque hex and an opacity', () => {
+	const X = loadExport();
+	const cases = [
+		['#ABC', '#aabbcc', 1],
+		['#ff8c19', '#ff8c19', 1],
+		['#00000080', '#000000', 0.502],
+		['rgba(46,168,229,0.45)', '#2ea8e5', 0.45],
+		['rgb(255, 255, 255)', '#ffffff', 1],
+		['rgb(0 0 0 / 50%)', '#000000', 0.5],
+	];
+	for (const [css, c, a] of cases) {
+		const p = X.paint(css);
+		if (p.c !== c || p.a !== a) throw new Error(css + ' -> ' + JSON.stringify(p));
+	}
+});
+
+check('the path recorder writes the calls the edge tracer makes', () => {
+	const rec = loadExport().recorder();
+	rec.moveTo(1, 2);
+	rec.quadraticCurveTo(3.333, -0.001, 5, 6);
+	rec.lineTo(-7.5, 8);
+	rec.closePath();
+	const d = rec.take();
+	if (d !== 'M1 2Q3.33 0 5 6L-7.5 8Z') throw new Error(d);
+	if (rec.take() !== '') throw new Error('take() did not clear');
+});
+
+check('an exported GraphML declares every attribute it uses and links real nodes', () => {
+	const X = loadExport();
+	const ghost = 'doi:10.5555/a<b>&c';
+	const xml = X.graphml({
+		description: 'Shelf & <co>',
+		nodes: [
+			{
+				id: 'AAAA1111', label: 'Smith2020', title: 'On "Graphs"', firstAuthor: 'Smith',
+				creators: ['Smith', 'Jones'], year: 2020, collections: ['A', 'B'], subfield: 'Graphs',
+				itemType: 'journalArticle', publication: 'J', doi: '10.1/x', held: true,
+				citedHere: 3, citedGlobal: 120, color: '#ff6666', x: 1.234, y: -5, r: 4,
+			},
+			{ id: ghost, label: 'a<b>', held: false, citedHere: 2, citedGlobal: null, color: '#999999', x: 10, y: 20, r: 3 },
+		],
+		edges: [
+			{
+				source: 'AAAA1111', target: ghost, strategies: ['text-doi', 'pdf-links'],
+				confidence: 0.95, doi: '10.5555/a<b>&c', color: '#5fb236',
+			},
+		],
+	});
+	assertWellFormed(xml);
+	const declared = new Set([...xml.matchAll(/<key id="([^"]+)"/g)].map(m => m[1]));
+	for (const m of xml.matchAll(/<data key="([^"]+)"/g)) {
+		if (!declared.has(m[1])) throw new Error('data for undeclared key ' + m[1]);
+	}
+	const ids = new Set([...xml.matchAll(/<node id="([^"]+)"/g)].map(m => m[1]));
+	for (const m of xml.matchAll(/<edge [^>]*source="([^"]+)" target="([^"]+)"/g)) {
+		if (!ids.has(m[1]) || !ids.has(m[2])) throw new Error('an edge to a node not in the file');
+	}
+	// Gephi's names for the drawing, and yEd's graphics for the same thing.
+	for (const k of ['n_label', 'n_x', 'n_y', 'n_size', 'n_r', 'n_g', 'n_b', 'e_weight', 'ng', 'eg']) {
+		if (!declared.has(k)) throw new Error('no key ' + k);
+	}
+	if (!xml.includes('<data key="n_held">false</data>')) throw new Error('held vs outside is missing');
+	if (!xml.includes('<data key="e_strategies">text-doi, pdf-links</data>')) throw new Error('strategies missing');
+	if (!xml.includes('<data key="n_collection">A; B</data>')) throw new Error('collections missing');
+	if (!xml.includes('<y:Geometry x="-2.77" y="-9" width="8" height="8"/>')) throw new Error('yEd geometry off');
+	if (!xml.includes('edgedefault="directed"')) throw new Error('a citation graph is directed');
+	// A node with nothing to say about a field says nothing, rather than an
+	// empty string a typed reader would choke on as an int.
+	if ((xml.match(/key="n_cited_global">/g) || []).length !== 1) throw new Error('a missing global count was written');
+});
+
+check('graph.html loads the export writer before the page', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+	const at = order.indexOf('graphExport.js');
+	if (at < 0) throw new Error('graphExport.js is not loaded');
+	if (at > order.indexOf('graph.js')) throw new Error('graphExport.js must load before graph.js');
+});
+
+check('an export is saved where the user said, under a name made safe', async () => {
+	await l10nReady;
+	const X = require_('./lib/exportFile.js');
+	const safe = X.fileName('Thesis: ch. 2/3 \u0007', 'svg');
+	if (safe !== 'Thesis_ ch. 2_3.svg') throw new Error(safe);
+	if (X.fileName('', 'graphml') !== 'citation-graph.graphml') throw new Error('no fallback name');
+	if (X.fileName('x', 'exe') !== null) throw new Error('an unknown format got a name');
+
+	const shown = [];
+	class FakePicker {
+		init(win, title, mode) { shown.push({ title, mode }); }
+		appendFilter(title, filter) { shown.push({ filter }); }
+		appendFilters() {}
+		async show() { return 0; }
+		get file() { return 'C:/out/graph.svg'; }
+	}
+	Object.assign(FakePicker.prototype, { modeSave: 1, returnOK: 0, returnCancel: 1, returnReplace: 2, filterAll: 1 });
+	const real = ChromeUtils.importESModule;
+	ChromeUtils.importESModule = url => (url === 'chrome://zotero/content/modules/filePicker.mjs'
+		? { FilePicker: FakePicker }
+		: real(url));
+	try {
+		const status = [];
+		// The page names neither the extension nor the path: an unknown format
+		// is refused before any picker opens.
+		if (await X.save({}, { format: 'exe', text: 'x', name: 'n' }, s => status.push(s)) !== null) {
+			throw new Error('saved an unknown format');
+		}
+		if (shown.length) throw new Error('opened a picker for an unknown format');
+		const text = '<svg xmlns="http://www.w3.org/2000/svg">unique-export-marker</svg>';
+		const at = await X.save({}, { format: 'svg', text, name: 'Shelf' }, s => status.push(s));
+		if (at !== 'C:/out/graph.svg') throw new Error('saved to ' + at);
+		if (!traceWrites.includes(text)) throw new Error('the text was not written');
+		if (!shown.some(x => x.filter === '*.svg')) throw new Error('no SVG filter in the picker');
+		if (!status.length || !status[0].includes('C:/out/graph.svg')) throw new Error('status: ' + status);
+	}
+	finally {
+		ChromeUtils.importESModule = real;
+	}
 });
 
 Promise.all(pending).then(() => {

@@ -24,6 +24,7 @@ let splitPane = require('./splitPane.js');
 let gapsPane = require('./gapsPane.js');
 let nodeMenu = require('./nodeMenu.js');
 let searchPane = require('./searchPane.js');
+let exportFile = require('./exportFile.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
@@ -923,6 +924,16 @@ async function handleMessage(win, tabID, scope, msg) {
 				Zotero.launchURL(msg.url);
 			}
 			break;
+		// The graph as a file: the page has written the document, and saving it
+		// is chrome's because a content page has no file picker. See
+		// lib/exportFile.js, which takes nothing from the message but the text,
+		// the format and the name to offer.
+		case 'export': {
+			let entry = open_.get(tabID);
+			if (!entry) break;
+			await exportFile.save(win, msg, text => send(entry, 'zgSetStatus', text));
+			break;
+		}
 		// Zotero's own item menu, over the node the user right-clicked. Chrome's
 		// to build and to open for the same reason as the item pane below: it is
 		// a XUL popup in the main window, and the graph page is content. See
