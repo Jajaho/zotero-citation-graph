@@ -1087,12 +1087,38 @@ truth about a collection-scoped graph.
 ## The canvas menu, and grouping
 
 Right-clicking the canvas itself — anywhere no node is under the pointer — gives
-two entries:
+these entries:
 
 | entry | what it does |
 |---|---|
 | `Zoom to fit` | the same reframe as the ⤢ button, bottom left |
+| `What is missing` | opens the gap list beside the graph |
 | `Group here` | plants an anchor at the pointer and asks what belongs at it |
+| `Export as SVG…` | saves the graph as drawn, with its legend, as a figure |
+| `Export as GraphML…` | saves the nodes, edges and layout for yEd, Gephi or a script |
+
+**Exports are of the graph as filtered** — masks, minimum confidence, strategies
+switched off, outside references shown or hidden — because that is the graph on
+screen. The page writes the document (`content/graphExport.js`, pure) and chrome
+saves it through Zotero's file picker (`lib/exportFile.js`).
+
+- **SVG** is written from the page's own geometry, not captured from the canvas:
+  circles and collection wedges as paths, each edge as the same outline the
+  canvas fills (arrow head included), and names as `<text>` so
+  `inkscape --export-latex` can typeset them. It is drawn at the current zoom —
+  an edge's width, a head and a name's type size are screen sizes — and carries
+  the names that would have room at that zoom over the whole graph, so zoom in
+  before exporting for more of them. A pick ring and isolation's fade are kept;
+  pin badges and group flags are not. Colours are the current theme's, the
+  background included, written as hex plus opacity (SVG 1.1) rather than `rgba()`.
+- **GraphML** has, per node, `label` (citekey), `title`, `first_author`,
+  `creators`, `year`, `collection`, `subfield`, `item_type`, `publication`, `doi`,
+  `held` (false for outside references), `cited_here`, `cited_global`, `color`
+  and the layout as `x`/`y`/`size`/`r`/`g`/`b`, which Gephi reads as the drawing;
+  per edge, `strategies`, `confidence` (also as Gephi's `weight`), `doi` and
+  `color`. yEd ignores those and reads yFiles graphics, so the same position,
+  size and colour are written again as `y:ShapeNode`/`y:PolyLineEdge`. `y` grows
+  downward, as on screen and in yEd.
 
 **A group is an anchor with a filter.** Plant a flag, name what belongs there
 with the same filter box the panel uses — same chips, same completions, same

@@ -342,6 +342,21 @@ zotero-citation-graph-gaps-mixed = über { $count } Teilgebiete verteilt
 zotero-citation-graph-gaps-more = +{ $count } weitere unterhalb der Grenze
 zotero-citation-graph-gaps-lookup-hint = Mit „Knotenmetadaten abfragen“ werden diese danach sortiert, wie spezifisch sie für deine Bibliothek sind, statt nur nach Anzahl.
 
+## Export: die zwei Einträge im Menü der Zeichenfläche, der Dateidialog und die
+## Statuszeile danach.
+
+zotero-citation-graph-menu-export-svg = Als SVG exportieren…
+zotero-citation-graph-menu-export-svg-hint = den Graphen wie gezeichnet samt Legende als Abbildung speichern — die Namen bleiben bearbeitbarer Text
+zotero-citation-graph-menu-export-graphml = Als GraphML exportieren…
+zotero-citation-graph-menu-export-graphml-hint = Knoten, Kanten und Layout für yEd, Gephi oder ein Skript speichern
+zotero-citation-graph-export-title = Zitationsgraph exportieren
+zotero-citation-graph-export-default-name = Zitationsgraph
+zotero-citation-graph-export-filter-svg = SVG-Grafik
+zotero-citation-graph-export-filter-graphml = GraphML-Graph
+zotero-citation-graph-export-legend-edges = Kanten, nach stärkstem Beleg
+zotero-citation-graph-export-saved = { $file } gespeichert
+zotero-citation-graph-export-failed = Der Graph konnte nicht exportiert werden.
+
 ## Die Seite des Plugins in Zoteros Einstellungen.
 
 zotero-citation-graph-prefs-title = Zitationsgraph

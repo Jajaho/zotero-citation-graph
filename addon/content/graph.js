@@ -1,4 +1,4 @@
-/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGGaps, ZGL10n, ZGIcons */
+/* global ForceGraph, ZGScale, ZGLinks, ZGFilters, ZGCluster, ZGGaps, ZGL10n, ZGIcons, ZGExport */
 
 /**
  * Content-side renderer. Runs with an ordinary content principal inside a
@@ -155,6 +155,7 @@
 	const Cluster = ZGCluster;
 	const Gaps = ZGGaps;
 	const Icons = ZGIcons;
+	const Export = ZGExport;
 
 	/**
 	 * One string, from the .ftl chrome hands the page. Until that lands t()
@@ -1310,10 +1311,7 @@
 	const LEGEND_MAX = 12;
 
 	function renderLegend(nodes) {
-		// The cached mode, not the <select>: the rows are keyed by colorKey(),
-		// which reads colorMode, and anything read from elsewhere can disagree
-		// with the rows it sits beside.
-		let mode = colorMode;
+		let model = legendModel(nodes);
 		// No title: the legend sits directly under the colour menu, which already
 		// says what it is a legend for. What the title's tooltip used to carry
 		// for the subfields is kept on the legend itself -- how good the split
@@ -1321,14 +1319,61 @@
 		// the algorithm's invention rather than the library's structure, and a
 		// reader colouring by it deserves to be able to find that out. A row's
 		// own tooltip wins over it, so it shows between the rows and on the ramp.
-		let quality = mode === 'cluster' && clusters().count
+		elLegend.title = model.mode === 'cluster' && clusters().count
 			? t('legend-cluster-quality', {
 				count: clusters().count,
 				q: clusters().modularity.toFixed(2),
 			})
 			: '';
-		elLegend.title = quality;
+		if (model.shared) elLegend.title = t('legend-collection-shared', { count: model.shared });
 		elLegendBody.textContent = '';
+
+		// Year is a continuum, so its legend is the ramp itself with the ends
+		// labelled -- one swatch per year would be fifty rows saying nothing.
+		if (model.ramp) {
+			let ramp = document.createElement('div');
+			ramp.className = 'legend-ramp';
+			ramp.style.background = 'linear-gradient(to right, ' + model.ramp.stops.join(', ') + ')';
+			elLegendBody.appendChild(ramp);
+
+			let ends = document.createElement('div');
+			ends.className = 'legend-ends';
+			let lo = document.createElement('span');
+			lo.textContent = model.ramp.lo;
+			let hi = document.createElement('span');
+			hi.textContent = model.ramp.hi;
+			ends.appendChild(lo);
+			ends.appendChild(hi);
+			elLegendBody.appendChild(ends);
+		}
+		for (let r of model.rows) elLegendBody.appendChild(legendRow(r.color, r.label, r.count));
+		if (model.more) {
+			let more = document.createElement('div');
+			more.className = 'legend-more';
+			more.textContent = model.more;
+			elLegendBody.appendChild(more);
+		}
+		for (let r of model.tail) elLegendBody.appendChild(legendRow(r.color, r.label, r.count));
+
+		elLegend.hidden = !elLegendBody.firstChild;
+	}
+
+	/**
+	 * What the legend says, as data: the sidebar draws it as rows and the SVG
+	 * export draws it into the figure, and both must say the same thing.
+	 *
+	 *   ramp   { stops, lo, hi } in year mode with any dated paper, else null
+	 *   rows   [{ color, label, count }], commonest first
+	 *   more   the "and N more" line, or null
+	 *   tail   the rows after it -- outside references, in every mode
+	 *   shared how many papers are cut into several collection wedges
+	 */
+	function legendModel(nodes) {
+		// The cached mode, not the <select>: the rows are keyed by colorKey(),
+		// which reads colorMode, and anything read from elsewhere can disagree
+		// with the rows it sits beside.
+		let mode = colorMode;
+		let model = { mode, ramp: null, rows: [], more: null, tail: [], shared: 0 };
 
 		let held = [];
 		let ghosts = 0;
@@ -1337,70 +1382,47 @@
 			else held.push(n);
 		}
 
-		if (mode === 'year') yearLegend(held);
-		else keyLegend(held);
+		if (mode === 'year') yearLegend(held, model);
+		else keyLegend(held, model);
 
 		// Outside references are the one population coloured by what they are
 		// rather than by any metadata they carry, so they get an entry of their
 		// own in every mode.
-		if (ghosts) elLegendBody.appendChild(legendRow(GHOST_COLOR, t('legend-outside'), ghosts));
-
-		elLegend.hidden = !elLegendBody.firstChild;
+		if (ghosts) model.tail.push({ color: GHOST_COLOR, label: t('legend-outside'), count: ghosts });
+		return model;
 	}
 
-	/** Year is a continuum, so its legend is the ramp itself with the ends
-	 *  labelled -- one swatch per year would be fifty rows saying nothing. */
-	function yearLegend(nodes) {
+	function yearLegend(nodes, model) {
 		let undated = 0;
 		for (let n of nodes) if (n.year == null) undated++;
 
 		if (yearRange) {
 			let stops = [];
 			for (let i = 0; i <= 8; i++) stops.push(yearColor(i / 8));
-			let ramp = document.createElement('div');
-			ramp.className = 'legend-ramp';
-			ramp.style.background = 'linear-gradient(to right, ' + stops.join(', ') + ')';
-			elLegendBody.appendChild(ramp);
-
-			let ends = document.createElement('div');
-			ends.className = 'legend-ends';
-			let lo = document.createElement('span');
-			lo.textContent = yearRange[0];
-			let hi = document.createElement('span');
-			hi.textContent = yearRange[1];
-			ends.appendChild(lo);
-			ends.appendChild(hi);
-			elLegendBody.appendChild(ends);
+			model.ramp = { stops, lo: yearRange[0], hi: yearRange[1] };
 		}
 
-		if (undated) elLegendBody.appendChild(legendRow(NO_KEY_COLOR, t('legend-no-date'), undated));
+		if (undated) model.rows.push({ color: NO_KEY_COLOR, label: t('legend-no-date'), count: undated });
 	}
 
 	/** The hashed modes: one swatch per key, commonest first, so the colours
 	 *  covering most of the screen are the ones explained first. A paper in
 	 *  three collections is counted under all three, which is what its three
 	 *  wedges say -- so the counts can add up to more than the nodes. */
-	function keyLegend(nodes) {
+	function keyLegend(nodes, model) {
 		let counts = new Map();
-		let shared = 0;
 		for (let n of nodes) {
 			let keys = colorKeys(n);
-			if (keys.length > 1) shared++;
+			if (keys.length > 1) model.shared++;
 			for (let key of keys) counts.set(key, (counts.get(key) || 0) + 1);
 		}
-		if (shared) elLegend.title = t('legend-collection-shared', { count: shared });
 		let keys = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)
 			|| (a < b ? -1 : a > b ? 1 : 0));
 		for (let key of keys.slice(0, LEGEND_MAX)) {
-			elLegendBody.appendChild(legendRow(keyColor(key), key, counts.get(key)));
+			model.rows.push({ color: keyColor(key), label: key, count: counts.get(key) });
 		}
 		let rest = keys.length - LEGEND_MAX;
-		if (rest > 0) {
-			let more = document.createElement('div');
-			more.className = 'legend-more';
-			more.textContent = t('legend-more', { count: rest });
-			elLegendBody.appendChild(more);
-		}
+		if (rest > 0) model.more = t('legend-more', { count: rest });
 	}
 
 	function legendRow(color, label, count) {
@@ -4310,6 +4332,276 @@
 			c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 	}
 
+	// --- export -----------------------------------------------------------
+
+	/**
+	 * The graph on screen, saved as a file. Two formats, for two different
+	 * next steps:
+	 *
+	 *   svg      a figure: the picture as it is drawn, at the zoom it is drawn
+	 *            at, with its legend beside it. Paths for the circles and the
+	 *            edges, <text> for the names.
+	 *   graphml  the data: every node and edge on screen with what the page
+	 *            knows about it, and the layout, for yEd, Gephi or a script.
+	 *
+	 * Both are of the graph AS FILTERED -- masks, minimum confidence, strategies
+	 * switched off, outside references hidden or shown -- because that is what
+	 * the user has spent their time arranging, and an export that quietly put
+	 * back what they took out would be a different graph from the one they
+	 * asked for. They are taken from what force-graph is drawing, which is
+	 * exactly that.
+	 *
+	 * The page writes the text and chrome writes the file: a content page has
+	 * no file picker and no file system. See 'export' in lib/graphTab.js.
+	 */
+	function exportGraph(format) {
+		if (!fg || !raw) return;
+		let text;
+		try {
+			text = format === 'svg' ? exportSvg() : exportGraphml();
+		}
+		catch (e) {
+			trace('export failed: ' + (e && e.message));
+			elStatus.textContent = t('export-failed');
+			return;
+		}
+		emit({ type: 'export', format, name: exportName(), text });
+	}
+
+	/** What the file is called before the user says otherwise: what the graph
+	 *  is of. Chrome makes it a valid file name. */
+	function exportName() {
+		let name = (raw.scope && raw.scope.name) || (raw.collection && raw.collection.name) || '';
+		return name || t('export-default-name');
+	}
+
+	/**
+	 * A theme colour as the computed style resolves it. The stylesheet's
+	 * variables are references to Zotero's own -- `var(--fill-primary)` and so
+	 * on -- and what that comes to is only known once something is painted
+	 * with it, which is what a probe element is for. The canvas never needed
+	 * this, because it takes any CSS colour a fillStyle takes; a file does not.
+	 */
+	function resolvedTheme() {
+		let theme = themeColors();
+		let probe = document.createElement('span');
+		probe.style.display = 'none';
+		document.body.appendChild(probe);
+		let resolve = (c) => {
+			probe.style.color = '';
+			probe.style.color = c;
+			return getComputedStyle(probe).color || c;
+		};
+		let out = {
+			fg: resolve(theme.fg),
+			muted: resolve(theme.muted),
+			bg: resolve(theme.halo),
+			accent: resolve(theme.accent),
+		};
+		probe.remove();
+		return out;
+	}
+
+	let _measureCtx = null;
+
+	function measureCtx() {
+		if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+		return _measureCtx;
+	}
+
+	/**
+	 * The figure. Everything is in graph units, as the canvas has it before
+	 * force-graph's transform, and drawn the way the canvas draws it AT THE
+	 * CURRENT ZOOM: an edge's width, an arrow head and a name's type size are
+	 * all screen sizes on the canvas, so a figure has to pick one zoom to turn
+	 * them back into graph units at. The one the user is looking at is the
+	 * only choice that makes the file look like the screen.
+	 *
+	 * The names are the frame's own rule, run over the whole graph instead of
+	 * the viewport: the same ranking, the same sizes and the same greedy pass,
+	 * so a figure carries every name that would have room at this zoom if the
+	 * window were big enough to hold all of it. Zoom in before exporting for
+	 * more names, out for fewer.
+	 *
+	 * What is left out is what is not the graph: the pin badges and the group
+	 * flags, which are furniture for laying it out, and the hover. A pick and
+	 * an isolation stay -- those are how a figure says "these papers", and
+	 * someone who wants them gone can clear them first.
+	 */
+	function exportSvg() {
+		let { nodes, links } = fg.graphData();
+		let scale = fg.zoom() || 1;
+		let theme = resolvedTheme();
+		let ctx = measureCtx();
+
+		let rec = Export.recorder();
+		let edges = [];
+		for (let l of links) {
+			// The canvas's own outline, traced into path data instead of a
+			// fill. See traceEdge().
+			traceEdge(rec, l, scale);
+			let d = rec.take();
+			if (d) edges.push({ d, fill: linkColor(l) || 'rgba(0,0,0,0.28)' });
+		}
+
+		let out = [];
+		for (let n of nodes) {
+			if (n.x == null || n.y == null) continue;
+			let dim = dimmed(n);
+			out.push({
+				x: n.x,
+				y: n.y,
+				// force-graph's radius, floor and all -- the circle it paints.
+				r: Math.sqrt(Math.max(0, nodeVal(n) || 1)) * NODE_REL_SIZE,
+				fill: nodeColor(n),
+				slices: nodeSlices(n),
+				solid: !dim,
+				ring: isPicked(n) ? {
+					r: nodeRadius(n) + HL_RING_GAP / scale,
+					width: HL_RING_WIDTH / scale,
+					color: dim ? fade(theme.accent, DIM_NODE_ALPHA) : theme.accent,
+				} : null,
+				title: n.ghost ? ((n.meta && n.meta.title) || n.name) : n.name,
+			});
+		}
+
+		let model = legendModel(nodes);
+		let opt = elColorBy.selectedOptions && elColorBy.selectedOptions[0];
+		let legend = {
+			title: opt ? opt.textContent.trim() : '',
+			ramp: model.ramp,
+			rows: model.rows.concat(model.tail),
+			more: model.more,
+			edges: null,
+		};
+		if (PERF.tint && colorEdges) {
+			let seen = new Set();
+			for (let l of links) seen.add(bestVia(l.via));
+			let rows = VIA_RANK.filter(v => seen.has(v));
+			for (let v of seen) if (!rows.includes(v)) rows.push(v);
+			legend.edges = {
+				title: t('export-legend-edges'),
+				rows: rows.map(v => ({ color: viaColor(v), label: v })),
+			};
+		}
+
+		return Export.svg({
+			scale,
+			theme,
+			edges,
+			nodes: out,
+			labels: exportLabels(nodes, scale, ctx, theme),
+			legend,
+			title: exportName(),
+		}, (text, px) => {
+			ctx.font = px + 'px sans-serif';
+			return ctx.measureText(String(text)).width;
+		});
+	}
+
+	/** Which names the figure carries, and at what size: reserveLabels() and
+	 *  placeLabel(), over the whole graph rather than the viewport. */
+	function exportLabels(nodes, scale, ctx, theme) {
+		if (!PERF.labels) return [];
+		let hideGhosts = elHideGhostNames.checked;
+		let onGraph = new Set(nodes);
+		// Cells indexed from the top-left of the whole graph, for the reason
+		// the frame indexes them from the viewport's. See Pass.begin().
+		let ox = Infinity;
+		let oy = Infinity;
+		for (let n of nodes) {
+			if (n.x == null) continue;
+			ox = Math.min(ox, n.x * scale);
+			oy = Math.min(oy, n.y * scale);
+		}
+		let pass = LabelLayout.pass();
+		pass.begin(Math.max(24, 5 * LABEL_MIN_PX), Infinity, ox - 1000, oy - 1000);
+		let out = [];
+		let offer = (n, force) => {
+			if (!onGraph.has(n) || !n.label || n.x == null) return;
+			if (n.ghost && hideGhosts) return;
+			if (dimmed(n)) return;
+			let m = labelMetrics(n, ctx, scale);
+			let px = m.px;
+			let w = m.w;
+			let x = n.x * scale;
+			let y = n.y * scale;
+			let box = w / 2 + LABEL_PAD;
+			let boxY = px * LABEL_INK / 2 + LABEL_PAD;
+			if (!force && pass.hits(x - box, y - boxY, x + box, y + boxY)) return;
+			pass.claim(x - box, y - boxY, x + box, y + boxY);
+			out.push({
+				x: n.x,
+				y: n.y,
+				px: px / scale,
+				w: w / scale,
+				text: n.label,
+				fill: n.ghost ? theme.muted : theme.fg,
+				halo: PERF.halo,
+			});
+		};
+		// The hand-picked names first, unconditionally, as on screen -- minus
+		// the hover, which is where the pointer happened to be on the way to
+		// the menu.
+		let forced = n => isPicked(n) || pinnedByUser(n);
+		for (let n of labelOrder) if (forced(n)) offer(n, true);
+		for (let n of labelOrder) if (!forced(n)) offer(n, false);
+		return out;
+	}
+
+	/**
+	 * The data. Colours are the hue a node is coloured by, without the fade
+	 * isolation lays over it: dimming is a view of the graph, and a file for
+	 * another tool should carry the graph. Positions are the layout as it
+	 * stands, in the canvas's own orientation -- y grows downward, as it does
+	 * in yEd.
+	 */
+	function exportGraphml() {
+		let { nodes, links } = fg.graphData();
+		let subfield = clusters().of;
+		let out = [];
+		for (let n of nodes) {
+			if (n.x == null || n.y == null) continue;
+			let x = n.ghost ? (n.meta || {}) : null;
+			let creators = (x ? x.creators : n.creators) || [];
+			out.push({
+				id: n.id,
+				label: n.label,
+				title: x ? (x.title || null) : n.name,
+				firstAuthor: creators[0] || null,
+				creators,
+				year: x ? (x.year != null ? x.year : null) : n.year,
+				collections: x ? [] : n.collections,
+				subfield: x ? null : (subfield.get(n.id) || null),
+				itemType: x ? null : n.itemType,
+				publication: x ? (x.venue || null) : n.publication,
+				doi: x ? (x.ns === 'doi' ? x.id : null) : n.doi,
+				held: !n.ghost,
+				citedHere: n.inDeg || 0,
+				citedGlobal: n.citedByGlobal,
+				color: baseColor(n),
+				x: n.x,
+				y: n.y,
+				r: Math.sqrt(Math.max(0, nodeVal(n) || 1)) * NODE_REL_SIZE,
+			});
+		}
+		let edges = [];
+		for (let l of links) {
+			let from = endId(l.source);
+			let to = endId(l.target);
+			if (from == null || to == null) continue;
+			edges.push({
+				source: from,
+				target: to,
+				strategies: l.via,
+				confidence: l.confidence,
+				doi: l.doi || null,
+				color: viaColor(bestVia(l.via)),
+			});
+		}
+		return Export.graphml({ description: exportName(), nodes: out, edges });
+	}
+
 	// --- the pick, which is the selection ---------------------------------
 
 	/**
@@ -5851,6 +6143,22 @@
 				run: () => addGroup(event),
 			});
 		}
+		// Last, being about the whole picture rather than any spot on it, and
+		// off on an empty canvas, where there is no picture to save.
+		let empty = !fg || !fg.graphData().nodes.length;
+		entries.push({
+			icon: 'export',
+			label: t('menu-export-svg'),
+			hint: t('menu-export-svg-hint'),
+			disabled: empty,
+			run: () => exportGraph('svg'),
+		}, {
+			icon: 'export',
+			label: t('menu-export-graphml'),
+			hint: t('menu-export-graphml-hint'),
+			disabled: empty,
+			run: () => exportGraph('graphml'),
+		});
 		openMenu(entries, event);
 	}
 
