@@ -987,6 +987,14 @@ and the neighbourhood stays where your eye left it. Double-clicking the node
 again, clicking empty canvas, pressing Escape, or the `isolated: …` button that
 appears in the control panel all give the whole graph back.
 
+The double click isolates whatever the page's `hoverNode` says the pointer is
+over, and force-graph only reports a hover when the object under the pointer
+*changes*. So a payload keeps the hover when its node is still drawn
+(`keepHover()`, after `render()`) instead of clearing it: build phases land for
+minutes on a large library, and a double click on a paper the pointer had been
+resting on through one of them found no node, and its two clicks picked the
+paper and unpicked it.
+
 The focus is a **set**, not one node, and it is built the way the pick is:
 **Ctrl-double-click** (Cmd on a Mac) lights a second neighbourhood beside the
 first without losing it, or puts one out again. That is the same modifier the
@@ -1058,6 +1066,13 @@ node is *held* at the spot it was dropped for as long as the menu is open — so
 it can neither drift away underneath the question nor be dragged across the
 canvas on the way to the answer. `Pin node here` makes the hold permanent;
 dismissing the menu any other way gives the node back to the layout.
+
+Only the **left** button's press is recorded as carrying a node (`pressNode`),
+and the record ends with the drag whichever button ended it. A right press
+fixes nothing in d3 and has no release that would clear it, so one that was
+recorded outlived the native menu it opened: `Pin node` picked there pinned a
+node `pinnedByUser()` still took for carried, with no badge and its links
+unboosted until the pointer came back onto the page.
 
 **Open in browser** resolves a held item's `url` field, or its DOI through
 doi.org when it has no URL; an outside reference always goes through its
