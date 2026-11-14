@@ -1363,6 +1363,8 @@ check('a graph too small for the cited-by threshold has it fitted, once', () => 
 			citesClamped: false,
 			elRecursiveLabel: { hidden: false },
 			elMinCites: { value: '2' },
+			saves: 0,
+			viewChanged: () => { ctx.saves++; },
 		};
 		vm.createContext(ctx);
 		// `let` bindings in the page become context globals here, which is all
@@ -1377,6 +1379,10 @@ check('a graph too small for the cited-by threshold has it fitted, once', () => 
 	c.applyScope();
 	if (c.elMinCites.value !== '1') throw new Error('one paper kept cited-by at ' + c.elMinCites.value);
 	if (!c.elRecursiveLabel.hidden) throw new Error('a selection kept its Subcollections switch');
+	// And the fitted number is what the tab keeps. The view is first saved before
+	// this payload lands, with the 2 in it, and a restored tab takes a saved
+	// number for the reader's own: unsaved, the fit was lost on every restart.
+	if (c.saves !== 1) throw new Error('the fitted threshold was not saved with the tab');
 
 	// Once. The reader puts it back up; the next push -- a later phase, a
 	// rebuild -- must leave their number alone.
@@ -1391,6 +1397,7 @@ check('a graph too small for the cited-by threshold has it fitted, once', () => 
 	c.raw = { scope: { kind: 'collection' }, items: [{ key: 'A' }, { key: 'B' }, { key: 'C' }] };
 	c.applyScope();
 	if (c.elMinCites.value !== '2') throw new Error('a collection had its default moved');
+	if (c.saves) throw new Error('a threshold that was left alone was saved as a change');
 	if (c.elRecursiveLabel.hidden) throw new Error('a collection lost its Subcollections switch');
 
 	// The empty first payload of phase 1 is not the one to decide on: it says
@@ -1409,6 +1416,27 @@ check('a graph too small for the cited-by threshold has it fitted, once', () => 
 	c.raw = { items: [{ key: 'A' }, { key: 'B' }] };
 	c.applyScope();
 	if (c.elRecursiveLabel.hidden) throw new Error('a payload with no scope was taken for a selection');
+});
+
+/**
+ * A paper with no author is named by the first real word of its title, and
+ * "word" was \W's: ASCII letters, digits and the underscore. "Étude sur la
+ * lumière" was drawn as tude1905, and a title in Greek or Cyrillic had every
+ * letter taken off it and was drawn as its year alone.
+ */
+check('a paper with no author is named by its title in any script', () => {
+	const page = liftPage({ functions: ['shortLabel'], consts: ['NOT_WORD'] });
+	const name = (title, y) => page.shortLabel({ title, creators: [] }, y);
+	if (name('Étude sur la lumière', 1905) !== 'Étude1905') throw new Error('French: ' + name('Étude sur la lumière', 1905));
+	if (name('Über die Erhaltung der Kraft', 1847) !== 'Über1847') throw new Error('German: ' + name('Über die Erhaltung der Kraft', 1847));
+	if (name('Περί ψυχής', null) !== 'Περί') throw new Error('Greek: ' + name('Περί ψυχής', null));
+	// A mark that rides on a letter is part of the word: the decomposed É, and
+	// every vowel sign in Devanagari.
+	if (name('E\u0301tude', 1905) !== 'E\u0301tude1905') throw new Error('a combining accent was stripped');
+	// Punctuation still goes, and a short word is still passed over.
+	if (name('"On the (so-called) problem"', 2001) !== 'socalled2001') throw new Error('punctuation: ' + name('"On the (so-called) problem"', 2001));
+	// An author still comes first.
+	if (page.shortLabel({ title: 'Étude', creators: ['Kucsko'] }, 2013) !== 'Kucsko2013') throw new Error('the author lost to the title');
 });
 
 check('the benchmark fixture is a payload the renderer can actually read', () => {
@@ -5641,6 +5669,142 @@ check('a payload does not forget the node the pointer is resting on', () => {
 });
 
 /**
+ * A row chosen out of the search list is a click on that node, reached from a
+ * list: centre it, ring it, describe it in the pane. It isolated the paper as
+ * well -- left over from when a click did -- so every search dimmed the rest of
+ * the graph and replaced whatever neighbourhoods had been lit on purpose.
+ */
+check('going to a search result picks the paper and leaves the isolation alone', () => {
+	let isolations = 0;
+	let pick = null;
+	let centred = null;
+	const page = liftPage({
+		functions: ['goTo'],
+		globals: {
+			searchRows: [{ id: 'K1', x: 3, y: 4 }],
+			fg: { centerAt: (x, y) => { centred = [x, y]; } },
+			REFRAME_MS: 400,
+			paneEngaged: false,
+			setIsolated: () => { isolations++; },
+			setPicked: (ids) => { pick = [...ids]; },
+			hideSearch: () => {},
+			elSearch: { blur() {} },
+		},
+	});
+	page.goTo(0);
+	if (isolations) throw new Error('a search result was isolated, not just picked');
+	if (!pick || pick.join() !== 'K1') throw new Error('the paper was not picked');
+	if (!centred || centred[0] !== 3 || !page.paneEngaged) throw new Error('the paper was not centred and described');
+});
+
+/**
+ * The graph's keys stand down inside a field that takes text, and that used to
+ * mean any <input> -- which on this page is mostly checkboxes and sliders. One
+ * of those keeps the focus from the moment it is clicked, so after any trip to
+ * the sidebar Ctrl-A and P did nothing until something else had been clicked.
+ */
+check('a checkbox or a slider holding the focus does not swallow the keys the graph is worked with', () => {
+	const page = liftPage({ functions: ['ownsKey'] });
+	const input = type => ({ tagName: 'INPUT', type });
+	for (const type of ['checkbox', 'range', 'radio', 'button']) {
+		if (page.ownsKey(input(type), false) || page.ownsKey(input(type), true)) {
+			throw new Error('a ' + type + ' input keeps keys it has no use for');
+		}
+	}
+	// Anything typed into keeps all of them: P is a letter, Ctrl-A selects the text.
+	for (const type of ['text', 'search', 'number', '']) {
+		if (!page.ownsKey(input(type), false) || !page.ownsKey(input(type), true)) {
+			throw new Error('a ' + (type || 'plain') + ' field lost its own keys to the graph');
+		}
+	}
+	if (!page.ownsKey({ tagName: 'TEXTAREA' }, false)) throw new Error('a textarea lost its keys');
+	if (!page.ownsKey({ tagName: 'DIV', isContentEditable: true }, true)) throw new Error('an editable region lost its keys');
+	// A menu's bare letters are its type-ahead; it has no select-all to keep.
+	if (!page.ownsKey({ tagName: 'SELECT' }, false)) throw new Error('P pins while a menu is choosing by letter');
+	if (page.ownsKey({ tagName: 'SELECT' }, true)) throw new Error('a menu keeps Ctrl-A it has no use for');
+	if (page.ownsKey({ tagName: 'CANVAS' }, false) || page.ownsKey(null, false)) throw new Error('the canvas is not a field');
+
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes('if (ownsKey(e.target, mod)) return;')) throw new Error('the key handler no longer asks ownsKey()');
+});
+
+/**
+ * Two things the blur of a filter box got wrong, both a tick after the focus
+ * left it.
+ *
+ * It ends the edit and rebuilds the chips -- and the box is editing from the
+ * first value picked off the list, so that is the usual state. A press on the
+ * ✕ of a chip blurred the box, the chips were rebuilt between the press and the
+ * release, and no click was ever raised on a button that no longer existed: the
+ * first press did nothing. And it closed the completion list, which is shared:
+ * going from the panel's box to a group's opened the list there on focus, and
+ * the first box's timer then closed it.
+ */
+check('leaving a filter box eats neither the click that took the focus nor the list of another box', () => {
+	const make = () => ({
+		children: [],
+		listeners: {},
+		classList: { add() {} },
+		appendChild(c) { this.children.push(c); },
+		addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+		setAttribute() {},
+		focus() {},
+	});
+	const input = Object.assign(make(), { value: '' });
+	const chips = make();
+	Object.defineProperty(chips, 'textContent', { set() { chips.children = []; } });
+	const timers = [];
+	let hides = 0;
+	const page = liftPage({
+		functions: ['filterBox'],
+		globals: {
+			Filters: loadFilters(),
+			document: { createElement: make },
+			window: { setTimeout: fn => timers.push(fn) },
+			t: id => id,
+			chipHint: () => '',
+			refreshSuggest: () => {},
+			hideSuggest: () => { hides++; },
+			suggestBox: null,
+			suggestIndex: -1,
+			elSuggest: { hidden: true },
+		},
+	});
+	const box = page.filterBox({ input, chips, candidates: () => [], onChange: () => {} });
+	input.value = 'author: Kucsko';
+	box.commit();
+	const chip = chips.children[0];
+	if (!chip || chip.children.length !== 2) throw new Error('setup: no chip with a text and a ✕');
+
+	// The press, on the ✕ and bubbling to the chip: the box must keep the focus.
+	const press = { prevented: false, preventDefault() { this.prevented = true; } };
+	for (const target of [chip.children[1], chip]) {
+		for (const fn of target.listeners.mousedown || []) fn(press);
+	}
+	if (!press.prevented) throw new Error('a press on a chip takes the focus, and the blur rebuilds the chip under it');
+
+	// Blurred for real, with the list by now another box's.
+	page.suggestBox = { input: make() };
+	input.listeners.blur[0]();
+	timers.shift()();
+	if (hides) throw new Error('the blur of one box closed the list another box had opened');
+	if (input.value !== '') throw new Error('leaving the box no longer ends the edit');
+	// Its own list still goes with it.
+	page.suggestBox = box;
+	input.listeners.blur[0]();
+	timers.shift()();
+	if (hides !== 1) throw new Error('the list outlived the focus of its own box');
+
+	// And the ✕ itself. The press leaves the focus in the box now, so the click
+	// is what leaves it -- or the list stays open over a mask that has gone.
+	let left = 0;
+	input.blur = () => { left++; };
+	chips.children[0].children[1].listeners.click[0]();
+	if (box.filters().length) throw new Error('the ✕ did not remove its mask');
+	if (!left) throw new Error('the box kept the focus, and its list, after its mask was removed');
+});
+
+/**
  * Page functions and constants, lifted out of graph.js by name and run in a
  * context of their own -- applyScope()'s trick, for several at once. `globals`
  * stands in for the page-level state they read; a function declared here
@@ -5883,6 +6047,52 @@ check('pressing a node while a settle has the graph frozen does not pin it', () 
 	page.hoverNode = pinned;
 	page.notePress({ button: 0 });
 	if (pinned.fx !== 1 || page.pressPinned !== pinned) throw new Error('pressing a pinned node unpinned it');
+});
+
+/**
+ * A shed runs on an alpha decay of its own and puts back the one it found when
+ * it began. Begun while "keep moving" is holding the layout, that is the hold's
+ * own: 0. Switching the hold off wrote the engine's decay back at once -- and
+ * the shed, landing a few ticks later, wrote the 0 over it. With the hold off
+ * nothing reads the decay again, so every later reheat ran at full energy until
+ * the clock stopped it.
+ */
+check('switching the hold off inside a settle does not leave the layout unable to cool', () => {
+	let decay = 0.0228;
+	const fg = {
+		d3AlphaDecay(v) {
+			if (v === undefined) return decay;
+			decay = v;
+			return fg;
+		},
+		d3ReheatSimulation: () => fg,
+		cooldownTime: () => fg,
+		cooldownTicks: () => fg,
+	};
+	const nodes = [{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 1, y: 1 }];
+	const page = liftPage({
+		functions: ['applyHold', 'holdValue', 'holdLevel', 'holdEnergy', 'shedTo', 'shedTicks', 'shed', 'thaw'],
+		consts: ['SHED_DECAY', 'HOLD_SLOP'],
+		globals: {
+			fg, PERF: { physics: true }, elHold: { value: '0.05' }, elHoldValue: {}, word: () => 'off',
+			drawnNodes: nodes, frozen: new Set(), shedLeft: 0, settleDecay: null, baseDecay: 0.0228,
+			lastAlpha: 0.05, dragNode: null, holdForCollide: () => {}, applySettle: () => {},
+		},
+	});
+	// A hold in force and at its level: the decay is pinned at 0.
+	page.applyHold();
+	page.holdEnergy();
+	if (decay !== 0) throw new Error('setup: the hold did not pin the decay');
+	// A node is dropped. The settle sheds, and notes the decay it will put back.
+	page.shedTo(0.06);
+	if (!page.shedLeft || decay !== 0.5) throw new Error('setup: no shed in flight');
+	// The hold is switched off before the shed has landed.
+	page.elHold.value = '0';
+	page.applyHold();
+	if (!page.shedLeft) throw new Error('the shed was cut short, and the graph let go at whatever alpha it had reached');
+	while (page.shedLeft) page.shed();
+	if (decay !== 0.0228) throw new Error('the hold is off and the layout was left on an alpha decay of ' + decay);
+	if (page.frozen.size || nodes[0].fx !== undefined) throw new Error('the shed never let go of the graph');
 });
 
 /**
