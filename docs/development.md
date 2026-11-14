@@ -710,6 +710,27 @@ hard-sphere collision, which threw the graph apart: turning the slider up sent
 everything *away* from the pin. Edge attraction has no such failure mode, because
 it only asks more of a spring that was already there.
 
+**With the engine off** — performance mode — these four still work, but not as the
+thumb moves. A reheat there has no ticks to be paid out over: it is `PERF_WARMUP`
+ticks run back to back with nothing painted, 1.4 to 2.6 seconds on 1,500 papers
+with the window answering nothing. Every step of a slider asked for one and got
+one, so a drag across the travel froze the page a dozen times over to show a dozen
+layouts nobody was waiting for. `reheat()` now only *asks* (`strikeSoon()`), and
+the burst runs once nothing has asked for 120ms: the readout follows the thumb and
+the layout answers where it stops. A group's flag being dragged and a pin being
+set go the same way. Not once a frame — a frame is far shorter than a burst, so
+that would only queue the same dozen behind one another.
+
+**What counts as a change to the layout** is the nodes on screen and which of them
+each edge joins, and nothing drawn *on* an edge. `structureSig()` used to sign
+confidence, strategies and DOI too, so a build phase that found a second strategy
+for edges already drawn — or a strategy switched off that all of its edges
+survived — handed force-graph a "new" graph and re-annealed every node to change a
+colour. A link is the same object every render and `linkFor()` rewrites those
+fields on it, so a repaint is all such a change needs. The one exception is a pair
+the payload lists twice, whose second link is made afresh each render and still
+signs what is drawn on it.
+
 **`drag energy`** is how much of the graph a drag sets moving, as a fraction of
 what force-graph does by itself. force-graph drags by holding the layout's alpha
 *target* at 0.3 — a third of a cold start — for the whole gesture. Alpha converges

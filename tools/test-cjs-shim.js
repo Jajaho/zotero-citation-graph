@@ -5988,6 +5988,134 @@ check('an edge is drawn by the same link object every render, so it keeps its hi
 });
 
 /**
+ * graphData re-anneals the whole layout, so it is for a change to what the
+ * layout is made of: the nodes, and which of them each edge joins. The
+ * signature that decides also signed what is DRAWN on an edge -- confidence,
+ * strategies, DOI -- so a build phase that found a second strategy for edges
+ * already on screen moved every node to change a colour, and in the static
+ * mode blocked for a whole burst to do it. Those fields are rewritten on the
+ * link force-graph already holds, which is all a repaint needs.
+ */
+check('a change that is only drawn on an edge does not re-anneal the layout', () => {
+	const page = liftPage({
+		functions: ['linkFor', 'endStale', 'pruneLinks', 'structureSig', 'endId'],
+		consts: ['SIG_SEP'],
+		globals: { linkCache: new Map(), linkCacheRaw: null, linkRender: 0, nodeCache: new Map(), raw: null },
+	});
+	const nodes = [{ id: 'A' }, { id: 'B' }, { id: 'C' }];
+	const draw = (edges, ns = nodes) => {
+		page.raw = { edges };
+		page.pruneLinks();
+		page.linkRender++;
+		return page.structureSig(ns, edges.map(e => page.linkFor(e, e.via)));
+	};
+	const AB = (confidence, via, doi) => ({ from: 'A', to: 'B', confidence, via, doi: doi || null });
+	const AC = { from: 'A', to: 'C', confidence: 0.9, via: ['text-doi'], doi: '10.1/c' };
+
+	const first = draw([AB(0.5, ['title-match']), AC]);
+	// A later phase: the same two edges, one of them better attested and with a DOI.
+	const later = draw([AB(0.95, ['title-match', 'pdf-links'], '10.1/b'), AC]);
+	if (later !== first) throw new Error('a second strategy for an edge already drawn re-anneals the graph');
+	// And the link force-graph is left holding says what the payload now says.
+	const held = page.linkCache.get('A' + String.fromCharCode(1) + 'B');
+	if (held.confidence !== 0.95 || held.via.length !== 2 || held.doi !== '10.1/b') {
+		throw new Error('the link that stays on screen kept what it used to say');
+	}
+
+	// What the layout IS made of still counts: an edge more, an edge fewer, a node more.
+	if (draw([AB(0.5, ['title-match']), AC, { from: 'B', to: 'C', confidence: 0.9, via: ['text-doi'], doi: null }]) === first) {
+		throw new Error('a new edge did not change the structure');
+	}
+	if (draw([AB(0.5, ['title-match'])]) === first) throw new Error('a lost edge did not change the structure');
+	if (draw([AB(0.5, ['title-match']), AC], nodes.concat({ id: 'D' })) === first) throw new Error('a new node did not change the structure');
+
+	// A pair the payload lists twice: the second link is a fresh object every
+	// render, so force-graph would be left holding last render's. What is drawn
+	// on that one still has to count.
+	const twice = draw([AB(0.5, ['title-match']), AB(0.6, ['text-doi'])]);
+	if (draw([AB(0.5, ['title-match']), AB(0.7, ['text-doi'])]) === twice) {
+		throw new Error('the second link of a pair listed twice changed, and the old one was left on screen');
+	}
+});
+
+/**
+ * With the engine off a reheat is a burst: 150 ticks run back to back, 1.4 to
+ * 2.6 seconds on 1,500 papers with the window answering nothing. Every step of
+ * a force slider asked for one and got one, so dragging "edge pull" across its
+ * travel froze the page a dozen times over to show a dozen layouts nobody was
+ * waiting for. The burst now waits until the asking has stopped.
+ */
+check('a static layout strikes once for a slider dragged across its travel', () => {
+	const timers = new Map();
+	let nextId = 1;
+	let strikes = 0;
+	let reheats = 0;
+	const data = { nodes: [{ id: 'A' }], links: [] };
+	const fg = {
+		graphData(v) {
+			if (v === undefined) return data;
+			strikes++;
+			return fg;
+		},
+		d3ReheatSimulation() {
+			reheats++;
+			return fg;
+		},
+	};
+	const page = liftPage({
+		functions: ['reheat', 'strikeSoon', 'strikeSpent', 'strike'],
+		consts: ['STRIKE_WAIT_MS'],
+		globals: {
+			fg,
+			PERF: { physics: false },
+			strikeTimer: null,
+			window: {
+				setTimeout: (fn, ms) => {
+					const id = nextId++;
+					timers.set(id, { fn, ms });
+					return id;
+				},
+				clearTimeout: id => { timers.delete(id); },
+			},
+		},
+	});
+	const fire = () => {
+		const [[id, t]] = [...timers];
+		timers.delete(id);
+		t.fn();
+	};
+
+	// Twelve steps of the thumb, each one through reheat().
+	for (let i = 0; i < 12; i++) page.reheat();
+	if (strikes) throw new Error('the layout struck ' + strikes + ' times while it was still being asked');
+	if (timers.size !== 1) throw new Error(timers.size + ' bursts are waiting, not one');
+	// A pause, not a frame: a frame is far shorter than a burst, and one burst a
+	// frame is the same dozen queued behind one another.
+	const wait = [...timers.values()][0].ms;
+	if (!(wait >= 50)) throw new Error('the burst waits ' + wait + 'ms, which is no pause at all');
+	fire();
+	if (strikes !== 1) throw new Error('the pause came and the layout struck ' + strikes + ' times');
+
+	// A new graph handed over in the meantime is that burst already.
+	page.reheat();
+	page.strikeSpent();
+	if (timers.size) throw new Error('a burst is still owed after the graph was re-annealed anyway');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!/if \(movedStructure\) \{[^}]*strikeSpent\(\);\s*fg\.graphData\(\{ nodes, links \}\);/.test(js)) {
+		throw new Error('a new graph does not answer the burst that was waiting');
+	}
+
+	// The engine switched back on before the pause was up: it has ticks to answer with.
+	page.reheat();
+	page.PERF.physics = true;
+	fire();
+	if (strikes !== 1) throw new Error('a burst struck a layout whose engine is running');
+	// And with it running a reheat is immediate, as it always was.
+	page.reheat();
+	if (reheats !== 1 || timers.size) throw new Error('a running engine was made to wait for its reheat');
+});
+
+/**
  * force-graph runs its resize on every set of width or height, changed or not,
  * and the resize reallocates both of its canvases. render() asked for that on
  * every call -- every slider step, every build phase -- so remeasure() sets
