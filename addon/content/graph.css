@@ -401,6 +401,88 @@ body {
 	display: none;
 }
 
+/*
+ * "What is missing" and Export. Their icons are the canvas menu's own, drawn
+ * on Zotero's 16px grid, where the three before them are 20px drawings: left
+ * to the rule above they would be stretched by a quarter, and a one-pixel
+ * stroke at 1.25px is a blurred one. So they are drawn at their own size in
+ * the same 28px plate, which is how core's toolbars carry a 16px icon too.
+ */
+#bar > #gaps-toggle svg,
+#bar > #export-menu svg {
+	width: 16px;
+	height: 16px;
+	opacity: 1;
+}
+
+/*
+ * The isolation's chip: what is isolated, how far out, and the way back.
+ *
+ * A tint of the accent rather than a plate of the toolbar's own grey, because
+ * it is not a control that is always there -- it is a state the graph is in,
+ * and it has to be noticed arriving. A pill, as the sidebar's filter chips
+ * are: both are a thing currently narrowing what is seen, with its own ✕.
+ *
+ * It gives way before the search field does. The bar is as narrow as the pane
+ * is dragged, and of the two the words here are the ones that can be cut
+ * short: the count and the depth lead, and the title says the rest.
+ */
+#iso-chip {
+	display: flex;
+	align-items: center;
+	flex: 0 1 auto;
+	min-width: 0;
+	gap: 2px;
+	height: 22px;
+	margin-inline-start: 4px;
+	padding-inline: 10px 2px;
+	border-radius: 11px;
+	background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+	color: var(--fill-primary);
+}
+
+/* display: flex above is an author rule, which the UA's [hidden] does not beat. */
+#iso-chip[hidden] {
+	display: none;
+}
+
+#iso-chip-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#iso-chip-clear {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--fill-secondary);
+	cursor: pointer;
+}
+
+#iso-chip-clear:hover {
+	background: var(--fill-quinary);
+	color: var(--fill-primary);
+}
+
+#iso-chip-clear:active {
+	background: var(--fill-quarternary);
+}
+
+#iso-chip-clear svg {
+	width: 16px;
+	height: 16px;
+	opacity: 1;
+}
+
 /* --- The search field -------------------------------------------------- */
 
 /*
@@ -1592,6 +1674,143 @@ body {
 	display: none;
 }
 
+/* Put away while the bar below stands in for it -- see showProgress(). */
+#status[hidden] {
+	display: none;
+}
+
+/*
+ * A build in flight: the phase, the count, Stop, and a bar under the three.
+ *
+ * Where the status line is and in its place -- see showProgress() in graph.js
+ * -- so it is positioned as that is. It is a control and not a note, though:
+ * it takes the pointer, which the line lets through to the canvas, and it is
+ * a card with an edge to it rather than a strip of text, because there is a
+ * button on it.
+ *
+ * Three columns and the first one gives: a long phase name in a narrow pane is
+ * cut short before the count or the button is pushed off the end.
+ */
+#progress {
+	position: absolute;
+	top: 8px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 8;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 4px 10px;
+	box-sizing: border-box;
+	max-width: calc(100% - 20px);
+	padding: 5px 6px 6px 10px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+	color: var(--fill-primary);
+}
+
+/* display: grid above is an author rule, which the UA's [hidden] does not beat. */
+#progress[hidden] {
+	display: none;
+}
+
+#progress-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Digits of one width, so the label beside it does not shiver as they turn. */
+#progress-count {
+	color: var(--fill-secondary);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* A phase that has counted nothing has no count, and an empty cell would
+   still be given its gap. */
+#progress-count:empty {
+	display: none;
+}
+
+/* The Rebuild button's own look, a size down: the two are the pair -- one
+   starts a build and the other ends it. */
+#progress-stop,
+#empty-clear {
+	font: inherit;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	background: var(--zg-input-background);
+	color: var(--fill-primary);
+	cursor: pointer;
+}
+
+#progress-stop {
+	padding: 1px 8px;
+}
+
+#progress-stop:hover:not([disabled]),
+#empty-clear:hover {
+	background: var(--zg-input-hover);
+}
+
+#progress-stop:active:not([disabled]),
+#empty-clear:active {
+	background: var(--fill-quarternary);
+}
+
+/* Pressed, and waiting for the build to notice -- see the listener in graph.js. */
+#progress-stop[disabled] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+#progress-bar {
+	grid-column: 1 / -1;
+	height: 3px;
+	border-radius: 2px;
+	background: var(--fill-quarternary);
+	overflow: hidden;
+}
+
+#progress-fill {
+	display: block;
+	width: 0;
+	height: 100%;
+	border-radius: 2px;
+	background: var(--accent-blue);
+	transition: width 150ms linear;
+}
+
+/* Nothing counted yet: a third of the track, going back and forth, which says
+   work without claiming a place. */
+#progress-bar.indeterminate #progress-fill {
+	width: 30%;
+	transition: none;
+	animation: zg-progress-seek 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes zg-progress-seek {
+	from { margin-inline-start: 0; }
+	to { margin-inline-start: 70%; }
+}
+
+/* Asked not to move things: the whole track, faint, which is still not a place. */
+@media (prefers-reduced-motion: reduce) {
+	#progress-fill {
+		transition: none;
+	}
+
+	#progress-bar.indeterminate #progress-fill {
+		width: 100%;
+		opacity: 0.35;
+		animation: none;
+	}
+}
+
 .via-toggle {
 	display: flex;
 	align-items: center;
@@ -1756,6 +1975,18 @@ body {
 	margin-top: 4px;
 	padding: 3px 10px;
 	pointer-events: auto;
+}
+
+/* The way out of a graph the filters emptied -- see renderEmpty(). Its look
+   is the Stop button's, above; the box it is in lets the pointer through. */
+#empty-clear {
+	margin-top: 4px;
+	padding: 3px 10px;
+	pointer-events: auto;
+}
+
+#empty-clear[hidden] {
+	display: none;
 }
 
 /* Action popover for outside references. A sibling of #graph, like #status,

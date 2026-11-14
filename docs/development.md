@@ -1106,8 +1106,16 @@ left both keys dead after any trip to the sidebar.
 in both directions, so you see what it cites *and* what cites it. It is a view
 state, not a filter: nothing is removed from the simulation, so nothing moves,
 and the neighbourhood stays where your eye left it. Double-clicking the node
-again, clicking empty canvas, pressing Escape, or the `isolated: …` button that
-appears in the control panel all give the whole graph back.
+again, clicking empty canvas, pressing Escape, or the ✕ on the chip the bar
+shows all give the whole graph back.
+
+That chip — *Isolated: 2 papers · depth 1* — is in the top bar for as long as
+anything is isolated, because the wash was the only thing on screen that said
+so and none of the ways out could be seen. It counts the papers isolated, not
+the neighbourhood lit around them, and the depth in force; `syncIsoChip()` is
+called from the three places either changes (`setIsolated()`, the depth box,
+and the render that takes an isolated paper off screen). In a narrow pane it is
+the chip that is cut short, not the search field.
 
 The double click isolates whatever the page's `hoverNode` says the pointer is
 over, and force-graph only reports a hover when the object under the pointer
@@ -1284,6 +1292,20 @@ these entries:
 | `Group here` | plants an anchor at the pointer and asks what belongs at it |
 | `Export as SVG…` | saves the graph as drawn, with its legend, as a figure |
 | `Export as GraphML…` | saves the nodes, edges and layout for yEd, Gephi or a script |
+
+**Three of these are in the top bar too**, after the reframe button and a
+hairline: *What is missing*, and an Export button that opens the two exports
+under itself. A menu only a right click on *empty* canvas raises was where the
+plugin's two headline features were kept, and they were found by accident. The
+bar's buttons are the menu's own entries, not copies — `gapsEntry()` and
+`exportEntries()` build them for both — so the button is named *Hide what is
+missing* exactly when the menu's row is, whichever of the two, Escape or
+chrome's own close button last moved the list (`syncGapsButton()`). Its icon
+does not turn over with its name, and it is never drawn pressed: a button is
+found again by what it looks like, and what says the list is open is the list.
+The Export button is a menu button: `openMenu()` takes the button it was opened
+from, hangs the menu under it, and a second press on it closes the menu rather
+than opening it again.
 
 **Exports are of the graph as filtered** — masks, minimum confidence, strategies
 switched off, outside references shown or hidden — because that is the graph on
@@ -1815,6 +1837,18 @@ tools/
   on the wire: `enrich/openalex.js` hands its signal to `fetch()`, which wants a real
   `AbortSignal`, so chrome's `{ aborted }` flag cannot be given to it — the requests already out
   come back and are cached, and are not drawn.
+- **The page draws that as a bar in the status line's place** (`showProgress()`, `#progress`):
+  *Step 2 of 4 · Scanning PDFs for DOI links*, *37 / 160*, Stop, and a 3px track under the three.
+  In its place and not beside it, because the two say the same thing; `#status` is only hidden,
+  and is still written to, so it is back with whatever was last said on it — the gesture hint
+  included — when `null` arrives. A report with no counts is a track with a third of itself going
+  back and forth, not an empty one, and keeps the label's ellipsis; a counted one drops it. A build
+  of one phase (a lookup switched on by itself) is not called "Step 1 of 1". Only the label is a
+  live region: it changes once a phase, and the count beside it five times a second. Stop goes
+  dead on the press, since the build notices at its next look and not at once, and the next
+  report or the `null` gives it back. A graph that was stopped says *stopped early* on the stats
+  line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
+  from a complete one.
 - **An item's type crosses by name and by label.** `itemRecord()` sends `itemType`, core's own
   name, which is what the type filter and a saved view are keyed on and must not change with the
   display language — and `itemTypeName` beside it, `Zotero.ItemTypes.getLocalizedString()`, which
@@ -1849,6 +1883,17 @@ tools/
   empty collection that pushed `phase: 'items'` claimed to be building forever over a canvas
   nothing was ever going to arrive on. The empty payload carries `meta.empty` instead, which is
   what `#empty` paints — including whether offering "include subcollections" would change anything.
+- **A graph the filters emptied gets the same card, in other words.** There are papers and the
+  masks leave none: the canvas was white, with *0 / 160 items* in the sidebar's footer the only
+  word on why. `renderEmpty(passing)` is told how many held items survived `masked()` and, at
+  none, says *No papers match these filters*, names each mask as its chip reads (and an Advanced
+  Search, which is a mask written in core's editor), and offers *Clear filters*. That button goes
+  through the filter box's own `load([])` and closes the Advanced Search if one is narrowing — not
+  through the chips' ✕, which blurs the box and ends an edit. It does not wait for a finished
+  build: the papers arrive with the first payload. *Hide unconnected* over a graph with no edge
+  left blanks the canvas as well and gets no card, because nothing there is a filter to clear.
+  The card's title and body carry no `data-zg-str`: which of the two things they say is not a
+  fact the markup knows, and `l10n.js` would write the empty collection's words back over it.
 - **Never read `ctx.collectionTreeRow`** in a menu handler; core defines it as a getter that throws.
   Use `ctx.collectionTreeRows`. That holds for both entries: the item menu's context
   (`zoteroPane.js`, target `main/library/item`) carries the same throwing getter beside `items`.
