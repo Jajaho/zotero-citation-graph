@@ -1532,7 +1532,15 @@
 		// button, and a button is someone asking for the thing now. Gating it
 		// would open an empty card beside a lit Rebuild, which is the feature
 		// not working rather than the feature waiting.
-		if (!elIncludeExternal.checked) {
+		//
+		// Decided by what the graph was built with, not by the box, because
+		// with Autobuild off the two part company. A box already ticked for a
+		// build that has not run is exactly that empty card beside a lit
+		// Rebuild, so it builds; a box unticked for the next build leaves this
+		// one's outside references where they are, and there is a list to show
+		// without spending anything. A box ticked with nothing pending is a
+		// build already on its way, and is not asked for twice.
+		if (!builtWith('includeExternal', elIncludeExternal) && (!elIncludeExternal.checked || pending)) {
 			elIncludeExternal.checked = true;
 			rebuildNow();
 		}
@@ -1596,7 +1604,9 @@
 			// Without the counts every gap is ranked at face value, which is
 			// the plain "most cited here" order. Worth saying, since the
 			// ranking is the reason to read this list rather than the graph.
-			lookup: !!elEnrich.checked,
+			// As built: a lookup box ticked or unticked for the next build says
+			// nothing about the counts these rows were ranked with.
+			lookup: builtWith('enrich', elEnrich),
 		});
 		// The rows have just been replaced, so which of them is lit is a fresh
 		// question -- and the render that got here can have moved a citer off
@@ -2289,7 +2299,8 @@
 		let minConf = Number(elMinConf.value);
 		elConfValue.textContent = minConf.toFixed(2);
 		let minCites = Math.max(1, Number(elMinCites.value) || 1);
-		let showGhosts = elIncludeExternal.checked && raw.external.length > 0;
+		// What this graph was built with, not what the box says -- see builtWith().
+		let showGhosts = builtWith('includeExternal', elIncludeExternal) && raw.external.length > 0;
 
 		// Identity, not visibility: this is what tells a held item apart from an
 		// outside reference, and a masked-out paper must not turn into a ghost of
@@ -6567,7 +6578,11 @@
 		// without them. "query node metadata" is NOT gated the same way: with ghosts
 		// off it still resolves the held items' own DOIs, and those counts are
 		// what "global citations" sizes the whole graph by.
-		let on = elIncludeExternal.checked;
+		//
+		// Gated on the ghosts being ON SCREEN, which with Autobuild off is not
+		// what the box says: a box unticked for the next build leaves this
+		// build's ghosts drawn, and these two still act on them.
+		let on = builtWith('includeExternal', elIncludeExternal);
 		elMinCites.disabled = !on;
 		el('min-cites-label').classList.toggle('disabled', !on);
 		// Same again for the names on them: with the ghosts off there is nothing
@@ -6580,7 +6595,36 @@
 		// same "unknown" dot. Keyed off the checkbox rather than the last
 		// payload: while a lookup rebuild is in flight the counts are on their
 		// way, and the mode the user just picked has to survive the wait.
-		if (!elEnrich.checked && elSizeBy.value === 'global') elSizeBy.value = 'here';
+		//
+		// And off the payload as well, for the other direction: with Autobuild
+		// off, unticking the lookup is an order for the next build, and the
+		// counts this one was built with are still on every node. Flipping the
+		// menu here resized the whole graph at the next repaint, for a build
+		// nobody had run.
+		if (!elEnrich.checked && !builtWith('enrich', elEnrich) && elSizeBy.value === 'global') {
+			elSizeBy.value = 'here';
+		}
+	}
+
+	/**
+	 * A scope option as the graph ON SCREEN was built with it, which is not
+	 * always what its checkbox says.
+	 *
+	 * With Autobuild off the panel runs ahead of the graph on purpose: a box is
+	 * an order for the next build -- see syncPending(). So whatever decides
+	 * what is DRAWN, or what a control has to act on, asks this and not the
+	 * box. Asking the box let the order leak: unticking Outside refs took every
+	 * ghost off the canvas at the next repaint -- a move of the confidence
+	 * slider was enough -- with no build run and Rebuild still lit to say one
+	 * was owed.
+	 *
+	 * A payload from before options were stamped carries none, and then the box
+	 * is the only record there is. zgSetData() keeps the two the same whenever
+	 * nothing is pending, so with Autobuild on this is the box.
+	 */
+	function builtWith(option, box) {
+		let o = raw && raw.options;
+		return o ? !!o[option] : box.checked;
 	}
 
 	/** The scope the controls are currently asking for, in the shape chrome

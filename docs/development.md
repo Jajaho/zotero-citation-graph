@@ -547,6 +547,15 @@ Payloads arrive without a rebuild — a lookup, a paper adopted into the graph �
 the options *that* build was made with, which would quietly untick what the user had just asked
 for.
 
+**What is drawn asks the payload, not the boxes.** While the panel is ahead, a box is an order
+for the next build and says nothing about this one, so everything that decides what is on screen
+goes through `builtWith(option, box)`, which reads the `options` the payload was stamped with:
+whether `render()` draws outside references, whether *Cited by ≥* and *hide outside names* have
+anything to act on, whether sizing by global citations still has its counts, what the gap list
+says about its own ranking, and whether *what is missing* needs a build before it has a list to
+show. Reading the boxes let the order leak — unticking *Outside refs* took every ghost off the
+canvas at the next repaint, for a build nobody had run.
+
 The switch is kept with the tab, and a new tab opens with the last answer given (`zg.autobuild`
 in `localStorage`): how long your builds run and how many options you change at once is a fact
 about how you work, not about any one collection. Turning it back **on** while something is
