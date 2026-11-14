@@ -7295,6 +7295,383 @@ check('the first finished graph is fitted once, and never over the reader\'s own
 });
 
 /**
+ * The other way a canvas comes to be blank: there are papers, and the filters
+ * leave none of them. It was simply white, with "0 / 160 items" in the
+ * sidebar's footer the only word on why. The empty card now says which filters
+ * did it -- each chip as it reads in the panel -- and carries the way out.
+ */
+check('a graph the filters emptied says which filters did it, and offers the way out', () => {
+	const card = (code, over) => {
+		const els = {};
+		for (const id of ['elEmpty', 'elEmptyTitle', 'elEmptyBody', 'elEmptySub', 'elEmptyRecursive', 'elEmptyClear']) {
+			els[id] = { hidden: true, textContent: '' };
+		}
+		const page = liftPage({
+			functions: ['renderEmpty', 'maskNames', 'clearFilters'],
+			globals: Object.assign(els, {
+				raw: { items: Array(160).fill({}), meta: { phase: 'done' } },
+				panelBox: {
+					stack: [{ said: 'Author: ~zzz' }],
+					filters() { return this.stack; },
+					load(fs_) { this.stack = fs_.slice(); },
+				},
+				Filters: { describe: f => f.said },
+				advMatch: null,
+				closed: [], renders: 0, saves: 0, hints: 0,
+				t: pageStrings(code),
+			}, over),
+		});
+		page.advanced = (what) => { page.closed.push(what); };
+		page.render = () => { page.renders++; };
+		page.viewChanged = () => { page.saves++; };
+		page.endHint = () => { page.hints++; };
+		return page;
+	};
+
+	// Papers on screen: no card, whatever masks are down.
+	let page = card('en-US');
+	page.renderEmpty(61);
+	if (!page.elEmpty.hidden) throw new Error('a filter that leaves papers put the card up');
+
+	// None left: the card, naming the mask as its chip reads, with its own button.
+	page.renderEmpty(0);
+	if (page.elEmpty.hidden) throw new Error('a graph the filters emptied is still a blank canvas');
+	if (page.elEmptyTitle.textContent !== 'No papers match these filters') throw new Error('title: ' + page.elEmptyTitle.textContent);
+	if (page.elEmptyBody.textContent !== 'All 160 papers are hidden by the filter “Author: ~zzz”.') {
+		throw new Error('body: ' + page.elEmptyBody.textContent);
+	}
+	if (page.elEmptyClear.hidden) throw new Error('the card has no way out on it');
+	if (!page.elEmptyRecursive.hidden || !page.elEmptySub.hidden) throw new Error('the card still offers subcollections');
+	if (!page.hints) throw new Error('the gesture hint was left up over a canvas with nothing to click');
+
+	// Every mask is named, and one paper is not "all 1 papers".
+	page.panelBox.stack.push({ said: 'Year: 1800' });
+	page.renderEmpty(0);
+	if (!page.elEmptyBody.textContent.endsWith('hidden by the filters “Author: ~zzz”, “Year: 1800”.')) {
+		throw new Error('two masks: ' + page.elEmptyBody.textContent);
+	}
+	page.raw = { items: [{}], meta: { phase: 'text' } };
+	page.renderEmpty(0);
+	if (!page.elEmptyBody.textContent.startsWith('The only paper here is hidden by')) throw new Error('one paper: ' + page.elEmptyBody.textContent);
+
+	// An Advanced Search is a mask too, written in core's editor.
+	page = card('en-US', { advMatch: new Set() });
+	page.panelBox.stack = [];
+	page.renderEmpty(0);
+	if (page.elEmpty.hidden || !page.elEmptyBody.textContent.includes('“Advanced Search”')) {
+		throw new Error('an Advanced Search that matches nothing: ' + page.elEmptyBody.textContent);
+	}
+
+	// A first payload with no papers in it yet is not a filtered graph, and a
+	// collection that IS empty keeps its own card and its own button.
+	page = card('en-US', { raw: { items: [], meta: { phase: 'links' } } });
+	page.renderEmpty(0);
+	if (!page.elEmpty.hidden) throw new Error('a payload with no papers yet was called filtered');
+	page = card('en-US', { raw: { items: [], meta: { phase: 'done', empty: { subcollections: 2, recursive: false } } } });
+	page.renderEmpty(0);
+	if (page.elEmpty.hidden || page.elEmptyTitle.textContent !== 'Nothing to graph') throw new Error('the empty collection lost its card');
+	if (!page.elEmptyClear.hidden || page.elEmptyRecursive.hidden) throw new Error('the empty collection got the wrong button');
+
+	// The way out: through the box, once, drawn and saved -- and the Advanced
+	// Search closed only if there is one.
+	page = card('en-US');
+	page.clearFilters();
+	if (page.panelBox.stack.length) throw new Error('Clear filters left a mask down');
+	if (page.renders !== 1 || page.saves !== 1) throw new Error('cleared, but not drawn and saved once: ' + page.renders + '/' + page.saves);
+	if (page.closed.length) throw new Error('Clear filters closed an Advanced Search that was not open');
+	page = card('en-US', { advMatch: new Set([1]) });
+	page.clearFilters();
+	if (page.closed.join() !== 'close') throw new Error('Clear filters left the Advanced Search narrowing');
+
+	// Every locale says it with the count and the names in it.
+	for (const code of fs.readdirSync(localeDir)) {
+		page = card(code);
+		page.renderEmpty(0);
+		const body = page.elEmptyBody.textContent;
+		if (!body.includes('160') || !body.includes('Author: ~zzz') || /[{}]|empty-filter/.test(body + page.elEmptyTitle.textContent)) {
+			throw new Error(code + ': ' + page.elEmptyTitle.textContent + ' / ' + body);
+		}
+	}
+
+	// The markup and the wiring the lifted functions cannot show.
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
+	const box = html.slice(html.indexOf('<div id="empty"'), html.indexOf('<div id="status"'));
+	if (!/<button id="empty-clear" type="button" hidden="hidden" data-zg-str="empty-filter-clear">/.test(box)) {
+		throw new Error('#empty has no Clear filters button, or it does not start hidden');
+	}
+	// The card says one of two things, so l10n.js must not write either over it.
+	if (/id="empty-(title|body)"[^>]*data-zg-str/.test(box)) throw new Error('the card\'s words are still pinned to the empty collection\'s');
+	if (!js.includes('renderEmpty(held.length);')) throw new Error('render() no longer tells the card how many papers passed the masks');
+	if (!js.includes("elEmptyClear.addEventListener('click', clearFilters);")) throw new Error('Clear filters is not wired');
+	// The card lets the pointer through to the canvas; its button must not.
+	const rules = [...css.matchAll(/\n#empty-clear \{([^}]*)\}/g)].map(m => m[1]).join('\n');
+	if (!rules.includes('pointer-events: auto')) throw new Error('Clear filters cannot be clicked: #empty takes no pointer events');
+});
+
+/**
+ * A build on a large library runs for minutes and said so in one line of text
+ * -- "Scanning PDFs for DOI links… 37/160" -- with the counts printed and
+ * nothing drawn from them, and no way to stop it. Chrome now sends the same
+ * news as { text, done, total, step, steps } (lib/graphTab.js progressFor) and
+ * the page draws it: the phase out of how many, the count, a bar, and Stop.
+ */
+check('a build in flight is drawn as a place on a bar, with a button that stops it', () => {
+	const bar = (code) => {
+		const attrs = {};
+		const classes = new Set();
+		let label = '';
+		const page = liftPage({
+			functions: ['showProgress'],
+			globals: {
+				elProgress: { hidden: true },
+				elStatus: { hidden: false, textContent: 'Scanning PDFs for DOI links… 37/160' },
+				elProgressText: {
+					writes: 0,
+					get textContent() { return label; },
+					set textContent(v) { label = v; this.writes++; },
+				},
+				elProgressCount: { textContent: '' },
+				elProgressStop: { disabled: true },
+				elProgressBar: {
+					attrs,
+					classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } },
+					setAttribute(k, v) { attrs[k] = v; },
+					removeAttribute(k) { delete attrs[k]; },
+				},
+				elProgressFill: { style: { width: '' } },
+				t: pageStrings(code || 'en-US'),
+			},
+		});
+		page.classes = classes;
+		return page;
+	};
+
+	// A counted report: which phase of how many, how far, and the bar at it.
+	let page = bar();
+	page.showProgress({ text: 'Scanning PDFs for DOI links…', done: 37, total: 160, step: 2, steps: 4 });
+	if (page.elProgress.hidden) throw new Error('a build in flight shows no bar');
+	if (!page.elStatus.hidden) throw new Error('the status line says the same thing beside the bar');
+	if (page.elProgressText.textContent !== 'Step 2 of 4 · Scanning PDFs for DOI links') throw new Error('label: ' + page.elProgressText.textContent);
+	if (page.elProgressCount.textContent !== '37 / 160') throw new Error('count: ' + page.elProgressCount.textContent);
+	if (page.elProgressFill.style.width !== '23%') throw new Error('the bar is at ' + page.elProgressFill.style.width);
+	if (page.elProgressBar.attrs['aria-valuenow'] !== '23' || page.elProgressBar.attrs['aria-valuetext'] !== '37 / 160') {
+		throw new Error('the bar does not say where it is: ' + JSON.stringify(page.elProgressBar.attrs));
+	}
+	if (page.classes.has('indeterminate')) throw new Error('a counted phase is drawn as one that cannot count');
+	if (page.elProgressStop.disabled) throw new Error('Stop is dead while a build reports');
+
+	// The label is the live part: the next count must not write it again.
+	page.showProgress({ text: 'Scanning PDFs for DOI links…', done: 52, total: 160, step: 2, steps: 4 });
+	if (page.elProgressText.writes !== 1) throw new Error('the label was rewritten for a count, and would be read out again');
+	if (page.elProgressFill.style.width !== '33%') throw new Error('the bar did not move: ' + page.elProgressFill.style.width);
+
+	// A phase's first report counts nothing: no place on the bar, no numbers,
+	// and the ellipsis is all there is to say work is going on.
+	page.showProgress({ text: 'Looking up works…', done: null, total: null, step: 4, steps: 4 });
+	if (page.elProgressText.textContent !== 'Step 4 of 4 · Looking up works…') throw new Error('label: ' + page.elProgressText.textContent);
+	if (page.elProgressCount.textContent !== '' || page.elProgressFill.style.width !== '') throw new Error('an uncounted phase kept the last one\'s place');
+	if (!page.classes.has('indeterminate') || 'aria-valuenow' in page.elProgressBar.attrs) {
+		throw new Error('an uncounted phase claims a place on the bar');
+	}
+	// A total of nothing is not a count either, and done never passes total.
+	page.showProgress({ text: 'x', done: 0, total: 0, step: 1, steps: 3 });
+	if (!page.classes.has('indeterminate')) throw new Error('0 of 0 was drawn as a place');
+	page.showProgress({ text: 'x', done: 9, total: 4, step: 1, steps: 3 });
+	if (page.elProgressFill.style.width !== '100%' || page.elProgressCount.textContent !== '4 / 4') throw new Error('past the end: ' + page.elProgressCount.textContent);
+
+	// A lookup toggled on its own is one phase, and is not "Step 1 of 1".
+	page.showProgress({ text: 'Looking up works…', done: 3, total: 12, step: 1, steps: 1 });
+	if (page.elProgressText.textContent !== 'Looking up works') throw new Error('one phase: ' + page.elProgressText.textContent);
+
+	// null ends it, however the build ended, and the line is back.
+	page.elProgressStop.disabled = true;
+	page.showProgress(null);
+	if (!page.elProgress.hidden || page.elStatus.hidden) throw new Error('the bar outlived its build');
+	if (page.elProgressStop.disabled) throw new Error('Stop stayed dead for the next build');
+
+	// Every locale can say the phase.
+	for (const code of fs.readdirSync(localeDir)) {
+		page = bar(code);
+		page.showProgress({ text: 'T', done: 1, total: 2, step: 2, steps: 4 });
+		const said = page.elProgressText.textContent;
+		if (!/2.*4.*T/.test(said) || /[{}]|progress-/.test(said + page.elProgressCount.textContent)) throw new Error(code + ': ' + said);
+	}
+
+	// The bridge, Stop, and what a stopped graph says of itself.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!/window\.zgSetProgress = function \(json\) \{[^}]*JSON\.parse\(json\)[\s\S]{0,80}?showProgress\(p\);\s*\};/.test(js)) {
+		throw new Error('window.zgSetProgress no longer parses what chrome sends and draws it');
+	}
+	const stop = (js.match(/elProgressStop\.addEventListener\('click', \(\) => \{([^}]*\{[^}]*\}[^}]*)\}\);/) || [])[1] || '';
+	if (!stop.includes("emit({ type: 'stop-build' })")) throw new Error('Stop does not ask chrome to stop the build');
+	if (!stop.includes('elProgressStop.disabled = true')) throw new Error('Stop can be pressed again before it is answered');
+	if (!fs.readFileSync(path.join(addonDir, 'lib/graphTab.js'), 'utf8').includes("case 'stop-build':")) {
+		throw new Error('chrome no longer answers the message Stop sends');
+	}
+	if (!/else if \(raw\.meta && raw\.meta\.stopped\) stats\.push\(t\('stats-stopped'\)\);/.test(js)) {
+		throw new Error('a graph stopped short no longer says so on the stats line');
+	}
+
+	// And the markup: a progress bar named by its label, and only the label live.
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const at = html.indexOf('<div id="progress" hidden="hidden">');
+	if (at < 0) throw new Error('#progress is gone, or does not start hidden');
+	const pill = html.slice(at, html.indexOf('\n\t\t\t</div>', at));
+	for (const [what, needle] of [
+		['a live label', '<span id="progress-text" aria-live="polite">'],
+		['a count that is not read out five times a second', '<span id="progress-count"></span>'],
+		['a Stop button', '<button id="progress-stop" type="button" data-zg-str="progress-stop"'],
+		['a bar that is a progressbar named by the label', 'id="progress-bar" role="progressbar" aria-labelledby="progress-text"'],
+	]) {
+		if (!pill.includes(needle)) throw new Error('#progress has lost ' + what);
+	}
+});
+
+/**
+ * "What is missing" and the two exports were entries on a menu only a right
+ * click on EMPTY canvas raises, and an isolation had nothing on screen to say
+ * it was one or how to leave it. The bar now carries all three -- and the two
+ * buttons are the menu's own entries, not copies of them.
+ */
+check('the bar offers what the canvas menu offers, and says when the graph is isolated', () => {
+	const bar = (code, over) => {
+		const button = () => ({
+			attrs: {}, title: '',
+			setAttribute(k, v) { this.attrs[k] = v; },
+		});
+		const page = liftPage({
+			functions: ['gapsEntry', 'toggleGaps', 'syncGapsButton', 'exportEntries', 'isoChip', 'syncIsoChip', 'menuFrom'],
+			globals: Object.assign({
+				gapsOpen: false, opened: 0, shut: 0, exported: [],
+				isolated: new Set(), isolateDepth: 1,
+				fg: { graphData: () => ({ nodes: [{}] }) },
+				menuFor: null,
+				elGapsToggle: button(), elExportMenu: button(),
+				elIsoChip: { hidden: true }, elIsoChipText: { textContent: '', title: '' },
+				ZGL10n: { loaded: () => true },
+				t: pageStrings(code || 'en-US'),
+			}, over),
+		});
+		page.openGaps = () => { page.opened++; page.gapsOpen = true; };
+		page.closeGaps = () => { page.shut++; page.gapsOpen = false; };
+		page.exportGraph = (format) => { page.exported.push(format); };
+		return page;
+	};
+
+	// One entry for the menu and the button, and it is a switch.
+	let page = bar();
+	let entry = page.gapsEntry();
+	if (entry.label !== 'What is missing' || entry.icon !== 'gaps') throw new Error('closed: ' + JSON.stringify(entry));
+	if (entry.run !== page.toggleGaps) throw new Error('the menu\'s entry and the bar\'s button do not share an action');
+	entry.run();
+	if (page.opened !== 1 || page.shut) throw new Error('the entry did not open the list');
+	entry = page.gapsEntry();
+	if (entry.label !== 'Hide what is missing' || entry.icon !== 'hide') throw new Error('open: ' + JSON.stringify(entry));
+	// The button says what the entry says, to the eye and to a reader.
+	page.syncGapsButton();
+	if (page.elGapsToggle.title !== 'Hide what is missing' || page.elGapsToggle.attrs['aria-label'] !== 'Hide what is missing') {
+		throw new Error('the button still reads ' + JSON.stringify(page.elGapsToggle.title));
+	}
+	page.toggleGaps();
+	if (page.shut !== 1) throw new Error('a second press did not close the list');
+	// Before the strings land the markup's English stays.
+	page = bar('en-US', { ZGL10n: { loaded: () => false }, t: id => id });
+	page.syncGapsButton();
+	if (page.elGapsToggle.title) throw new Error('the button was named by a message id: ' + page.elGapsToggle.title);
+
+	// The two exports: off with nothing to save, and each its own format.
+	page = bar();
+	let ex = page.exportEntries();
+	if (ex.length !== 2 || ex.some(e => e.disabled || e.icon !== 'export')) throw new Error('exports: ' + JSON.stringify(ex));
+	ex[0].run();
+	ex[1].run();
+	if (page.exported.join() !== 'svg,graphml') throw new Error('exported ' + page.exported.join());
+	for (const fg of [null, { graphData: () => ({ nodes: [] }) }]) {
+		if (!bar('en-US', { fg }).exportEntries().every(e => e.disabled)) throw new Error('an empty canvas offers an export');
+	}
+
+	// The menu's opener says so while it is one.
+	page = bar();
+	page.menuFrom(page.elExportMenu);
+	if (page.elExportMenu.attrs['aria-expanded'] !== 'true') throw new Error('Export does not say its menu is open');
+	page.menuFrom(null);
+	if (page.elExportMenu.attrs['aria-expanded'] !== 'false' || page.menuFor) throw new Error('Export still says its menu is open');
+
+	// The chip: only while something is isolated, counting what was isolated.
+	page = bar();
+	page.syncIsoChip();
+	if (!page.elIsoChip.hidden) throw new Error('a chip with nothing isolated');
+	page.isolated = new Set(['A']);
+	page.syncIsoChip();
+	if (page.elIsoChip.hidden || page.elIsoChipText.textContent !== 'Isolated: 1 paper · depth 1') {
+		throw new Error('one: ' + page.elIsoChipText.textContent);
+	}
+	page.isolated = new Set(['A', 'B', 'C']);
+	page.isolateDepth = 2;
+	page.syncIsoChip();
+	if (page.elIsoChipText.textContent !== 'Isolated: 3 papers · depth 2' || page.elIsoChipText.title !== page.elIsoChipText.textContent) {
+		throw new Error('three: ' + page.elIsoChipText.textContent);
+	}
+	page.isolated = new Set();
+	page.syncIsoChip();
+	if (!page.elIsoChip.hidden) throw new Error('the chip outlived the isolation');
+	for (const code of fs.readdirSync(localeDir)) {
+		const said = bar(code, { isolated: new Set(['A', 'B']), isolateDepth: 3 }).isoChip();
+		if (!/2.*3/.test(said) || /[{}]|isolation-chip/.test(said)) throw new Error(code + ': ' + said);
+	}
+
+	// What only the source can show: the same entries in the menu, the buttons'
+	// own listeners, and every place an isolation changes.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const body = (name) => {
+		const from = js.indexOf('\n\tfunction ' + name + '(');
+		if (from < 0) throw new Error(name + '() is gone');
+		return js.slice(from, js.indexOf('\n\t}\n', from));
+	};
+	const menu = body('showCanvasMenu');
+	if (!menu.includes('gapsEntry()') || !menu.includes('exportEntries()')) {
+		throw new Error('the canvas menu builds its own copy of an entry the bar also offers');
+	}
+	for (const [what, needle] of [
+		['"What is missing" in the bar', "elGapsToggle.addEventListener('click', toggleGaps);"],
+		['Export\'s menu', 'openMenu(exportEntries(), null, elExportMenu);'],
+		['a second press on Export closing its menu', 'if (e.detail && menuShut === elExportMenu) {'],
+		['the press that closes the menu being told from one that opens it', 'if (menuFor && menuFor.contains(e.target)) menuShut = menuFor;'],
+		['the chip\'s ✕', "elIsoChipClear.addEventListener('click', clearIsolated);"],
+	]) {
+		if (!js.includes(needle)) throw new Error(what + ' is no longer wired');
+	}
+	for (const fn of ['openGaps', 'closeGaps']) {
+		if (!body(fn).includes('syncGapsButton();')) throw new Error(fn + '() leaves the bar\'s button saying the opposite');
+	}
+	if (!/window\.zgGapsShowing = function \(json\) \{[^]*?syncGapsButton\(\);\s*\};/.test(js)) {
+		throw new Error('the list closed from chrome leaves the button saying it is open');
+	}
+	for (const fn of ['setIsolated', 'applyIsolateDepth']) {
+		if (!body(fn).includes('syncIsoChip();')) throw new Error(fn + '() leaves the chip saying what was true before');
+	}
+	if (!body('render').includes('if (isolated.size !== focus) syncIsoChip();')) {
+		throw new Error('a filter that takes an isolated paper off screen leaves the chip counting it');
+	}
+	if (!body('hideMenu').includes('menuFrom(null);')) throw new Error('a closed menu leaves its button saying it is open');
+
+	// In the bar, after the camera's button and before the room the bar gives up.
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	const order = ['id="reframe"', 'class="divider"', 'id="gaps-toggle"', 'id="export-menu"', 'id="iso-chip" hidden="hidden"', 'id="iso-chip-clear"', 'id="bar-spacer"'];
+	let at = html.indexOf('id="reframe"');
+	for (const needle of order) {
+		const next = html.indexOf(needle, at);
+		if (next < 0) throw new Error('the bar has no ' + needle + ' where it belongs, after ' + html.slice(at, at + 20));
+		at = next + 1;
+	}
+	if (!/<button id="export-menu" type="button" aria-haspopup="menu" aria-expanded="false"/.test(html)) {
+		throw new Error('Export does not say it opens a menu');
+	}
+});
+
+/**
  * Autobuild draws one line, and the line is control versus button.
  *
  * With the switch off the graph must not change until Rebuild is pressed, so
@@ -7399,6 +7776,7 @@ check('with Autobuild off, a scope box not built yet changes nothing on screen',
 			believedEdges: () => [],
 			clusters: () => ({ of: new Map() }),
 			markGaps: () => {},
+			syncGapsButton: () => {},
 			emit: msg => sent.push(msg),
 			rebuildNow: () => { rebuilds++; },
 		},

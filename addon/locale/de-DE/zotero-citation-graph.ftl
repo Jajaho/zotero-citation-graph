@@ -129,6 +129,9 @@ zotero-citation-graph-side-toggle-show = Seitenleiste einblenden
 
 zotero-citation-graph-pane-toggle-show = Infobereich einblenden
 
+zotero-citation-graph-export-hint = Graphen exportieren
+zotero-citation-graph-isolation-chip = Isoliert: { $count } Knoten · Tiefe { $depth }
+
 zotero-citation-graph-search-placeholder = Suchen
 zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern (Strg+F). Das filtert den Graphen nicht — das tun die Erweiterte Suche (Strg+Umschalt+F) und das Filterfeld in der Seitenleiste.
 zotero-citation-graph-search-mode = Schnellsuche-Modus
@@ -148,11 +151,17 @@ zotero-citation-graph-status-looking-up = Namen werden nachgeschlagen…
 zotero-citation-graph-status-dropping-names = Nachgeschlagene Namen werden verworfen…
 zotero-citation-graph-bad-payload = Ungültige Daten: { $message }
 
+zotero-citation-graph-progress-step = Schritt { $step } von { $steps } · { $text }
+zotero-citation-graph-progress-count = { $done } / { $total }
+zotero-citation-graph-progress-stop = Stoppen
+zotero-citation-graph-progress-stop-hint = Diesen Aufbau stoppen und behalten, was er bisher gefunden hat
+
 zotero-citation-graph-stats-items = { $shown } / { $total } Einträge
 zotero-citation-graph-stats-outside = { $count } extern
 zotero-citation-graph-stats-named = ({ $count } benannt)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } Kante *[other] { $count } Kanten }
 zotero-citation-graph-stats-building = Wird aufgebaut…
+zotero-citation-graph-stats-stopped = vorzeitig gestoppt
 zotero-citation-graph-stats-of-picked = { $shown } von { $picked } ausgewählten
 
 
@@ -297,6 +306,11 @@ zotero-citation-graph-empty-body = Diese Sammlung enthält keine regulären Eint
 zotero-citation-graph-empty-body-selection = { $count -> [one] Die ausgewählte Zeile ist kein Aufsatz *[other] Keine der { $count } ausgewählten Zeilen ist ein Aufsatz } – nur Anhänge, Notizen oder Einträge ohne Titel.
 zotero-citation-graph-empty-sub = Nicht einbezogen: { $count -> [one] eine Untersammlung *[other] { $count } Untersammlungen }.
 zotero-citation-graph-empty-include-sub = Untersammlungen einbeziehen
+
+zotero-citation-graph-empty-filter-title = Kein Eintrag passt zu diesen Filtern
+zotero-citation-graph-empty-filter-body = { $count -> [one] Der einzige Eintrag hier wird *[other] Alle { $count } Einträge werden } { $filters -> [one] vom Filter *[other] von den Filtern } { $names } ausgeblendet.
+zotero-citation-graph-empty-filter-name = „{ $name }“
+zotero-citation-graph-empty-filter-clear = Filter aufheben
 
 
 ## Aufbauphasen, aus dem Chrome auf der Statuszeile gemeldet.

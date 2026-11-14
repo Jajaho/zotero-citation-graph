@@ -42,6 +42,30 @@
 			     the data, and the two belong together. -->
 			<button id="reframe" type="button" data-zg-title="reframe-hint" data-zg-aria-label="reframe-hint"
 				title="Fit the whole graph in view" aria-label="Fit the whole graph in view"></button>
+			<!-- The two things a graph is opened for besides looking at it, which
+			     were entries on a menu that only a right click on EMPTY canvas
+			     raises -- so they were found by accident or not at all. Up here
+			     they are the same entries: #gaps-toggle is the menu's "What is
+			     missing", label and all, and #export-menu opens the menu's two
+			     exports under itself. The menu keeps them. A second hairline,
+			     because these act on the data and the one before them on the
+			     camera. -->
+			<div class="divider" role="presentation"></div>
+			<button id="gaps-toggle" type="button" data-zg-title="menu-gaps" data-zg-aria-label="menu-gaps"
+				title="What is missing" aria-label="What is missing"></button>
+			<button id="export-menu" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menu"
+				data-zg-title="export-hint" data-zg-aria-label="export-hint"
+				title="Export the graph" aria-label="Export the graph"></button>
+			<!-- Only while something is isolated. An isolation had nothing on
+			     screen to say it was one but the wash itself, and no way out that
+			     could be seen: Escape, or a click on empty canvas. This names it
+			     and carries the way out. The text is isoChip()'s. -->
+			<div id="iso-chip" hidden="hidden">
+				<span id="iso-chip-text"></span>
+				<button id="iso-chip-clear" type="button"
+					data-zg-title="menu-show-whole-graph" data-zg-aria-label="menu-show-whole-graph"
+					title="Show whole graph" aria-label="Show whole graph"></button>
+			</div>
 			<div id="bar-spacer"></div>
 			<!-- Finds a paper and goes to it. Deliberately not a second filter: the
 			     panel's chips already narrow the graph, and what had no answer until
@@ -552,18 +576,40 @@
 			     you are already reading, and this is the whole answer: there is no
 			     graph, and the stats line in the panel has just stopped claiming one
 			     is on its way. A sibling of #graph, not a child -- force-graph's
-			     init() does container.innerHTML = "". -->
+			     init() does container.innerHTML = "".
+
+			     And the card for the other way a canvas comes to be blank: there
+			     are papers, and the filters leave none of them. Same card, other
+			     words and its own button -- see renderEmpty(), which is why the
+			     title and body carry no data-zg-str: which of the two they say is
+			     not a fact the markup knows. -->
 			<div id="empty" hidden="hidden">
-				<div id="empty-title" data-zg-str="empty-title">Nothing to graph</div>
-				<div id="empty-body" data-zg-str="empty-body">This collection has no regular items — only attachments, notes, or nothing at all.</div>
+				<div id="empty-title">Nothing to graph</div>
+				<div id="empty-body">This collection has no regular items — only attachments, notes, or nothing at all.</div>
 				<!-- Only when there is something down there to include: offering to
 				     turn on a switch that would change nothing is worse than silence. -->
 				<div id="empty-sub" hidden="hidden"></div>
 				<button id="empty-recursive" type="button" hidden="hidden" data-zg-str="empty-include-sub">Include subcollections</button>
+				<button id="empty-clear" type="button" hidden="hidden" data-zg-str="empty-filter-clear">Clear filters</button>
 			</div>
 
 			<!-- Outside #graph for the same reason as #empty. -->
 			<div id="status" data-zg-str="status-loading">Loading…</div>
+
+			<!-- A build in flight, as a place on a bar and a way to stop it. It
+			     takes the status line's place while there is one -- chrome says
+			     the same thing in both, see zgSetProgress in graph.js. Only the
+			     label is live: it changes once a phase, and the count beside it
+			     five times a second. -->
+			<div id="progress" hidden="hidden">
+				<span id="progress-text" aria-live="polite"></span>
+				<span id="progress-count"></span>
+				<button id="progress-stop" type="button" data-zg-str="progress-stop"
+					data-zg-title="progress-stop-hint"
+					title="Stop this build and keep what it has found so far">Stop</button>
+				<div id="progress-bar" role="progressbar" aria-labelledby="progress-text"
+					aria-valuemin="0" aria-valuemax="100"><i id="progress-fill"></i></div>
+			</div>
 		</div>
 	</div>
 

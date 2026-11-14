@@ -170,6 +170,16 @@ zotero-citation-graph-side-toggle-show = Show the sidebar
 # Pane" and is on screen exactly when this button is not.
 zotero-citation-graph-pane-toggle-show = Show the item pane
 
+# The bar's Export button, which opens the two export entries of the canvas
+# menu under itself. "What is missing" beside it has no string of its own: it
+# is the menu's entry, and says menu-gaps or menu-gaps-hide as that does.
+zotero-citation-graph-export-hint = Export the graph
+
+# The chip the bar shows while something is isolated. $count is how many
+# papers were isolated -- not how many are lit around them -- and $depth is the
+# "Isolation depth" in force. Its ✕ is menu-show-whole-graph.
+zotero-citation-graph-isolation-chip = Isolated: { $count -> [one] { $count } paper *[other] { $count } papers } · depth { $depth }
+
 zotero-citation-graph-search-placeholder = Search
 zotero-citation-graph-search-hint = Find a paper on the canvas and go to it (Ctrl+F). This does not filter the graph — Advanced Search (Ctrl+Shift+F) and the filter box in the sidebar do that.
 zotero-citation-graph-search-mode = Quick Search mode
@@ -189,12 +199,24 @@ zotero-citation-graph-status-looking-up = Looking up names…
 zotero-citation-graph-status-dropping-names = Dropping looked-up names…
 zotero-citation-graph-bad-payload = Bad payload: { $message }
 
+# A build in flight, drawn as a bar in the status line's place. $text is the
+# phase as chrome names it (scanning-pdfs, lookup-phase and the rest), $step
+# and $steps which phase of how many; a build of one phase shows $text alone.
+# The count is of whatever the phase counts -- papers, mostly.
+zotero-citation-graph-progress-step = Step { $step } of { $steps } · { $text }
+zotero-citation-graph-progress-count = { $done } / { $total }
+zotero-citation-graph-progress-stop = Stop
+zotero-citation-graph-progress-stop-hint = Stop this build and keep what it has found so far
+
 # The counts under the panel. Joined with " · " in the order they appear here.
 zotero-citation-graph-stats-items = { $shown } / { $total } items
 zotero-citation-graph-stats-outside = { $count } outside
 zotero-citation-graph-stats-named = ({ $count } named)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } edge *[other] { $count } edges }
 zotero-citation-graph-stats-building = Building…
+# In the same place, once a build was stopped with the Stop button: the graph
+# on screen is finished but is not all of it.
+zotero-citation-graph-stats-stopped = stopped early
 
 # On the stats line of a graph built from a selection, and only when the two
 # numbers differ: how many of the rows the user picked became papers. The rest
@@ -368,6 +390,16 @@ zotero-citation-graph-empty-body = This collection has no regular items — only
 zotero-citation-graph-empty-body-selection = { $count -> [one] The selected row is not a paper *[other] None of the { $count } selected rows is a paper } — only attachments, notes, or items with no title.
 zotero-citation-graph-empty-sub = Not included: { $count -> [one] one subcollection *[other] { $count } subcollections }.
 zotero-citation-graph-empty-include-sub = Include subcollections
+
+# The same card over a graph that HAS papers, when the filters leave none of
+# them. $count is how many papers there are, $filters how many filters are
+# set, and $names those filters as their chips read, each wrapped by
+# empty-filter-name and joined with commas -- an Advanced Search counts as one
+# and is named by search-advanced.
+zotero-citation-graph-empty-filter-title = No papers match these filters
+zotero-citation-graph-empty-filter-body = { $count -> [one] The only paper here is *[other] All { $count } papers are } hidden by { $filters -> [one] the filter *[other] the filters } { $names }.
+zotero-citation-graph-empty-filter-name = “{ $name }”
+zotero-citation-graph-empty-filter-clear = Clear filters
 
 
 ## Build phases, reported on the status line from chrome.

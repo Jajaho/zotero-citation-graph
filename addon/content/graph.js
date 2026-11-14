@@ -854,9 +854,22 @@
 	let elLegend = el('legend');
 	let elLegendBody = el('legend-body');
 	let elEmpty = el('empty');
+	let elEmptyTitle = el('empty-title');
 	let elEmptyBody = el('empty-body');
 	let elEmptySub = el('empty-sub');
 	let elEmptyRecursive = el('empty-recursive');
+	let elEmptyClear = el('empty-clear');
+	let elGapsToggle = el('gaps-toggle');
+	let elExportMenu = el('export-menu');
+	let elIsoChip = el('iso-chip');
+	let elIsoChipText = el('iso-chip-text');
+	let elIsoChipClear = el('iso-chip-clear');
+	let elProgress = el('progress');
+	let elProgressText = el('progress-text');
+	let elProgressCount = el('progress-count');
+	let elProgressStop = el('progress-stop');
+	let elProgressBar = el('progress-bar');
+	let elProgressFill = el('progress-fill');
 	let elFilterChips = el('filter-chips');
 	let elFilterInput = el('filter-input');
 	let elSuggest = el('filter-suggest');
@@ -1049,6 +1062,88 @@
 		// has anything to say -- see offerHint().
 		elStatus.textContent = text || hint || '';
 	};
+
+	/**
+	 * A build in flight, as a place on a bar: which phase of how many, how far
+	 * through it, and a button that stops it.
+	 *
+	 * A build on a large library runs for minutes, and all it had was the
+	 * status line -- "Scanning PDFs for DOI links… 37/160" -- with the counts
+	 * printed and nothing drawn from them, and no way to stop it short of
+	 * closing the tab. Chrome sends the same news in a shape a bar can be drawn
+	 * from, right after each status and a bare `null` when the build is over
+	 * however it ended; see progressFor() in lib/graphTab.js for the fields.
+	 *
+	 * The bar takes the status line's place rather than sitting beside it: the
+	 * two say the same thing. The line is still written underneath -- by chrome,
+	 * and by this page's own notes -- so when the build ends it is there again
+	 * with whatever was last said on it, the gesture hint included.
+	 */
+	window.zgSetProgress = function (json) {
+		let p;
+		try {
+			p = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		showProgress(p);
+	};
+
+	function showProgress(p) {
+		let on = !!p && typeof p === 'object';
+		elProgress.hidden = !on;
+		elStatus.hidden = on;
+		// A press on Stop has been answered by now, one way or the other: with
+		// the `null` that ends the bar, or by a build that is still reporting --
+		// which is one that did not stop, and has to be stoppable again.
+		elProgressStop.disabled = false;
+		if (!on) return;
+
+		// Both, and both numbers: a phase's first report carries neither, and a
+		// phase that cannot count never does. That is a bar with no place on it,
+		// not an empty one.
+		let counted = p.done != null && p.total != null
+			&& Number.isFinite(Number(p.done)) && Number.isFinite(Number(p.total)) && Number(p.total) > 0;
+		let text = String(p.text == null ? '' : p.text);
+		// The label ends in an ellipsis because the status line's does, where it
+		// is all there is to say work is going on. Beside a count it is noise.
+		if (counted) text = text.replace(/\s*(?:…|\.{3})\s*$/, '');
+		let label = Number(p.steps) > 1
+			? t('progress-step', { step: p.step, steps: p.steps, text })
+			: text;
+		// Only when it changes: this is the one live part of the bar, and
+		// writing the same words again would have them read out again.
+		if (elProgressText.textContent !== label) elProgressText.textContent = label;
+
+		elProgressBar.classList.toggle('indeterminate', !counted);
+		if (!counted) {
+			elProgressCount.textContent = '';
+			elProgressFill.style.width = '';
+			elProgressBar.removeAttribute('aria-valuenow');
+			elProgressBar.removeAttribute('aria-valuetext');
+			return;
+		}
+		let done = Math.max(0, Math.min(Number(p.done), Number(p.total)));
+		let count = t('progress-count', {
+			done: done.toLocaleString(),
+			total: Number(p.total).toLocaleString(),
+		});
+		let percent = Math.round(100 * done / Number(p.total));
+		elProgressCount.textContent = count;
+		elProgressFill.style.width = percent + '%';
+		elProgressBar.setAttribute('aria-valuenow', String(percent));
+		elProgressBar.setAttribute('aria-valuetext', count);
+	}
+
+	// The generation moves on in chrome and the work in flight finds itself no
+	// longer wanted at its next look, which can be a paper away: so the button
+	// goes dead on the press rather than inviting a second one, and
+	// showProgress() gives it back.
+	elProgressStop.addEventListener('click', () => {
+		elProgressStop.disabled = true;
+		emit({ type: 'stop-build' });
+	});
 
 	/**
 	 * What a click, a double click and a right click do on a paper, said once.
@@ -1733,7 +1828,58 @@
 			gapsOpen = !!JSON.parse(json).showing;
 		}
 		catch (e) { /* leave it as it was */ }
+		syncGapsButton();
 	};
+
+	/**
+	 * "What is missing", as an entry: what it is called just now, the icon
+	 * that goes with that, and what it does.
+	 *
+	 * One of these for the two places that offer it -- the canvas menu, and the
+	 * bar's button -- because it is a switch, and two copies of a switch come
+	 * to disagree about which way it is thrown.
+	 */
+	function gapsEntry() {
+		return {
+			// Not a node gesture: what is missing is a question about the
+			// collection, so it is asked of the canvas rather than of any one
+			// paper on it.
+			icon: gapsOpen ? 'hide' : 'gaps',
+			label: t(gapsOpen ? 'menu-gaps-hide' : 'menu-gaps'),
+			hint: t('menu-gaps-hint'),
+			run: toggleGaps,
+		};
+	}
+
+	function toggleGaps() {
+		if (gapsOpen) closeGaps();
+		else openGaps();
+	}
+
+	/**
+	 * The bar's button, made to say what the entry says.
+	 *
+	 * The list is opened and shut from four places -- here, the menu, Escape,
+	 * and chrome's own close button on the list, which is told to this page
+	 * through zgGapsShowing -- so each of them ends by calling this.
+	 *
+	 * Its name turns over, as the menu's row does and as the sidebar's toggle
+	 * at the head of this bar does. Its icon does not: a row in a menu is read
+	 * afresh each time the menu opens, but a button is found again by what it
+	 * looks like, and one that became a struck-out eye would be a button that
+	 * had gone. Nor is it drawn "pressed", for the reason no other button in
+	 * this bar is -- what says the list is open is the list.
+	 */
+	function syncGapsButton() {
+		// Before the strings land t() answers with the id it was asked for; the
+		// markup's English stays until then, and the onReady block calls again.
+		if (!ZGL10n.loaded()) return;
+		let label = gapsEntry().label;
+		elGapsToggle.title = label;
+		elGapsToggle.setAttribute('aria-label', label);
+	}
+
+	elGapsToggle.addEventListener('click', toggleGaps);
 
 	function openGaps() {
 		gapsOpen = true;
@@ -1762,12 +1908,14 @@
 		}
 		emit({ type: 'gaps-open' });
 		renderGaps();
+		syncGapsButton();
 	}
 
 	function closeGaps() {
 		if (!gapsOpen) return;
 		gapsOpen = false;
 		emit({ type: 'gaps-close' });
+		syncGapsButton();
 	}
 
 	/**
@@ -1837,11 +1985,39 @@
 	 * for a build that FINISHED empty -- a first payload on the way to a real
 	 * graph carries no nodes either, and painting this over it would be a lie
 	 * that lasts a second and reads as a bug.
+	 *
+	 * And the card for a graph the FILTERS emptied. There are papers, `passing`
+	 * of them survive the masks, and that is none: the canvas was simply blank,
+	 * with "0 / 160 items" in the sidebar's footer the only word on why. So the
+	 * card says which masks did it -- each chip as it reads in the panel, and
+	 * the Advanced Search if one is narrowing -- and carries the way out. It
+	 * does not wait for a finished build: the papers arrive with the first payload,
+	 * and a mask that matches none of them is as true then as later.
+	 *
+	 * Only the masks. "Hide unconnected" over a graph with no edge left blanks
+	 * the canvas too, but that is the switch doing what it says to papers that
+	 * did pass, and nothing here is a filter to clear.
 	 */
-	function renderEmpty() {
+	function renderEmpty(passing) {
 		let info = raw.meta && raw.meta.empty;
-		elEmpty.hidden = !info;
+		let masks = !info && raw.items.length && !passing ? maskNames() : [];
+		elEmpty.hidden = !info && !masks.length;
+		elEmptyClear.hidden = !masks.length;
+		if (masks.length) {
+			// Nothing left on the canvas for the gesture hint to be about.
+			endHint();
+			elEmptyTitle.textContent = t('empty-filter-title');
+			elEmptyBody.textContent = t('empty-filter-body', {
+				count: raw.items.length,
+				filters: masks.length,
+				names: masks.map(name => t('empty-filter-name', { name })).join(', '),
+			});
+			elEmptySub.hidden = true;
+			elEmptyRecursive.hidden = true;
+			return;
+		}
 		if (!info) return;
+		elEmptyTitle.textContent = t('empty-title');
 		// A selection that came to nothing did so for a reason a collection
 		// never has: every row picked was a note, an attachment, or a record
 		// with no title. Saying "this collection has no regular items" over a
@@ -1858,6 +2034,32 @@
 		elEmptyRecursive.hidden = !offer;
 		if (offer) elEmptySub.textContent = t('empty-sub', { count: info.subcollections });
 	}
+
+	/** What is masking the graph, by the names the panel gives it: each chip as
+	 *  it reads there, and the Advanced Search if one is narrowing. */
+	function maskNames() {
+		let names = panelBox.filters().map(f => Filters.describe(f));
+		if (advMatch) names.push(t('search-advanced'));
+		return names;
+	}
+
+	/**
+	 * Lift every mask at once -- the way out the card above offers.
+	 *
+	 * Through the box's own load(), not by pressing each chip's ✕ for it: a ✕
+	 * takes the focus out of the box and ends an edit, which are things a
+	 * reader's press means and this does not. An Advanced Search is a mask
+	 * written in core's editor, and closing that editor is how it is lifted;
+	 * chrome answers with the matches gone, which is a render of its own.
+	 */
+	function clearFilters() {
+		panelBox.load([]);
+		if (advMatch) advanced('close');
+		render();
+		viewChanged();
+	}
+
+	elEmptyClear.addEventListener('click', clearFilters);
 
 	/**
 	 * A row of the gap list, clicked.
@@ -2725,7 +2927,11 @@
 		let dropped = false;
 		if (isolated.size || picked.size) {
 			let onScreen = new Set(nodes.map(n => n.id));
+			let focus = isolated.size;
 			for (let id of isolated) if (!onScreen.has(id)) isolated.delete(id);
+			// The one change to the focus that does not come through
+			// setIsolated(), and the bar's chip counts it.
+			if (isolated.size !== focus) syncIsoChip();
 			for (let id of picked) {
 				if (onScreen.has(id)) continue;
 				picked.delete(id);
@@ -2950,7 +3156,7 @@
 		// landing, a strategy switched off or a paper added all change what is
 		// missing, and a stale list would be a list of the wrong papers.
 		renderGaps();
-		renderEmpty();
+		renderEmpty(held.length);
 
 		let phase = raw.meta && raw.meta.phase;
 		let ghostCount = visibleGhosts.size;
@@ -2977,6 +3183,10 @@
 		}
 		stats.push(t('stats-edges', { count: links.length }));
 		if (phase && phase !== 'done') stats.push(t('stats-building'));
+		// A build the reader stopped: finished as far as the page is concerned,
+		// and not the whole graph. Said where "Building…" was said a moment ago,
+		// because nothing else on screen tells this graph from a complete one.
+		else if (raw.meta && raw.meta.stopped) stats.push(t('stats-stopped'));
 		elStats.textContent = stats.join(' · ');
 	}
 
@@ -5154,7 +5364,37 @@
 		isolated = ids;
 		recoloured();
 		repaint();
+		syncIsoChip();
 	}
+
+	/**
+	 * What the bar says of an isolation: how many papers it is OF -- the ones
+	 * isolated, not the neighbourhood lit around them -- and how many edges out
+	 * from them stays lit. Empty when nothing is isolated.
+	 */
+	function isoChip() {
+		if (!isolated.size) return '';
+		return t('isolation-chip', { count: isolated.size, depth: isolateDepth });
+	}
+
+	/**
+	 * The chip in the bar, there for as long as something is isolated.
+	 *
+	 * An isolation washes out the whole graph and had nothing on screen to say
+	 * what it was or how to leave it: the ways out are Escape and a click on
+	 * empty canvas, and neither can be seen. The chip names it and carries a
+	 * button that is clearIsolated() and nothing more.
+	 */
+	function syncIsoChip() {
+		let text = isoChip();
+		elIsoChip.hidden = !text;
+		if (elIsoChipText.textContent === text) return;
+		elIsoChipText.textContent = text;
+		// The whole of it, for a bar too narrow to show the whole of it.
+		elIsoChipText.title = text;
+	}
+
+	elIsoChipClear.addEventListener('click', clearIsolated);
 
 	function clearIsolated() {
 		if (isolated.size) setIsolated(new Set());
@@ -5314,7 +5554,13 @@
 	}
 
 	window.addEventListener('pointerdown', (e) => {
-		if (!elMenu.hidden && !elMenu.contains(e.target)) hideMenu();
+		menuShut = null;
+		if (elMenu.hidden || elMenu.contains(e.target)) return;
+		// On the button the menu hangs from, this press is the one that closes
+		// it -- and the click it ends in must not open it again. Noted here
+		// because by the time that click arrives the menu is simply shut.
+		if (menuFor && menuFor.contains(e.target)) menuShut = menuFor;
+		hideMenu();
 	}, true);
 
 	/**
@@ -6580,15 +6826,7 @@
 			label: t('menu-zoom-to-fit'),
 			hint: t('menu-zoom-to-fit-hint'),
 			run: reframeAsked,
-		}, {
-			// Not a node gesture: what is missing is a question about the
-			// collection, so it is asked of the canvas rather than of any one
-			// paper on it.
-			icon: gapsOpen ? 'hide' : 'gaps',
-			label: t(gapsOpen ? 'menu-gaps-hide' : 'menu-gaps'),
-			hint: t('menu-gaps-hint'),
-			run: () => (gapsOpen ? closeGaps() : openGaps()),
-		}];
+		}, gapsEntry()];
 		let g = groupAt(event);
 		if (g) {
 			for (let entry of groupEntries(g, event)) entries.push(entry);
@@ -6601,10 +6839,19 @@
 				run: () => addGroup(event),
 			});
 		}
-		// Last, being about the whole picture rather than any spot on it, and
-		// off on an empty canvas, where there is no picture to save.
+		// Last, being about the whole picture rather than any spot on it.
+		for (let entry of exportEntries()) entries.push(entry);
+		openMenu(entries, event);
+	}
+
+	/**
+	 * The two exports, as entries -- for the canvas menu, and for the menu the
+	 * bar's Export button opens, which is these two and nothing else. Off on an
+	 * empty canvas, where there is no picture to save.
+	 */
+	function exportEntries() {
 		let empty = !fg || !fg.graphData().nodes.length;
-		entries.push({
+		return [{
 			icon: 'export',
 			label: t('menu-export-svg'),
 			hint: t('menu-export-svg-hint'),
@@ -6616,25 +6863,60 @@
 			hint: t('menu-export-graphml-hint'),
 			disabled: empty,
 			run: () => exportGraph('graphml'),
-		});
-		openMenu(entries, event);
+		}];
 	}
 
-	function openMenu(entries, event) {
+	/**
+	 * The page's own menu, opened at the pointer -- or, given the button it
+	 * was asked for from, hung under that button.
+	 */
+	function openMenu(entries, event, opener) {
 		hideAction();
 		// A menu replaced rather than dismissed still owes the previous node
 		// its freedom.
 		release();
+		menuFrom(opener || null);
 		elMenu.textContent = '';
 		for (let entry of entries) {
 			elMenu.appendChild(menuItem(entry));
 		}
 		elMenu.hidden = false;
-		positionAt(elMenu, event);
+		if (opener) positionUnder(elMenu, opener);
+		else positionAt(elMenu, event);
 	}
+
+	/**
+	 * Which button the menu is hanging from, if it is hanging from one.
+	 *
+	 * A menu raised by a right click belongs to the spot it was raised at and
+	 * to nothing on the page. One opened from a button is that button's: the
+	 * button says it has a menu open (aria-expanded), and a second press on it
+	 * closes the menu rather than opening it again -- see `menuShut`.
+	 */
+	let menuFor = null;
+	let menuShut = null;
+
+	function menuFrom(button) {
+		if (menuFor === button) return;
+		if (menuFor) menuFor.setAttribute('aria-expanded', 'false');
+		menuFor = button;
+		if (menuFor) menuFor.setAttribute('aria-expanded', 'true');
+	}
+
+	elExportMenu.addEventListener('click', (e) => {
+		// The press this click belongs to found the menu open and closed it,
+		// which is the whole of what a second press on a menu button means.
+		// `detail` is 0 for Enter and Space, which press nothing.
+		if (e.detail && menuShut === elExportMenu) {
+			menuShut = null;
+			return;
+		}
+		openMenu(exportEntries(), null, elExportMenu);
+	});
 
 	function hideMenu() {
 		elMenu.hidden = true;
+		menuFrom(null);
 		// A native menu is chrome's to take down, and chrome answers by saying
 		// so -- see zgMenuClosed, which is where the hold is given up in that
 		// case. Releasing here as well would hand the node back to the layout
@@ -6780,6 +7062,16 @@
 		let py = event ? event.clientY : window.innerHeight / 2;
 		node.style.left = Math.max(4, Math.min(px + 12, window.innerWidth - w - 8)) + 'px';
 		node.style.top = Math.max(4, Math.min(py + 12, window.innerHeight - h - 8)) + 'px';
+	}
+
+	/** Hung under the button it was opened from, start edges together, with
+	 *  the same clamp: the bar's buttons are at the top of a narrow pane. */
+	function positionUnder(node, anchor) {
+		let r = anchor.getBoundingClientRect();
+		let w = node.offsetWidth;
+		let h = node.offsetHeight;
+		node.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+		node.style.top = Math.max(4, Math.min(r.bottom + 2, window.innerHeight - h - 8)) + 'px';
 	}
 
 	// --- the outside-reference action popover -----------------------------
@@ -7362,6 +7654,7 @@
 		isolateDepth = Number.isFinite(n) ? Math.min(4, Math.max(0, n)) : 1;
 		recoloured();
 		repaint();
+		syncIsoChip();
 	}
 
 	elIsolateDepth.addEventListener('input', () => {
@@ -7618,6 +7911,10 @@
 	// The same icon as the sidebar's toggle, mirrored in CSS -- see graph.css.
 	elPaneToggle.appendChild(Icons.svg('open-pane'));
 	elReframe.appendChild(Icons.svg('zoom-to-fit'));
+	// The same two the canvas menu's rows wear.
+	elGapsToggle.appendChild(Icons.svg('gaps'));
+	elExportMenu.appendChild(Icons.svg('export'));
+	elIsoChipClear.appendChild(Icons.svg('clear'));
 	elSearchMode.appendChild(Icons.svg('magnifier'));
 	elSearchMode.appendChild(Icons.svg('chevron-6'));
 	elSearchAdvanced.appendChild(Icons.svg('filter'));
@@ -8438,6 +8735,9 @@
 		// from its data-zg-title; if the panel is ahead of the graph, the
 		// button says so again, now in the user's language.
 		syncPending();
+		// And the bar's "What is missing", whose name turns over with the list:
+		// applyStatic() has just written the closed one's name on it.
+		syncGapsButton();
 		// The strategies' rows are built out of the payload and keep their
 		// names until the list of them changes -- so a payload that beat the
 		// strings across named them by id, and has to be asked again.
