@@ -300,6 +300,7 @@ zotero-citation-graph-build-openalex-progress = Referenzen werden bei OpenAlex a
 zotero-citation-graph-lookup-works = { $count -> [one] { $count } Arbeit wird *[other] { $count } Arbeiten werden } nachgeschlagen…
 zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
+zotero-citation-graph-build-failed = Der Graph konnte nicht aufgebaut werden: { $message }
 
 
 ## Eine externe Referenz zur Bibliothek hinzufügen.

@@ -333,6 +333,33 @@ async function selectItems(tabID, itemIDs) {
 }
 
 /**
+ * Whether every one of `itemIDs` is on this tab's graph -- as a node, or as a
+ * note or an attachment of one, which is the same substitution the pane makes
+ * when it is asked to show a child item.
+ *
+ * What lib/tabContext.js asks before it keeps a "select this item" in the graph
+ * tab. The items are the last payload's, so a paper adopted into the graph
+ * counts and a ghost never does; a tab with no payload yet holds nothing.
+ */
+function holdsItems(tabID, itemIDs) {
+	let entry = open_.get(tabID);
+	if (!entry || !entry.heldIDs || !itemIDs || !itemIDs.length) return false;
+	for (let id of itemIDs) {
+		let item = null;
+		try {
+			item = Zotero.Items.get(id);
+			while (item && item.parentItemID) item = Zotero.Items.get(item.parentItemID);
+		}
+		catch (e) {
+			// Not loaded, or gone: not something this graph can be said to hold.
+			item = null;
+		}
+		if (!item || !entry.heldIDs.has(item.id)) return false;
+	}
+	return true;
+}
+
+/**
  * Teardown for a tab that is going away. The container is about to be destroyed
  * anyway, but what is in the side panel is not just markup: an item pane holds
  * observers registered with Zotero.Notifier, and taking it out of the document
@@ -1061,14 +1088,74 @@ async function runBuild(tabID) {
 	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
 
 	entry.building = true;
+	// The last finished derivation stops being this tab's the moment another is
+	// started: it describes a graph that is on its way out. Left standing, it
+	// was still what adoptAdded() folded a new paper into -- so a paper added
+	// while a rebuild ran was written into the build being replaced, and the
+	// build replacing it, which had listed the collection before the add, put
+	// the ghost straight back. With nothing here the add falls through to a
+	// build of its own, which lists the paper. A lookup is not a build and
+	// keeps it: see runLookup().
+	entry.built = null;
 	try {
 		await buildPhases(entry, alive);
+	}
+	catch (e) {
+		// Nothing above this catches: mount() and the message handler log a
+		// rejection and move on, which left the status line on whatever phase
+		// threw and the page waiting for a payload that was never coming.
+		Zotero.logError(e);
+		if (alive()) buildFailed(entry, e);
 	}
 	finally {
 		// A build that has already been superseded must not clear the flag the
 		// build that superseded it set.
 		if (alive()) entry.building = false;
 	}
+}
+
+/**
+ * A build that threw: say so, and leave the page with a finished graph.
+ *
+ * The status line carries the reason. The payload is what lets go of the tab:
+ * the page reads any phase but 'done' as work still in flight, and goes on
+ * saying "building…" beside a build that has stopped.
+ */
+function buildFailed(entry, e) {
+	let message = e && e.message ? e.message : String(e);
+	settle(entry, { failed: message });
+	send(entry, 'zgSetStatus', l10n.t('build-failed', { message }));
+}
+
+/**
+ * Leave the page holding a FINISHED payload, whatever the build got to.
+ *
+ * What is on screen stays on screen: the last payload is sent again as it was,
+ * stamped 'done' -- with the options it was built with, which are not
+ * necessarily the tab's any more -- and with `extra` saying why it ended there.
+ * A payload that already said 'done' is left alone, since the page is not
+ * waiting for anything; and a tab that has been sent nothing at all is sent an
+ * empty graph, because a page with no payload has nothing to stop waiting on.
+ */
+function settle(entry, extra) {
+	let last = entry.pushed;
+	if (!last) {
+		pushData(entry, {
+			items: [],
+			inCollection: new Set(),
+			edges: [],
+			metadata: Object.create(null),
+			described: Object.create(null),
+			heldCounts: Object.create(null),
+			picked: null,
+		}, { phase: 'done', items: 0, ...extra });
+		return;
+	}
+	if (last.meta && last.meta.phase === 'done') return;
+	let meta = { ...last.meta, phase: 'done', ...extra };
+	// A rename the page has already acted on, and must not act on twice.
+	delete meta.adopted;
+	pushData(entry, last.state, meta, last.options);
 }
 
 async function buildPhases(entry, alive) {
@@ -1383,6 +1470,12 @@ async function runLookup(tabID) {
 		}
 		await lookUpNames(entry, alive, built);
 	}
+	catch (e) {
+		// As runBuild(): a pass that threw must not leave "Looking up…" on the
+		// status line for the rest of the session.
+		Zotero.logError(e);
+		if (alive()) buildFailed(entry, e);
+	}
 	finally {
 		if (alive()) entry.building = false;
 	}
@@ -1549,8 +1642,11 @@ async function lookUpNames(entry, alive, built) {
  * that re-sends a graph it did not derive sends exactly what the build that
  * derived it would have sent.
  */
-function pushData(entry, state, meta) {
-	let { scope, options } = entry;
+function pushData(entry, state, meta, options = entry.options) {
+	let { scope } = entry;
+	// What the page is holding, kept so that a build which ends early can hand
+	// it the same graph again as a finished one. See settle().
+	entry.pushed = { state, meta, options: { ...options } };
 	// External nodes are recomputed over the combined edge list rather than
 	// carried from each build: a work found by both text-doi and pdf-links is
 	// one node cited once, not two.
@@ -2279,7 +2375,7 @@ module.exports = {
 	open, openSelection, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
 	watchChrome,
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
-	selectedLibraryID, selectItems,
+	selectedLibraryID, selectItems, holdsItems,
 	mergeEdges, toWireExternal, adoptAdded, rekeyByDoi,
 	// Exported for the add checks: the one path here that writes to the library.
 	addByDoi,

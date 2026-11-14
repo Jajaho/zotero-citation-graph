@@ -455,6 +455,7 @@ function addTabContext(win) {
 		collection: graphTab.selectedCollection,
 		libraryID: graphTab.selectedLibraryID,
 		select: graphTab.selectItems,
+		holds: graphTab.holdsItems,
 	});
 }
 
