@@ -1732,6 +1732,28 @@ tools/
   and the new one — which had listed the collection before the add — put the ghost straight back.
   With no finished build to fold into, the add ends in a build of its own, which lists the paper.
   A lookup is not a build and keeps it.
+- **A build says where it is twice, and can be stopped.** Beside every status line chrome sends
+  `zgSetProgress(json)`: `{ text, done, total, step, steps }` — the phase's label without its
+  counts, how far through the phase it is (both `null` until something has been counted, which is
+  every phase's first report), and which phase this is, from 1, out of how many this build's
+  options promise — and a bare `null` when the build is over, however it ended. `zgSetStatus` is
+  sent exactly as before, and a page with no `zgSetProgress` hears nothing new, since `send()`
+  skips a function the page does not have. A phase that runs several strategies counts across
+  them as one run (`progressFor().at()`): each strategy counts the same papers from nothing, and
+  a bar drawn from that would fill three times. The page's Stop sends `stop-build`.
+  `stopBuild()` moves the tab's generation on — the signal a newer build raises, which every
+  strategy checks between papers — takes the bar and the status line down, and has `settle()`
+  hand the page the payload it is holding again as `phase: 'done'` with `meta.stopped`.
+  `entry.built` stays null for a build stopped before it finished deriving, so the next lookup or
+  add starts a build rather than working over half of one. A stopped *lookup* is not interrupted
+  on the wire: `enrich/openalex.js` hands its signal to `fetch()`, which wants a real
+  `AbortSignal`, so chrome's `{ aborted }` flag cannot be given to it — the requests already out
+  come back and are cached, and are not drawn.
+- **An item's type crosses by name and by label.** `itemRecord()` sends `itemType`, core's own
+  name, which is what the type filter and a saved view are keyed on and must not change with the
+  display language — and `itemTypeName` beside it, `Zotero.ItemTypes.getLocalizedString()`, which
+  is what a reader should be shown ("Conference Paper"). It is `null` where core has no label, and
+  the page falls back to the name.
 - **What survives a restart is the scope and the settings, and nothing derived.**
   `Zotero_Tabs.getState()` serialises `tab.data` wholesale into `session.json`, so `tabData()` is the
   persisted form: `libraryID`, `collectionKey` (null for a selection made outside a collection),

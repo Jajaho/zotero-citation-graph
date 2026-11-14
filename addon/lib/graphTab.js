@@ -857,6 +857,12 @@ async function handleMessage(win, tabID, scope, msg) {
 			else await runLookup(tabID);
 			break;
 		}
+		// The Stop button beside the progress bar. See stopBuild().
+		case 'stop-build': {
+			let entry = open_.get(tabID);
+			if (entry) stopBuild(entry);
+			break;
+		}
 		// The page's settings changed -- see snapshotView() in graph.js. Kept
 		// whole: the page always sends all of it, so there is nothing to merge.
 		case 'view': {
@@ -1109,9 +1115,102 @@ async function runBuild(tabID) {
 	}
 	finally {
 		// A build that has already been superseded must not clear the flag the
-		// build that superseded it set.
-		if (alive()) entry.building = false;
+		// build that superseded it set -- nor take down the bar that build has
+		// just put up.
+		if (alive()) {
+			entry.building = false;
+			send(entry, 'zgSetProgress', null);
+		}
 	}
+}
+
+/**
+ * How far along a build is, for the bar beside the status line.
+ *
+ * The status line already says all of this in words -- "Scanning PDFs for DOI
+ * links… 37/160" -- and goes on saying it, unchanged: a page that has no
+ * zgSetProgress hears nothing new, since send() skips a function the page does
+ * not have. This is the same news in a shape a bar can be drawn from:
+ *
+ *   { text, done, total, step, steps }
+ *
+ *   text         the phase's label, without the counts
+ *   done, total  how far through the phase; both null while nothing has been
+ *                counted, which is every phase's first report and the whole of
+ *                a phase that cannot count
+ *   step, steps  which phase this is, from 1, out of how many this build has
+ *
+ * and a bare `null` when the build is over, however it ended. See runBuild(),
+ * runLookup() and stopBuild().
+ *
+ * `steps` is what the options promise, which can be one more than what
+ * happens: a build with the lookup switched on and nothing to look up ends a
+ * phase early. A bar that finishes early is the right way round to be wrong.
+ */
+function progressFor(entry, alive, steps) {
+	let step = 0;
+	let text = '';
+	let say = (done, total) => {
+		if (!alive()) return;
+		let counted = Number.isFinite(done) && Number.isFinite(total) && total > 0;
+		send(entry, 'zgSetProgress', {
+			text,
+			done: counted ? Math.min(done, total) : null,
+			total: counted ? total : null,
+			step,
+			steps,
+		});
+	};
+	return {
+		/** The next phase, by its label, with nothing counted yet. */
+		begin(label) {
+			step = Math.min(step + 1, steps);
+			text = label;
+			say(null, null);
+		},
+		/**
+		 * One strategy's report, as a place in the PHASE. A phase that runs
+		 * several strategies hears each of them count the same papers from
+		 * nothing, and a bar drawn from that would fill three times; `order` is
+		 * the list the phase runs them in, so each one's count starts where the
+		 * last one's ended.
+		 */
+		at(p, order = []) {
+			let i = order.indexOf(p.provider);
+			if (order.length > 1 && i >= 0 && p.total > 0) say(i * p.total + p.done, order.length * p.total);
+			else say(p.done, p.total);
+		},
+	};
+}
+
+/**
+ * Stop the build or the lookup this tab is running, and keep what is on screen.
+ *
+ * The signal is the one a newer build raises: the generation moves on, so the
+ * work in flight finds itself no longer alive at its next look -- between two
+ * papers for a strategy, between two phases otherwise -- and pushes nothing
+ * more. What it had finished reading is not thrown away: the PDF link cache
+ * is flushed on the way out either way.
+ *
+ * What the page is holding was stamped with the phase it arrived in, and the
+ * page reads any phase but 'done' as work in flight. So it is sent that same
+ * graph again as a finished one, with `meta.stopped` to say it is not the
+ * whole of it -- see settle(), which leaves a payload that already said 'done'
+ * alone. `entry.built` stays null for a build stopped before it finished
+ * deriving, so the next lookup or add starts a build rather than working over
+ * half of one.
+ *
+ * A lookup that is stopped is not interrupted on the wire -- the enricher
+ * hands its signal to fetch(), which wants a real AbortSignal -- so the
+ * requests already out come back and are cached; they are simply not drawn.
+ */
+function stopBuild(entry) {
+	if (!entry.building) return;
+	entry.generation++;
+	entry.building = false;
+	send(entry, 'zgSetProgress', null);
+	settle(entry, { stopped: true });
+	send(entry, 'zgSetStatus', '');
 }
 
 /**
@@ -1205,14 +1304,20 @@ async function buildPhases(entry, alive) {
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
 	};
+	// The three every build has -- listing, text, PDFs -- and one for each
+	// switch that adds a phase. See progressFor().
+	let progress = progressFor(entry, alive,
+		3 + (options.openalexRefs ? 1 : 0) + (options.refStrings ? 1 : 0) + (options.enrich ? 1 : 0));
 
 	// --- phase 1: nodes -------------------------------------------------
 	// Written as one flat conditional with no call inside it: the l10n audit
 	// in tools/test-cjs-shim.js scans a t(...) call for quoted ids and stops at
 	// the first ')', so a nested call here would hide all three from it.
-	status(l10n.t(scope.kind === 'selection' ? 'build-loading-selection'
+	let loading = l10n.t(scope.kind === 'selection' ? 'build-loading-selection'
 		: options.recursive ? 'build-loading-collection-recursive'
-		: 'build-loading-collection'));
+		: 'build-loading-collection');
+	status(loading);
+	progress.begin(loading);
 	let items = await adapter.listItems();
 	if (!alive()) return;
 	state.items = items;
@@ -1242,13 +1347,17 @@ async function buildPhases(entry, alive) {
 
 	// --- phase 2: text strategies ---------------------------------------
 	status(l10n.t('build-reading-text'));
+	progress.begin(l10n.t('build-reading-text'));
 	let textResult = await cg.build(adapter, {
 		signal,
 		sections,
 		enable: TEXT_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
-		onProgress: throttle(p => status(l10n.t('build-reading-text-progress', p))),
+		onProgress: throttle((p) => {
+			status(l10n.t('build-reading-text-progress', p));
+			progress.at(p, TEXT_STRATEGIES);
+		}),
 	});
 	if (!alive()) return;
 	push(textResult.edges, {
@@ -1264,12 +1373,16 @@ async function buildPhases(entry, alive) {
 	status(pdfs
 		? l10n.t('build-scanning-pdfs-count', { count: pdfs })
 		: l10n.t('build-scanning-pdfs'));
+	progress.begin(l10n.t('build-scanning-pdfs'));
 	let pdfResult = await cg.build(adapter, {
 		signal,
 		enable: PDF_STRATEGIES,
 		offline: true,
 		includeExternal: options.includeExternal,
-		onProgress: throttle(p => status(l10n.t('build-scanning-pdfs-progress', p))),
+		onProgress: throttle((p) => {
+			status(l10n.t('build-scanning-pdfs-progress', p));
+			progress.at(p, PDF_STRATEGIES);
+		}),
 	});
 	await cache.flush();
 	if (!alive()) return;
@@ -1288,6 +1401,7 @@ async function buildPhases(entry, alive) {
 			errors: [...textResult.meta.errors, ...pdfResult.meta.errors],
 		});
 		status(l10n.t('build-openalex-references'));
+		progress.begin(l10n.t('build-openalex-references'));
 		let [refCache, metaCache] = await Promise.all([
 			MetadataCache.forProfile({ file: REFERENCE_CACHE_FILE }).load(),
 			MetadataCache.forProfile().load(),
@@ -1303,7 +1417,10 @@ async function buildPhases(entry, alive) {
 					metadataCache: metaCache,
 				},
 			},
-			onProgress: throttle(p => status(l10n.t('build-openalex-progress', p))),
+			onProgress: throttle((p) => {
+				status(l10n.t('build-openalex-progress', p));
+				progress.at(p);
+			}),
 		});
 		await Promise.all([refCache.flush(), metaCache.flush()]);
 		if (!alive()) return;
@@ -1328,13 +1445,17 @@ async function buildPhases(entry, alive) {
 				...(oaResult ? oaResult.meta.errors : [])],
 		});
 		status(l10n.t('build-reading-references'));
+		progress.begin(l10n.t('build-reading-references'));
 		refResult = await cg.build(adapter, {
 			signal,
 			sections,
 			enable: ['ref-strings'],
 			offline: true,
 			includeExternal: options.includeExternal,
-			onProgress: throttle(p => status(l10n.t('build-reading-references-progress', p))),
+			onProgress: throttle((p) => {
+				status(l10n.t('build-reading-references-progress', p));
+				progress.at(p);
+			}),
 		});
 		// Nothing reads them after this, and this function runs on through the
 		// lookup, which can take a while.
@@ -1394,7 +1515,7 @@ async function buildPhases(entry, alive) {
 		status('');
 		return;
 	}
-	await lookUpNames(entry, alive, entry.built);
+	await lookUpNames(entry, alive, entry.built, progress);
 }
 
 /**
@@ -1468,7 +1589,8 @@ async function runLookup(tabID) {
 			send(entry, 'zgSetStatus', l10n.t('lookup-nothing'));
 			return;
 		}
-		await lookUpNames(entry, alive, built);
+		// One phase, and the whole of this pass.
+		await lookUpNames(entry, alive, built, progressFor(entry, alive, 1));
 	}
 	catch (e) {
 		// As runBuild(): a pass that threw must not leave "Looking up…" on the
@@ -1477,7 +1599,10 @@ async function runLookup(tabID) {
 		if (alive()) buildFailed(entry, e);
 	}
 	finally {
-		if (alive()) entry.building = false;
+		if (alive()) {
+			entry.building = false;
+			send(entry, 'zgSetProgress', null);
+		}
 	}
 }
 
@@ -1594,7 +1719,7 @@ function consolidateRefs(state, edges) {
  * build that produced it and by a later switch-on, so the two cannot disagree
  * about what a named graph looks like.
  */
-async function lookUpNames(entry, alive, built) {
+async function lookUpNames(entry, alive, built, progress) {
 	let { state, baseMeta, heldByDoiKey } = built;
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
@@ -1603,11 +1728,16 @@ async function lookUpNames(entry, alive, built) {
 
 	let metaCache = await MetadataCache.forProfile().load();
 	status(l10n.t('lookup-works', { count: toLookUp.length }));
+	progress.begin(l10n.t('lookup-phase'));
+	let chain = enricherList();
 	let enriched = await cg.enrich(toLookUp, {
-		enable: enricherList(),
+		enable: chain,
 		cache: metaCache,
 		providers: { openalex: { apiKey: pref('openalex.apiKey') || null } },
-		onProgress: throttle(p => status(l10n.t('lookup-progress', p))),
+		onProgress: throttle((p) => {
+			status(l10n.t('lookup-progress', p));
+			progress.at(p, chain);
+		}),
 	});
 	await metaCache.flush();
 	if (!alive()) return;
