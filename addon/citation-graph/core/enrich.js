@@ -72,23 +72,28 @@ async function enrich(keys, config = {}) {
 		const refs = allRefs.filter(r =>
 			p.supports.includes(r.ns) && !isComplete(metadata[r.key]));
 		let resolved = 0;
+		const take = (out) => {
+			for (const m of out || []) {
+				if (!m || !m.key || !seen.has(m.key)) continue;
+				if (mergeInto(metadata, m, p.id)) resolved++;
+			}
+		};
 		if (refs.length) {
 			try {
-				const out = await p.resolve({
+				take(await p.resolve({
 					refs,
 					options: p.options,
 					signal: config.signal,
 					onProgress: (done, total, note) =>
 						config.onProgress && config.onProgress({ provider: p.id, done, total, note }),
-				});
-				for (const m of out || []) {
-					if (!m || !m.key || !seen.has(m.key)) continue;
-					if (mergeInto(metadata, m, p.id)) resolved++;
-				}
+				}));
 			}
 			catch (err) {
 				// One failing enricher must not lose the others' work, and must
 				// not lose the graph either -- names are a nicety, edges are not.
+				// Nor its own: what it had answered before it failed comes on the
+				// error as `partial`, and is merged and cached like any answer.
+				take(err && err.partial);
 				errors.push({ provider: p.id, message: err && err.message });
 			}
 		}

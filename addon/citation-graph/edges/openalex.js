@@ -23,6 +23,9 @@ const { toMetadata } = require('../enrich/openalex');
  * ignored by the server, so it is not sent. The key goes in an Authorization
  * header rather than the query string to keep it out of URLs and error text.
  */
+// Failed requests in a row before the rest are not sent.
+const GIVE_UP_AFTER = 2;
+
 module.exports.id = register({
 	id: 'openalex',
 	label: 'OpenAlex referenced_works',
@@ -48,13 +51,16 @@ module.exports.id = register({
 		metadataCache: null,
 	},
 
-	async derive({ items, index, options, includeExternal, onProgress, signal }) {
+	// A generator, so that a request failing does not cost the edges of the
+	// papers that were answered -- or were in the cache all along. build() keeps
+	// what was yielded before a throw, and the failure is thrown last.
+	async *derive({ items, index, options, includeExternal, onProgress, signal }) {
 		const keyByDoi = new Map();
 		for (const it of items) {
 			const d = normDoi(it.doi);
 			if (d && !keyByDoi.has(d)) keyByDoi.set(d, it.key);
 		}
-		if (!keyByDoi.size) return [];
+		if (!keyByDoi.size) return;
 
 		// Every held paper is needed, not only the ones whose references are
 		// wanted: a reference arrives as an OpenAlex ID, and resolves to a held
@@ -67,6 +73,11 @@ module.exports.id = register({
 			else ask.push(d);
 		}
 
+		// As in enrich/openalex.js: a failed request costs its own batch, and two
+		// in a row end the asking. Nothing is remembered for a batch that failed,
+		// so its papers are asked about again on the next build.
+		let failure = null;
+		let failedInARow = 0;
 		if (ask.length) {
 			const fetch_ = options.fetchImpl || globalThis.fetch;
 			if (typeof fetch_ !== 'function') throw new Error('no fetch implementation available');
@@ -77,7 +88,7 @@ module.exports.id = register({
 				// Between requests, and not handed to fetch: build() documents
 				// `signal` as something with an `aborted`, which is all the
 				// plugin's own is. What has been fetched is in the cache either way.
-				if (signal && signal.aborted) return [];
+				if (signal && signal.aborted) return;
 				const batch = ask.slice(i, i + options.batchSize);
 				const url = new URL(options.endpoint);
 				url.searchParams.set('per-page', String(options.batchSize));
@@ -85,9 +96,18 @@ module.exports.id = register({
 					+ 'display_name,publication_year,authorships,cited_by_count,type');
 				url.searchParams.set('filter', 'doi:' + batch.join('|'));
 
-				const res = await fetch_(url.toString(), { headers });
-				if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
-				const json = await res.json();
+				let json;
+				try {
+					const res = await fetch_(url.toString(), { headers });
+					if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
+					json = await res.json();
+				}
+				catch (err) {
+					failure = failure || err;
+					if (++failedInARow >= GIVE_UP_AFTER) break;
+					continue;
+				}
+				failedInARow = 0;
 				const answered = new Set();
 				for (const w of (json && json.results) || []) {
 					const d = normDoi(w.doi);
@@ -121,25 +141,24 @@ module.exports.id = register({
 			if (w.id) index.setExternal('openalex', w.id, keyByDoi.get(d));
 		}
 
-		const out = [];
 		for (const [d, w] of works) {
 			const from = keyByDoi.get(d);
 			for (const ref of w.refs) {
 				const to = index.lookupExternal('openalex', ref);
 				if (to) {
-					if (to !== from) out.push(edge(from, to, 'openalex', 0.98, { openalexId: ref }));
+					if (to !== from) yield edge(from, to, 'openalex', 0.98, { openalexId: ref });
 				}
 				else if (includeExternal) {
 					// A cited work the collection does not hold, known only by its
 					// OpenAlex ID. Naming it -- which also brings its DOI, and with
 					// that the node the same work has when a PDF links it -- is the
 					// metadata lookup's to do, and only when it is switched on.
-					out.push(edge(from, externalKey('openalex', shortId(ref)), 'openalex', 0.98,
-						{ openalexId: ref, external: true }));
+					yield edge(from, externalKey('openalex', shortId(ref)), 'openalex', 0.98,
+						{ openalexId: ref, external: true });
 				}
 			}
 		}
-		return out;
+		if (failure) throw failure;
 	},
 });
 

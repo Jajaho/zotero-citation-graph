@@ -24,6 +24,9 @@ const { normDoi } = require('../core/normalize');
  * Authorization header rather than the query string so it stays out of URLs,
  * logs and thrown error messages.
  */
+// Failed requests in a row before the rest are not sent.
+const GIVE_UP_AFTER = 2;
+
 module.exports.id = register({
 	id: 'openalex',
 	label: 'OpenAlex (names + citation counts)',
@@ -63,6 +66,17 @@ module.exports.id = register({
 		if (options.apiKey) headers.Authorization = 'Bearer ' + options.apiKey;
 
 		const out = [];
+		// A request that fails costs its own batch and no other. Thrown from the
+		// loop, one 429 on the third of ten requests took the first two with it:
+		// nothing was named, nothing reached the cache, and the next build asked
+		// for all of it again. So the failure is kept and the run goes on -- past
+		// one bad batch, because a DOI the filter cannot take must not starve the
+		// batches behind it, and no further than two in a row, because by then it
+		// is the service and not the batch. What was answered is handed back on
+		// the error (see the end), which core/enrich.js merges before reporting.
+		let failure = null;
+		let failedInARow = 0;
+		batches:
 		for (let i = 0; i < values.length; i += options.batchSize) {
 			if (signal && signal.aborted) break;
 			const batch = values.slice(i, i + options.batchSize);
@@ -87,9 +101,18 @@ module.exports.id = register({
 				url.searchParams.set('filter',
 					(ns === 'doi' ? 'doi:' : 'ids.openalex:') + ids.join('|'));
 
-				const res = await fetch_(url.toString(), { headers, signal });
-				if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
-				const json = await res.json();
+				let json;
+				try {
+					const res = await fetch_(url.toString(), { headers, signal });
+					if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
+					json = await res.json();
+				}
+				catch (err) {
+					failure = failure || err;
+					if (++failedInARow >= GIVE_UP_AFTER) break batches;
+					continue;
+				}
+				failedInARow = 0;
 				// By the ID each work came back under, not by the key it was
 				// matched to: a work asked for by ID is matched to its DOI's key
 				// when that was asked for too.
@@ -113,6 +136,12 @@ module.exports.id = register({
 				}
 			}
 			onProgress && onProgress(Math.min(i + options.batchSize, values.length), values.length);
+		}
+		if (failure) {
+			// Whatever was thrown, as something `partial` can ride on.
+			const err = Object(failure) === failure ? failure : new Error(String(failure));
+			err.partial = out;
+			throw err;
 		}
 		return out;
 	},

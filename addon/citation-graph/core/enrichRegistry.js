@@ -18,7 +18,9 @@
  *                             ['doi', 'openalex']. A provider is never handed a
  *                             ref outside this list, so it needs no guard.
  *   options        {Object}
- *   resolve(ctx)   {Promise<Metadata[]>}
+ *   resolve(ctx)   {Promise<Metadata[]>}  An enricher that fails part-way
+ *                             throws, with what it had answered by then on the
+ *                             error as `partial`; the runner keeps those.
  *
  * `ctx` is { refs, options, signal, onProgress }, where each ref is an already
  * parsed { key, ns, id } -- no enricher re-implements parseExternalKey.
