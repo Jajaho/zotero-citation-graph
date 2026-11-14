@@ -32,8 +32,15 @@
  * scheme would work one way only. chrome pushes the resolved answer over the
  * bridge (zgSetChrome), because a content document's own matchMedia only ever
  * sees the OS.
+ *
+ * color-scheme goes the same three ways, and for the half of the page these
+ * tokens never reach: what Gecko draws itself. A <select>, a number field's
+ * spinner, an unticked checkbox, a slider's track and the scrollbar are painted
+ * from the scheme the ELEMENT declares, and with none declared that is the
+ * OS's light -- so a dark sidebar was dark text boxes around white menus.
  */
 :root {
+	color-scheme: light;
 	--accent-blue: #4072e5;
 	--color-background: #fff;
 	--color-sidepane: #f2f2f2;
@@ -103,10 +110,29 @@
 	   localStorage. Here rather than on #side so that one custom property is the
 	   whole of the state. */
 	--zg-side-width: 240px;
+
+	/* The sidebar's rhythm, as three lengths so that Zotero's density setting
+	   can change all of it at one place -- see the compact rule below. */
+	--zg-gap-row: 6px;      /* between two controls of one group */
+	--zg-gap-group: 8px;    /* between two groups, and under a section's last */
+	--zg-pad-head: 6px;     /* above and below a section's title */
+}
+
+/*
+ * Zotero's View > Density. Chrome reads the pref and the page stamps core's own
+ * attribute on its root (zgSetChrome), which until this rule nothing read: the
+ * library beside the graph tightened and the panel did not. Tighter rows, and
+ * nothing else -- the bar is core's toolbar height in both densities.
+ */
+:root[zoteroUIDensity="compact"] {
+	--zg-gap-row: 3px;
+	--zg-gap-group: 5px;
+	--zg-pad-head: 4px;
 }
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-color-scheme]) {
+	color-scheme: dark;
 	--accent-blue: #4072e5;
 	--color-background: #1e1e1e;
 	--color-sidepane: #303030;
@@ -132,6 +158,7 @@
 }
 
 :root[data-color-scheme="dark"] {
+	color-scheme: dark;
 	--accent-blue: #4072e5;
 	--color-background: #1e1e1e;
 	--color-sidepane: #303030;
@@ -850,7 +877,7 @@ body {
 
 .section .section > .section-toggle {
 	font-weight: 400;
-	padding: 5px 0 5px 2px;
+	padding: calc(var(--zg-pad-head) - 1px) 0 calc(var(--zg-pad-head) - 1px) 2px;
 }
 
 .section .section > .section-body {
@@ -877,7 +904,7 @@ body {
 	font: inherit;
 	font-weight: 600;
 	text-align: left;
-	padding: 6px 9px;
+	padding: var(--zg-pad-head) 9px;
 	border: 0;
 	background: transparent;
 	color: var(--fill-secondary);
@@ -926,11 +953,11 @@ body {
 }
 
 .section-body {
-	padding: 0 9px 8px;
+	padding: 0 9px var(--zg-gap-group);
 	min-height: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: var(--zg-gap-group);
 }
 
 .section.collapsed .section-body {
@@ -946,8 +973,8 @@ body {
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
-	gap: 6px;
-	padding-top: 8px;
+	gap: var(--zg-gap-row);
+	padding-top: var(--zg-gap-group);
 	border-top: 1px solid var(--fill-quinary);
 }
 
@@ -1005,11 +1032,56 @@ body {
 }
 
 /* Right-aligns the control of a "text, then control" row, so the selects and
-   number fields line up down the panel instead of tracking label width. */
+   number fields line up down the panel instead of tracking label width. A
+   slider is not one of these: see the slider rows below. */
 .section label > select,
-.section label > input[type="number"],
-.section label > input[type="range"] {
+.section label > input[type="number"] {
 	margin-left: auto;
+}
+
+/*
+ * A slider row: the name and the value share a line, and the track runs the
+ * full width under them.
+ *
+ * It was one flex line -- name, track, value -- with the track given whatever
+ * the other two left. So each track began where its name ended, eight ragged
+ * left edges down the panel, and a name too long for a third of 240px wrapped
+ * and took the track's room with it: "Stop at energy" and "Keep moving" stood
+ * three lines tall, and under a German panel the readout at the far end was cut
+ * off mid-number. The rule that sized the tracks also named them one by one,
+ * and the three energy sliders were added after the list was written.
+ *
+ * So the row is found by what is in it, not by a list of ids: any label that
+ * holds a range input is laid out this way, and the next slider added is too.
+ * The value is the label's last span, and keeps tabular figures so the name
+ * beside it does not twitch as the thumb moves.
+ */
+.section label:has(> input[type="range"]) {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	column-gap: 8px;
+	row-gap: 0;
+	align-items: baseline;
+}
+
+.section label:has(> input[type="range"]) > input[type="range"] {
+	grid-column: 1 / -1;
+	grid-row: 2;
+	width: 100%;
+	margin: 1px 0 0;
+}
+
+.section label:has(> input[type="range"]) > span:last-of-type {
+	grid-column: 2;
+	grid-row: 1;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+/* A control that only means something while the switch above it is on sits
+   under that switch's words, a checkbox and its gap in. */
+#min-cites-label {
+	margin-left: calc(1em + 6px);
 }
 
 #min-cites,
@@ -1100,34 +1172,6 @@ body {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-#conf-label {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--muted);
-}
-
-/* Every slider gives the track whatever the label and the readout leave: a
-   range input's default width would otherwise push the panel wider. */
-#min-conf,
-#link-pull,
-#center-pull,
-#group-pull,
-#pin-pull {
-	flex: 1 1 60px;
-	width: auto;
-	min-width: 40px;
-}
-
-#conf-value,
-#pull-value,
-#center-value,
-#group-pull-value,
-#pin-pull-value {
-	font-variant-numeric: tabular-nums;
-	min-width: 3.2ch;
 }
 
 /*
@@ -1512,6 +1556,30 @@ body {
 	border-radius: 50%;
 	display: inline-block;
 	flex: 0 0 auto;
+}
+
+/* A strategy's name gives way before its count does. */
+.via-toggle .via-name {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* How many of the edges on screen the strategy found, hard right: the number
+   a reader needs to decide what unticking it would cost. Empty until a graph
+   says, and an empty one takes no room. */
+.via-toggle .via-count {
+	flex: 0 0 auto;
+	margin-left: auto;
+	color: var(--fill-secondary);
+	opacity: 0.75;
+	font-variant-numeric: tabular-nums;
+}
+
+.via-toggle .via-count:empty {
+	display: none;
 }
 
 /* The node context menu. A sibling of #graph, like #status and #action,

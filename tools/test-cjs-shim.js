@@ -4617,6 +4617,65 @@ check('picking a value extends the mask being built rather than replacing it', (
 	}
 });
 
+/**
+ * An item type has two names. `journalArticle` is Zotero's id for it and what
+ * a mask is keyed on; "Journal Article" -- "Zeitschriftenartikel" on a German
+ * Zotero -- is what the library's own columns call it, and comes with the
+ * payload. The page showed the id everywhere, in every language.
+ *
+ * So what is SHOWN is the name and what is KEPT is the id: a mask picked off
+ * the list survives a change of language and a restart, and the reader never
+ * sees a programmer's word. Matching answers to both, or the list would offer
+ * a row that typing its own text could not find.
+ */
+check('an item type is shown and found by the name Zotero gives it, and kept by its id', () => {
+	const F = loadFilters();
+	const lib = library(F);
+	const NAMES = { journalArticle: 'Zeitschriftenartikel', book: 'Buch' };
+	F.setNamer((field, value) => (field === 'type' ? NAMES[value] : value));
+
+	// The row says the name, and what it writes into the mask is still the id.
+	const rows = F.suggest('type:', lib).filter(s => s.kind === 'value');
+	if (rows.map(s => s.label).join() !== 'Zeitschriftenartikel,Buch') {
+		throw new Error('the list names the types ' + rows.map(s => s.label).join());
+	}
+	if (rows[0].term !== '"journalArticle"') throw new Error('a picked type is kept as ' + rows[0].term);
+
+	// Typed towards what the row says, the row is there; and towards the id,
+	// which is what a mask from before the names were sent still spells.
+	const typed = F.suggest('zeitsch', lib).filter(s => s.kind === 'value');
+	if (typed.length !== 1 || typed[0].field !== 'type' || typed[0].count !== 2) {
+		throw new Error('typing a type\'s name does not find it: ' + JSON.stringify(typed));
+	}
+	if (!F.suggest('type: journalA', lib).some(s => s.label === 'Zeitschriftenartikel')) {
+		throw new Error('typing a type\'s id no longer finds it');
+	}
+
+	// The chip. A pinned value reads as it is called; a substring is the
+	// reader's own text and reads as typed.
+	const chip = F.describe(F.exact('type', 'journalArticle'));
+	if (chip !== 'Item type: Zeitschriftenartikel') throw new Error('the chip reads ' + chip);
+	if (F.describe(F.parse('type: zeit')) !== 'Item type: ~zeit') throw new Error('a substring chip was renamed');
+	// And back in the box it is the id again, so the round trip holds.
+	if (F.toInput(F.exact('type', 'journalArticle')) !== 'type: "journalArticle"') {
+		throw new Error('an edited chip no longer round-trips: ' + F.toInput(F.exact('type', 'journalArticle')));
+	}
+
+	// Matching: the id, the name pinned, the name in part, and a bare term.
+	if (hits(F, lib, 'type:"journalArticle"').join() !== '0,1') throw new Error('the id stopped matching');
+	if (hits(F, lib, 'type:"Zeitschriftenartikel"').join() !== '0,1') throw new Error('the name does not match');
+	if (hits(F, lib, 'type: zeitschrift').join() !== '0,1') throw new Error('part of the name does not match');
+	if (hits(F, lib, 'buch').join() !== '2') throw new Error('a bare term does not reach the name');
+	// Every other facet is its own name, and is untouched.
+	if (hits(F, lib, 'publication:"Nature"').join() !== '0') throw new Error('another facet changed');
+
+	// A payload with no names -- the benchmark's -- shows what it has.
+	F.setNamer((field, value) => null);
+	if (F.suggest('type:', lib).filter(s => s.kind === 'value')[0].label !== 'journalArticle') {
+		throw new Error('a type with no name is not shown by its id');
+	}
+});
+
 // --- coupling and communities (content/graphCluster.js) ---------------------
 
 /** Same trick as loadScale(): evaluate the content-page script as a browser would. */
@@ -5476,6 +5535,105 @@ check('a forced colour scheme outranks the OS, in both directions', () => {
 		if (!css.includes(':root[data-color-scheme="' + scheme + '"]')) {
 			throw new Error('no :root[data-color-scheme="' + scheme + '"] rule to force ' + scheme);
 		}
+	}
+});
+
+/**
+ * The tokens colour what this page draws. What Gecko draws itself -- a
+ * <select>, a number field's spinner, an unticked checkbox, a slider's track,
+ * the scrollbar -- is painted from the `color-scheme` the element declares, and
+ * the page declared none: in a dark Zotero the sidebar was dark text around
+ * white menus. So every block that sets the palette also says which scheme it
+ * is a palette for, down the same three-way shape the test above holds.
+ */
+check('the scheme the tokens are for reaches the controls Gecko draws', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+	// The declaration block of every rule that sets the page's background token.
+	const palettes = [...css.matchAll(/([^{}]*)\{([^{}]*--color-background:\s*#[^{}]*)\}/g)]
+		.map(m => ({ selector: m[1].trim(), body: m[2] }));
+	if (palettes.length !== 3) throw new Error('expected the three palette blocks, found ' + palettes.length);
+	for (const { selector, body } of palettes) {
+		const said = body.match(/(?:^|[;\s])color-scheme:\s*(\w+)/);
+		if (!said) throw new Error(selector + ' sets a palette and no color-scheme, so native controls keep the OS\'s');
+		// #fff is the light background; anything else in here is the dark one.
+		const want = /--color-background:\s*#fff\b/.test(body) ? 'light' : 'dark';
+		if (said[1] !== want) throw new Error(selector + ' is a ' + want + ' palette declared ' + said[1]);
+	}
+});
+
+/**
+ * A slider's row: the name and the value on one line, the track full width
+ * under them.
+ *
+ * It was one line of three, and the rule that sized the tracks listed them by
+ * id -- five ids, written before the three energy sliders existed. Those three
+ * took a range input's default width, their names wrapped to three lines, and
+ * on a German panel the readout at the end of every row was cut off. So the row
+ * is now found by what is in it, and this holds both halves: the rule exists,
+ * and every slider in the markup is shaped the way the rule expects -- a name,
+ * the input, the value last -- so the next one added is laid out too.
+ */
+check('a slider row is laid out by what is in it, not by a list of sliders', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8')
+		.replace(/<!--[\s\S]*?-->/g, '');
+	const rule = (sel) => {
+		const at = css.indexOf(sel + ' {');
+		if (at < 0) throw new Error('content/graph.css has no "' + sel + '" rule');
+		return css.slice(at + sel.length, css.indexOf('}', at));
+	};
+	const ROW = '.section label:has(> input[type="range"])';
+	if (!/display:\s*grid/.test(rule(ROW))) throw new Error('a slider row is not a grid');
+	const track = rule(ROW + ' > input[type="range"]');
+	if (!/grid-column:\s*1\s*\/\s*-1/.test(track) || !/width:\s*100%/.test(track)) {
+		throw new Error('the track does not run the full width under its name: ' + track.trim());
+	}
+	if (!/grid-row:\s*1/.test(rule(ROW + ' > span:last-of-type'))) {
+		throw new Error('the value is not on the name\'s line');
+	}
+
+	const sliders = [...html.matchAll(/<label\b[^>]*>\s*<span\b[^>]*>[^<]*<\/span>\s*<input id="([\w-]+)" type="range"[^>]*\/>\s*<span id="[\w-]+">[^<]*<\/span>\s*<\/label>/g)]
+		.map(m => m[1]);
+	const all = [...html.matchAll(/<input id="([\w-]+)" type="range"/g)].map(m => m[1]);
+	if (all.length < 8) throw new Error('found only ' + all.length + ' sliders; the scan is broken');
+	const odd = all.filter(id => !sliders.includes(id));
+	if (odd.length) throw new Error('#' + odd.join(', #') + ': not a name, the slider and its value in one label');
+	// And none of them is sized by name any more: a list is what went stale.
+	const named = all.filter(id => new RegExp('#' + id + '(?![\\w-])').test(css));
+	if (named.length) throw new Error('#' + named.join(', #') + ' still sized one by one in graph.css');
+});
+
+/**
+ * Zotero's View > Density. Chrome reads the pref and the page stamps core's own
+ * attribute on its root -- and no rule read it, so the library tightened and
+ * the panel beside it did not. The sidebar's spacing is three lengths, and
+ * compact has to make each of them smaller AND the rules have to use them.
+ */
+check('the compact density tightens the sidebar\'s rows', () => {
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes("root.setAttribute('zoteroUIDensity', props.density)")) {
+		throw new Error('the page no longer stamps the density it is told');
+	}
+	const block = (sel) => {
+		const m = css.match(new RegExp('(?:^|\\})\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'));
+		if (!m) throw new Error('content/graph.css has no "' + sel + '" rule');
+		return m[1];
+	};
+	const px = (body, name) => {
+		const m = body.match(new RegExp(name + ':\\s*([\\d.]+)px'));
+		if (!m) throw new Error(name + ' is not set in px');
+		return Number(m[1]);
+	};
+	const base = block(':root');
+	const compact = block(':root[zoteroUIDensity="compact"]');
+	for (const name of ['--zg-gap-row', '--zg-gap-group', '--zg-pad-head']) {
+		if (!(px(compact, name) < px(base, name))) throw new Error('compact does not tighten ' + name);
+		const used = css.split('var(' + name + ')').length - 1;
+		if (!used) throw new Error('nothing is spaced by ' + name + ', so the density changes nothing');
 	}
 });
 
@@ -6665,6 +6823,178 @@ check('lib/l10n.js resolves a locale, formats, and hands the page its source', a
 	const forPage = l10n.contentBundle();
 	if (forPage.locale !== 'en-US') throw new Error('locale: ' + forPage.locale);
 	if (!forPage.source.includes('zotero-citation-graph-rebuild')) throw new Error('empty source');
+});
+
+/** t() over one locale's file, the way the page formats: the id back when the
+ *  file has no such message, so a missing one is visible. */
+function pageStrings(code) {
+	const messages = Ftl.parse(readLocale(code));
+	return (id, args) => (PREFIX + id in messages ? Ftl.format(messages[PREFIX + id], args || {}, code) : id);
+}
+
+/** Just enough of an element for the page functions that build rows. */
+function fakeElement(tag) {
+	return {
+		tag, children: [], listeners: {}, style: {}, text: '',
+		appendChild(c) { this.children.push(c); return c; },
+		addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+		set textContent(v) { this.text = String(v); this.children = []; },
+		get textContent() { return this.text + this.children.map(c => c.textContent).join(''); },
+	};
+}
+
+/**
+ * A strategy's row said `pdf-links`. That is what the payload calls it, and
+ * four of the six rows showed it -- beside two that had real names, because
+ * those two are switches written in the markup. Each row now carries the
+ * strategy's name and how many of the edges on screen it found, which is the
+ * number that says what unticking it would cost.
+ *
+ * The names are per strategy and per locale, and the page only ever sees ids,
+ * so this holds the list against the strategies the build actually ships.
+ */
+check('a strategy\'s row says what it is called and what it found', () => {
+	// Every strategy the build ships, read off the modules that define them.
+	const edgesDir = path.join(addonDir, 'citation-graph/edges');
+	const shipped = [];
+	for (const f of fs.readdirSync(edgesDir)) {
+		const m = fs.readFileSync(path.join(edgesDir, f), 'utf8').match(/\n\tid: '([a-z-]+)',/);
+		if (m) shipped.push(m[1]);
+	}
+	if (shipped.length < 6) throw new Error('found only ' + shipped.length + ' strategies; the scan is broken');
+
+	for (const code of fs.readdirSync(localeDir)) {
+		const page = liftPage({ functions: ['viaName'], globals: { t: pageStrings(code) } });
+		for (const via of shipped) {
+			const name = page.viaName(via);
+			if (name === via || /^strategy-name-/.test(name)) {
+				throw new Error(code + ' has no name for ' + via + ', so its row shows ' + name);
+			}
+		}
+		// One nobody has heard of keeps the id the payload gave it.
+		if (page.viaName('next-years') !== 'next-years') throw new Error('an unknown strategy lost its id');
+	}
+
+	// The rows themselves: named, strongest evidence first, counted.
+	const elStrategies = fakeElement('div');
+	const elOpenAlexCount = fakeElement('span');
+	const page = liftPage({
+		functions: ['renderStrategyToggles', 'renderStrategyCounts', 'strategyCounts', 'viaName', 'viaHint', 'viaColor'],
+		consts: ['VIA_RANK'],
+		globals: {
+			raw: { edges: [
+				{ from: 'A', to: 'B', via: ['title-match', 'pdf-links'] },
+				{ from: 'A', to: 'C', via: ['title-match'] },
+				{ from: 'B', to: 'C', via: ['openalex', 'text-doi'] },
+				{ from: 'C', to: 'D', via: ['locator-match'] },
+			] },
+			t: pageStrings('en-US'),
+			document: { createElement: fakeElement },
+			elStrategies, elOpenAlexCount,
+			disabledVia: new Set(['title-match']), viaGen: 0, renderedVias: null, viaCounts: new Map(),
+			render() {}, viewChanged() {},
+		},
+	});
+	page.renderStrategyToggles();
+	const rows = elStrategies.children;
+	const cell = (row, cls) => row.children.find(c => c.className === cls);
+	const names = rows.map(r => cell(r, 'via-name').textContent);
+	// OpenAlex has its own switch above the list; the rest by strength, not by id.
+	if (names.join() !== 'PDF links,DOIs in text,Journal locator,Title match') {
+		throw new Error('the rows read ' + names.join());
+	}
+
+	// What render() hands over: the links on screen. `via` is the strategies
+	// still switched on, `found` every one that found the edge -- so an edge an
+	// unticked strategy shares with a ticked one still counts on both rows.
+	page.renderStrategyCounts([
+		{ via: ['pdf-links'], found: ['title-match', 'pdf-links'] },
+		{ via: ['openalex', 'text-doi'], found: ['openalex', 'text-doi'] },
+		{ via: ['locator-match'], found: ['locator-match'] },
+	]);
+	const counts = rows.map(r => cell(r, 'via-count').textContent);
+	if (counts.join() !== '1,1,1,1') throw new Error('the rows count ' + counts.join());
+	if (elOpenAlexCount.textContent !== '1') throw new Error('OpenAlex\'s switch counts ' + elOpenAlexCount.textContent);
+	// Nothing of a strategy's on screen is a 0 on its row; OpenAlex's switch,
+	// which is there whether or not it has run, says nothing instead.
+	page.renderStrategyCounts([{ via: ['pdf-links'], found: ['pdf-links'] }]);
+	if (cell(rows[3], 'via-count').textContent !== '0') throw new Error('an empty strategy shows no count');
+	if (elOpenAlexCount.textContent !== '') throw new Error('OpenAlex is counted before it has found anything');
+
+	// The same names off the canvas: an edge's tooltip and an exported figure.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const tip = liftPage({
+		functions: ['edgeTooltip', 'viaName', 'escapeHtml'],
+		globals: { t: pageStrings('en-US') },
+	}).edgeTooltip({ via: ['pdf-links', 'title-match'], doi: '10.1/x' });
+	if (tip !== 'PDF links, Title match — 10.1/x') throw new Error('an edge\'s tooltip reads ' + tip);
+	if (!js.includes('label: viaName(v)')) throw new Error('an exported figure keys its edges by strategy id');
+});
+
+/**
+ * The legend is the one thing in the panel that is read rather than set, and
+ * it was at the very bottom of it: under the strategies and seven layout
+ * sliders, below the fold of a 900px window. The order is the markup's, so the
+ * markup is what is held -- along with the list graph.js wires the folds from,
+ * which has to name a section for each.
+ */
+check('the key to the colours comes before the strategies and the physics', () => {
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8')
+		.replace(/<!--[\s\S]*?-->/g, '');
+	const order = [...html.matchAll(/<div class="section" id="sec-([\w-]+)">/g)].map(m => m[1]);
+	if (order.join() !== 'items,display,strategies,physics,forces,energy') {
+		throw new Error('the sections run ' + order.join(', '));
+	}
+	if (html.indexOf('id="legend"') > html.indexOf('id="sec-strategies"')) {
+		throw new Error('the legend is no longer in the section that comes second');
+	}
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const wired = js.match(/const SECTIONS = \[([^\]]*)\]/)[1].match(/'([^']+)'/g).map(s => s.slice(1, -1));
+	if (wired.slice().sort().join() !== order.slice().sort().join()) {
+		throw new Error('graph.js folds ' + wired.join(', ') + ' and the markup has ' + order.join(', '));
+	}
+	// And the threshold that only means something with outside references on
+	// sits under that switch, a checkbox in.
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8');
+	if (!/#min-cites-label \{\s*margin-left: calc\(1em \+ 6px\);/.test(css)) {
+		throw new Error('"Cited by" is not indented under the switch it depends on');
+	}
+	if (html.indexOf('id="min-cites-label"') < html.indexOf('id="include-external"')) {
+		throw new Error('"Cited by" comes before the switch it depends on');
+	}
+});
+
+/**
+ * Colouring by item type: the colour hangs on the type's id, so the same
+ * library is the same picture in every language, and the row beside the swatch
+ * reads as Zotero names the type.
+ */
+check('the legend names an item type as Zotero does, and colours it by its id', () => {
+	const asked = [];
+	const page = liftPage({
+		functions: ['keyLegend', 'colorKeys', 'colorKey', 'typeName'],
+		consts: ['LEGEND_MAX'],
+		globals: {
+			colorMode: 'type',
+			typeMemo: { raw: null, names: new Map() },
+			raw: { items: [
+				{ key: 'A', itemType: 'conferencePaper', itemTypeName: 'Konferenz-Paper' },
+				{ key: 'B', itemType: 'conferencePaper', itemTypeName: 'Konferenz-Paper' },
+				// No name: the benchmark's payload, or one built before they were sent.
+				{ key: 'C', itemType: 'preprint' },
+			] },
+			keyColor: (key) => { asked.push(key); return '#000000'; },
+			t: pageStrings('en-US'),
+		},
+	});
+	const model = { mode: 'type', rows: [], more: null, shared: 0 };
+	page.keyLegend(page.raw.items.map(it => ({ id: it.key, itemType: it.itemType })), model);
+	const rows = model.rows.map(r => r.label + ' ' + r.count);
+	if (rows.join() !== 'Konferenz-Paper 2,preprint 1') throw new Error('the legend reads ' + rows.join());
+	if (asked.join() !== 'conferencePaper,preprint') throw new Error('the colours hang on ' + asked.join());
+	// A new payload is a new set of names, not last one's.
+	page.raw = { items: [{ key: 'A', itemType: 'conferencePaper', itemTypeName: 'Conference Paper' }] };
+	if (page.typeName('conferencePaper') !== 'Conference Paper') throw new Error('the names outlived their payload');
 });
 
 /**

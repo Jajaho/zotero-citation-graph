@@ -38,7 +38,7 @@ zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autore
 zotero-citation-graph-scope-hide-external-names = Externe Namen ausblenden
 zotero-citation-graph-scope-hide-external-names-hint = Externe Arbeiten im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
 
-zotero-citation-graph-color-by = Knoten Farbe
+zotero-citation-graph-color-by = Knotenfarbe
 zotero-citation-graph-color-by-year = Jahr
 zotero-citation-graph-color-by-collection = Sammlung
 zotero-citation-graph-color-by-cluster = Teilgebiet
@@ -46,7 +46,7 @@ zotero-citation-graph-color-by-author = Erstautor
 zotero-citation-graph-color-by-publication = Publikation
 zotero-citation-graph-color-by-type = Eintragsart
 
-zotero-citation-graph-size-by = Knoten Größe
+zotero-citation-graph-size-by = Knotengröße
 zotero-citation-graph-size-by-here = Hier zitiert
 zotero-citation-graph-size-by-global = Zitationen weltweit
 
@@ -111,6 +111,14 @@ zotero-citation-graph-strategy-ref-strings-hint = Arbeiten, die in den Literatur
 zotero-citation-graph-strategy-ref-strings-run = Literaturangaben lesen
 zotero-citation-graph-strategy-ref-strings-run-hint = Jeden Eintrag in den Literaturverzeichnissen deiner Texte lesen und die genannten Arbeiten aufnehmen – auch die ganz ohne DOI. Zum Anzeigen ist „Externe Referenzen“ nötig. Funktioniert offline; es entstehen neue Knoten statt nur Kanten, daher wird beim Ankreuzen neu gebaut.
 zotero-citation-graph-strategy-other-hint = Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
+# Wie jede Strategie heißt: in ihrer Zeile im Panel, im Tooltip einer Kante und
+# in der Legende einer exportierten Abbildung.
+zotero-citation-graph-strategy-name-pdf-links = PDF-Links
+zotero-citation-graph-strategy-name-text-doi = DOIs im Text
+zotero-citation-graph-strategy-name-title-match = Titelabgleich
+zotero-citation-graph-strategy-name-locator-match = Fundstellenabgleich
+zotero-citation-graph-strategy-name-openalex = OpenAlex
+zotero-citation-graph-strategy-name-ref-strings = Gelesene Literaturangaben
 
 zotero-citation-graph-reframe-hint = Ganzen Graphen einpassen
 
