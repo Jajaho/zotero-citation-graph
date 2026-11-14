@@ -908,13 +908,36 @@
 		hideAction();
 		hideMenu();
 		hideSuggest();
-		hoverNode = null;
 		renderStrategyToggles();
 		syncEnabled();
 		// The build that just landed may be the one the panel was waiting for.
 		syncPending();
 		render();
+		// After render(), which is what decides whether the node is still drawn.
+		keepHover();
 	};
+
+	/**
+	 * What the pointer is over, carried across a payload.
+	 *
+	 * A payload used to clear it outright, on the grounds that the node might
+	 * not exist any more. But force-graph only reports a hover when the object
+	 * under the pointer CHANGES, and nodeCache hands the same objects back on
+	 * every render -- so for a pointer resting on a node that survived, nothing
+	 * ever said so again. Until the pointer left the node and came back, a
+	 * double click on it found no node to isolate, never armed the swallow, and
+	 * let the second click undo the first: the paper was picked and unpicked
+	 * and the graph stayed as it was. Its name lost the hover's claim on a
+	 * place, too. Build phases land for minutes on a large library, so this was
+	 * most of the time a reader spends looking at one.
+	 *
+	 * So only a node that is really gone is forgotten. One that was replaced
+	 * under the same id -- a ghost adopted and back again -- is a different
+	 * object, and force-graph will report whichever it finds there next frame.
+	 */
+	function keepHover() {
+		if (hoverNode && !drawnNodes.includes(hoverNode)) hoverNode = null;
+	}
 
 	/**
 	 * What the graph is OF, applied to the controls that depend on it.
@@ -2475,6 +2498,12 @@
 			});
 			fg.onNodeDragEnd((n) => {
 				dragNode = null;
+				// With it, as pressNode's own note says. The left button's release
+				// has usually cleared both already; a drag the RIGHT button ended
+				// has no such release yet, and one let go over the native menu
+				// never reaches this page at all -- which left the node "carried"
+				// through the "Pin node here" that menu exists to offer.
+				pressNode = null;
 				undamp();
 				// Dragging a pinned node moves its pin. Told for every drop
 				// rather than worked out here: the snapshot is taken after the
@@ -5060,10 +5089,19 @@
 	// A new press means the last one is spent, whatever became of its release.
 	// Capture on window, so this runs ahead of d3's own drag start -- which
 	// fixes the node's coordinates on this very press, not 5px later.
-	function notePress() {
+	//
+	// Only the primary button carries a node: d3's drag ignores every other
+	// one, so a right press fixes nothing and has no release that clears it --
+	// the mouseup below is the left button's. Recorded all the same, it stayed
+	// set for as long as the native menu it opened kept the pointer off the
+	// page, and "Pin node" picked from that menu pinned a node pinnedByUser()
+	// still took for carried: no badge, and its links priced without the boost.
+	function notePress(e) {
 		menuPress = false;
-		pressNode = hoverNode || null;
-		pressPinned = hoverNode && isPinned(hoverNode) ? hoverNode : null;
+		let n = hoverNode || null;
+		let carries = e.button === 0;
+		pressNode = carries ? n : null;
+		pressPinned = carries && n && isPinned(n) ? n : null;
 		// A press that lands while a settle has the graph frozen would otherwise
 		// pin the node for good. force-graph's drag start records the fx/fy it
 		// finds as where the node "was" fixed, and on release puts back only an
@@ -5073,9 +5111,11 @@
 		// boosted links included. Measured: grabbing a second node straight
 		// after dropping the first did this every time. The pressed node leaves
 		// the freeze here, before d3 can read it; the rest of the settle runs on.
-		if (pressNode && frozen.delete(pressNode)) {
-			delete pressNode.fx;
-			delete pressNode.fy;
+		// Whatever the button: a right press is followed by a hold, and thaw()
+		// would take a hold on a node still in `frozen` off with the freeze.
+		if (n && frozen.delete(n)) {
+			delete n.fx;
+			delete n.fy;
 		}
 	}
 

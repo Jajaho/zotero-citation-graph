@@ -5567,7 +5567,7 @@ check('the release that ends a right-clicked drag is not a click', () => {
 	}
 	// A release that lands on the menu raises no click at all, so the flag needs
 	// a second way out or it eats the next real one.
-	if (!/function notePress\(\) \{\s*menuPress = false;/.test(js)
+	if (!/function notePress\(e\) \{\s*menuPress = false;/.test(js)
 		|| !js.includes("window.addEventListener('pointerdown', notePress, true);")) {
 		throw new Error('a spent press with no click of its own is never cleared');
 	}
@@ -5605,6 +5605,39 @@ check('a double click rings the node once, not on and off again', () => {
 	if (!after('function armDouble()', 140).includes('requestAnimationFrame')) {
 		throw new Error('an armed swallow has no way out but the click it is waiting for');
 	}
+});
+
+/**
+ * The dblclick handler isolates whatever hoverNode says the pointer is over,
+ * and force-graph only reports a hover when the object under the pointer
+ * CHANGES. zgSetData() used to clear hoverNode on every payload, and the node
+ * objects are reused across renders -- so for a pointer resting on a node,
+ * nothing ever said so again. A double click after a build phase had landed
+ * found no node, armed no swallow, and its two clicks picked the paper and
+ * unpicked it. Seen in the real page: the pane was told [146] and then [].
+ */
+check('a payload does not forget the node the pointer is resting on', () => {
+	const A = { id: 'A' };
+	const B = { id: 'B' };
+	const page = liftPage({ functions: ['keepHover'], globals: { hoverNode: A, drawnNodes: [A, B] } });
+	page.keepHover();
+	if (page.hoverNode !== A) throw new Error('a node that is still drawn stopped being the one hovered');
+	// Masked out, or gone from the payload: force-graph will say what is there now.
+	page.drawnNodes = [B];
+	page.keepHover();
+	if (page.hoverNode !== null) throw new Error('a node nobody draws is still the one hovered');
+	// Replaced under its id -- a ghost adopted and back again -- is a different object.
+	page.hoverNode = A;
+	page.drawnNodes = [{ id: 'A' }, B];
+	page.keepHover();
+	if (page.hoverNode !== null) throw new Error('the hover outlived the object it was on');
+
+	// Asked once the payload is drawn, and nothing clears it outright before that.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const body = js.slice(js.indexOf('window.zgSetData = function'), js.indexOf('function keepHover()'));
+	if (/hoverNode = null/.test(body)) throw new Error('zgSetData() still forgets the hover on every payload');
+	const at = body.indexOf('keepHover();');
+	if (at < 0 || at < body.lastIndexOf('\t\trender();')) throw new Error('the hover is not checked against what render() drew');
 });
 
 /**
@@ -5843,13 +5876,65 @@ check('pressing a node while a settle has the graph frozen does not pin it', () 
 			isPinned: n => n.fx != null && !page.frozen.has(n),
 		},
 	});
-	page.notePress();
+	page.notePress({ button: 0 });
 	if (frozenNode.fx !== undefined || page.frozen.has(frozenNode)) throw new Error('the pressed node is still frozen');
 	if (page.pressNode !== frozenNode || page.pressPinned !== null) throw new Error('a frozen node was taken for a pin');
 	// A real pin is the user's and stays.
 	page.hoverNode = pinned;
-	page.notePress();
+	page.notePress({ button: 0 });
 	if (pinned.fx !== 1 || page.pressPinned !== pinned) throw new Error('pressing a pinned node unpinned it');
+});
+
+/**
+ * pinnedByUser() discounts the node a press is carrying, because force-graph
+ * fixes it from the moment the button goes down. Only the LEFT button does
+ * that, and only its release clears the record -- but every press was
+ * recorded. So a right click on a node left it "carried" for as long as the
+ * native menu kept the pointer off the page, and "Pin node" picked from that
+ * menu pinned a node with no badge and unboosted links. The same record
+ * outlived a drag the right button ended, when the left one was let go over
+ * the menu and its release never reached the page.
+ */
+check('a node pinned from the menu a right click opened counts as pinned at once', () => {
+	const n = { id: 'N', x: 5, y: 6 };
+	const page = liftPage({
+		functions: ['notePress', 'pinnedByUser', 'isPinned'],
+		globals: {
+			menuPress: false, pressNode: null, pressPinned: null, dragNode: null, heldNode: null,
+			hoverNode: n, frozen: new Set(),
+		},
+	});
+	const fix = () => {
+		n.fx = n.x;
+		n.fy = n.y;
+	};
+	// The right click that opens the menu, then the row that pins.
+	page.notePress({ button: 2 });
+	if (page.pressNode !== null) throw new Error('a right press was recorded as carrying the node');
+	fix();
+	if (!page.pinnedByUser(n)) throw new Error('a node pinned from its menu is not counted as pinned');
+
+	// The left button still is a carry: fixed by d3 on the press, not by the user.
+	delete n.fx;
+	delete n.fy;
+	page.notePress({ button: 0 });
+	fix();
+	if (page.pinnedByUser(n)) throw new Error('a node merely pressed on wears a pin');
+
+	// A right press inside a settle still takes the node out of the freeze: the
+	// hold that follows is in fx/fy too, and thaw() would take it off.
+	const frozenNode = { id: 'F', fx: 1, fy: 2 };
+	page.frozen.add(frozenNode);
+	page.hoverNode = frozenNode;
+	page.notePress({ button: 2 });
+	if (page.frozen.has(frozenNode) || frozenNode.fx !== undefined) throw new Error('a right-pressed node stayed frozen');
+
+	// And the record ends with the drag, whichever button ended it.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const end = js.slice(js.indexOf('fg.onNodeDragEnd('), js.indexOf('fg.onBackgroundClick('));
+	if (!/dragNode = null;[\s\S]*?pressNode = null;/.test(end)) {
+		throw new Error('a drag the right button ended leaves the node recorded as carried');
+	}
 });
 
 /**
