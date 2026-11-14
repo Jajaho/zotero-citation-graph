@@ -240,8 +240,17 @@ gap.
   selection — a row picks its ghost, the same ghost clicked on the canvas picks it from the other
   end, empty canvas clears the pick, a rebuild restates the count — and unpinned, each of those
   would put the list away, so you would get one gesture per opening. The selection is drawn on the
-  page *behind* it instead, and closing the list is what brings that up. Escape still takes the
-  layers off one press at a time, the list last.
+  page *behind* it instead, and closing the list is what brings that up — or, when nothing was
+  drawn underneath in the meantime, the page the list was opened over (`gapsPane.open()` records
+  it), so a list opened over "27 items in this view" closes back onto that count and not onto the
+  paper last looked at. Escape still takes the layers off one press at a time, the list last.
+- **A payload that changes nothing draws nothing.** The page pushes rows on every render, and most
+  renders change nothing here. `rows()` keeps the payload it drew from (`gaps.sig`) and returns
+  when the next one says the same, so the row holding the keyboard focus keeps it. Pressing a `+`
+  clears that record, because the row no longer shows what its payload said: an add that ends
+  without a rebuild is answered with the very same rows, and that redraw gives the button back.
+- **The close button** in the card's head is core's own cross (`16/universal/x-8.svg`) with an
+  `aria-label`; it is a toolbarbutton with no label, so without an image it drew nothing.
 - **The `+`** adds the work to Zotero through the same add-by-identifier path the ghost's own menu
   uses, so it needs a DOI and is disabled without one, and it asks the same two questions first.
   The work is then held and the row leaves the list by itself; cancel, and the row comes
@@ -1079,6 +1088,19 @@ so it nests exactly the way the collection pane does and picking the library
 itself means the library root. **New Collection…** hands off to Zotero's own
 new-collection dialog and files into whatever comes back.
 
+**Enter adds, except on a button.** Enter anywhere in the panel accepts and Escape cancels — but
+Enter on a focused button is left to that button, which Gecko answers with a click: on Cancel it
+cancels, and on New Collection… it opens that dialog.
+
+**A work the library already holds is filed, not fetched again.** An outside reference is outside
+the *collection*, and a paper on another shelf of the same library is the commonest ghost there
+is. Zotero's add-by-identifier never asks — it saves whatever the translator returns — so the
+library is asked for the DOI first (`heldByDoi()` in `lib/graphTab.js`: Zotero's own search on
+the DOI field, then `normDoi()` to decide, the trash left out). When it holds the work the dialog
+says so, its button reads **Add to Collection**, and the tag row is left out because nothing is
+being added; accepting files the item there is through `Collection.addItems()`, which is core's
+own *Add to Collection*. The ghost is then taken in exactly as a fetched paper is, see below.
+
 Both answers stick. The tag and its checkbox are written to
 `extensions.zotero.zoteroCitationGraph.addTag` and `.addTagEnabled`, and are what the
 dialog opens with next time; the collection is remembered for the life of the
@@ -1274,9 +1296,13 @@ box writes every edit to every selected paper, and that is not a thing to walk i
 second node. The opt-in is dropped whenever the set of papers changes.
 
 The count of the view is the one thing only the page knows, so it travels on the same message
-(`inView`). It moves with every pixel of a slider drag, so a restated count **re-words the message
-and does not touch the deck** — the gap list is a page of that same deck, and a count that took it
-would close a list the user was reading down. A real change of selection does take it.
+(`inView`). It moves with every pixel of a slider drag, and a restated count re-words the message
+**without taking the deck from the gap list** — that list is a page of the same deck, and its pin
+(`pane.pinned`) is what holds it. The message is otherwise faced every time it is drawn. It used
+to be skipped when a request repeated the one before it, but requests are recorded without being
+drawn while the pane is collapsed or a render is still running, so a repeat could be the first to
+reach the screen: clear the pick with the pane put away, move a filter, and the pane came back on
+the paper that was no longer picked.
 
 **An outside reference contributes nothing to the selection.** There is no item to describe, and
 its own card is what the context menu is for — so a pick made only of ghosts is an empty

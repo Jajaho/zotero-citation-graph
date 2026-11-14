@@ -168,10 +168,22 @@ async function show(entry, itemIDs, { inView = null, status = () => {}, expand =
  * duplicates are dropped after that substitution rather than before it.
  */
 async function resolve(itemIDs) {
+	let ids = itemIDs || [];
+	if (!ids.length) return [];
+	// One ask for the whole pick rather than one per paper: a Ctrl+A over a
+	// collection is hundreds of ids, and each was its own await. What comes
+	// back is NOT in the order asked for -- getAsync() answers with what was
+	// already loaded first and what it had to load after -- and the order is
+	// the selection's: the first paper is the one a batch edit describes. So
+	// the answer is put back in the order of the question.
+	let byID = new Map();
+	for (let item of await Zotero.Items.getAsync(ids)) {
+		if (item) byID.set(item.id, item);
+	}
 	let items = [];
 	let seen = new Set();
-	for (let id of itemIDs || []) {
-		let item = await Zotero.Items.getAsync(id);
+	for (let id of ids) {
+		let item = byID.get(Number(id));
 		if (!item) continue;
 		let target = item.isNote() ? item : (item.parentItem || item);
 		if (seen.has(target.id)) continue;
@@ -196,13 +208,9 @@ async function resolve(itemIDs) {
  */
 function want(pane, items) {
 	let ids = items.map(i => i.id).join(',');
-	// Whether this is a fresh answer to "what is selected" or the same answer
-	// with a new number in it. A filter moving the count of the view is the
-	// second kind, and it must not take the deck away from the gap list the
-	// user is reading down -- see showMessage(). `wantedIDs` starts null rather
-	// than empty so that the first empty selection is a change like any other.
-	pane.quiet = ids === pane.wantedIDs;
-	if (!pane.quiet) {
+	// `wantedIDs` starts null rather than empty so that the first empty
+	// selection is a change like any other.
+	if (ids !== pane.wantedIDs) {
 		if (pane.batch) setBatchCollapsible(pane, false);
 		pane.batch = false;
 		pane.wantedIDs = ids;
@@ -348,11 +356,19 @@ function showMessage(entry, pane, id, count) {
 	let message = ensureMessage(entry, pane);
 	if (!message) return;
 	message.render({ l10nId: id, l10nArgs: { count: Number(count) || 0 } });
-	// A restated count is not a reason to change what the pane is showing. The
-	// count moves every time a filter does, and the gap list is a page of this
-	// same deck -- so a slider dragged while that list was open would close it,
-	// and would go on closing it every few pixels. See want().
-	if (!pane.quiet) face(pane, message);
+	// Always faced, a restated count included. A count restated while this page
+	// is up changes nothing -- face() returns at its first line -- and one
+	// restated under the gap list is held off by the list's pin, which is what
+	// keeps a slider dragged beside that list from closing it.
+	//
+	// This used to be skipped whenever the LAST request repeated the one before
+	// it, on the theory that a repeat had already been faced. But requests are
+	// recorded without being drawn -- while the pane is collapsed, and while a
+	// render is still running -- so the request being drawn could be the first
+	// to reach the screen and still be a repeat. A selection cleared with the
+	// pane put away, and then a filter moved: the pane came back saying "4 items
+	// in this view" on a page nobody could see, under the paper last picked.
+	face(pane, message);
 }
 
 /**

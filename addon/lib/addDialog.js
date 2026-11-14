@@ -82,6 +82,9 @@ const PANEL_CSS = `
 	#${PANEL_ID} .zg-add-tag:disabled {
 		opacity: 0.5;
 	}
+	#${PANEL_ID} .zg-add-held {
+		color: var(--fill-secondary);
+	}
 	#${PANEL_ID} .zg-add-buttons {
 		display: flex;
 		justify-content: flex-end;
@@ -101,6 +104,10 @@ const PANEL_CSS = `
  * @param {?Number} [opts.collectionID]  collection to preselect; null is the library root
  * @param {String}  [opts.tag]           what the tag field opens with
  * @param {Boolean} [opts.tagOn]         whether the tag is applied, default true
+ * @param {Boolean} [opts.held]          the library already holds this work: the
+ *                                       dialog says so, offers to file the item
+ *                                       there is rather than add a second, and
+ *                                       leaves the tag out -- nothing is new
  * @param {Object}  [opts.anchor]        element to centre the panel over
  * @returns {Promise<?Object>} { libraryID, collectionID, tag, tagOn }, or null if cancelled
  */
@@ -146,6 +153,15 @@ function open(win, opts) {
 		doiLine.textContent = opts.title ? opts.doi : '';
 		work.appendChild(name);
 		if (doiLine.textContent) work.appendChild(doiLine);
+
+		// An outside reference is outside the COLLECTION, which is not the same
+		// as outside the library -- and the answer for a work the library holds
+		// is to file that item, not to fetch a second copy of it. Said before
+		// the question is answered, because it changes what "yes" does.
+		let held = !!opts.held;
+		let heldNote = doc.createElement('div');
+		heldNote.className = 'zg-add-held';
+		heldNote.textContent = held ? l10n.t('add-held-note') : '';
 
 		// --- the tag ----------------------------------------------------
 
@@ -202,13 +218,16 @@ function open(win, opts) {
 		cancelBtn.textContent = l10n.t('add-cancel');
 		let okBtn = doc.createElement('button');
 		okBtn.type = 'button';
-		okBtn.textContent = l10n.t('add-confirm');
+		okBtn.textContent = l10n.t(held ? 'add-confirm-held' : 'add-confirm');
 		buttons.appendChild(cancelBtn);
 		buttons.appendChild(okBtn);
 
 		box.appendChild(style);
 		box.appendChild(work);
-		box.appendChild(tagRow);
+		// The tag marks what the graph ADDED. An item that was already there is
+		// not that, so there is no tag to ask about -- and accept() hands the two
+		// values back as they came, which leaves the remembered tag alone.
+		box.appendChild(held ? heldNote : tagRow);
 		box.appendChild(colRow);
 		box.appendChild(buttons);
 		panel.appendChild(box);
@@ -336,6 +355,12 @@ function open(win, opts) {
 			// While the collection tree is dropped down, both keys belong to it.
 			if (menulist.open) return;
 			if (event.key === 'Enter') {
+				// Enter on a focused button is that button's own: Gecko answers it
+				// with a click, unless the key is taken first. Taking it here and
+				// accepting made Enter on Cancel add the paper, and Enter on
+				// "New Collection…" add it without ever opening that dialog.
+				let target = event.target;
+				if (target && typeof target.closest === 'function' && target.closest('button')) return;
 				event.preventDefault();
 				accept();
 			}
@@ -360,8 +385,13 @@ function open(win, opts) {
 		panel.addEventListener('popupshown', (event) => {
 			if (!ownPopup(event)) return;
 			try {
-				tagInput.focus();
-				tagInput.select();
+				// With no tag to type there is one thing left to do here, and the
+				// focus goes to the button that does it.
+				if (held) okBtn.focus();
+				else {
+					tagInput.focus();
+					tagInput.select();
+				}
 			}
 			catch (e) { /* nothing to focus; the dialog is still usable */ }
 		});

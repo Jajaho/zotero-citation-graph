@@ -1606,6 +1606,14 @@ function pushData(entry, state, meta) {
  * is the one thing the graph does that WRITES to the library, and a paper filed
  * somewhere the user did not choose is cheap to undo but tedious to find. See
  * addDialog.js.
+ *
+ * Unless the library holds the work already. An outside reference is outside
+ * the COLLECTION the graph is of, and a paper filed on another shelf of the same
+ * library is exactly that -- so this is the common case rather than a corner.
+ * Add-by-identifier never asks: lookup.js saves whatever the translator hands
+ * back, and the answer used to be a second copy of the paper beside the first.
+ * So the library is asked first, and the item it has is filed where the dialog
+ * says instead. See heldByDoi().
  */
 async function addByDoi(win, tabID, scope, doi, title) {
 	let entry = open_.get(tabID);
@@ -1630,6 +1638,7 @@ async function addByDoi(win, tabID, scope, doi, title) {
 		libraryID: scope.libraryID,
 		collectionID: scope.collection ? scope.collection.id : null,
 	};
+	let held = await heldByDoi(target.libraryID, d);
 	let choice = await addDialog.open(win, {
 		doi: d,
 		title: title || null,
@@ -1637,6 +1646,9 @@ async function addByDoi(win, tabID, scope, doi, title) {
 		collectionID: target.collectionID,
 		tag: typeof pref('addTag') === 'string' ? pref('addTag') : '',
 		tagOn: pref('addTagEnabled') !== false,
+		// Said in the dialog, before it is answered: "Add" over a work the
+		// library has is an offer to file that item, and nothing is fetched.
+		held: !!held,
 		anchor: entry ? entry.browser : null,
 	});
 	// The tab can have been closed while the dialog was up; the add still
@@ -1659,21 +1671,32 @@ async function addByDoi(win, tabID, scope, doi, title) {
 	}
 
 	status(l10n.t('add-adding', { doi: d }));
-	let translate = new Zotero.Translate.Search();
-	translate.setIdentifier({ DOI: d });
 	let newItems = [];
+	// The item the library already has, filed where the dialog said -- which
+	// is the whole of the add when there is one. The library is the one that
+	// was searched: the dialog's menu is of that library and no other, and a
+	// choice that somehow named a different one gets the ordinary add.
+	let filed = !!held && held.libraryID === choice.libraryID;
 	try {
-		let translators = await translate.getTranslators();
-		if (!translators.length) throw new Error('no translator accepted the DOI');
-		translate.setTranslator(translators);
-		newItems = await translate.translate({
-			libraryID: choice.libraryID,
-			// Empty is the library root, which is what picking the library
-			// itself out of the menu means.
-			collections: choice.collectionID ? [choice.collectionID] : [],
-			// Zotero's own open-access PDF lookup, for free.
-			saveAttachments: true,
-		});
+		if (filed) {
+			await fileHeld(held, choice.collectionID);
+			newItems = [held];
+		}
+		else {
+			let translate = new Zotero.Translate.Search();
+			translate.setIdentifier({ DOI: d });
+			let translators = await translate.getTranslators();
+			if (!translators.length) throw new Error('no translator accepted the DOI');
+			translate.setTranslator(translators);
+			newItems = await translate.translate({
+				libraryID: choice.libraryID,
+				// Empty is the library root, which is what picking the library
+				// itself out of the menu means.
+				collections: choice.collectionID ? [choice.collectionID] : [],
+				// Zotero's own open-access PDF lookup, for free.
+				saveAttachments: true,
+			});
+		}
 	}
 	catch (e) {
 		Zotero.logError(e);
@@ -1691,7 +1714,10 @@ async function addByDoi(win, tabID, scope, doi, title) {
 	// library and collections and nothing else, so a tag is a second write.
 	// Type 0 is a manual tag -- the kind the tag selector offers and colours --
 	// which is what someone typing one into the dialog is asking for.
-	if (choice.tagOn && choice.tag) {
+	//
+	// Not for an item that was already in the library: the tag says what the
+	// graph added, and the dialog did not ask about one. See addDialog.js.
+	if (!filed && choice.tagOn && choice.tag) {
 		try {
 			await Zotero.DB.executeTransaction(async () => {
 				for (let item of newItems) {
@@ -1726,13 +1752,72 @@ async function addByDoi(win, tabID, scope, doi, title) {
 		return;
 	}
 	if (one && await adoptAdded(entry, ghostKey, one, names)) {
-		status(l10n.t('add-done', { title: added }));
+		status(l10n.t(filed ? 'add-filed' : 'add-done', { title: added }));
 		return;
 	}
 	// Whatever the graph could not simply take in -- one DOI that resolved to
 	// several works, or a tab with no finished build behind it yet.
 	status(l10n.t('add-rebuilding', { title: added }));
 	await runBuild(tabID);
+}
+
+/**
+ * The item a library already holds under a DOI, or null.
+ *
+ * Asked of Zotero's own search rather than of the build: the build knows the
+ * collection, and the question is about every other shelf of the library. The
+ * condition is a LIKE, which is what finds a DOI typed in capitals or pasted in
+ * behind https://doi.org/ -- and normDoi() is then what decides, the same
+ * function that decides whether a held paper and a reference are one work
+ * everywhere else. The trash is not the library: search leaves it out, and an
+ * item trashed since is passed over.
+ *
+ * The oldest when there are several, since duplicates that are there already
+ * are no reason to pick differently from one run to the next.
+ *
+ * A lookup that throws costs the check and not the add: what follows is then
+ * the add this plugin always made.
+ */
+async function heldByDoi(libraryID, doi) {
+	try {
+		let s = new Zotero.Search();
+		s.libraryID = libraryID;
+		s.addCondition('DOI', 'contains', doi);
+		let ids = await s.search();
+		if (!ids || !ids.length) return null;
+		let items = await Zotero.Items.getAsync([...ids]);
+		await Zotero.Items.loadDataTypes(items);
+		// getAsync() answers loaded-first, not in the order asked.
+		items = items.filter(Boolean).sort((a, b) => a.id - b.id);
+		for (let item of items) {
+			if (item.deleted || !item.isRegularItem()) continue;
+			let have = '';
+			try {
+				have = item.getField('DOI');
+			}
+			catch (e) {
+				have = '';
+			}
+			if (normDoi(have) === doi) return item;
+		}
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	return null;
+}
+
+/**
+ * Put an item the library already holds into a collection -- core's own "Add to
+ * Collection", through the same call (Collection.addItems, in a transaction,
+ * which leaves the item's modified date alone). The library root is no
+ * collection, and an item is in its library by definition.
+ */
+async function fileHeld(item, collectionID) {
+	if (!collectionID || item.inCollection(collectionID)) return;
+	let collection = Zotero.Collections.get(collectionID);
+	if (!collection) throw new Error('no such collection: ' + collectionID);
+	await Zotero.DB.executeTransaction(() => collection.addItems([item.id]));
 }
 
 /**
@@ -2196,6 +2281,8 @@ module.exports = {
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
 	selectedLibraryID, selectItems,
 	mergeEdges, toWireExternal, adoptAdded, rekeyByDoi,
+	// Exported for the add checks: the one path here that writes to the library.
+	addByDoi,
 	// Exported for the parsed-reference tests: which outside nodes a lookup is
 	// asked about, and how the two kinds of name are merged into one.
 	ghostKeysOf, describeNode, consolidateRefs,

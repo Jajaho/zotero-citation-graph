@@ -375,11 +375,14 @@ zotero-citation-graph-add-collection-label = Collection
 zotero-citation-graph-add-new-collection = New Collection…
 zotero-citation-graph-add-cancel = Cancel
 zotero-citation-graph-add-confirm = Add
+zotero-citation-graph-add-confirm-held = Add to Collection
+zotero-citation-graph-add-held-note = Already in your library. The item you have is filed here; nothing is added twice.
 zotero-citation-graph-add-bad-doi = Not a usable DOI: { $doi }
 zotero-citation-graph-add-adding = Adding { $doi }…
 zotero-citation-graph-add-failed = Could not add { $doi }: { $message }
 zotero-citation-graph-add-no-metadata = No metadata found for { $doi }
 zotero-citation-graph-add-done = Added "{ $title }"
+zotero-citation-graph-add-filed = Filed "{ $title }" — it was already in your library.
 zotero-citation-graph-add-elsewhere = Added "{ $title }" to another collection — this graph is unchanged.
 zotero-citation-graph-add-rebuilding = Added "{ $title }" — rebuilding…
 
