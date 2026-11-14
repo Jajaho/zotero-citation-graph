@@ -593,8 +593,10 @@
 				<button id="empty-clear" type="button" hidden="hidden" data-zg-str="empty-filter-clear">Clear filters</button>
 			</div>
 
-			<!-- Outside #graph for the same reason as #empty. -->
-			<div id="status" data-zg-str="status-loading">Loading…</div>
+			<!-- Outside #graph for the same reason as #empty. A live region: what
+			     this line says is news about a graph the reader may not be able
+			     to see change, and nothing else on the page would tell them. -->
+			<div id="status" role="status" aria-live="polite" data-zg-str="status-loading">Loading…</div>
 
 			<!-- A build in flight, as a place on a bar and a way to stop it. It
 			     takes the status line's place while there is one -- chrome says
@@ -630,7 +632,7 @@
 
 	<!-- The node context menu, and the canvas one. Built per node in graph.js.
 	     A sibling for the same reason as the two above. -->
-	<div id="menu" hidden="hidden"></div>
+	<div id="menu" role="menu" hidden="hidden"></div>
 
 	<!-- A group's card: the anchor's own filter box, opened by "Group here" on
 	     the canvas menu and by "Edit group" on a flag. It authors masks exactly

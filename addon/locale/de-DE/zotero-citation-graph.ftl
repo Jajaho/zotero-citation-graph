@@ -162,6 +162,7 @@ zotero-citation-graph-stats-named = ({ $count } benannt)
 zotero-citation-graph-stats-edges = { $count -> [one] { $count } Kante *[other] { $count } Kanten }
 zotero-citation-graph-stats-building = Wird aufgebaut…
 zotero-citation-graph-stats-stopped = vorzeitig gestoppt
+zotero-citation-graph-canvas-label = Zitationsgraph: { $stats }
 zotero-citation-graph-stats-of-picked = { $shown } von { $picked } ausgewählten
 
 

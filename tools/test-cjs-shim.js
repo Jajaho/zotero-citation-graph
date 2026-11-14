@@ -1505,6 +1505,91 @@ check('a paper with no author is named by its title in any script', () => {
 	if (page.shortLabel({ title: 'Étude', creators: ['Kucsko'] }, 2013) !== 'Kucsko2013') throw new Error('the author lost to the title');
 });
 
+/**
+ * Smith wrote two papers in 2019 and both were drawn as "Smith2019": two nodes
+ * with one name on the canvas, in the search list, and as two rows with the
+ * same label in an exported GraphML. They are told apart by a letter now -- and
+ * which paper has which letter is a fact about the payload, not about what
+ * happens to be on screen, because a name is how a node is found again.
+ */
+check('two papers that would share a name are told apart by a letter, and keep it', () => {
+	const page = liftPage({
+		functions: ['nameNodes', 'suffixLetters', 'shortLabel', 'ghostLabel', 'ghostNamed', 'year'],
+		consts: ['NOT_WORD'],
+	});
+	const held = (key, itemID, author, date, title) => ({ key, itemID, creators: author ? [author] : [], date, title: title === undefined ? 'A title' : title });
+	const names = (items, external) => Object.fromEntries(page.nameNodes(items, external || []));
+
+	// Lettered oldest in the library first, whatever order the payload lists
+	// them in; a paper with a name of its own is left alone.
+	const three = [held('ZZZ', 30, 'Smith', '2019-03'), held('MMM', 10, 'Smith', '2019'), held('AAA', 20, 'Smith', '2019-11-02'), held('KKK', 5, 'Kucsko', '2013')];
+	let n = names(three);
+	if (n.MMM !== 'Smith2019a' || n.AAA !== 'Smith2019b' || n.ZZZ !== 'Smith2019c') throw new Error('three of a name: ' + JSON.stringify(n));
+	if (n.KKK !== 'Kucsko2013') throw new Error('a name nobody shares was changed to ' + n.KKK);
+	// The same papers in another order are the same names.
+	const back = names(three.slice().reverse());
+	if (['MMM', 'AAA', 'ZZZ', 'KKK'].some(k => back[k] !== n[k])) throw new Error('the order of the payload decides who is "a": ' + JSON.stringify(back));
+	// A fourth, added later, takes the next letter and moves nobody.
+	n = names(three.concat([held('BBB', 40, 'Smith', '2019')]));
+	if (n.MMM !== 'Smith2019a' || n.AAA !== 'Smith2019b' || n.ZZZ !== 'Smith2019c' || n.BBB !== 'Smith2019d') {
+		throw new Error('a paper added later renamed the ones already there: ' + JSON.stringify(n));
+	}
+	// With no item id to go by, the key is the order.
+	n = names([held('B', undefined, 'Smith', '2019'), held('A', undefined, 'Smith', '2019')]);
+	if (n.A !== 'Smith2019a' || n.B !== 'Smith2019b') throw new Error('no item ids: ' + JSON.stringify(n));
+
+	// Outside references come after every held paper, so a lookup that gives
+	// one its name a phase later cannot reshuffle the held ones.
+	const two = [held('H1', 1, 'Smith', '2019'), held('H2', 2, 'Smith', '2019')];
+	const ghost = { key: 'doi:10.1/zzz', id: '10.1/zzz', ns: 'doi' };
+	n = names(two, [ghost]);
+	if (n.H1 !== 'Smith2019a' || n.H2 !== 'Smith2019b' || n['doi:10.1/zzz'] !== 'zzz') throw new Error('before the lookup: ' + JSON.stringify(n));
+	n = names(two, [Object.assign({}, ghost, { title: 'Found', creators: ['Smith'], year: 2019 })]);
+	if (n.H1 !== 'Smith2019a' || n.H2 !== 'Smith2019b' || n['doi:10.1/zzz'] !== 'Smith2019c') throw new Error('after the lookup: ' + JSON.stringify(n));
+	// One held paper and its outside namesake: both lettered, the held one first.
+	n = names([held('H1', 1, 'Smith', '2019')], [{ key: 'doi:10.1/a', id: '10.1/a', title: 'T', creators: ['Smith'], year: 2019 }]);
+	if (n.H1 !== 'Smith2019a' || n['doi:10.1/a'] !== 'Smith2019b') throw new Error('held and outside: ' + JSON.stringify(n));
+
+	// Only names in the citekey form. Two identifiers cut to the same tail stay
+	// as they are -- a letter there would read as part of the DOI -- and so
+	// does "?", the paper with nothing to call it by.
+	const long = '10.1000/' + 'x'.repeat(30);
+	n = names([held('Q1', 1, '', '', ''), held('Q2', 2, '', '', '')], [{ key: 'doi:' + long + '1', id: long + '1' }, { key: 'doi:' + long + '2', id: long + '2' }]);
+	if (n.Q1 !== '?' || n.Q2 !== '?') throw new Error('"?" was lettered: ' + n.Q1 + ' ' + n.Q2);
+	if (n['doi:' + long + '1'] !== n['doi:' + long + '2'] || !n['doi:' + long + '1'].endsWith('…')) {
+		throw new Error('a cut-off identifier was lettered: ' + n['doi:' + long + '1']);
+	}
+	// After a name with no year the letter is set off, or it reads as the name.
+	n = names([held('K1', 1, 'Kucsko', ''), held('K2', 2, 'Kucsko', '')]);
+	if (n.K1 !== 'Kucsko-a' || n.K2 !== 'Kucsko-b') throw new Error('no year: ' + JSON.stringify(n));
+	// Past z.
+	const many = Array.from({ length: 28 }, (_, i) => held('K' + String(i).padStart(2, '0'), i + 1, 'Rossi', '2001'));
+	n = names(many);
+	if (n.K25 !== 'Rossi2001z' || n.K26 !== 'Rossi2001aa' || n.K27 !== 'Rossi2001ab') throw new Error('past z: ' + n.K25 + ' ' + n.K26 + ' ' + n.K27);
+	if (new Set(Object.values(n)).size !== 28) throw new Error('two of the 28 still share a name');
+
+	// The names are the payload's: dealt over all of it, once, and what a
+	// filter hides plays no part. So render() only looks them up.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes('nodeNames = nameNodes(raw.items || [], raw.external || []);')) {
+		throw new Error('the names are no longer dealt over the whole payload');
+	}
+	const set = [...js.matchAll(/\n\t+n\.label = ([^;]*);/g)].map(m => m[1]);
+	if (set.length !== 2 || set.some(s => !/^names\(\)\.get\((it\.key|key)\)$/.test(s))) {
+		throw new Error('a node is named by something other than the payload\'s names: ' + set.join(' | '));
+	}
+	const data = js.slice(js.indexOf('window.zgSetData = function'), js.indexOf('function keepHover'));
+	if (!data.includes('nodeNames = null;')) throw new Error('a new payload keeps the last one\'s names');
+	// And everything that shows a name shows that one.
+	for (const [what, needle] of [
+		['the search list', "key.textContent = n.label || '';"],
+		['an exported figure', 'text: n.label,'],
+		['an exported GraphML', 'label: n.label,'],
+	]) {
+		if (!js.includes(needle)) throw new Error(what + ' no longer shows the name the canvas draws');
+	}
+});
+
 check('the benchmark fixture is a payload the renderer can actually read', () => {
 	// The benchmark drives the real graph page through the real zgSetData
 	// bridge, so a fixture in the wrong shape does not fail loudly -- it draws
@@ -7668,6 +7753,161 @@ check('the bar offers what the canvas menu offers, and says when the graph is is
 	}
 	if (!/<button id="export-menu" type="button" aria-haspopup="menu" aria-expanded="false"/.test(html)) {
 		throw new Error('Export does not say it opens a menu');
+	}
+});
+
+/**
+ * A <canvas> is a hole in the page to anything that reads one out, and the
+ * status line changed without a word to a reader who could not see it change.
+ * The canvas now says that it is the graph and how much is on it -- the stats
+ * line, kept in step -- and the status line is a live region.
+ */
+check('the canvas says what it is, and the status line says its news aloud', () => {
+	const tab = (code, canvas) => liftPage({
+		functions: ['describeCanvas'],
+		globals: {
+			elGraph: { querySelector: sel => (sel === 'canvas' ? canvas : null) },
+			t: pageStrings(code),
+		},
+	});
+	const fake = () => ({
+		attrs: {}, writes: 0,
+		getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+		setAttribute(k, v) { this.attrs[k] = v; this.writes++; },
+	});
+
+	// Before force-graph has made one there is nothing to name, and no throw.
+	tab('en-US', null).describeCanvas('0 / 0 items');
+
+	const canvas = fake();
+	const page = tab('en-US', canvas);
+	page.describeCanvas('160 / 160 items · 21 outside (10 named) · 308 edges');
+	if (canvas.attrs.role !== 'img') throw new Error('the canvas has no role: ' + canvas.attrs.role);
+	if (canvas.attrs['aria-label'] !== 'Citation graph: 160 / 160 items · 21 outside (10 named) · 308 edges') {
+		throw new Error('the canvas is called ' + JSON.stringify(canvas.attrs['aria-label']));
+	}
+	// render() comes through on every step of a slider: written only on change.
+	const wrote = canvas.writes;
+	page.describeCanvas('160 / 160 items · 21 outside (10 named) · 308 edges');
+	if (canvas.writes !== wrote) throw new Error('the same name was written again');
+	page.describeCanvas('61 / 160 items · 62 edges');
+	if (canvas.attrs['aria-label'] !== 'Citation graph: 61 / 160 items · 62 edges') throw new Error('the name did not follow the graph');
+
+	for (const code of fs.readdirSync(localeDir)) {
+		const c = fake();
+		tab(code, c).describeCanvas('S');
+		if (!/S$/.test(c.attrs['aria-label']) || c.attrs['aria-label'] === 'S' || /[{}]|canvas-label/.test(c.attrs['aria-label'])) {
+			throw new Error(code + ': ' + c.attrs['aria-label']);
+		}
+	}
+
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes('describeCanvas(elStats.textContent);')) throw new Error('render() no longer keeps the canvas\'s name in step with the stats line');
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	if (!/<div id="status" role="status" aria-live="polite"/.test(html)) throw new Error('#status is not a live region');
+});
+
+/**
+ * The bar's new controls, without a pointer. Each is a <button>, which is most
+ * of it -- Tab reaches one and Enter presses it. The rest is Export's menu:
+ * the focus goes into it, the arrows move along it, Escape and Tab leave it,
+ * and the focus goes back to the button it hung from, not to the top of the
+ * page.
+ */
+check('a menu opened from the bar is worked from the keyboard, and gives the focus back', () => {
+	const menu = (over) => {
+		const entry = (name, disabled) => ({ name, disabled: !!disabled, focus() { doc.activeElement = this; } });
+		const doc = { activeElement: null };
+		const rows = [entry('svg'), entry('off', true), entry('graphml')];
+		const button = { attrs: {}, focused: 0, setAttribute(k, v) { this.attrs[k] = v; }, focus() { this.focused++; doc.activeElement = this; } };
+		const page = liftPage({
+			functions: ['focusMenuItem', 'hideMenu', 'menuFrom'],
+			globals: Object.assign({
+				document: doc,
+				elMenu: {
+					hidden: false,
+					contains: el => rows.includes(el),
+					querySelectorAll: (sel) => {
+						if (sel !== '.menu-item:not([disabled])') throw new Error('asked the menu for ' + sel);
+						return rows.filter(r => !r.disabled);
+					},
+				},
+				menuFor: null, nativeOpen: false, released: 0,
+				emit() {},
+			}, over),
+		});
+		page.release = () => { page.released++; };
+		return { page, doc, rows, button };
+	};
+	const at = m => (m.doc.activeElement ? m.doc.activeElement.name || 'button' : null);
+
+	// In, on the first entry that can be picked; the arrows go round, past the
+	// one that cannot.
+	let m = menu();
+	m.page.focusMenuItem(0);
+	if (at(m) !== 'svg') throw new Error('the focus went to ' + at(m));
+	m.page.focusMenuItem(0, 1);
+	if (at(m) !== 'graphml') throw new Error('Down stopped on an entry that is off: ' + at(m));
+	m.page.focusMenuItem(0, 1);
+	if (at(m) !== 'svg') throw new Error('Down does not go round: ' + at(m));
+	m.page.focusMenuItem(0, -1);
+	if (at(m) !== 'graphml') throw new Error('Up does not go round: ' + at(m));
+	m.page.focusMenuItem(-1);
+	if (at(m) !== 'graphml') throw new Error('End: ' + at(m));
+	// From outside the menu an arrow starts at the near end.
+	m.doc.activeElement = null;
+	m.page.focusMenuItem(0, -1);
+	if (at(m) !== 'graphml') throw new Error('Up from outside: ' + at(m));
+
+	// Closed with the focus in it: the button it hung from gets the focus back
+	// and stops saying it has a menu open.
+	m = menu();
+	m.page.menuFrom(m.button);
+	m.page.focusMenuItem(0);
+	m.page.hideMenu();
+	if (!m.page.elMenu.hidden) throw new Error('the menu is still up');
+	if (m.button.focused !== 1 || at(m) !== 'button') throw new Error('the focus was dropped with the menu');
+	if (m.button.attrs['aria-expanded'] !== 'false') throw new Error('the button still says its menu is open');
+	if (!m.page.released) throw new Error('the node a menu held was not given back');
+	// Closed with the focus somewhere else -- a click on the canvas -- it stays there.
+	m = menu();
+	m.page.menuFrom(m.button);
+	m.page.hideMenu();
+	if (m.button.focused) throw new Error('closing a menu took the focus from where the reader had put it');
+	// A menu raised at the pointer hangs from nothing.
+	m = menu();
+	m.page.focusMenuItem(0);
+	m.page.hideMenu();
+	if (m.button.focused) throw new Error('a right-click menu handed the focus to a button');
+
+	// The wiring: in on open, the keys, and what the menu and its rows are.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	if (!js.includes('if (opener) focusMenuItem(0);')) throw new Error('a menu opened from a button leaves the focus on the button');
+	const keys = js.slice(js.indexOf("elMenu.addEventListener('keydown'"));
+	const handler = keys.slice(0, keys.indexOf('\n\t});'));
+	for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Tab']) {
+		if (!handler.includes("'" + key + "'")) throw new Error('the menu does not answer ' + key);
+	}
+	if (!/else if \(e\.key === 'Tab'\) hideMenu\(\);/.test(handler)) throw new Error('Tab leaves the menu open behind it');
+	if (!/<div id="menu" role="menu" hidden="hidden">/.test(html)) throw new Error('#menu does not say it is a menu');
+	if (!js.includes("b.setAttribute('role', 'menuitem');")) throw new Error('a menu\'s rows do not say they are its items');
+
+	// And the focus can be seen. These are plain buttons drawn by this
+	// stylesheet; the ring is the browser's, so no rule of theirs may take the
+	// outline away without putting a ring of its own in its place.
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+	for (const m2 of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+		const sel = m2[1].trim();
+		if (!/#gaps-toggle|#export-menu|#iso-chip-clear|#progress-stop|#empty-clear|\.menu-item|#bar > button/.test(sel)) continue;
+		if (/outline(-style)?:\s*(none|0)\b/.test(m2[2]) && !/box-shadow:/.test(m2[2])) {
+			throw new Error(sel + ' takes the focus ring off and draws none');
+		}
+	}
+	// Each of them a real button, in the order Tab walks the bar.
+	for (const id of ['gaps-toggle', 'export-menu', 'iso-chip-clear', 'progress-stop', 'empty-clear']) {
+		if (!new RegExp('<button id="' + id + '" type="button"').test(html)) throw new Error('#' + id + ' is not a button');
+		if (new RegExp('<button id="' + id + '"[^>]*tabindex="-1"').test(html)) throw new Error('#' + id + ' is taken out of the Tab order');
 	}
 });
 

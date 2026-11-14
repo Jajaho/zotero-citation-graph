@@ -642,6 +642,34 @@ three letters, and a word is letters, the marks that ride on them, and digits �
 in any script (`NOT_WORD`). `\W` is ASCII's idea of one: it drew *Étude sur la
 lumière* as `tude1905` and a Greek title as its year alone.
 
+**Two papers that would share a name are lettered** — `Smith2019a`,
+`Smith2019b` — where they used to be two nodes called `Smith2019`, on the
+canvas, in the search list and as two rows with one `label` in an exported
+GraphML. Which paper has which letter is a fact about the payload and nothing
+else (`nameNodes()`, worked out once per payload by `names()`): the letters are
+dealt over every held item and every outside reference, whatever the masks, the
+confidence slider or *Cited by* are hiding, so hiding `Smith2019a` leaves the
+other `Smith2019b` — a name is how a node is found again. A paper can therefore
+wear a letter with its namesake out of sight, which says, truly, that the graph
+has another. The order belongs to the papers too: held items first, oldest in
+the library first (the item id only grows, so a third Smith added later is `c`
+and moves nobody), then outside references by key — after the held ones, because
+a lookup gives them their names a phase later and must not reshuffle those. Only
+names in the citekey form are lettered: an outside reference drawn as the tail
+of its identifier is left as it is, and so is `?`. After a name with no year the
+letter is set off (`Kucsko-a`), or it would read as part of the name. Every
+reader of a name reads `n.label`, so the search list and both exports agree with
+the canvas.
+
+**The canvas has a name.** A `<canvas>` is a hole in the page to anything that
+reads one out, so the one force-graph makes is given `role="img"` and an
+`aria-label` of *Citation graph:* and the stats line (`describeCanvas()`), kept
+in step by `render()` and written only when it changes. It does not make the
+graph readable without sight — the item pane and the search field are what do
+that — but it says that the picture is there and how much is on it. The status
+line is a live region (`role="status"`), and of the progress bar only the phase's
+label is.
+
 **Which names are drawn** is decided for the whole frame at once
 (`reserveLabels()`, over the greedy pass in `labelLayout.js`): the names are
 offered room in a fixed order of importance, each reserves its glyphs plus
@@ -1306,6 +1334,18 @@ found again by what it looks like, and what says the list is open is the list.
 The Export button is a menu button: `openMenu()` takes the button it was opened
 from, hangs the menu under it, and a second press on it closes the menu rather
 than opening it again.
+
+**All of it works without a pointer.** Each of the bar's controls, Stop and
+*Clear filters* is a `<button>`, so Tab reaches it in the order it is drawn and
+Enter presses it, and the ring it wears is the browser's own: none of their
+rules takes the outline off. A menu opened from a button takes the focus onto
+its first entry that can be picked (`focusMenuItem()`); Up and Down go round the
+entries, Home and End to either end; Escape closes it, and so does Tab, which
+then moves on from the button. Closing a menu that holds the focus hands it back
+to the button the menu hung from (`hideMenu()`) — hiding a focused element drops
+the focus on the document, a Tab away from the top of the page. A menu raised by
+a right click hangs from nothing and takes no focus. `#menu` is a `role="menu"`
+and its rows `menuitem`s.
 
 **Exports are of the graph as filtered** — masks, minimum confidence, strategies
 switched off, outside references shown or hidden — because that is the graph on
