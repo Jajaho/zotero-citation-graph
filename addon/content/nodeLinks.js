@@ -13,21 +13,53 @@
 (function (global) {
 	'use strict';
 
+	// Tails of a publisher's URL, not of the DOI inside it: .../abstract, .../full.
+	var URL_TAIL_RE = /\/(abstract|epdf|full|pdf|meta|html|summary)$/;
+
 	/**
 	 * Bare, lower-cased DOI, or null.
 	 *
-	 * Deliberately character-for-character the same rule as
-	 * citation-graph/core/normalize.js normDoi(). That tree is CommonJS and this
+	 * Deliberately step for step the same rule as citation-graph/core/
+	 * normalize.js normDoi(), helpers included. That tree is CommonJS and this
 	 * page has no loader, so it cannot be required -- the duplication is the
-	 * price, and the test is what keeps the two from drifting.
+	 * price, and the test is what keeps the two from drifting. It did drift
+	 * once: core learned to keep a DOI's own closing parenthesis, to decode a
+	 * DOI that arrived as a link and to drop a publisher's URL tail, and this
+	 * copy went on cutting 10.1061/(asce)0733-9399(2004)130:8(951) short at the
+	 * bracket, so the menu opened an address doi.org does not know.
 	 */
 	function normDoi(raw) {
 		if (!raw) return null;
-		var d = String(raw).trim().toLowerCase()
+		var d = decodePercentEscapes(String(raw).trim()).toLowerCase()
 			.replace(/^https?:\/\/(dx\.)?doi\.org\//, '')
 			.replace(/^doi:\s*/, '')
-			.replace(/[.,;:)\]]+$/, '');
+			.replace(/[.,;:\]]+$/, '')
+			.replace(URL_TAIL_RE, '');
+		d = stripUnmatchedCloser(d);
 		return /^10\.\d{4,9}\//.test(d) ? d : null;
+	}
+
+	/** Drop a trailing `)` only while it closes nothing the DOI itself opened:
+	 *  "(see 10.1234/abc)" loses the sentence's bracket, and
+	 *  10.1016/0017-9310(69)90011-8 keeps its own. */
+	function stripUnmatchedCloser(d) {
+		var s = d;
+		for (;;) {
+			if (s.charAt(s.length - 1) !== ')') return s;
+			var open = (s.match(/\(/g) || []).length;
+			var close = (s.match(/\)/g) || []).length;
+			if (close <= open) return s;
+			s = s.slice(0, -1).replace(/[.,;:\]]+$/, '');
+		}
+	}
+
+	/** Percent-escapes, decoded: a DOI copied out of a link has its brackets as
+	 *  %28 and %29. A malformed escape is left alone rather than throwing. */
+	function decodePercentEscapes(s) {
+		return String(s).replace(/%[0-9A-Fa-f]{2}/g, function (m) {
+			try { return decodeURIComponent(m); }
+			catch (_) { return m; }
+		});
 	}
 
 	/**

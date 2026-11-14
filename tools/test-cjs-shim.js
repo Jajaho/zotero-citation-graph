@@ -1278,12 +1278,38 @@ check('the benchmark fixture is a payload the renderer can actually read', () =>
 			throw new Error('date ' + it.date + ' is not one year() can read');
 		}
 	}
-	const ext = new Set(g.external.map(x => x.id));
+	// By `key`, which is what render() looks an outside reference up under and
+	// what an edge's `to` names. This read `id`, and the fixture put the key
+	// there: every edge landed, the check passed, and the page -- which reads
+	// x.key -- drew no ghost at all, on a benchmark whose header counted them.
+	const ext = new Set(g.external.map(x => x.key));
+	if (ext.has(undefined) || ext.size !== g.external.length) {
+		throw new Error('outside refs are not keyed: ' + JSON.stringify(g.external[0]));
+	}
 	for (const e of g.edges) {
 		if (!keys.has(e.from)) throw new Error('edge from an item that is not here: ' + e.from);
 		if (!keys.has(e.to) && !ext.has(e.to)) throw new Error('edge to nothing: ' + e.to);
 		if (!(e.confidence > 0 && e.confidence <= 1)) throw new Error('confidence ' + e.confidence);
 		if (!Array.isArray(e.via) || !e.via.length) throw new Error('edge with no strategy');
+	}
+	// And the whole of the shape, held against the code that makes the real
+	// one rather than against a list of fields written out here: the builder
+	// derives the outside references from these very edges, and chrome's
+	// toWireExternal() is what the page is then sent.
+	const { collectExternalNodes } = require_('./citation-graph/core/graphBuilder.js');
+	const { toWireExternal } = require_('./lib/graphTab.js');
+	const built = new Map(collectExternalNodes(g.edges, k => keys.has(k)).map(x => [x.key, toWireExternal(x, null)]));
+	if (built.size !== g.external.length) throw new Error(built.size + ' outside refs in the edges, ' + g.external.length + ' in the payload');
+	for (const x of g.external) {
+		const wire = built.get(x.key);
+		if (!wire) throw new Error('nothing cites ' + x.key);
+		for (const field of Object.keys(wire)) {
+			if (JSON.stringify(x[field]) !== JSON.stringify(wire[field])) {
+				throw new Error(x.key + ': ' + field + ' is ' + JSON.stringify(x[field]) + ', the builder says ' + JSON.stringify(wire[field]));
+			}
+		}
+		// The bare identifier, which is what the ghost's menu opens.
+		if (loadLinks().externalUrl(x.ns, x.id) !== 'https://doi.org/' + x.id) throw new Error(x.key + ' opens nowhere');
 	}
 
 	// Heavy-tailed, not uniform: a few hubs is the shape the layout, the
@@ -3280,11 +3306,32 @@ check('the content page and core agree on what a DOI is', () => {
 		'10.1/x',           // registrant too short
 		'nature12373',      // not a DOI at all
 		'', null, undefined,
+		// The three steps the copy went without for a while. Each of these is a
+		// DOI the builder keyed a node with one way and the page spelled another.
+		'10.1061/(asce)0733-9399(2004)130:8(951)',            // its own closing bracket
+		'(10.1016/0017-9310(69)90011-8).',                    // not a DOI: opens with the sentence's
+		'10.1016/0017-9310(69)90011-8).',                     // its own bracket, then the sentence's
+		'https://doi.org/10.1016/0017-9310%2869%2990011-8',   // a link, so percent-encoded
+		'https://doi.org/10.1002/1521-396x%28200009%29181:1%3C99::aid-pssa99%3E3.0.co;2-5',
+		'10.3389/fncom.2013.00137/full',                      // a publisher's URL tail
+		'https://doi.org/10.3389/fncom.2013.00137/abstract.',
+		'10.1234/abc%zz',                                     // a malformed escape is left alone
 	];
 	for (const raw of cases) {
 		if (L.normDoi(raw) !== normDoi(raw)) {
 			throw new Error(JSON.stringify(raw) + ': ' + L.normDoi(raw) + ' vs ' + normDoi(raw));
 		}
+	}
+	// Agreement alone would also hold if both were wrong the same way, so the
+	// three spelled out: what the node's menu opens is the DOI that resolves.
+	const asce = '10.1061/(asce)0733-9399(2004)130:8(951)';
+	if (L.normDoi(asce) !== asce) throw new Error('cut a DOI at its own bracket: ' + L.normDoi(asce));
+	if (L.doiUrl(asce) !== 'https://doi.org/' + asce) throw new Error(L.doiUrl(asce));
+	if (L.normDoi('https://doi.org/10.1016/0017-9310%2869%2990011-8') !== '10.1016/0017-9310(69)90011-8') {
+		throw new Error('an encoded link kept its escapes');
+	}
+	if (L.normDoi('10.3389/fncom.2013.00137/full') !== '10.3389/fncom.2013.00137') {
+		throw new Error('a URL tail stayed on the DOI');
 	}
 });
 
@@ -3520,6 +3567,37 @@ check('a value row names its facet only while the search spans every facet', () 
 	if (!scoped.length || scoped.some((s) => s.facet)) throw new Error(JSON.stringify(scoped));
 });
 
+check('the free-text row keeps its place however many values match', () => {
+	const F = loadFilters();
+	// Twenty authors with "an" in the name. "Anything containing this" is the
+	// one row that takes all twenty at once, and it was appended after the
+	// values and then cut off with the list: there exactly until it was needed.
+	const lib = [];
+	for (let i = 0; i < 20; i++) lib.push({ creators: ['Tanaka' + i], year: 2000 + i, title: 'T' + i });
+	const facets = lib.map(F.facets);
+	const rows = F.suggest('author: an', facets);
+	if (rows.length !== 12) throw new Error('a full list is twelve rows, got ' + rows.length);
+	const last = rows[rows.length - 1];
+	if (last.kind !== 'free') throw new Error('the last row is ' + last.kind + ' ' + last.label);
+	if (rows.filter((s) => s.kind === 'value').length !== 11) throw new Error('the values did not make room');
+	// Taken, it is the mask it says it is: all twenty.
+	const picked = F.parse(F.spliceTerm('author: an', last.field, last.term));
+	if (facets.filter((f) => F.matches(picked, f)).length !== 20) throw new Error('the free row is not the substring');
+	// With a smaller limit too -- the slot is one of the limit, not a thirteenth.
+	const five = F.suggest('author: an', facets, 5);
+	if (five.length !== 5 || five[4].kind !== 'free') throw new Error('limit 5: ' + five.map((s) => s.kind).join());
+	// Where a value on the list already says what was typed there is no free
+	// row, and its slot goes back to the values rather than standing empty.
+	const exact = F.suggest('author: tanaka1', facets);
+	if (exact.some((s) => s.kind === 'free')) throw new Error('offered the same thing twice');
+	if (exact.length !== 11) throw new Error('Tanaka1 and Tanaka10-19 are eleven rows, got ' + exact.length);
+	const crowded = lib.concat([{ creators: ['an'], year: 1990, title: 'X' }, { creators: ['an'], year: 1991, title: 'Y' }]).map(F.facets);
+	const full = F.suggest('author: an', crowded);
+	if (full.length !== 12 || full.some((s) => s.kind === 'free')) {
+		throw new Error('a list with the typed value on it: ' + full.map((s) => s.kind).join());
+	}
+});
+
 check('a picked completion pins the value where typed text stays a substring', () => {
 	const F = loadFilters();
 	const lib = library(F);
@@ -3592,6 +3670,17 @@ check('a chip round-trips through the box it is edited in', () => {
 		'year: 2013, 1990-2000, >=2020, <=1899',
 		'title: "He said ""hi"""',
 		'tales',
+		// Substrings the box would read its own way if they were written bare:
+		// it trims the ends, takes a leading keyword for the field and reads a
+		// year under year as a span. Each came back as a different mask.
+		'title: ~" of the "',
+		'~" soc"',
+		'~"author: soc"',
+		'~"Title : a subtitle"',
+		'~"subfield: x"',
+		'year: ~"2013"',
+		'year: ~">2010", 1999',
+		'year: ~"1990-2000"',
 	]) {
 		const f = F.parse(text);
 		if (!f) throw new Error('did not parse: ' + text);
@@ -3599,6 +3688,20 @@ check('a chip round-trips through the box it is edited in', () => {
 		if (!back || F.key(back) !== F.key(f)) {
 			throw new Error(text + ' -> ' + F.toInput(f) + ' -> ' + JSON.stringify(back));
 		}
+	}
+	// What needs no quoting gets none: a chip opened for editing reads as it
+	// was typed, colon and all, as long as the colon is not a keyword's.
+	for (const plain of ['tales', '10.1038:x', 'title: vol 3: the return', 'author: soc', 'publication: 2013']) {
+		if (F.toInput(F.parse(plain)) !== plain) throw new Error(plain + ' -> ' + F.toInput(F.parse(plain)));
+	}
+	// The free-text completion is written by the same rule, so taking it does
+	// not rescope the box to the field its own text happens to open with.
+	const lib = library(F);
+	const free = F.suggest('~"author: soc"', lib).find((s) => s.kind === 'free');
+	if (!free) throw new Error('no free row for a quoted substring');
+	const taken = F.parse(F.spliceTerm('~"author: soc"', free.field, free.term));
+	if (!taken || taken.field !== null || taken.terms[0].value !== 'author: soc') {
+		throw new Error('the free row rescoped the box: ' + JSON.stringify(taken));
 	}
 });
 
@@ -3735,6 +3838,173 @@ check('a reference everybody cites couples nobody', () => {
 	// the one agreement that means something.
 	if (pairs.length !== 1) throw new Error('background reference coupled ' + pairs.length + ' pairs');
 	if (pairs[0].a !== 'HELD0000' || pairs[0].b !== 'HELD0001') throw new Error('wrong pair survived');
+});
+
+/**
+ * coupling() as it was first written: one "a b" string, and one map lookup, for
+ * every two papers that share a reference. Kept here and only here, as the
+ * statement of what the pairs ARE. The one in graphCluster.js counts the same
+ * thing by number, and has to give this back to the last bit.
+ */
+function couplingByPairKey(edges, held, opts, C) {
+	opts = opts || {};
+	const direct = opts.direct == null ? C.DIRECT_WEIGHT : opts.direct;
+	const maxShare = opts.maxShare == null ? C.MAX_SHARE : opts.maxShare;
+	const inSet = new Set(held);
+	const refs = new Map();
+	const citers = new Map();
+	const cites = [];
+	for (const e of edges) {
+		if (!e || !e.from || !e.to || e.from === e.to) continue;
+		if (!inSet.has(e.from)) continue;
+		let mine = refs.get(e.from);
+		if (!mine) refs.set(e.from, mine = new Set());
+		if (mine.has(e.to)) continue;
+		mine.add(e.to);
+		let c = citers.get(e.to);
+		if (!c) citers.set(e.to, c = []);
+		c.push(e.from);
+		if (inSet.has(e.to)) cites.push(e);
+	}
+	const cap = Math.max(3, Math.floor(maxShare * refs.size));
+	const shared = new Map();
+	for (const work of [...citers.keys()].sort()) {
+		let group = citers.get(work);
+		if (group.length < 2 || group.length > cap) continue;
+		group = group.slice().sort();
+		for (let x = 0; x < group.length; x++) {
+			for (let y = x + 1; y < group.length; y++) {
+				const k = group[x] + ' ' + group[y];
+				shared.set(k, (shared.get(k) || 0) + 1);
+			}
+		}
+	}
+	const pairs = new Map();
+	shared.forEach((count, k) => {
+		const ab = k.split(' ');
+		pairs.set(k, { a: ab[0], b: ab[1], w: count / Math.sqrt(refs.get(ab[0]).size * refs.get(ab[1]).size) });
+	});
+	if (direct > 0) {
+		for (const { from, to } of cites) {
+			const lo = from < to ? from : to;
+			const hi = from < to ? to : from;
+			let p = pairs.get(lo + ' ' + hi);
+			if (!p) pairs.set(lo + ' ' + hi, p = { a: lo, b: hi, w: 0 });
+			if (!p.direct) { p.w += direct; p.direct = true; }
+		}
+	}
+	const out = [...pairs.values()];
+	out.sort((p, q) => (p.a < q.a ? -1 : p.a > q.a ? 1 : p.b < q.b ? -1 : p.b > q.b ? 1 : 0));
+	return { pairs: out, refs };
+}
+
+/**
+ * A collection with everything coupling has a rule about: subfields with their
+ * own literature, a few references half the field cites, citations among the
+ * held papers in both directions, held papers that are cited and cite nothing,
+ * the same edge twice, a paper citing itself, and edges out of papers that are
+ * not in the collection at all.
+ */
+function couplingStress(n, seed) {
+	const r = mulberry32(seed);
+	const key = i => 'K' + String(i).padStart(4, '0');
+	const held = [];
+	const edges = [];
+	for (let i = 0; i < n; i++) held.push(key(i));
+	for (let i = 0; i < n; i++) {
+		// One in ten has no readable reference list: an endpoint by being cited only.
+		if (i % 10 === 9) continue;
+		const topic = i % 6;
+		const m = 4 + Math.floor(r() * 24);
+		for (let j = 0; j < m; j++) {
+			const u = r();
+			if (u < 0.12) edges.push({ from: key(i), to: key(Math.floor(r() * n)) });
+			else if (u < 0.22) edges.push({ from: key(i), to: 'doi:10.1/common' + Math.floor(Math.pow(r(), 3) * 6) });
+			else edges.push({ from: key(i), to: 'doi:10.' + topic + '/w' + Math.floor(Math.pow(r(), 2) * 40) });
+		}
+		if (r() < 0.2) edges.push({ from: key(i), to: key(i) });
+		if (r() < 0.2 && edges.length) edges.push(Object.assign({}, edges[edges.length - 1]));
+	}
+	// A and B citing each other: one relation, not two.
+	edges.push({ from: key(0), to: key(1) }, { from: key(1), to: key(0) });
+	edges.push({ from: 'NOTHELD1', to: key(0) }, { from: 'NOTHELD1', to: 'doi:10.0/w0' });
+	return { held, edges };
+}
+
+check('coupling counted by number gives the pairs it gave counted by key', () => {
+	const C = loadCluster();
+	const same = (what, edges, held, opts) => {
+		const got = C.coupling(edges, held, opts);
+		const want = couplingByPairKey(edges, held, opts, C);
+		// The whole of it, order and weights included: Louvain visits pairs in
+		// this order and a weight a bit apart can tip a paper into another
+		// subfield, which would repaint a graph nobody touched.
+		if (JSON.stringify(got.pairs) !== JSON.stringify(want.pairs)) {
+			const at = got.pairs.findIndex((p, i) => JSON.stringify(p) !== JSON.stringify(want.pairs[i]));
+			throw new Error(what + ': ' + got.pairs.length + ' pairs vs ' + want.pairs.length + ', first apart at ' + at
+				+ ': ' + JSON.stringify(got.pairs[at]) + ' vs ' + JSON.stringify(want.pairs[at]));
+		}
+		const flat = refs => JSON.stringify([...refs].map(([k, v]) => [k, [...v]]));
+		if (flat(got.refs) !== flat(want.refs)) throw new Error(what + ': refs differ');
+		return got.pairs;
+	};
+
+	const lib = couplingLibrary();
+	same('the two-subfield library', lib.edges, lib.items.map(i => i.key));
+
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext(fs.readFileSync(path.join(addonDir, 'content/bench/fixture.js'), 'utf8'), ctx, { filename: 'fixture.js' });
+	const bench = ctx.ZGFixture.collection({ n: 300, seed: 3 });
+	if (!same('the benchmark collection', bench.edges, bench.items.map(i => i.key)).length) {
+		throw new Error('the benchmark collection couples nothing, so it compared nothing');
+	}
+
+	for (const seed of [1, 2, 3]) {
+		const { held, edges } = couplingStress(240, seed);
+		const pairs = same('stress ' + seed, edges, held);
+		// The comparison is only worth something if every rule was in play.
+		if (!pairs.some(p => p.direct && p.w > C.DIRECT_WEIGHT)) throw new Error('no pair both coupled and cited');
+		if (!pairs.some(p => p.direct && p.w === C.DIRECT_WEIGHT)) throw new Error('no pair joined by a citation alone');
+		if (!pairs.some(p => !p.direct)) throw new Error('no pair joined by coupling alone');
+		if (!pairs.some(p => /9$/.test(p.a) || /9$/.test(p.b))) throw new Error('no paper without a reference list in a pair');
+		same('stress ' + seed + ', no direct term', edges, held, { direct: 0 });
+		same('stress ' + seed + ', a heavier one', edges, held, { direct: 1.5 });
+		same('stress ' + seed + ', a tighter share', edges, held, { maxShare: 0.05 });
+		same('stress ' + seed + ', held as a Set', edges, new Set(held));
+		// And through to the answer the page draws.
+		const items = held.map(k => ({ key: k, title: 'spin lattice ' + k }));
+		const part = C.cluster(edges, items);
+		if (part.count < 2 || part.of.size < held.length / 2) throw new Error('stress ' + seed + ' did not partition');
+	}
+});
+
+check('coupling builds no string for a pair of papers', () => {
+	// What made it slow was not the counting, which has to happen once for every
+	// two papers sharing a reference, but what each count cost: a "keyA keyB"
+	// string built and hashed. So this counts the strings. Two hundred papers
+	// citing twenty works each out of a hundred is 78,000 agreements between
+	// nearly every one of the 19,900 pairs, read from 4,000 edges -- and the
+	// strings keyed into a map may not outnumber the edges.
+	const ctx = {};
+	vm.createContext(ctx);
+	vm.runInContext('var keyed = 0; (function () { var set = Map.prototype.set;'
+		+ ' Map.prototype.set = function (k, v) { if (typeof k === "string") keyed++; return set.call(this, k, v); }; }());', ctx);
+	vm.runInContext(fs.readFileSync(path.join(addonDir, 'content/graphCluster.js'), 'utf8'), ctx, { filename: 'graphCluster.js' });
+	const r = mulberry32(11);
+	const held = [];
+	const edges = [];
+	for (let i = 0; i < 200; i++) {
+		held.push('P' + String(i).padStart(3, '0'));
+		const cited = new Set();
+		while (cited.size < 20) cited.add(Math.floor(r() * 100));
+		for (const w of cited) edges.push({ from: held[i], to: 'doi:10.1/w' + w });
+	}
+	const { pairs } = ctx.ZGCluster.coupling(edges, held);
+	if (pairs.length < 10000) throw new Error('only ' + pairs.length + ' pairs: not the dense case this is about');
+	if (ctx.keyed > edges.length) {
+		throw new Error(ctx.keyed + ' strings keyed for ' + edges.length + ' edges and ' + pairs.length + ' pairs');
+	}
 });
 
 check('the partition recovers subfields that never cite each other', () => {
@@ -5330,6 +5600,31 @@ check('a translated keyword scopes the box, and the English one still does', () 
 	if (F.parse('author: Kucsko').field !== 'author') throw new Error('author: stopped working');
 	// A prefix that is neither is still a search term, not a syntax error.
 	if (F.parse('10.1038:x').field !== null) throw new Error('invented a field for a DOI');
+});
+
+check('every en-US keyword scopes the box under every language', () => {
+	// "The English one still does" was true of seven facets out of eight: the
+	// box answered to a facet's own name, and the subfield facet is `cluster`
+	// in the source and "subfield:" on an English panel. So the word English
+	// documentation and screenshots spell it with was a bare search for the
+	// text "subfield: x" on a German one, which matches nothing.
+	const en = Ftl.bundle(readLocale('en-US'), 'en-US', PREFIX);
+	for (const code of fs.readdirSync(localeDir)) {
+		if (!fs.existsSync(path.join(localeDir, code, FTL_NAME))) continue;
+		const F = filtersIn(code);
+		for (const f of FACETS) {
+			const key = en.t('fieldkey-' + f);
+			if (F.fieldFor(key) !== f) throw new Error(code + ': ' + key + ': -> ' + F.fieldFor(key));
+			const mask = F.parse(key.toUpperCase() + ': x');
+			if (!mask || mask.field !== f) throw new Error(code + ': ' + key + ': does not scope the box');
+		}
+	}
+	// And with no bundle at all, which is how every other filter check runs.
+	if (loadFilters().parse('subfield: x').field !== 'cluster') throw new Error('subfield: needs a translator');
+	// A German chip still goes back into the box in German.
+	const de = filtersIn('de-DE');
+	if (de.toInput(de.parse('subfield: x')) !== 'Teilgebiet: x') throw new Error(de.toInput(de.parse('subfield: x')));
+	if (de.toInput(de.parse('~"subfield: x"')) !== '~"subfield: x"') throw new Error('an English keyword in a substring was left bare');
 });
 
 check('a chip round-trips through the box in the language it is shown in', () => {
@@ -6999,8 +7294,112 @@ check('the path recorder writes the calls the edge tracer makes', () => {
 	rec.lineTo(-7.5, 8);
 	rec.closePath();
 	const d = rec.take();
-	if (d !== 'M1 2Q3.33 0 5 6L-7.5 8Z') throw new Error(d);
+	// At the recorder's own six decimals: it traces before the figure's zoom
+	// is known, and svg() shortens the outline to what that zoom can show.
+	if (d !== 'M1 2Q3.333 -0.001 5 6L-7.5 8Z') throw new Error(d);
 	if (rec.take() !== '') throw new Error('take() did not clear');
+	rec.moveTo(0.00000049, -0.0000004);
+	if (rec.take() !== 'M0 0') throw new Error('a "-0" or an exponent got into path data');
+});
+
+/** The viewBox of an exported figure, as [x, y, w, h]. */
+function viewBoxOf(svg) {
+	const m = svg.match(/viewBox="([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+)"/);
+	if (!m) throw new Error('no viewBox');
+	return m.slice(1).map(Number);
+}
+
+check('an exported figure has room for an edge that bows past its nodes', () => {
+	const X = loadExport();
+	// Two papers one above the other on the rim of the graph, 600 units apart,
+	// and the bow force-graph draws between them: 8% of the length for the
+	// control point, so the curve itself swings 24 units out to the left. The
+	// figure was sized from circles and names alone, and the root element
+	// clips whatever its viewBox does not hold.
+	const rec = X.recorder();
+	rec.moveTo(0.5, 4);
+	rec.quadraticCurveTo(-47.5, 300, 0.5, 596);
+	rec.lineTo(-0.5, 596);
+	rec.quadraticCurveTo(-48.5, 300, -0.5, 4);
+	rec.closePath();
+	const scene = {
+		scale: 1, theme: {}, labels: [], legend: null,
+		edges: [{ d: rec.take(), fill: '#999999' }],
+		nodes: [
+			{ x: 0, y: 0, r: 4, fill: '#ff6666', slices: null, solid: true, ring: null, title: null },
+			{ x: 0, y: 600, r: 4, fill: '#ff6666', slices: null, solid: true, ring: null, title: null },
+		],
+	};
+	const [x, , w] = viewBoxOf(X.svg(scene));
+	// The outer side turns round at x = -24.5, and gets the 16px of air every
+	// circle gets.
+	if (!(x <= -24.5 - 16 + 0.01)) throw new Error('the bow is cut off: the figure starts at x = ' + x);
+	// ...and no more than that. The control point is at -48.5, twice as far out
+	// as the curve ever goes; sizing the figure to it would be a margin of
+	// nothing down one side.
+	if (!(x > -48.5)) throw new Error('sized to the control point: ' + x);
+	if (!(x + w >= 4 + 16 - 0.01)) throw new Error('the right-hand side moved: ' + (x + w));
+	// A straight edge between the same two changes nothing: it is inside the
+	// box its circles span.
+	rec.moveTo(0.5, 4);
+	rec.lineTo(0.5, 596);
+	rec.lineTo(-0.5, 596);
+	rec.lineTo(-0.5, 4);
+	rec.closePath();
+	scene.edges = [{ d: rec.take(), fill: '#999999' }];
+	if (viewBoxOf(X.svg(scene))[0] !== -20) throw new Error('a straight edge resized the figure');
+	// Path data that is not the recorder's is passed through as it came,
+	// rather than being measured as something it is not.
+	scene.edges = [{ d: 'M0 4C-90 200 -90 400 0 596', fill: '#999999' }];
+	const foreign = X.svg(scene);
+	if (!foreign.includes('d="M0 4C-90 200 -90 400 0 596"')) throw new Error('rewrote a path it cannot read');
+	if (viewBoxOf(foreign)[0] !== -20) throw new Error('measured a path it cannot read');
+});
+
+check('a figure taken at deep zoom keeps the width of its edges', () => {
+	const X = loadExport();
+	// At 400x a line one pixel wide is 0.0025 graph units wide. Written to a
+	// hundredth of a unit both of its sides landed on y = 0: an outline with
+	// nothing inside, so the edge was not in the figure at all.
+	const trace = () => {
+		const rec = X.recorder();
+		rec.moveTo(0.1, 0.00125);
+		rec.lineTo(0.9, 0.00125);
+		rec.lineTo(0.9, -0.00125);
+		rec.lineTo(0.1, -0.00125);
+		rec.closePath();
+		return rec.take();
+	};
+	const scene = (scale) => ({
+		scale, theme: {}, legend: null,
+		edges: [{ d: trace(), fill: '#999999' }],
+		nodes: [
+			{ x: 0.12345678, y: 0, r: 0.1, fill: '#ff6666', slices: null, solid: true, ring: { r: 0.11, width: 0.005, color: '#0a67c2' }, title: null },
+			{ x: 1, y: 0, r: 0.1, fill: '#ff6666', slices: ['#ff6666', '#5fb236'], solid: false, ring: null, title: null },
+		],
+		labels: [{ x: 0.5, y: 0.2, px: 0.0275, w: 0.2, text: 'Smith2020', fill: '#000000', halo: false }],
+	});
+	const edge = (svg) => (svg.match(/<g id="edges">\n<path d="([^"]*)"/) || [])[1];
+	const deep = X.svg(scene(400));
+	assertWellFormed(deep);
+	const ys = [...edge(deep).matchAll(/[ML][-\d.]+ ([-\d.]+)/g)].map((m) => Number(m[1]));
+	if (Math.max(...ys) - Math.min(...ys) !== 0.0025) throw new Error('the edge is ' + (Math.max(...ys) - Math.min(...ys)) + ' wide: ' + edge(deep));
+	// The same hundredth of a screen pixel for everything else in graph units.
+	if (!deep.includes('cx="0.12346"')) throw new Error('a circle moved off its paper');
+	if (!deep.includes('stroke-width="0.005"')) throw new Error('the pick ring lost its width');
+	if (!deep.includes('font-size="0.0275"')) throw new Error('a name changed size');
+	if (!/<path d="M1 0L1 -0\.1A0\.1 0\.1 0 0 1 1 0\.1Z"/.test(deep)) throw new Error('a wedge was rounded differently from its circle');
+	// And a figure at zoom 1 or below is as short as it ever was: two decimals.
+	for (const scale of [1, 0.25]) {
+		const flat = X.svg(scene(scale));
+		if (!flat.includes('cx="0.12"')) throw new Error('zoom ' + scale + ' grew decimals');
+		if (/\d\.\d{3,}/.test(edge(flat))) throw new Error('zoom ' + scale + ' kept the recorder\'s decimals: ' + edge(flat));
+	}
+	// One more decimal for each factor of ten, so the step is a hundredth of a
+	// pixel at any zoom the page can reach.
+	for (const [scale, want] of [[2, '0.123'], [10, '0.123'], [11, '0.1235'], [100, '0.1235'], [1000, '0.12346']]) {
+		if (!X.svg(scene(scale)).includes('cx="' + want + '"')) throw new Error('zoom ' + scale + ' is not written as ' + want);
+	}
 });
 
 check('an exported GraphML declares every attribute it uses and links real nodes', () => {

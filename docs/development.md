@@ -164,7 +164,10 @@ partition's modularity, and under about 0.3 the split is more the algorithm than
 
 The maths is `content/graphCluster.js` — pure, no DOM, and unit-tested against fixtures whose
 answer is known, for the same reason `nodeScale.js` is: a wrong partition is tedious to spot by
-looking at a coloured graph. See the whole thing over a real library with
+looking at a coloured graph. Coupling is counted by paper number, a row at a time into one array,
+because the count runs once for every two papers sharing a reference and a string per pair made
+it about five times slower; `npm test` holds the result to the pairwise count it replaced, weights and
+order included. See the whole thing over a real library with
 `node tools/cli.js … --offline --include-external --clusters`.
 
 ## What's missing
@@ -829,6 +832,14 @@ Eight facets can be masked on: `author`, `year`, `tag`, `type`, `publication`,
 `field:` prefix is asked of all eight at once, so `Tales` finds the paper without
 you having to know which field it lives in.
 
+Those are the facets' names in the code and in a saved mask. What goes before
+the colon is a **keyword**, and it is the panel language's own word: `subfield:`
+on an English panel, `Teilgebiet:` on a German one. The box answers to three
+vocabularies under every language — the language's keywords, the names above,
+and the en-US keywords — so `subfield: sensing` copied out of an English
+screenshot scopes a German box too, and comes back out of its chip as
+`Teilgebiet: sensing`.
+
 `tag` is the Zotero tags on the item, the ones typed by hand and the ones a
 translator attached alike — which of the two a tag is says where it came from,
 not what it means. An item carries any number of them, and a mask matches on all
@@ -867,6 +878,12 @@ apart by quoting: `"Nature"` is pinned, `nat` is a substring. Quoting is also ho
 a value containing a comma survives the split — `publication: "Ann. Phys., Lpz."`
 is one value, not two — and `~"a, b"` is a substring that contains one.
 
+A chip put back in the box is written so that the box reads the same mask back.
+Most substrings go back bare. The ones the box would read its own way go back as
+`~"…"`: one with a space at either end, which it would trim; one that opens with
+a keyword and a colon, which it would take for a field; and a year or a span
+under `year`, which it would take for a range.
+
 `year` also takes comparisons and ranges — `year:2013`, `year:>2010`,
 `year:>=2012`, `year:<2000`, `year:2010-2015` — because "papers since 2015" is a
 question people actually ask and listing eleven years to ask it would be absurd.
@@ -892,6 +909,13 @@ shorter list.
 With the box empty the list names the six fields, so the vocabulary is
 discoverable without documentation. Past the first comma it stops offering field
 names — the field is settled by then.
+
+The last row is **anything containing** what was typed: the substring itself as a
+mask, for when what you want is all of the values above it at once. Its place is
+kept before the values are dealt out, so a full list is eleven values and that
+row, not twelve values and no way to take them together. It is left out only
+when a value on the list already says the same thing, and the row goes back to
+the values.
 
 **Outside references are not masked.** A ghost is a DOI and, with lookup on, a
 title — masking it on author or publication would delete every one of them the
@@ -1030,7 +1054,10 @@ identifier (`doi.org`, `arxiv.org`, `openalex.org`). Only http(s) is ever handed
 to `Zotero.launchURL` — the `url` field is free text and routinely holds a local
 path. The URL building is pure and lives in `content/nodeLinks.js`, which also
 carries the one copy of `normDoi()` the content page needs; `npm test` asserts
-that copy still agrees with the core one.
+that copy still agrees with the core one — on a DOI that ends in its own closing
+bracket, on one that arrived percent-encoded in a link and on one with a
+publisher's `/full` still attached, which are the three steps the copy once
+lacked, as well as on the plain spellings.
 
 **Add to Zotero** appears in three places — the ghost's context menu, the detail
 card that menu's *Show details* opens, and the `+` in *what is missing* — and all
@@ -1111,6 +1138,11 @@ saves it through Zotero's file picker (`lib/exportFile.js`).
   before exporting for more of them. A pick ring and isolation's fade are kept;
   pin badges and group flags are not. Colours are the current theme's, the
   background included, written as hex plus opacity (SVG 1.1) rather than `rgba()`.
+  The figure is sized to hold everything drawn plus 16px of air, the swing of a
+  bowed edge past its two nodes included. Coordinates are written to a hundredth
+  of a screen pixel at the zoom the figure was taken at: two decimals at zoom 1
+  and below, one more for each factor of ten above it, so a hairline edge at
+  400× still has two sides.
 - **GraphML** has, per node, `label` (citekey), `title`, `first_author`,
   `creators`, `year`, `collection`, `subfield`, `item_type`, `publication`, `doi`,
   `held` (false for outside references), `cited_here`, `cited_global`, `color`

@@ -139,28 +139,41 @@
 			});
 		}
 
+		// The shape of lib/graphTab.js toWireExternal(). `key` is the namespaced
+		// string an edge's `to` carries and the one render() looks a ghost up
+		// under; `ns` and the bare `id` are what its menu opens. This wrote the
+		// key into `id` and no `key` at all, so every outside reference was
+		// looked up as undefined and the benchmark drew none of them -- while
+		// counting them in its header.
 		var external = [];
 		var extCount = Math.round(n * externalFrac);
 		for (var x = 0; x < extCount; x++) {
-			var xid = 'doi:10.' + (5000 + x) + '/out' + x;
+			var xdoi = '10.' + (5000 + x) + '/out' + x;
+			var xkey = 'doi:' + xdoi;
 			var cites = 1 + Math.floor(Math.pow(r(), 3) * 12);
+			var xvia = [];
 			external.push({
-				id: xid,
+				key: xkey,
+				ns: 'doi',
+				id: xdoi,
 				title: enriched && r() < 0.6 ? title(r) : null,
 				creators: enriched && r() < 0.6 ? [pick(r, SURNAMES)] : [],
 				year: enriched ? 1975 + Math.floor(r() * 50) : null,
 				citedByGlobal: enriched ? Math.floor(Math.pow(r(), 4) * 20000) : null,
 				citedBy: cites,
+				via: xvia,
 			});
 			for (var c = 0; c < cites; c++) {
-				edges.push({
+				var edge = {
 					from: items[Math.floor(r() * n)].key,
-					to: xid,
+					to: xkey,
 					confidence: r() < 0.7 ? 0.95 : 0.5,
 					via: [pick(r, VIA)],
 					evidence: [],
 					doi: null,
-				});
+				};
+				if (xvia.indexOf(edge.via[0]) < 0) xvia.push(edge.via[0]);
+				edges.push(edge);
 			}
 		}
 

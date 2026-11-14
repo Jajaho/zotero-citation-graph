@@ -162,7 +162,11 @@ the collision force and the label ranking are all tuned against — uniform
 random degrees would make every one of them look easier than it is. `npm test`
 checks the fixture is a payload the renderer can actually read, since a
 malformed one does not fail loudly: it draws an empty graph and reports
-excellent frame times for rendering nothing.
+excellent frame times for rendering nothing. That check holds the outside
+references to the shape the builder and chrome give them — `key`, `ns` and the
+bare `id` — because it has happened: they once carried their key under `id`,
+the page looked each one up under a `key` it did not have, and every run drew
+the held items alone while its header counted the outside references in.
 
 ## Measuring a performance switch
 

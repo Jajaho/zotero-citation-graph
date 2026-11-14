@@ -38,12 +38,38 @@
 			});
 	}
 
-	/** A coordinate, short: two decimals is a hundredth of a graph unit, far
-	 *  below anything a figure can show, and it keeps a big graph's file from
-	 *  being mostly digits. Never "-0", which some parsers read as a string. */
-	function num(v) {
-		var n = Math.round((Number(v) || 0) * 100) / 100;
+	var POW = [1, 10, 100, 1e3, 1e4, 1e5, 1e6];
+
+	/** As many decimals as anything in here is ever written with, and what the
+	 *  path recorder keeps: it traces before the figure's zoom is known. */
+	var RAW = POW.length - 1;
+
+	/** A coordinate, short: two decimals unless told otherwise, which keeps a
+	 *  big graph's file from being mostly digits. Never "-0", which some
+	 *  parsers read as a string. */
+	function num(v, dp) {
+		var f = POW[dp == null ? 2 : dp] || 100;
+		var n = Math.round((Number(v) || 0) * f) / f;
 		return n === 0 ? '0' : String(n);
+	}
+
+	/**
+	 * How many decimals a graph-unit coordinate needs in a figure taken at this
+	 * zoom.
+	 *
+	 * Two is a hundredth of a graph unit, and at zoom 1 that is a hundredth of
+	 * a pixel: far below anything a figure can show. Zoomed in it is not. A
+	 * line a pixel wide is 0.0025 units wide at 400x, and two decimals put
+	 * both of its sides on the same coordinate -- an outline with nothing
+	 * inside it, so the edge is simply not in the file, and every circle sits
+	 * up to two pixels from where it was drawn. One more decimal for each
+	 * factor of ten keeps what is written to a hundredth of a screen pixel at
+	 * any zoom, and leaves a figure taken at zoom 1 or below exactly as short
+	 * as it was.
+	 */
+	function decimals(scale) {
+		if (!(scale > 1)) return 2;
+		return Math.min(RAW, 2 + Math.ceil(Math.log10(scale) - 1e-9));
 	}
 
 	// --- paint ----------------------------------------------------------
@@ -99,18 +125,22 @@
 	 * makes on the canvas, into one of these -- so the figure's edges are the
 	 * screen's edges, head and bow and all, from the one function that knows how
 	 * they are shaped.
+	 *
+	 * Written at RAW decimals, not at the figure's: the tracer runs before
+	 * svg() is handed the zoom, and svg() shortens each outline to what that
+	 * zoom can show as it reads it -- see fitPath().
 	 */
 	function PathRecorder() {
 		this.parts = [];
 	}
 	PathRecorder.prototype.moveTo = function (x, y) {
-		this.parts.push('M' + num(x) + ' ' + num(y));
+		this.parts.push('M' + num(x, RAW) + ' ' + num(y, RAW));
 	};
 	PathRecorder.prototype.lineTo = function (x, y) {
-		this.parts.push('L' + num(x) + ' ' + num(y));
+		this.parts.push('L' + num(x, RAW) + ' ' + num(y, RAW));
 	};
 	PathRecorder.prototype.quadraticCurveTo = function (cx, cy, x, y) {
-		this.parts.push('Q' + num(cx) + ' ' + num(cy) + ' ' + num(x) + ' ' + num(y));
+		this.parts.push('Q' + num(cx, RAW) + ' ' + num(cy, RAW) + ' ' + num(x, RAW) + ' ' + num(y, RAW));
 	};
 	PathRecorder.prototype.closePath = function () {
 		this.parts.push('Z');
@@ -122,16 +152,72 @@
 		return d;
 	};
 
+	// Only what the recorder writes: absolute M, L, Q and Z over plain numbers.
+	var PATH_OURS = /^[MLQZ\d\s,.eE+-]*$/;
+	var PATH_STEP = /([MLQ])([^MLQZ]*)|Z/g;
+
+	/** Where a quadratic from p0 past control c to p2 turns round on one axis,
+	 *  or p0 when it does not turn between its ends. */
+	function quadTurn(p0, c, p2) {
+		var den = p0 - 2 * c + p2;
+		if (den === 0) return p0;
+		var t = (p0 - c) / den;
+		if (!(t > 0 && t < 1)) return p0;
+		var s = 1 - t;
+		return s * s * p0 + 2 * s * t * c + t * t * p2;
+	}
+
+	/**
+	 * A recorded outline, at `dp` decimals, with everywhere it reaches handed
+	 * to grow(x0, y0, x1, y1).
+	 *
+	 * The reach is the curve's own, not its control point's: a bow's control
+	 * point stands twice as far off the chord as the bow itself ever gets, and
+	 * a figure sized to hold it would have a margin of nothing down one side.
+	 *
+	 * Anything that is not the recorder's own notation comes back untouched and
+	 * unmeasured, rather than being read as something it is not.
+	 */
+	function fitPath(d, dp, grow) {
+		d = String(d);
+		if (!PATH_OURS.test(d)) return d;
+		var out = '';
+		var px = 0;
+		var py = 0;
+		var m;
+		PATH_STEP.lastIndex = 0;
+		while ((m = PATH_STEP.exec(d))) {
+			if (!m[1]) {
+				out += 'Z';
+				continue;
+			}
+			var v = m[2].trim().split(/[\s,]+/).map(Number);
+			if (v.length !== (m[1] === 'Q' ? 4 : 2) || v.some(isNaN)) return d;
+			var x = v[v.length - 2];
+			var y = v[v.length - 1];
+			if (m[1] === 'Q') {
+				var tx = quadTurn(px, v[0], x);
+				var ty = quadTurn(py, v[1], y);
+				grow(tx, ty, tx, ty);
+			}
+			grow(x, y, x, y);
+			px = x;
+			py = y;
+			out += m[1] + v.map(function (n) { return num(n, dp); }).join(' ');
+		}
+		return out;
+	}
+
 	/** One wedge of a circle, clockwise from `from` to `to` (radians, 0 = three
 	 *  o'clock, as on the canvas). */
-	function wedge(x, y, r, from, to) {
+	function wedge(x, y, r, from, to, dp) {
 		var x0 = x + r * Math.cos(from);
 		var y0 = y + r * Math.sin(from);
 		var x1 = x + r * Math.cos(to);
 		var y1 = y + r * Math.sin(to);
 		var large = to - from > Math.PI ? 1 : 0;
-		return 'M' + num(x) + ' ' + num(y) + 'L' + num(x0) + ' ' + num(y0)
-			+ 'A' + num(r) + ' ' + num(r) + ' 0 ' + large + ' 1 ' + num(x1) + ' ' + num(y1) + 'Z';
+		return 'M' + num(x, dp) + ' ' + num(y, dp) + 'L' + num(x0, dp) + ' ' + num(y0, dp)
+			+ 'A' + num(r, dp) + ' ' + num(r, dp) + ' 0 ' + large + ' 1 ' + num(x1, dp) + ' ' + num(y1, dp) + 'Z';
 	}
 
 	// --- SVG ------------------------------------------------------------
@@ -172,8 +258,12 @@
 		var s = scene.scale > 0 ? scene.scale : 1;
 		var theme = scene.theme || {};
 		measure = measure || function (text, px) { return String(text).length * px * 0.6; };
+		// Graph units are written through g(); px -- the legend, the size of the
+		// figure -- keep num()'s two decimals at any zoom.
+		var dp = decimals(s);
+		function g(v) { return num(v, dp); }
 
-		// The extent of what is drawn: every circle, ring and name.
+		// The extent of what is drawn: every circle, ring, name and edge.
 		var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
 		function grow(ax, ay, bx, by) {
 			if (ax < x0) x0 = ax;
@@ -187,6 +277,14 @@
 		});
 		(scene.labels || []).forEach(function (l) {
 			grow(l.x - l.w / 2, l.y - l.px / 2, l.x + l.w / 2, l.y + l.px / 2);
+		});
+		// Edges too. A straight one never leaves the box its two circles span,
+		// but a bow does: LINK_CURVE of its length to one side, which for a long
+		// edge along the rim of the graph is further than the padding below, and
+		// the root element clips what its viewBox does not hold.
+		var edges = [];
+		(scene.edges || []).forEach(function (e) {
+			if (e.d) edges.push({ d: fitPath(e.d, dp, grow), fill: e.fill });
 		});
 		if (!(x1 >= x0)) {
 			x0 = y0 = 0;
@@ -212,17 +310,17 @@
 		out.push('<?xml version="1.0" encoding="UTF-8" standalone="no"?>');
 		out.push('<svg xmlns="' + SVGNS + '" version="1.1"'
 			+ ' width="' + Math.ceil(w * s) + '" height="' + Math.ceil(h * s) + '"'
-			+ ' viewBox="' + num(x0) + ' ' + num(y0) + ' ' + num(w) + ' ' + num(h) + '">');
+			+ ' viewBox="' + g(x0) + ' ' + g(y0) + ' ' + g(w) + ' ' + g(h) + '">');
 		if (scene.title) out.push('<title>' + esc(scene.title) + '</title>');
 		if (legend && legend.defs) out.push('<defs>' + legend.defs + '</defs>');
 		if (theme.bg) {
-			out.push('<rect id="background" x="' + num(x0) + '" y="' + num(y0)
-				+ '" width="' + num(w) + '" height="' + num(h) + '" ' + fillAttrs(theme.bg) + '/>');
+			out.push('<rect id="background" x="' + g(x0) + '" y="' + g(y0)
+				+ '" width="' + g(w) + '" height="' + g(h) + '" ' + fillAttrs(theme.bg) + '/>');
 		}
 
 		out.push('<g id="edges">');
-		(scene.edges || []).forEach(function (e) {
-			if (e.d) out.push('<path d="' + e.d + '" ' + fillAttrs(e.fill) + '/>');
+		edges.forEach(function (e) {
+			out.push('<path d="' + e.d + '" ' + fillAttrs(e.fill) + '/>');
 		});
 		out.push('</g>');
 
@@ -234,27 +332,27 @@
 				var step = 2 * Math.PI / n.slices.length;
 				var first = 0;
 				if (n.solid) {
-					parts.push(circle(n.x, n.y, n.r, fillAttrs(n.slices[0])));
+					parts.push(circle(n.x, n.y, n.r, fillAttrs(n.slices[0]), dp));
 					first = 1;
 				}
 				for (var i = first; i < n.slices.length; i++) {
 					var from = -Math.PI / 2 + i * step;
-					parts.push('<path d="' + wedge(n.x, n.y, n.r, from, from + step) + '" '
+					parts.push('<path d="' + wedge(n.x, n.y, n.r, from, from + step, dp) + '" '
 						+ fillAttrs(n.slices[i]) + '/>');
 				}
 				out.push('<g>' + tip + parts.join('') + '</g>');
 			}
 			else if (tip) {
-				out.push('<circle cx="' + num(n.x) + '" cy="' + num(n.y) + '" r="' + num(n.r) + '" '
+				out.push('<circle cx="' + g(n.x) + '" cy="' + g(n.y) + '" r="' + g(n.r) + '" '
 					+ fillAttrs(n.fill) + '>' + tip + '</circle>');
 			}
 			else {
-				out.push(circle(n.x, n.y, n.r, fillAttrs(n.fill)));
+				out.push(circle(n.x, n.y, n.r, fillAttrs(n.fill), dp));
 			}
 			if (n.ring) {
-				out.push('<circle cx="' + num(n.x) + '" cy="' + num(n.y) + '" r="' + num(n.ring.r)
+				out.push('<circle cx="' + g(n.x) + '" cy="' + g(n.y) + '" r="' + g(n.ring.r)
 					+ '" fill="none" ' + fillAttrs(n.ring.color, 'stroke')
-					+ ' stroke-width="' + num(n.ring.width) + '"/>');
+					+ ' stroke-width="' + g(n.ring.width) + '"/>');
 			}
 		});
 		out.push('</g>');
@@ -268,10 +366,10 @@
 			// The canvas centres a name on its node with textBaseline 'middle';
 			// SVG 1.1 has only the baseline, which sits about a third of the type
 			// size below that middle in any sans.
-			var attrs = 'x="' + num(l.x) + '" y="' + num(l.y + l.px * 0.35) + '" font-size="' + num(l.px) + '" '
+			var attrs = 'x="' + g(l.x) + '" y="' + g(l.y + l.px * 0.35) + '" font-size="' + g(l.px) + '" '
 				+ fillAttrs(l.fill);
 			if (l.halo && theme.bg) {
-				attrs += ' ' + fillAttrs(theme.bg, 'stroke') + ' stroke-width="' + num(l.px * 0.3)
+				attrs += ' ' + fillAttrs(theme.bg, 'stroke') + ' stroke-width="' + g(l.px * 0.3)
 					+ '" paint-order="stroke"';
 			}
 			out.push('<text ' + attrs + '>' + esc(l.text) + '</text>');
@@ -281,7 +379,7 @@
 		if (legend) {
 			var lx = x1 - pad + LEGEND.margin / s;
 			var ly = y0 + pad;
-			out.push('<g id="legend" transform="translate(' + num(lx) + ' ' + num(ly) + ') scale(' + (1 / s) + ')"'
+			out.push('<g id="legend" transform="translate(' + g(lx) + ' ' + g(ly) + ') scale(' + (1 / s) + ')"'
 				+ ' font-family="sans-serif" font-size="' + LEGEND.font + '">');
 			out.push(legend.body);
 			out.push('</g>');
@@ -291,8 +389,8 @@
 		return out.join('\n') + '\n';
 	}
 
-	function circle(x, y, r, fill) {
-		return '<circle cx="' + num(x) + '" cy="' + num(y) + '" r="' + num(r) + '" ' + fill + '/>';
+	function circle(x, y, r, fill, dp) {
+		return '<circle cx="' + num(x, dp) + '" cy="' + num(y, dp) + '" r="' + num(r, dp) + '" ' + fill + '/>';
 	}
 
 	/**
