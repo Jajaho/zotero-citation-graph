@@ -977,6 +977,10 @@
 		render();
 		// After render(), which is what decides whether the node is still drawn.
 		keepHover();
+		// A finished graph on a layout that is at rest and staying there: the
+		// engine will not stop again to say so. See firstFit().
+		if (!engineLive && !engineDue) firstFit();
+		offerHint();
 	};
 
 	/**
@@ -1041,8 +1045,60 @@
 	}
 
 	window.zgSetStatus = function (text) {
-		elStatus.textContent = text || '';
+		// The hint, while there is one, is what the line says when nothing else
+		// has anything to say -- see offerHint().
+		elStatus.textContent = text || hint || '';
 	};
+
+	/**
+	 * What a click, a double click and a right click do on a paper, said once.
+	 *
+	 * It was the second half of every node's tooltip: the same sentence on
+	 * every hover, for as long as the plugin is installed, taking the room the
+	 * paper's own details wanted. The gestures are worth saying to someone who
+	 * has never opened a graph and to nobody else, so they are said to that
+	 * person: on the status line, the first time a profile sees a finished
+	 * graph, for HINT_MS or until a paper is clicked.
+	 *
+	 * Under whatever else the line has to say, not instead of it. Chrome clears
+	 * the line when a build ends -- zgSetStatus('') -- which is exactly when
+	 * this is offered, so the hint is kept beside the line and shown whenever
+	 * the line is otherwise empty; a status that arrives covers it, and
+	 * uncovers it again on leaving.
+	 *
+	 * Once per profile is localStorage's to keep, and a resource:// page can be
+	 * denied it. Then it is once per tab, which is the most that can be kept.
+	 */
+	const HINT_SEEN_KEY = 'zg.hint.gestures';
+	const HINT_MS = 15000;
+	let hint = '';
+	let hintOffered = false;
+	let hintTimer = null;
+
+	function offerHint() {
+		if (hintOffered || !raw) return;
+		// A finished graph with something on it: there is nothing to click on
+		// an empty one, and a build still landing has the line to itself.
+		let meta = raw.meta || {};
+		if ((meta.phase && meta.phase !== 'done') || meta.failed || !drawnNodes.length) return;
+		hintOffered = true;
+		try {
+			if (window.localStorage.getItem(HINT_SEEN_KEY) === '1') return;
+			window.localStorage.setItem(HINT_SEEN_KEY, '1');
+		}
+		catch (e) { /* no storage: once per tab */ }
+		hint = t('hint-gestures');
+		if (!elStatus.textContent) elStatus.textContent = hint;
+		hintTimer = window.setTimeout(endHint, HINT_MS);
+	}
+
+	function endHint() {
+		window.clearTimeout(hintTimer);
+		hintTimer = null;
+		if (!hint) return;
+		if (elStatus.textContent === hint) elStatus.textContent = '';
+		hint = '';
+	}
 
 	/**
 	 * Whether the item pane is open.
@@ -1157,27 +1213,76 @@
 	}
 
 	/**
-	 * Tooltip for a ghost. Both counts appear, and both are named: `citedBy` is
-	 * citers inside this collection, `citedByGlobal` is the whole literature.
-	 * Conflating them would undo the reason ghosts are computed at all -- see
-	 * docs/external-references.md part 4.
+	 * A node's tooltip, as three lines of a card: what it is, who wrote it when
+	 * and where, and how much it is cited. Any line with nothing to say is left
+	 * out, and a paper with only a title is only a title.
+	 *
+	 * It was one line of everything, ending in the same sentence about clicking
+	 * on every hover -- see offerHint() for where that went -- and it had no
+	 * author and no venue, though the payload carries both and they are what a
+	 * reader hovers a citekey to find out.
+	 *
+	 * Markup, because force-graph sets a tooltip as innerHTML: every word that
+	 * came from a library or off the network is escaped on its way in, and the
+	 * only tags are the ones written here. graph.css draws the card
+	 * (.float-tooltip-kap) and these three classes.
 	 */
+	function tipCard(title, meta, counts) {
+		let html = '<div class="tip-title">' + escapeHtml(title) + '</div>';
+		if (meta.length) html += '<div class="tip-meta">' + meta.join(' · ') + '</div>';
+		if (counts.length) html += '<div class="tip-counts">' + counts.join(' · ') + '</div>';
+		return html;
+	}
+
+	/**
+	 * A count in a sentence the locale owns, with the number set apart.
+	 *
+	 * The sentence is formatted with the bare number, which is what picks its
+	 * plural, and the number is then found in it and written the way the
+	 * reader's locale groups its digits, in bold. A sentence with no number in
+	 * it -- "no paper here cites it" -- is returned as it is.
+	 *
+	 * Handed the sentence rather than its id, so that the t() that asks for it
+	 * is written out where npm test's scan for unused messages can see it.
+	 */
+	function tipCount(sentence, n) {
+		let text = escapeHtml(sentence);
+		let plain = String(n);
+		let at = text.indexOf(plain);
+		if (at < 0) return text;
+		return text.slice(0, at) + '<b>' + escapeHtml(Number(n).toLocaleString()) + '</b>'
+			+ text.slice(at + plain.length);
+	}
+
+	/**
+	 * The two counts, and both are named: `here` is citers inside this graph,
+	 * `global` is the whole literature. Conflating them would undo the reason
+	 * ghosts are computed at all -- see docs/external-references.md part 4.
+	 *
+	 * A paper nothing here cites says so only beside a worldwide count, where
+	 * the contrast is the point; alone it would be a line on most hovers of a
+	 * young collection saying nothing has happened.
+	 */
+	function tipCounts(n, global) {
+		let out = [];
+		let here = n.inDeg || 0;
+		if (here || global != null) out.push(tipCount(t('tooltip-cited-here', { count: here }), here));
+		if (global != null) out.push(tipCount(t('tooltip-cited-global', { count: global }), global));
+		if (isPinned(n)) out.push(escapeHtml(t('tooltip-pinned')));
+		return out;
+	}
+
+	/** Tooltip for a ghost: the same card, and first on its second line that it
+	 *  is not a paper of this graph -- the grey of its circle, in words. */
 	function ghostTooltip(n) {
 		let x = n.meta || {};
-		let head = x.title ? escapeHtml(x.title) : escapeHtml(n.name);
-		let bits = [];
-		if (x.creators && x.creators.length) bits.push(escapeHtml(creatorList(x.creators)));
-		// Escaped although every source today hands over a number: force-graph
-		// sets this as innerHTML, and part of what a ghost says comes off the
-		// network.
-		if (x.year) bits.push(escapeHtml(x.year));
-		bits.push(t('tooltip-cited-here', { count: n.inDeg }));
-		if (x.citedByGlobal != null) {
-			bits.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
-		}
-		if (isPinned(n)) bits.push(t('tooltip-pinned'));
-		bits.push(t('tooltip-actions'));
-		return t('tooltip-not-in-collection', { title: head }) + '<br/>' + bits.join(' · ');
+		let meta = ['<span class="tip-tag">' + escapeHtml(t('tooltip-not-in-collection')) + '</span>'];
+		if (x.creators && x.creators.length) meta.push(escapeHtml(creatorList(x.creators)));
+		// Escaped although every source today hands over a number: part of what
+		// a ghost says comes off the network.
+		if (x.year) meta.push(escapeHtml(x.year));
+		if (x.venue) meta.push(escapeHtml(x.venue));
+		return tipCard(x.title || n.name, meta, tipCounts(n, x.citedByGlobal));
 	}
 
 	/** The first few names, with the rest folded into an "et al." the locale
@@ -1196,16 +1301,13 @@
 
 	/** Held items. Same two counts, same wording, so they read side by side. */
 	function itemTooltip(n) {
-		let bits = [];
-		if (n.inDeg) bits.push(t('tooltip-cited-here', { count: n.inDeg }));
-		if (n.citedByGlobal != null) {
-			bits.push(t('tooltip-citations-total', { count: n.citedByGlobal.toLocaleString() }));
-		}
-		if (isPinned(n)) bits.push(t('tooltip-pinned'));
-		bits.push(t('tooltip-actions'));
-		return escapeHtml(n.name) + (n.year ? ' (' + n.year + ')' : '')
-			+ '<br/>' + bits.join(' · ');
+		let meta = [];
+		if (n.creators && n.creators.length) meta.push(escapeHtml(creatorList(n.creators)));
+		if (n.year) meta.push(escapeHtml(n.year));
+		if (n.publication) meta.push(escapeHtml(n.publication));
+		return tipCard(n.name, meta, tipCounts(n, n.citedByGlobal));
 	}
+
 
 	// --- colour -----------------------------------------------------------
 
@@ -2675,6 +2777,9 @@
 				// The second click of a double click, whose own gesture has
 				// already been answered below. See spentDouble().
 				if (spentDouble()) return;
+				// Whoever has clicked a paper has found the first of the
+				// gestures the hint is there to name.
+				endHint();
 				paneEngaged = true;
 				if (event && (event.ctrlKey || event.metaKey)) togglePick(n.id);
 				else pickOnly(n.id);
@@ -2754,11 +2859,10 @@
 			});
 			fg.onBackgroundRightClick(showCanvasMenu);
 			// A settle sheds its alpha tick by tick and ends when the engine
-			// stops -- see settle().
-			fg.onEngineTick(shed);
-			// Nothing to do at the end of an ordinary cooldown; this is the
-			// safety net for a settle whose shed never finishes. See settle().
-			fg.onEngineStop(thaw);
+			// stops -- see settle(). And the two hooks are the only word there
+			// is on whether the layout is moving: see engineTicked().
+			fg.onEngineTick(engineTicked);
+			fg.onEngineStop(engineStopped);
 
 			// Every accessor below is a closure over live state and re-read on
 			// each redraw, so these are set once and never touched again. That
@@ -2807,6 +2911,11 @@
 				// After the graph: the names so no circle can bury one, then
 				// the flags so no name can bury those. See drawLabels().
 				.onRenderFramePost(drawOver)
+				// A drag of the canvas is the reader's own hand on the camera;
+				// every other zoom event is force-graph's or this page's. See
+				// cameraTaken().
+				.onZoom(() => { if (canvasHeld) cameraTaken(); })
+
 				.d3VelocityDecay(VELOCITY_DECAY);
 
 			// d3 re-initialises every registered force whenever the node array
@@ -2917,6 +3026,11 @@
 		// that window has to lift the freeze first, or it would lay the graph
 		// out around a hundred nodes nailed to their old positions.
 		if (movedStructure || movedRadii) thaw();
+
+		// Either of the two below sets the layout going, and it will say when it
+		// has stopped. Until its first tick nothing else knows it is about to
+		// move -- see firstFit(), which must not frame a graph on its way out.
+		if (movedStructure || (movedRadii && PERF.collide)) engineDue = true;
 
 		if (movedStructure) {
 			// With the engine off this IS the burst, run against the forces as
@@ -3760,10 +3874,39 @@
 	 * ascender and descender room that a citekey never fills, and reserving it
 	 * kept two names apart that had a clear gap between them.
 	 */
-	const LABEL_PAD = 1;        // screen px of air between two names
+	const LABEL_PAD = 3;        // screen px of air between two names
 	const LABEL_INK = 0.72;     // glyph height as a fraction of the type size
-	const LABEL_STICKY = 0.85;  // a shown label is tested at this of its width
+	const LABEL_STICKY = 0.85;  // a shown label's box while the layout moves; see labelSlack()
 	const LABEL_FADE_MS = 140;  // in and out, so a verdict flip is not a blink
+
+	/**
+	 * Whether the engine is ticking: true from its first tick to its stop.
+	 *
+	 * force-graph does not say, so the two hooks it does have keep this -- see
+	 * engineTicked() and engineStopped(). It is what the name pass asks before
+	 * it cuts a shown name any slack.
+	 */
+	let engineLive = false;
+
+	/**
+	 * How much of its box a name already on screen is tested at.
+	 *
+	 * LABEL_STICKY while the layout is moving: nodes jitter by a pixel a frame
+	 * as it settles, a name on the edge of another's box would win and lose its
+	 * place on alternate frames, and a strobing name is worse than none. So a
+	 * shown name has to be clearly overlapped to go, not merely brushed.
+	 *
+	 * And the whole box once the layout has stopped. The slack was applied
+	 * there too, and at rest nothing jitters -- so all it did was keep whatever
+	 * pairs had drifted into each other on the way: a graph that came to rest
+	 * with names lying 15% across their neighbours, for good, since a stopped
+	 * graph is not judged again until something moves. The frame the engine
+	 * stops on is judged with the slack, so engineStopped() asks for one more,
+	 * and that one is strict.
+	 */
+	function labelSlack() {
+		return engineLive ? LABEL_STICKY : 1;
+	}
 
 	let labelOrder = [];        // drawnNodes, ranked; see rankLabels()
 	let labelRankedFrom = null; // the node array labelOrder was built from
@@ -3778,6 +3921,8 @@
 	let labelViewW = 0;
 	let labelViewH = 0;
 	let labelHideGhosts = false;
+	// And labelSlack(), asked once a frame for the same reason.
+	let labelSticky = 1;
 
 	/**
 	 * Rank the nodes once, not once per frame. Called from updateGraph, which
@@ -3870,6 +4015,7 @@
 		let w = labelViewW = elGraph.clientWidth;
 		let h = labelViewH = elGraph.clientHeight;
 		labelHideGhosts = elHideGhostNames.checked;
+		labelSticky = labelSlack();
 		// Screen origin in graph coordinates, so a node's position can be put
 		// into screen space with a multiply and an add rather than a call per
 		// node into force-graph's own converter.
@@ -3931,10 +4077,11 @@
 	 * and those circles are carrying the colour the legend explains. Letting a
 	 * name cover them would trade one kind of legibility for another.
 	 *
-	 * A name shown last frame is tested at LABEL_STICKY of its width, so it has
-	 * to be clearly overlapped to lose its place rather than merely brushed.
-	 * Without that hysteresis a label on a boundary strobes as the layout
-	 * jitters, and a strobing label is worse than no label.
+	 * A name shown last frame is tested at LABEL_STICKY of its width while the
+	 * layout is moving, so it has to be clearly overlapped to lose its place
+	 * rather than merely brushed. Without that hysteresis a label on a boundary
+	 * strobes as the layout jitters, and a strobing label is worse than no
+	 * label. At rest it is tested whole -- see labelSlack().
 	 */
 	function placeLabel(node, ctx, globalScale, ox, oy, force) {
 		node._labelWant = 0;
@@ -3978,7 +4125,7 @@
 		// the rest of the ranking that costs. Below the cap this never fires:
 		// the packing runs out of room long before the count does.
 		if (labelPass.full()) return;
-		let k = node._labelLit > 0 ? LABEL_STICKY : 1;
+		let k = node._labelLit > 0 ? labelSticky : 1;
 		if (labelPass.hits(x - box * k, y - boxY * k, x + box * k, y + boxY * k)) return;
 		labelPass.claim(x - box, y - boxY, x + box, y + boxY);
 		node._labelWant = 1;
@@ -5722,6 +5869,35 @@
 		frozen.clear();
 	}
 
+	/**
+	 * One tick of the engine. shed() is what a tick has always run; the flag is
+	 * what the name pass and the first fit read.
+	 */
+	function engineTicked() {
+		engineLive = true;
+		engineDue = false;
+		shed();
+	}
+
+	/**
+	 * The layout has come to rest -- cooled, timed out, or, in the static mode,
+	 * struck: a burst is run inside the update and "stops" on the frame after,
+	 * with no tick in between, so this is told of it all the same.
+	 *
+	 * thaw() first, as the stop always did: the safety net for a settle whose
+	 * shed never finished. Then the frame the names are owed -- see labelSlack()
+	 * -- because force-graph draws nothing more once the engine has stopped and
+	 * the last frame it drew was judged as a moving one. And the first time a
+	 * finished graph comes to rest, it is put in view: see firstFit().
+	 */
+	function engineStopped() {
+		thaw();
+		engineLive = false;
+		engineDue = false;
+		repaint();
+		firstFit();
+	}
+
 	/** force-graph stops redrawing once the simulation has cooled, so a change
 	 *  that is purely visual has to announce itself. Re-setting a visual
 	 *  accessor is what marks the canvas dirty. */
@@ -6403,7 +6579,7 @@
 			icon: 'zoom-to-fit',
 			label: t('menu-zoom-to-fit'),
 			hint: t('menu-zoom-to-fit-hint'),
-			run: reframe,
+			run: reframeAsked,
 		}, {
 			// Not a node gesture: what is missing is a question about the
 			// collection, so it is asked of the canvas rather than of any one
@@ -7223,7 +7399,78 @@
 		fg.zoomToFit(REFRAME_MS, Math.max(8, pad));
 	}
 
-	elReframe.addEventListener('click', reframe);
+	// The button is the reader's own hand on the camera: see firstFit().
+	elReframe.addEventListener('click', reframeAsked);
+
+	/**
+	 * The first view: the whole graph, in the window, once.
+	 *
+	 * Nothing framed a graph but the button above. A tab opened at zoom 1 with
+	 * the layout's origin in the middle of the canvas, whatever came to be
+	 * built there: fifteen hundred papers ran off every edge of the window and
+	 * a dozen sat small in the middle of it, and the first thing anyone did in
+	 * a new tab was press reframe.
+	 *
+	 * So it is pressed for them -- when the first FINISHED graph of the tab
+	 * comes to rest, and never again. Finished, because a build lands in
+	 * phases and a fit to the first of them frames a graph that is about to
+	 * grow. At rest, because a layout still flying apart has no size to fit.
+	 * And once, because after that the camera is the reader's: a later payload
+	 * -- a lookup, a paper added, a rebuild -- must not take it off whatever
+	 * they have gone to look at.
+	 *
+	 * For the same reason it is not done at all if they have already moved it:
+	 * see cameraTaken(). The view saved with a tab holds no camera, so a
+	 * restored tab is fitted like a new one.
+	 *
+	 * Asked when the engine stops, and when a payload lands on a layout that is
+	 * already at rest and is not about to move -- a build whose last phase
+	 * changed nothing the layout is made of.
+	 */
+	let fitSpent = false;     // the one automatic fit has been made, or forfeited
+	let engineDue = false;    // an update has set the layout going; no tick yet
+
+	function firstFit() {
+		if (fitSpent || !fg || !raw) return;
+		let phase = raw.meta && raw.meta.phase;
+		if (phase && phase !== 'done') return;
+		// Nothing to frame yet: an empty collection, or everything masked. The
+		// fit is kept for the graph that does arrive.
+		if (!drawnNodes.length) return;
+		fitSpent = true;
+		if (!cameraTouched) reframe();
+	}
+
+	/**
+	 * The reader has moved the camera themselves.
+	 *
+	 * Where the camera IS cannot answer that. force-graph zooms a new graph by
+	 * its size the moment it is handed one -- 4 over the cube root of the node
+	 * count -- and re-centres on every resize, so there is no resting place to
+	 * compare against; and its zoom callback does not say what moved it. So
+	 * the four gestures that are the reader's are each told here instead: a
+	 * wheel over the canvas, a drag of it (a zoom event while a pointer is held
+	 * down on it -- carrying a NODE raises none), the reframe button or its
+	 * menu entry, and going to a search result.
+	 */
+	let cameraTouched = false;
+	let canvasHeld = false;   // a pointer is down on the canvas
+
+	function cameraTaken() {
+		cameraTouched = true;
+	}
+
+	/** Reframe because the reader asked: the button, and the canvas menu. */
+	function reframeAsked() {
+		cameraTaken();
+		reframe();
+	}
+
+	elGraph.addEventListener('wheel', cameraTaken, { capture: true, passive: true });
+	elGraph.addEventListener('pointerdown', () => { canvasHeld = true; }, true);
+	for (let type of ['pointerup', 'pointercancel']) {
+		window.addEventListener(type, () => { canvasHeld = false; }, true);
+	}
 
 	// --- the sidebar ------------------------------------------------------
 
@@ -7590,7 +7837,11 @@
 	function goTo(i) {
 		let n = searchRows[i];
 		if (!n || !fg) return;
-		if (Number.isFinite(n.x) && Number.isFinite(n.y)) fg.centerAt(n.x, n.y, REFRAME_MS);
+		if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
+			// Going to a paper is the reader choosing where to look.
+			cameraTaken();
+			fg.centerAt(n.x, n.y, REFRAME_MS);
+		}
 		// The pick, not a toggle of it: a row chosen out of the search results
 		// is "show me this one", and a second visit to the same paper must not
 		// answer by deselecting it.

@@ -175,12 +175,20 @@ zotero-citation-graph-color-unknown-type = (Unbekannte Art)
 
 ## Kurzinfos an den Knoten.
 
-zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen — { $title }
-zotero-citation-graph-tooltip-cited-here = hier von { $count } zitiert
+# Der Tooltip eines Knotens ist eine Karte mit bis zu drei Zeilen: der Titel;
+# wer, wann und wo, mit „ · “ verbunden; und die Zahlen, ebenso verbunden.
+zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen
+# Die Zahl setzt die Seite fett: { $count } in jeder Variante behalten, die
+# eine Zahl zeigt.
+zotero-citation-graph-tooltip-cited-here = { $count -> [0] Hier von keinem Eintrag zitiert [one] Hier von { $count } Eintrag zitiert *[other] Hier von { $count } Einträgen zitiert }
+zotero-citation-graph-tooltip-cited-global = { $count } weltweit
 zotero-citation-graph-tooltip-citations-total = { $count } Zitationen insgesamt
 zotero-citation-graph-tooltip-pinned = angeheftet
 zotero-citation-graph-tooltip-et-al = { $names } u. a.
-zotero-citation-graph-tooltip-actions = Klick zum Auswählen (Strg zum Hinzufügen) · Doppelklick zum Isolieren · Rechtsklick für Aktionen
+
+# Was die drei Gesten auf einem Eintrag tun. Wird einmal pro Profil in der
+# Statuszeile gezeigt, wenn der erste Graph aufgebaut ist.
+zotero-citation-graph-hint-gestures = Klick auf einen Eintrag wählt ihn aus (Strg fügt hinzu) · Doppelklick isoliert · Rechtsklick für Aktionen
 
 
 ## Filter-Chips und die Vorschlagsliste.

@@ -228,12 +228,23 @@ zotero-citation-graph-color-unknown-type = (Unknown type)
 
 ## Node tooltips.
 
-zotero-citation-graph-tooltip-not-in-collection = Not in this graph — { $title }
-zotero-citation-graph-tooltip-cited-here = cited by { $count } here
+# A node's tooltip is a card of up to three lines: the title; who, when and
+# where, joined with " · "; and the counts, joined the same way. An outside
+# reference's second line starts with tooltip-not-in-collection.
+zotero-citation-graph-tooltip-not-in-collection = Not in this graph
+# The number is set in bold by the page, which finds it in the sentence: keep
+# { $count } in every variant that has a number to show.
+zotero-citation-graph-tooltip-cited-here = { $count -> [0] No paper here cites it [one] { $count } paper here cites it *[other] { $count } papers here cite it }
+zotero-citation-graph-tooltip-cited-global = { $count } worldwide
+# The gap list's line for the same count, which has no "here" beside it to be
+# read against.
 zotero-citation-graph-tooltip-citations-total = { $count } citations total
 zotero-citation-graph-tooltip-pinned = pinned
 zotero-citation-graph-tooltip-et-al = { $names } et al.
-zotero-citation-graph-tooltip-actions = click to pick (Ctrl to add) · double-click to isolate · right-click for actions
+
+# What the three gestures on a paper do. It was the end of every tooltip; it is
+# now said once per profile, on the status line, when the first graph is built.
+zotero-citation-graph-hint-gestures = Click a paper to pick it (Ctrl to add) · double-click to isolate · right-click for actions
 
 
 ## Filter chips and the completion list.
