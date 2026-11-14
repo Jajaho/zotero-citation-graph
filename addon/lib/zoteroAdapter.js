@@ -338,6 +338,20 @@ function field(item, name, { unformatted = false, baseMapped = false } = {}) {
 	}
 }
 
+/**
+ * Core's own label for an item type, or null where it will not give one -- a
+ * custom type with no label registered throws -- which the page reads as "show
+ * the name instead".
+ */
+function typeName(itemTypeID) {
+	try {
+		return Zotero.ItemTypes.getLocalizedString(itemTypeID) || null;
+	}
+	catch (e) {
+		return null;
+	}
+}
+
 function ftCachePath(att) {
 	let FT = Zotero.FullText || Zotero.Fulltext;
 	try {
@@ -494,6 +508,12 @@ function itemRecord(item, collections = []) {
 		// ask the chrome side to select the item in the library pane.
 		itemID: item.id,
 		itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+		// The same type as Zotero words it, in the language Zotero is in:
+		// "Conference Paper" for conferencePaper. Beside the name rather than in
+		// place of it -- the name is what the type filter is keyed on and what a
+		// saved view holds, and it must not change with the display language.
+		// Like itemID, for the page and not part of the adapter contract.
+		itemTypeName: typeName(item.itemTypeID),
 		title,
 		doi: field(item, 'DOI') || null,
 		// Unformatted: the raw multipart date, matching what the SQLite

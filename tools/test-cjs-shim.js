@@ -3832,6 +3832,168 @@ checkAlone('a graph tab says which items it holds, a paper\'s note among them', 
 	if (graphTab.holdsItems('tab-nothing', [1])) throw new Error('a tab with no graph holds a paper');
 });
 
+/* --- what a build says while it runs --------------------------------------
+ *
+ * The status line has always said how far a build is, in words. The page now
+ * draws a bar from the same news, and offers to stop: chrome's half of that is
+ * a second message beside every status line, a 'stop-build' it answers, and
+ * the item type under the name Zotero shows for it.
+ */
+
+check('a paper carries its type under the name Zotero shows for it', () => {
+	const { itemRecord } = require_('./lib/zoteroAdapter.js');
+	// Given back at the end: other checks are waiting at awaits with their own.
+	const found = Zotero.ItemTypes;
+	try {
+		Zotero.ItemTypes = {
+			getName: () => 'conferencePaper',
+			getLocalizedString: id => (id === 1 ? 'Konferenzbeitrag' : ''),
+		};
+		const rec = itemRecord(fakeZoteroItem());
+		// The name is what the type filter is keyed on and what a saved view
+		// holds; the label is for reading, and changes with Zotero's language.
+		if (rec.itemType !== 'conferencePaper') throw new Error('itemType: ' + rec.itemType);
+		if (rec.itemTypeName !== 'Konferenzbeitrag') throw new Error('itemTypeName: ' + rec.itemTypeName);
+		// A type core will not label -- a custom one with nothing registered
+		// throws -- is no label, which the page reads as "show the name".
+		Zotero.ItemTypes = {
+			getName: () => 'conferencePaper',
+			getLocalizedString: () => {
+				throw new Error('Label not available for custom field 10001');
+			},
+		};
+		if (itemRecord(fakeZoteroItem()).itemTypeName !== null) throw new Error('an unlabelled type was given a label');
+		Zotero.ItemTypes = { getName: () => 'conferencePaper' };
+		if (itemRecord(fakeZoteroItem()).itemTypeName !== null) throw new Error('a Zotero with no labels threw');
+	}
+	finally {
+		Zotero.ItemTypes = found;
+	}
+});
+
+checkAlone('a build reports each phase as a place on a bar, beside the status line', async () => {
+	await l10nReady;
+	const papers = [
+		fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] }),
+		fakeZoteroItem({
+			key: 'BBBBBBBB', id: 2, getAttachments: () => [], getCollections: () => [7],
+			getField: name => ({ title: 'Another paper entirely', DOI: '10.5555/another' }[name] || ''),
+		}),
+	];
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection(papers) });
+	const payload = await tab.built();
+	await until('the bar coming down', () => tab.sent('zgSetProgress').pop() === null);
+	if (payload.items[0].itemTypeName !== 'Journal Article') {
+		throw new Error('the payload does not name the type: ' + JSON.stringify(payload.items[0].itemTypeName));
+	}
+
+	// Three phases with nothing switched on. Each opens with nothing counted,
+	// and the text phase counts across its three strategies as ONE run: each of
+	// them reports the same two papers from nothing, and a bar drawn from that
+	// would fill three times.
+	const want = [
+		{ text: 'Loading collection…', done: null, total: null, step: 1, steps: 3 },
+		{ text: 'Reading indexed text…', done: null, total: null, step: 2, steps: 3 },
+		{ text: 'Reading indexed text…', done: 1, total: 6, step: 2, steps: 3 },
+		{ text: 'Scanning PDFs…', done: null, total: null, step: 3, steps: 3 },
+		{ text: 'Scanning PDFs…', done: 1, total: 2, step: 3, steps: 3 },
+		null,
+	];
+	const got = tab.sent('zgSetProgress');
+	if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error('progress: ' + JSON.stringify(got));
+	// And the status line says what it always said, in the order it said it.
+	const said = tab.sent('zgSetStatus');
+	const lines = ['Loading collection…', 'Reading indexed text…', 'Reading indexed text… 1/2 (text-doi)',
+		'Scanning PDFs…', 'Scanning PDFs for DOI links… 1/2', ''];
+	if (JSON.stringify(said) !== JSON.stringify(lines)) throw new Error('status: ' + JSON.stringify(said));
+
+	// The lookup switched on over a finished graph is a pass of one phase.
+	const from = tab.calls.length;
+	tab.emit({ type: 'lookup', on: true });
+	await tab.built(from);
+	await until('the lookup\u2019s bar coming down', () => {
+		const sent = tab.calls.slice(from).filter(c => c.fn === 'zgSetProgress').map(c => c.value);
+		return sent.length > 1 && sent[sent.length - 1] === null && sent;
+	});
+	const lookup = tab.calls.slice(from).filter(c => c.fn === 'zgSetProgress').map(c => c.value);
+	if (JSON.stringify(lookup[0]) !== JSON.stringify({ text: 'Looking up works…', done: null, total: null, step: 1, steps: 1 })) {
+		throw new Error('lookup progress: ' + JSON.stringify(lookup));
+	}
+
+	// A page from before any of this has no zgSetProgress, and must not notice.
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	const old = await fakeLiveTab({ collection: liveCollection(papers), absent: ['zgSetProgress'] });
+	const built = await old.built();
+	if (built.items.length !== 2 || built.meta.failed) throw new Error('a page with no progress bar failed to build');
+	if (old.sent('zgSetProgress').length) throw new Error('the recorder is broken: it heard a call it does not have');
+});
+
+checkAlone('Stop ends the build that is running and leaves the page a finished graph', async () => {
+	await l10nReady;
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection([paper]) });
+	await tab.built();
+	await until('the first build letting go', () => tab.sent('zgSetProgress').pop() === null);
+
+	// Nothing running: a late press is not an instruction to do anything.
+	let from = tab.calls.length;
+	tab.emit({ type: 'stop-build' });
+	await new Promise(r => setTimeout(r, 5));
+	if (tab.calls.length !== from) throw new Error('Stop with nothing running did ' + JSON.stringify(tab.calls.slice(from)));
+
+	// A rebuild, held where the text phase asks for the paper's attachments:
+	// past the first payload, which is the nodes with no edge among them.
+	let release;
+	const gate = new Promise((r) => {
+		release = r;
+	});
+	Zotero.Items.getAsync = async () => {
+		await gate;
+		return [];
+	};
+	from = tab.calls.length;
+	tab.emit({ type: 'rebuild', options: {} });
+	await until('the rebuild reaching its text phase', () => tab.calls.slice(from)
+		.some(c => c.fn === 'zgSetProgress' && c.value && c.value.step === 2));
+	const partial = tab.calls.slice(from).filter(c => c.fn === 'zgSetData').pop().value;
+	if (partial.meta.phase !== 'items') throw new Error('held at the wrong place: ' + partial.meta.phase);
+
+	tab.emit({ type: 'stop-build' });
+	const after = tab.calls.slice(from);
+	// The page reads any phase but 'done' as work in flight. So what it holds
+	// is sent again as a finished graph, and says it is not the whole of one.
+	const settled = after.filter(c => c.fn === 'zgSetData').pop().value;
+	if (settled.meta.phase !== 'done' || settled.meta.stopped !== true) {
+		throw new Error('the page was left waiting: ' + JSON.stringify(settled.meta));
+	}
+	if (settled.items.length !== 1 || settled.items[0].key !== 'AAAAAAAA') throw new Error('Stop threw the graph away');
+	if (after.filter(c => c.fn === 'zgSetProgress').pop().value !== null) throw new Error('the bar was left up');
+	if (after.filter(c => c.fn === 'zgSetStatus').pop().value !== '') throw new Error('the status line was left on the phase');
+
+	// The build that was stopped finds out at its next look, and says nothing.
+	const quiet = tab.calls.length;
+	release();
+	await new Promise(r => setTimeout(r, 20));
+	if (tab.calls.length !== quiet) {
+		throw new Error('a stopped build went on talking: ' + JSON.stringify(tab.calls.slice(quiet).map(c => c.fn)));
+	}
+
+	// And the tab is free: Rebuild builds, start to finish, with no mark on it.
+	stubLibrary({ 1: paper });
+	from = tab.calls.length;
+	tab.emit({ type: 'rebuild', options: {} });
+	const again = await tab.built(from);
+	if (again.meta.stopped || again.meta.failed || again.items.length !== 1) {
+		throw new Error('the build after a stop: ' + JSON.stringify(again.meta));
+	}
+});
+
 check('a selection graph is titled by its count, anchored or not', () => {
 	const { tabTitle, selectionScope, collectionScope } = require_('./lib/graphTab.js');
 	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
