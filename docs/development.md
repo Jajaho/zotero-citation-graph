@@ -1382,6 +1382,30 @@ The IDs are read back through `Zotero.Items` rather than trusted. A paper delete
 graph that is still on screen drops out of the selection, which gives the honest *0 items
 selected*, where handing a dead ID to core’s menu builder would throw.
 
+**“Select this item” stays in the graph tab only for what the graph holds.** `lib/tabContext.js`
+also wraps `ZoteroPane.selectItems()`, which is how core shows the user something it has just made
+— the note *Add Note* wrote, an attachment just added — and a graph tab has a pane of its own to
+put that in. But the same function is how Zotero answers a `zotero://select` link opened from
+another program, the connector saving a page (`noTabSwitch`: select it in the library, behind
+whatever tab is up), a sync error’s *Show Item in Library*, and *Show in Library* on another tab’s
+menu. Taken unasked, each of those opened this tab’s pane on a paper the graph does not hold and
+left the library’s own list where it was. So the wrapper keeps a request only when every item
+named is on the graph — a node, or a note or an attachment of one (`graphTab.holdsItems()`, read
+off the last payload) — and the caller passed neither `inLibraryRoot` nor `noTabSwitch`.
+Everything else reaches core as it was called. A related paper that is not on the graph therefore
+opens in the library, which is where it is.
+
+**“List all tabs” asks every tab for an item.** `elements/tabsMenuPanel.js` draws a row per tab
+and, for every tab but the library’s, takes the icon from
+`Zotero.Items.get(tab.data.itemID).getItemTypeIconName()`. A graph tab has no item: the lookup
+answers `false`, the call throws, and the list stops there — the graph tab’s row and every row
+after it missing. `tabs.js` reads `tab.data.icon` first and guards the lookup; the panel does
+neither. Until core does, `tabContext.js` wraps the panel’s `refreshList()`: for the length of
+that one synchronous call each graph tab names a stand-in id, `Zotero.Items.get()` answers that
+id with the tab’s own icon name, and both are put back before it returns — nothing is left on
+`tab.data` for `session.json`, and with no graph tab in the strip nothing is touched. The row
+gets its picture from the rule that already paints the tab strip (`TAB_ICON_CSS`).
+
 **A graph tab is not the tab that is already showing the PDF.** The sidenav also works out a
 `locateMode` from `container.tabType` — `"library"` for the library tab, `"tab"` for everything
 else — and one test reads it, `ViewItem.canHandleItem`, which drops the entry that would “open in
@@ -1621,6 +1645,22 @@ tools/
   `select()` holds `ZoteroContextPane`'s loading cover over the tab until it settles. And `graph` is
   deliberately **not** pushed into core's `_loadableTypes`: that list is what `unloadUnusedTabs()`
   reads, and a built graph must not be discarded after a day unselected.
+- **A build waits for its library, and a build that throws says so.** Zotero loads the user's own
+  library at startup and the others in their own time; until a library's items are in memory
+  `Zotero.Items.get()` throws `UnloadedDataException` for them, and `Collection.getChildItems()`
+  is that call. A restored graph tab builds the moment it is selected, which for a group library
+  is routinely first, so `ZoteroAdapter.listItems()` awaits `library.waitForDataLoad('item')`
+  before it reads anything — what core's own item tree awaits. And `runBuild()` (`runLookup()`
+  too) catches whatever a phase throws, where it used to have a `finally` and nothing else: the
+  status line gets `build-failed` with the message, and `settle()` sends the page its last payload
+  again stamped `phase: 'done'` with `meta.failed` — an empty graph if nothing had been sent —
+  because the page reads any other phase as work still in flight.
+- **`entry.built` belongs to the build that made it**, and `runBuild()` clears it before the first
+  phase. It is what `adoptAdded()` folds a new paper into, and left standing through a rebuild it
+  was the graph on its way out: a paper added while a rebuild ran was written into the old build,
+  and the new one — which had listed the collection before the add — put the ghost straight back.
+  With no finished build to fold into, the add ends in a build of its own, which lists the paper.
+  A lookup is not a build and keeps it.
 - **What survives a restart is the scope and the settings, and nothing derived.**
   `Zotero_Tabs.getState()` serialises `tab.data` wholesale into `session.json`, so `tabData()` is the
   persisted form: `libraryID`, `collectionKey` (null for a selection made outside a collection),

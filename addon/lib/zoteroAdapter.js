@@ -58,6 +58,9 @@ class ZoteroAdapter {
 	async listItems() {
 		if (this._items) return this._items;
 
+		// Before anything is read out of the library. See libraryLoaded().
+		await libraryLoaded(this.scope ? this.scope.libraryID : null);
+
 		let { items: zItems, collectionsByKey, picked } = this.scope && this.scope.kind === 'selection'
 			? await selectionItems(this.scope.libraryID, this.scope.itemKeys)
 			: await collectionItems(this.collection, this.recursive);
@@ -181,6 +184,37 @@ class ZoteroAdapter {
 			for (let a of atts) if (a.contentType === 'application/pdf') n++;
 		}
 		return n;
+	}
+}
+
+/**
+ * Wait until a library's items are in memory.
+ *
+ * Zotero does not load every library at startup: the user's own comes first
+ * and the rest follow in their own time, or when their row is first selected.
+ * Until then Zotero.Items.get() THROWS for an item of that library -- it knows
+ * the id and has not loaded the object (UnloadedDataException) -- and
+ * Collection.getChildItems() is that call. A graph tab restored from the last
+ * session builds as soon as it is selected, which for a group library is
+ * routinely before that load: the listing threw, and the tab sat at
+ * "Loading collection…" for the rest of the session.
+ *
+ * waitForDataLoad() is what core's own item tree awaits before it lists a
+ * library. It returns at once for one that is loaded, joins a load already
+ * running, and starts one otherwise.
+ */
+async function libraryLoaded(libraryID) {
+	if (!libraryID) return;
+	let library = null;
+	try {
+		library = Zotero.Libraries.get(libraryID);
+	}
+	catch (e) {
+		// A library that cannot be asked is read as it always was.
+		library = null;
+	}
+	if (library && typeof library.waitForDataLoad === 'function') {
+		await library.waitForDataLoad('item');
 	}
 }
 

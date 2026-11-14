@@ -3615,6 +3615,195 @@ const t6 = check('a selection tab restores its surviving papers, and dies only w
 	if (graphTab.selectedLibraryID(back[0].id) !== 1) throw new Error('lost its library');
 });
 
+/**
+ * Zotero loads the user's own library at startup and the others in their own
+ * time. Until a library's items are in memory Zotero.Items.get() throws for
+ * one of them -- it knows the id and has not loaded the object -- and
+ * Collection.getChildItems() is that call. A graph tab restored from the last
+ * session builds the moment it is selected, which for a group library is
+ * routinely first: the listing threw, nothing caught it, and the tab sat at
+ * "Loading collection…" until it was closed.
+ */
+checkAlone('a graph of a library whose items are not loaded yet waits for them', async () => {
+	await l10nReady;
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	let loaded = false;
+	const waited = [];
+	Zotero.Libraries = {
+		get: id => ({
+			libraryID: id,
+			// Core's own: back at once when loaded, and loading otherwise.
+			waitForDataLoad: async (type) => {
+				waited.push(id + ':' + type);
+				loaded = true;
+			},
+		}),
+	};
+	const collection = liveCollection([paper], {
+		getChildItems: () => {
+			if (!loaded) {
+				const e = new Error('Item 1 not yet loaded');
+				e.name = 'UnloadedDataException';
+				throw e;
+			}
+			return [paper];
+		},
+	});
+
+	const tab = await fakeLiveTab({ collection });
+	const payload = await tab.built();
+	if (waited.join() !== '1:item') throw new Error('waited for ' + (waited.join() || 'nothing'));
+	if (payload.meta.failed) throw new Error('the build failed: ' + payload.meta.failed);
+	if (payload.items.length !== 1 || payload.items[0].key !== 'AAAAAAAA') {
+		throw new Error('the paper is not on the graph: ' + JSON.stringify(payload.items));
+	}
+});
+
+checkAlone('a build that throws says why, and leaves the page a finished graph', async () => {
+	await l10nReady;
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	let broken = true;
+	const collection = liveCollection([paper], {
+		getChildItems: () => {
+			if (broken) throw new Error('disk on fire');
+			return [paper];
+		},
+	});
+
+	const tab = await fakeLiveTab({ collection });
+	// runBuild() had a finally and no catch: the rejection was logged two frames
+	// up, the status line stayed on the phase that threw, and the page went on
+	// waiting for a payload that was never coming.
+	const payload = await tab.built();
+	if (payload.meta.failed !== 'disk on fire') throw new Error('meta: ' + JSON.stringify(payload.meta));
+	if (payload.items.length || payload.edges.length) throw new Error('a failed first build drew something');
+	const said = tab.sent('zgSetStatus').pop();
+	if (!/disk on fire/.test(said) || !/^Could not build/.test(said)) throw new Error('the status line said: ' + said);
+
+	// And the tab is let go of: the next build is an ordinary one.
+	broken = false;
+	const from = tab.calls.length;
+	tab.emit({ type: 'rebuild', options: {} });
+	const again = await tab.built(from);
+	if (again.meta.failed || again.items.length !== 1) throw new Error('the rebuild after a failure: ' + JSON.stringify(again.meta));
+	if (tab.calls.slice(from).filter(c => c.fn === 'zgSetStatus').pop().value !== '') {
+		throw new Error('the failure was still on the status line after a good build');
+	}
+});
+
+/**
+ * The last finished build is not the tab's any more once another has started.
+ * adoptAdded() folds a new paper into `entry.built`, and that was still the
+ * build being replaced: the paper was written into a graph on its way out, and
+ * the build replacing it -- which had listed the collection before the add --
+ * put the ghost straight back.
+ */
+checkAlone('a paper added while a rebuild runs is listed by a build, not folded into the old one', async () => {
+	await l10nReady;
+	const addDialog = require_('./lib/addDialog.js');
+	const citing = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	const added = fakeZoteroItem({
+		key: 'BBBBBBBB', id: 2, getAttachments: () => [], getCollections: () => [7],
+		getDisplayTitle: () => 'The work they all cite',
+	});
+	stubLibrary({ 1: citing, 2: added });
+	stubCollections();
+	Zotero.Libraries = { get: () => MY_LIBRARY };
+	const papers = [citing];
+	let gate = null;
+	const collection = liveCollection(papers, {
+		// The first thing a listing awaits, and so where a rebuild can be held.
+		loadDataType: () => gate,
+	});
+	const tab = await fakeLiveTab({ collection });
+	await tab.built();
+
+	let release;
+	gate = new Promise((r) => {
+		release = r;
+	});
+	const from = tab.calls.length;
+	tab.emit({ type: 'rebuild', options: {} });
+	await until('the rebuild reaching its listing', () => tab.calls.slice(from)
+		.some(c => c.fn === 'zgSetStatus' && /^Loading/.test(c.value)));
+
+	// Now the add, start to finish, while that rebuild is held at its listing.
+	Zotero.Search = class {
+		addCondition() {}
+
+		async search() {
+			return [];
+		}
+	};
+	Zotero.Translate = {
+		Search: class {
+			setIdentifier() {}
+
+			async getTranslators() {
+				return [{}];
+			}
+
+			setTranslator() {}
+
+			async translate() {
+				// In the library, and in the collection the graph is of.
+				papers.push(added);
+				return [added];
+			}
+		},
+	};
+	Zotero.Utilities = {
+		Internal: {
+			createMenuForTarget: collectionMenuStub(tab.element, [
+				{ target: MY_LIBRARY }, { target: READING_LIST },
+			]),
+		},
+	};
+	tab.emit({ type: 'add-item', doi: '10.5555/outside', title: 'The work they all cite' });
+	const panel = await until('the add dialog', () => tab.made.find(el => el.id === addDialog.PANEL_ID && !el.removed));
+	tab.made.find(el => el.localName === 'button' && el.textContent === 'Add'
+		&& el.parent && el.parent.parent && el.parent.parent.parent === panel).fire('click');
+	await until('the add reporting', () => tab.calls.slice(from)
+		.some(c => c.fn === 'zgSetStatus' && /^Added /.test(c.value)));
+
+	const folded = tab.calls.slice(from).find(c => c.fn === 'zgSetData' && c.value.meta.adopted);
+	if (folded) throw new Error('the paper was folded into the build that was being replaced');
+	release();
+	const payload = await tab.built(from);
+	if (!payload.items.some(i => i.key === 'BBBBBBBB')) {
+		throw new Error('the build that followed does not list the added paper: '
+			+ payload.items.map(i => i.key).join());
+	}
+});
+
+checkAlone('a graph tab says which items it holds, a paper\'s note among them', async () => {
+	await l10nReady;
+	const graphTab = require_('./lib/graphTab.js');
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection([paper]) });
+	// Nothing is held before the first payload says what is on the graph.
+	await tab.built();
+
+	const library = { 1: paper, 2: { id: 2, parentItemID: 1 }, 3: { id: 3 } };
+	Zotero.Items.get = id => library[id] || false;
+	if (!graphTab.holdsItems(tab.tabID, [1])) throw new Error('a node is not held');
+	// What Add Note ends in: core selecting the note it has just written.
+	if (!graphTab.holdsItems(tab.tabID, [2])) throw new Error('a note on a node is not the graph\'s');
+	if (graphTab.holdsItems(tab.tabID, [3])) throw new Error('a paper that is not on the graph is held');
+	if (graphTab.holdsItems(tab.tabID, [1, 3])) throw new Error('one stranger in a set went unnoticed');
+	if (graphTab.holdsItems(tab.tabID, [404])) throw new Error('an item that does not exist is held');
+	if (graphTab.holdsItems(tab.tabID, [])) throw new Error('nothing at all is held');
+	if (graphTab.holdsItems('tab-nothing', [1])) throw new Error('a tab with no graph holds a paper');
+});
+
 check('a selection graph is titled by its count, anchored or not', () => {
 	const { tabTitle, selectionScope, collectionScope } = require_('./lib/graphTab.js');
 	const collection = { key: 'ABCD1234', libraryID: 1, name: 'Reading list' };
@@ -6389,11 +6578,14 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	let graphSelection = [7];
 	let graphCollection = collection;
 	let graphLibraryID = 7;
+	// What is on the graph: one paper, and a note written on it.
+	const onGraph = new Set([31, 32]);
 	tabContext.install(win, {
 		select: async (tabID, ids) => {
 			shown.push({ tabID, ids });
 			return true;
 		},
+		holds: (tabID, ids) => ids.every(id => onGraph.has(id)),
 		itemIDs: (tabID) => {
 			asked.push(tabID);
 			return graphSelection;
@@ -6461,6 +6653,32 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	if (switched[0].options !== true) throw new Error('core saw ' + JSON.stringify(switched[0].options));
 	await pane.selectItems([31], { inLibraryRoot: true });
 	if (switched.length !== 2) throw new Error('the object form was not honoured');
+
+	// And only for what the graph holds. selectItems() is also how Zotero
+	// answers a zotero://select link from another program, a sync error's "Show
+	// Item in Library" and Show in Library on another tab's menu -- none of
+	// them about this graph, and all of them used to open this tab's pane on a
+	// paper it does not hold while the library's own list stayed where it was.
+	shown.length = 0;
+	switched.length = 0;
+	await pane.selectItems([77]);
+	if (shown.length) throw new Error('a paper the graph does not hold was kept in the graph tab');
+	if (switched.length !== 1 || switched[0].ids[0] !== 77) throw new Error('core never saw the request');
+	// One stranger among them is enough: core selects the whole set or none.
+	await pane.selectItems([31, 77]);
+	if (shown.length || switched.length !== 2) throw new Error('a mixed request was split from core');
+	// The connector saving a page selects it in the library BEHIND the tab that
+	// is up. That is not a request to look at anything here, whatever it names.
+	const behind = { noTabSwitch: true, noWindowRestore: true };
+	await pane.selectItems([31], behind);
+	if (shown.length) throw new Error('a selection made behind the tabs opened the pane beside the graph');
+	if (switched.length !== 3 || switched[2].options !== behind) throw new Error('core did not get the call as it was made');
+	// A note on a paper of the graph is the graph's to show: Add Note ends here.
+	await pane.selectItems([32]);
+	if (shown.length !== 1 || shown[0].ids[0] !== 32) throw new Error('a note written on a node left for the library');
+	// Put back for what follows: the awaits above are turns in which any other
+	// check may have set a Zotero.Items of its own.
+	Zotero.Items = { get: id => items[id] || false };
 
 	// A read-only group is read-only in the graph too -- the answer is the
 	// collection's, not a blanket yes.
@@ -6564,6 +6782,115 @@ check('a graph tab answers ZoteroPane what a tab of core’s own would', async (
 	const after = pane.getSelectedItems();
 	if (!outerCalls) throw new Error('the outer wrapper stopped being called');
 	if (after !== inLibrary) throw new Error('an uninstalled wrapper still answered for the graph');
+});
+
+/**
+ * "List all tabs". Core's panel (elements/tabsMenuPanel.js) draws a row per tab
+ * and, for every tab but the library's, takes the icon from the item behind
+ * tab.data.itemID. A graph tab has no item: the lookup answers false, the next
+ * call throws, and the list stops there -- the graph tab's row and every row
+ * after it missing. tabs.js reads tab.data.icon first; the panel does not.
+ */
+check('"List all tabs" draws a row for a graph tab, and for the tabs after it', () => {
+	const tabContext = require_('./lib/tabContext.js');
+	const rows = [];
+	let win = null;
+	// refreshList(), as far as the icon goes.
+	const panel = {
+		refreshList() {
+			rows.length = 0;
+			for (const tab of win.Zotero_Tabs._tabs) {
+				if (tab.id === 'zotero-pane') {
+					rows.push('library');
+					continue;
+				}
+				const item = Zotero.Items.get(tab.data.itemID);
+				rows.push(item.getItemTypeIconName(true));
+			}
+			return rows.length;
+		},
+	};
+	const coreRefresh = panel.refreshList;
+	const graphData = { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-citation-graph' };
+	const restoredData = { ...graphData };
+	const strip = [
+		{ id: 'zotero-pane', type: 'library', data: {} },
+		{ id: 'tab-2', type: 'graph', data: graphData },
+		{ id: 'tab-3', type: 'graph-unloaded', data: restoredData },
+		{ id: 'tab-4', type: 'reader', data: { itemID: 5 } },
+	];
+	win = {
+		ZoteroPane: {},
+		document: { getElementById: id => (id === 'zotero-tabs-menu-panel' ? panel : null) },
+		Zotero_Tabs: { selectedType: 'library', selectedID: 'zotero-pane', _tabs: strip },
+	};
+	// The method is the prototype's, as it is on core's Zotero.Items.
+	let lookups = 0;
+	class Items {
+		get(id) {
+			lookups++;
+			return id === 5 ? { getItemTypeIconName: () => 'attachmentPDF' } : false;
+		}
+	}
+	const items = new Items();
+	// Given back at the end: nothing here awaits, but the check above this one
+	// is waiting at an await of its own with a Zotero.Items it set.
+	const found = Zotero.Items;
+	Zotero.Items = items;
+	try {
+
+		let threw = false;
+		try {
+			panel.refreshList();
+		}
+		catch (e) {
+			threw = true;
+		}
+		if (!threw || rows.join() !== 'library') throw new Error('core is supposed to stop at the graph tab -- that is the bug');
+
+		tabContext.install(win, {
+			itemIDs: () => [], collection: () => null, libraryID: () => 1,
+			select: async () => true, holds: () => false,
+		});
+		if (panel.refreshList() !== 4) throw new Error('the wrapper lost what core returns');
+		// The tab's own icon name, which is what the tab strip already draws it by.
+		if (rows.join() !== 'library,zotero-citation-graph,zotero-citation-graph,attachmentPDF') {
+			throw new Error('rows: ' + rows.join());
+		}
+		// Nothing left behind: not on the tabs, which session.json is written from,
+		// and not on Zotero.Items, which every other lookup in Zotero goes through.
+		if ('itemID' in graphData || 'itemID' in restoredData) throw new Error('a stand-in id was left on a tab');
+		if (Zotero.Items !== items || Object.prototype.hasOwnProperty.call(items, 'get')) {
+			throw new Error('Zotero.Items was left patched');
+		}
+		// And core's loop throwing for a reason of its own leaves nothing behind either.
+		strip.push({ id: 'tab-5', type: 'reader', data: { itemID: 6 } });
+		threw = false;
+		try {
+			panel.refreshList();
+		}
+		catch (e) {
+			threw = true;
+		}
+		if (!threw) throw new Error('a reader tab with no item is core\'s own failure, and was hidden');
+		if ('itemID' in graphData || Object.prototype.hasOwnProperty.call(items, 'get')) {
+			throw new Error('a throw inside core\'s loop left the stand-ins in place');
+		}
+		strip.pop();
+
+		// With no graph tab in the strip nothing is touched at all.
+		const graphs = strip.splice(1, 2);
+		lookups = 0;
+		panel.refreshList();
+		if (rows.join() !== 'library,attachmentPDF' || lookups !== 1) throw new Error('a strip with no graph tab: ' + rows.join());
+		strip.splice(1, 0, ...graphs);
+
+		tabContext.uninstall(win);
+		if (panel.refreshList !== coreRefresh) throw new Error('uninstall left the tab list wrapped');
+	}
+	finally {
+		Zotero.Items = found;
+	}
 });
 
 /**

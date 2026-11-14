@@ -66,6 +66,25 @@
  * the pane answers -- except when the caller asked to BE in the library, which
  * is what core's own "Show in Library" says by passing inLibraryRoot.
  *
+ * And only for what the graph HOLDS. selectItems() is also how Zotero answers
+ * a zotero://select link opened from another program, the connector saving a
+ * page (noTabSwitch: select it in the library, behind whatever tab is up), a
+ * sync error's "Show Item in Library", and Show in Library on some other
+ * tab's context menu -- none of which is about this graph. Taken unasked,
+ * every one of them opened this tab's pane on a paper the graph does not hold
+ * and left the library's own list where it was. So the wrapper keeps a request
+ * only when every item named is on the graph -- as a node, or as a note or an
+ * attachment of one -- and the caller did not ask for a selection made behind
+ * the tabs. Everything else is core's, untouched.
+ *
+ * HOW THE TAB IS LISTED. "List all tabs" (elements/tabsMenuPanel.js) draws a
+ * row per tab, and for every tab but the library's takes the icon from
+ * `Zotero.Items.get(tab.data.itemID).getItemTypeIconName()`. A graph tab has no
+ * item; the lookup answers false, the call throws, and the list stops at the
+ * graph tab -- that row and every one after it missing, nothing selected.
+ * tabs.js _update() reads `tab.data.icon` first and guards the lookup; this
+ * panel does neither, so refreshList() is wrapped: see withTabIcons().
+ *
  * WHETHER IT CAN BE EDITED. canEdit() and canEditFiles() have a `library` case
  * reading the tree row's `editable` / `filesEditable`, a `reader` case reading
  * the open item's library, and a default of `false` -- taken literally, "a
@@ -106,9 +125,11 @@ let installed_ = new WeakMap();
  *        `itemIDs(tabID)` is the selection, newest click last,
  *        `collection(tabID)` the collection the tab is a view of -- null for a
  *        selection graph opened outside one -- `libraryID(tabID)` the library it
- *        is in either way, and `select(tabID, itemIDs)` shows one of them in the
- *        tab's own pane. See graphTab.selectedItemIDs(), selectedCollection(),
- *        selectedLibraryID() and selectItems().
+ *        is in either way, `holds(tabID, itemIDs)` says whether every one of
+ *        those items is on the graph, and `select(tabID, itemIDs)` shows them
+ *        in the tab's own pane. See graphTab.selectedItemIDs(),
+ *        selectedCollection(), selectedLibraryID(), holdsItems() and
+ *        selectItems().
  */
 function install(win, graph) {
 	if (installed_.has(win)) return;
@@ -179,10 +200,19 @@ function install(win, graph) {
 			// about it. Read it the same way -- but hand on what was actually
 			// passed, so the call core sees is the call that was made.
 			let asked = typeof options === 'boolean' ? { inLibraryRoot: options } : (options || {});
-			if (!asked.inLibraryRoot && isGraphTab(win_, record)) {
+			if (!asked.inLibraryRoot && !asked.noTabSwitch && isGraphTab(win_, record)
+				&& holds(win_, record, itemIDs)) {
 				return record.graph.select(win_.Zotero_Tabs.selectedID, itemIDs || []);
 			}
 			return original.call(this, itemIDs, options);
+		});
+
+	// The panel is the window's own element, there from the start; a Zotero
+	// that has renamed it or its method costs this one answer. See wrap().
+	wrap(record, win, tabsMenuPanel(win), 'refreshList',
+		(original, win_) => function (...args) {
+			if (record.inert) return original.apply(this, args);
+			return withTabIcons(win_, () => original.apply(this, args));
 		});
 
 	// Removed rather than set to 'library'. The suppression is keyed on two
@@ -238,6 +268,84 @@ function uninstall(win) {
 
 	for (let { target, name, original, patched } of record.wraps) {
 		if (target[name] === patched) target[name] = original;
+	}
+}
+
+/** Whether the graph on screen holds every item a "select this" names. A
+ *  graph that cannot be asked holds nothing, and the request is core's. */
+function holds(win, record, itemIDs) {
+	if (!itemIDs || !itemIDs.length || typeof record.graph.holds !== 'function') return false;
+	try {
+		return !!record.graph.holds(win.Zotero_Tabs.selectedID, itemIDs);
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return false;
+	}
+}
+
+/** The "List all tabs" panel of a window, or null where there is none. */
+function tabsMenuPanel(win) {
+	try {
+		return (win.document && win.document.getElementById('zotero-tabs-menu-panel')) || null;
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+/** A tab of this plugin's, in any of the three states tabs.js gives a type. */
+function isGraphType(type) {
+	return /^graph(-|$)/.test(String(type || ''));
+}
+
+/**
+ * Run core's tab list with an icon to find for every graph tab.
+ *
+ * The list asks one thing of a tab it does not know: the item behind
+ * `tab.data.itemID`, for its type icon. So for the length of this one
+ * synchronous call each graph tab is given a stand-in to name -- an object of
+ * its own as the id, which no real lookup can be asked for -- and
+ * Zotero.Items.get() answers that one id with something that has an icon name:
+ * the tab's own `data.icon`, which is what the tab strip already draws it
+ * with, so the row gets the same picture from the same rule (TAB_ICON_CSS in
+ * main.js). Every other lookup goes to core's function as it came.
+ *
+ * Both are put back before this returns, whatever core's loop did: nothing is
+ * left on tab.data for the session file to pick up, and Zotero.Items is as it
+ * was found -- including not having a `get` of its own, when the method was
+ * the prototype's. With no graph tab in the strip nothing is touched at all.
+ */
+function withTabIcons(win, run) {
+	let tabs = [];
+	try {
+		tabs = ((win.Zotero_Tabs && win.Zotero_Tabs._tabs) || [])
+			.filter(t => t && t.data && t.data.itemID == null && isGraphType(t.type));
+	}
+	catch (e) {
+		tabs = [];
+	}
+	let Items = Zotero.Items;
+	if (!tabs.length || !Items || typeof Items.get !== 'function') return run();
+
+	let standIns = new Map();
+	let own = Object.prototype.hasOwnProperty.call(Items, 'get');
+	let was = Items.get;
+	try {
+		for (let tab of tabs) {
+			let id = {};
+			standIns.set(id, { getItemTypeIconName: () => tab.data.icon || 'document' });
+			tab.data.itemID = id;
+		}
+		Items.get = function (ids) {
+			return standIns.has(ids) ? standIns.get(ids) : was.apply(this, arguments);
+		};
+		return run();
+	}
+	finally {
+		if (own) Items.get = was;
+		else delete Items.get;
+		for (let tab of tabs) delete tab.data.itemID;
 	}
 }
 

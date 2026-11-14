@@ -366,6 +366,7 @@ zotero-citation-graph-build-reading-references-progress = Reading reference list
 zotero-citation-graph-lookup-works = Looking up { $count -> [one] { $count } work *[other] { $count } works }…
 zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
+zotero-citation-graph-build-failed = Could not build the graph: { $message }
 
 
 ## Adding an outside reference to the library.
