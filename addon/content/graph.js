@@ -54,7 +54,7 @@
 	// Every collapsible section, nested or not: the machinery below is the same
 	// for both -- a header that toggles a body, remembered by name -- and
 	// Graph Physics holding two of them changes nothing about any of it.
-	const SECTIONS = ['items', 'strategies', 'physics', 'forces', 'energy', 'display'];
+	const SECTIONS = ['items', 'display', 'strategies', 'physics', 'forces', 'energy'];
 
 	// The keys below are what a NEW graph tab opens with: the last value the
 	// user gave each control, in whichever tab they gave it. Nothing reads them
@@ -175,6 +175,10 @@
 	// rather than reaching for one, so the same file still runs under Node with
 	// its own English labels.
 	Filters.setTranslator(t);
+	// And what a value is called on screen where that is not the value: an item
+	// type is `conferencePaper` to Zotero and "Conference Paper" to its reader.
+	// See typeName().
+	Filters.setNamer((field, value) => (field === 'type' ? typeName(value) : value));
 
 	let fg = null;
 	let raw = null;
@@ -807,6 +811,7 @@
 	let elMinCites = el('min-cites');
 	let elEnrich = el('enrich');
 	let elOpenAlexRefs = el('openalex-refs');
+	let elOpenAlexCount = el('openalex-refs-count');
 	let elRefStrings = el('ref-strings');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
@@ -1182,6 +1187,13 @@
 		return creators.length > 3 ? t('tooltip-et-al', { names: head }) : head;
 	}
 
+	/** An edge: the strategies it is drawn by, named as their rows in the panel
+	 *  name them, and the DOI the citation was read as. */
+	function edgeTooltip(l) {
+		return escapeHtml(l.via.map(viaName).join(', '))
+			+ (l.doi ? ' — ' + escapeHtml(l.doi) : '');
+	}
+
 	/** Held items. Same two counts, same wording, so they read side by side. */
 	function itemTooltip(n) {
 		let bits = [];
@@ -1386,6 +1398,34 @@
 		return '#' + out.toString(16).padStart(6, '0');
 	}
 
+	/**
+	 * What Zotero calls an item type, for everywhere this page shows one.
+	 *
+	 * A paper carries its type twice: `itemType` is core's own id
+	 * (`conferencePaper`, `bookSection`), which is what a filter is keyed on,
+	 * what a colour hangs on and what a saved tab remembers, and `itemTypeName`
+	 * is that type in the user's language, as the library's own Item Type column
+	 * says it. The id was all this page had, so the legend, the completion list
+	 * and the chips showed a programmer's word in every locale.
+	 *
+	 * Read off the payload rather than asked of chrome per type: every type on
+	 * the graph is on some item of it. A payload without the names -- the
+	 * benchmark's, or one from a build before they were sent -- leaves the id
+	 * standing, which is what was shown before.
+	 */
+	let typeMemo = { raw: null, names: new Map() };
+
+	function typeName(id) {
+		if (typeMemo.raw !== raw) {
+			let names = new Map();
+			for (let it of (raw ? raw.items : [])) {
+				if (it.itemType && it.itemTypeName) names.set(it.itemType, String(it.itemTypeName));
+			}
+			typeMemo = { raw, names };
+		}
+		return typeMemo.names.get(id) || id;
+	}
+
 	// --- legend -----------------------------------------------------------
 
 	/**
@@ -1512,7 +1552,11 @@
 		let keys = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)
 			|| (a < b ? -1 : a > b ? 1 : 0));
 		for (let key of keys.slice(0, LEGEND_MAX)) {
-			model.rows.push({ color: keyColor(key), label: key, count: counts.get(key) });
+			// The key is what the colour hangs on and stays the type's id, so a
+			// panel in another language paints the same picture; the row reads
+			// as Zotero names the type.
+			let label = model.mode === 'type' ? typeName(key) : key;
+			model.rows.push({ color: keyColor(key), label, count: counts.get(key) });
 		}
 		let rest = keys.length - LEGEND_MAX;
 		if (rest > 0) model.more = t('legend-more', { count: rest });
@@ -1759,7 +1803,11 @@
 
 	// --- strategy toggles -------------------------------------------------
 
-	let renderedVias = '';
+	// null rather than '' so that a graph with no strategy to list still goes
+	// through once, which is what gives OpenAlex's switch its count.
+	let renderedVias = null;
+	// Each strategy's count on its row, by id -- see renderStrategyCounts().
+	let viaCounts = new Map();
 
 	function renderStrategyToggles() {
 		let seen = new Set();
@@ -1768,12 +1816,20 @@
 		// whether it runs at all. A second box that only hid its edges would be
 		// two answers to one question.
 		seen.delete('openalex');
-		let vias = [...seen].sort();
+		// Strongest evidence first, the order an edge takes its colour in and
+		// the order an exported figure's key lists them. They were sorted by
+		// id, which was at least alphabetical while the rows showed the ids;
+		// by name it is no order at all. A strategy the ranking has not heard
+		// of goes after the ones it has, by id.
+		let rank = v => (VIA_RANK.indexOf(v) + 1) || VIA_RANK.length + 1;
+		let vias = [...seen].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
 		let sig = vias.join(',');
 		if (sig === renderedVias) return;
 		renderedVias = sig;
 
 		elStrategies.textContent = '';
+		// OpenAlex's count is written on its own switch, which is in the markup.
+		viaCounts = new Map([['openalex', elOpenAlexCount]]);
 		for (let via of vias) {
 			let label = document.createElement('label');
 			label.className = 'via-toggle';
@@ -1791,10 +1847,71 @@
 			let dot = document.createElement('span');
 			dot.className = 'dot';
 			dot.style.background = viaColor(via);
+			// The strategy's name, not its id: `pdf-links` is what the payload
+			// calls it, and four of these rows used to say so.
+			let name = document.createElement('span');
+			name.className = 'via-name';
+			name.textContent = viaName(via);
+			let count = document.createElement('span');
+			count.className = 'via-count';
+			viaCounts.set(via, count);
 			label.appendChild(cb);
 			label.appendChild(dot);
-			label.appendChild(document.createTextNode(via));
+			label.appendChild(name);
+			label.appendChild(count);
 			elStrategies.appendChild(label);
+		}
+	}
+
+	/**
+	 * How many of the edges on screen each strategy found, on its row.
+	 *
+	 * Of what is DRAWN, so the numbers answer to the same filters the stats line
+	 * does and move with them. An edge two strategies found counts on both
+	 * rows, which is why they can add up to more than the edges there are. And
+	 * a strategy that is unticked still counts the edges it shares with one
+	 * that is not -- those are still on screen -- so the drop on unticking it is
+	 * exactly the edges only it had found, which is what its tooltip says goes.
+	 *
+	 * Called by render() with the links it has just made.
+	 */
+	function renderStrategyCounts(links) {
+		let counts = strategyCounts(links);
+		for (let [via, count] of viaCounts) {
+			if (!count) continue;
+			let n = counts.get(via) || 0;
+			// A row in the list says 0: the strategy ran, and nothing of its is
+			// on screen. OpenAlex's switch says nothing until it has found some.
+			count.textContent = n || via !== 'openalex' ? n.toLocaleString() : '';
+		}
+	}
+
+	/** Strategy id -> how many of `links` it found. A link's `via` is the
+	 *  strategies still switched on; `found` is every one that found the edge. */
+	function strategyCounts(links) {
+		let counts = new Map();
+		for (let l of links) {
+			for (let v of (l.found || l.via)) counts.set(v, (counts.get(v) || 0) + 1);
+		}
+		return counts;
+	}
+
+	/**
+	 * What a strategy is called, wherever the page names one: its row in the
+	 * panel, an edge's tooltip, the key in an exported figure. One message per
+	 * strategy the build ships, written out for the reason viaHint()'s are. One
+	 * the page has never heard of keeps its id, which is at least what the
+	 * payload calls it.
+	 */
+	function viaName(via) {
+		switch (via) {
+			case 'pdf-links': return t('strategy-name-pdf-links');
+			case 'text-doi': return t('strategy-name-text-doi');
+			case 'title-match': return t('strategy-name-title-match');
+			case 'locator-match': return t('strategy-name-locator-match');
+			case 'openalex': return t('strategy-name-openalex');
+			case 'ref-strings': return t('strategy-name-ref-strings');
+			default: return via;
 		}
 	}
 
@@ -1962,7 +2079,8 @@
 					? t('chip-or-later', { year: term.lo })
 					: t('chip-or-earlier', { year: term.hi });
 			}
-			return t(term.op === 'is' ? 'chip-is-exactly' : 'chip-contains', { value: term.value });
+			if (term.op !== 'is') return t('chip-contains', { value: term.value });
+			return t('chip-is-exactly', { value: Filters.valueLabel(f.field, term.value) });
 		});
 		// "or", because terms widen. It is the chips between them that narrow.
 		return what + ' ' + bits.join(t('chip-or-join')) + '\n' + t('chip-click-to-edit');
@@ -2672,9 +2790,7 @@
 				// tooltip is asked not to appear -- it hides itself on falsy
 				// content -- and edgeHitArea() takes the edges off the hit-test
 				// canvas at the same time, so there is nothing to hover.
-				.linkLabel(l => (edgeTips
-					? l.via.join(', ') + (l.doi ? ' — ' + escapeHtml(l.doi) : '')
-					: ''))
+				.linkLabel(l => (edgeTips ? edgeTooltip(l) : ''))
 				.linkPointerAreaPaint(edgeHitArea())
 				// Colour by the strongest strategy backing the edge, so a
 				// publisher's own DOI link reads differently from an inferred
@@ -2720,6 +2836,7 @@
 			anchorNext = null;
 		}
 		renderLegend(nodes);
+		renderStrategyCounts(links);
 		// Rebuilt with the graph rather than only when opened: a build phase
 		// landing, a strategy switched off or a paper added all change what is
 		// missing, and a stale list would be a list of the wrong papers.
@@ -2916,6 +3033,9 @@
 		l._render = linkRender;
 		l.confidence = e.confidence;
 		l.via = via;
+		// Every strategy that found it, switched on or not: `via` above is what
+		// the edge is drawn by, this is what its strategies' rows count.
+		l.found = e.via;
 		l.doi = e.doi;
 		return l;
 	}
@@ -4632,7 +4752,7 @@
 			for (let v of seen) if (!rows.includes(v)) rows.push(v);
 			legend.edges = {
 				title: t('export-legend-edges'),
-				rows: rows.map(v => ({ color: viaColor(v), label: v })),
+				rows: rows.map(v => ({ color: viaColor(v), label: viaName(v) })),
 			};
 		}
 
@@ -7955,7 +8075,7 @@
 			viaGen++;
 			// The toggles are built from the payload's strategies, and would
 			// otherwise keep the boxes they were drawn with.
-			renderedVias = '';
+			renderedVias = null;
 		}
 		if (Array.isArray(view.filters)) panelBox.load(view.filters.filter(isFilter));
 
@@ -8067,6 +8187,11 @@
 		// from its data-zg-title; if the panel is ahead of the graph, the
 		// button says so again, now in the user's language.
 		syncPending();
+		// The strategies' rows are built out of the payload and keep their
+		// names until the list of them changes -- so a payload that beat the
+		// strings across named them by id, and has to be asked again.
+		renderedVias = null;
+		if (raw) renderStrategyToggles();
 		if (raw) render();
 	});
 

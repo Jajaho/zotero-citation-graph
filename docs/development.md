@@ -513,6 +513,28 @@ and so is the three-way CSS that selects it: a bare `:root`, a media query guard
 to dark beats a window explicitly told to be light, and forcing a scheme works one way only — and
 it fails silently, so `npm test` holds it.
 
+The tokens only colour what the page draws. What Gecko draws itself — a `<select>`, a number
+field's spinner, an unticked checkbox, a slider's track, the scrollbar — is painted from the
+`color-scheme` the element declares, so each of the three palette blocks declares the one it is
+a palette for; without it a dark sidebar was dark text around white menus. The density is read
+too: `:root[zoteroUIDensity="compact"]` shortens the three lengths the sidebar is spaced by
+(`--zg-gap-row`, `--zg-gap-group`, `--zg-pad-head`), and nothing else — the bar is core's toolbar
+height in both.
+
+**The sidebar is in the order it is read.** *Item Selection*, then *Graph Display* — colour, size
+and the legend, which is the one thing in the panel that is read rather than set and was last,
+under the strategies and seven sliders, below the fold of a 900px window — then *Referencing
+Strategies* and *Graph Physics*, which are opened when one of them is in question. A slider's row
+is its name and its value on one line with the track full width beneath; it was one line of
+three, sized by a list of slider ids that the three energy sliders were never added to, so their
+names wrapped to three lines and a German readout was cut off mid-number. The row is now found by
+what is in it (`.section label:has(> input[type="range"])`), so the next slider is laid out too.
+A strategy's row carries its name (`viaName()`, one `strategy-name-*` message per strategy the
+build ships; the payload only has ids) and how many of the edges *on screen* it found, strongest
+evidence first. An edge two strategies found counts on both rows, and an unticked strategy still
+counts the edges it shares with a ticked one, so the drop on unticking is exactly the edges only
+it had found. The same names are used in an edge's tooltip and in an exported figure's key.
+
 **The sidebar's width is dragged, not split.** There is no `<splitter>` in an HTML document,
 which is exactly why the reader carries a resizer of its own; this does the same with pointer
 events, clamped between core's own 200px collections-pane floor and 420px. The width and the
@@ -1753,7 +1775,9 @@ tools/
   name, which is what the type filter and a saved view are keyed on and must not change with the
   display language — and `itemTypeName` beside it, `Zotero.ItemTypes.getLocalizedString()`, which
   is what a reader should be shown ("Conference Paper"). It is `null` where core has no label, and
-  the page falls back to the name.
+  the page falls back to the name. The page shows the label in the legend, on a completion row and
+  on a chip (`typeName()`, and `setNamer()` in `nodeFilters.js`), and keeps the name: a mask picked
+  off the list holds `conferencePaper`, the colour hangs on it, and matching answers to either.
 - **What survives a restart is the scope and the settings, and nothing derived.**
   `Zotero_Tabs.getState()` serialises `tab.data` wholesale into `session.json`, so `tabData()` is the
   persisted form: `libraryID`, `collectionKey` (null for a selection made outside a collection),

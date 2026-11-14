@@ -68,7 +68,7 @@ zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles an
 zotero-citation-graph-scope-hide-external-names = Hide outside names
 zotero-citation-graph-scope-hide-external-names-hint = Leave the names off every outside reference, so they are drawn as unlabelled dots.
 
-zotero-citation-graph-color-by = Node Colour
+zotero-citation-graph-color-by = Node colour
 zotero-citation-graph-color-by-year = Year
 zotero-citation-graph-color-by-collection = Collection
 zotero-citation-graph-color-by-cluster = Subfield
@@ -146,6 +146,16 @@ zotero-citation-graph-strategy-ref-strings-hint = Works named in your papers’ 
 zotero-citation-graph-strategy-ref-strings-run = Parsed references
 zotero-citation-graph-strategy-ref-strings-run-hint = Read every entry in your papers’ reference lists and add the works they name, including those with no DOI anywhere. Needs "Outside refs" to draw them. Works offline; it adds nodes rather than edges, so ticking it rebuilds.
 zotero-citation-graph-strategy-other-hint = Untick to hide the edges only this strategy found.
+# What each strategy is called: on its row in the panel, in an edge's tooltip and
+# in the key of an exported figure. The page knows them by id only, and one it
+# has no name for is shown by its id. ref-strings is the strategy the "Parsed
+# references" switch runs, and is called the same.
+zotero-citation-graph-strategy-name-pdf-links = PDF links
+zotero-citation-graph-strategy-name-text-doi = DOIs in text
+zotero-citation-graph-strategy-name-title-match = Title match
+zotero-citation-graph-strategy-name-locator-match = Journal locator
+zotero-citation-graph-strategy-name-openalex = OpenAlex
+zotero-citation-graph-strategy-name-ref-strings = Parsed references
 
 zotero-citation-graph-reframe-hint = Fit the whole graph in view
 

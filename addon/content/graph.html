@@ -110,8 +110,8 @@
 		     force sliders shared one fold and one scroll position, and the one
 		     you wanted was reliably below the edge of a 200px pane. Four
 		     sections give each question somewhere to be asked -- which items are
-		     here at all, where the edges were read from, what moves them, and
-		     how the ones that are here get drawn -- and each remembers its own
+		     here at all, how the ones that are here get drawn, where the edges
+		     were read from, and what moves them -- and each remembers its own
 		     fold, so the physics you have settled can be put away without taking
 		     the strategies you are still arguing with down with them.
 
@@ -204,6 +204,93 @@
 					</div>
 				</div>
 
+				<!-- How the items that survived are drawn: which of them are drawn at
+				     all, which are labelled, how big each is and what its colour
+				     means. What the renderer is allowed to STOP drawing is a question
+				     about the engine before it is one about paint, so it is asked
+				     under Energy -- see the performance mode checkbox there.
+
+				     Second, directly under the selection, and it was last: the key to
+				     the colours on the canvas is the one thing in this panel that is
+				     read rather than set, and under the strategies and seven layout
+				     sliders it was below the fold of a 900px window. What is drawn
+				     and how to read it come first; where the edges came from and how
+				     the layout moves are opened when one of them is in question. -->
+				<div class="section" id="sec-display">
+					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
+						<span class="section-chevron"></span>
+						<span class="section-title" data-zg-str="section-display">Graph Display</span>
+					</button>
+					<div class="section-body" id="sec-display-body">
+						<div class="group">
+							<label data-zg-title="hide-isolated-hint" title="Leave out papers that have no edge left on the graph as it is filtered now.">
+								<input id="hide-isolated" type="checkbox"/>
+								<span data-zg-str="hide-isolated">Hide unconnected</span>
+							</label>
+							<!-- Whether the names an outside reference already has are left
+							     off the canvas. Nothing is derived or fetched for it -- it
+							     decides which of the names the graph already has get asked for
+							     room in the label pass, so it is paint and costs a repaint. Off
+							     by default, which leaves the names drawn: a ghost with no name
+							     is a grey dot whose only way of saying what it is is the
+							     tooltip. On is for a graph with more outside references than
+							     papers, where the DOI tails they fall back to are noise over
+							     the collection. -->
+							<label id="hide-ghost-names-label" data-zg-title="scope-hide-external-names-hint" title="Leave the names off every outside reference, so they are drawn as unlabelled dots.">
+								<input id="hide-ghost-names" type="checkbox"/>
+								<span data-zg-str="scope-hide-external-names">Hide outside names</span>
+							</label>
+							<!-- Applies to outside refs as well as held items. "global citations"
+							     needs the counts "query node metadata" fetches, so picking it
+							     switches that on -- in the item selection section -- and
+							     rebuilds, rather than sitting here greyed out: the user asked
+							     for the sizing, not for a lecture about a prerequisite. The
+							     lookup is still never entered on its own. -->
+							<label data-zg-title="size-by-hint" title="What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on &quot;Query node metadata&quot;).">
+								<span data-zg-str="size-by">Size</span>
+								<select id="size-by">
+									<option value="here" data-zg-str="size-by-here">Cited here</option>
+									<option value="global" data-zg-str="size-by-global">Global citations</option>
+								</select>
+							</label>
+							<label data-zg-title="color-by-hint" title="What a node's colour shows. The key underneath lists the colours on screen.">
+								<span data-zg-str="color-by">Colour</span>
+								<select id="color-by">
+									<option value="year" data-zg-str="color-by-year">Year</option>
+									<option value="collection" data-zg-str="color-by-collection">Collection</option>
+									<option value="cluster" data-zg-str="color-by-cluster">Subfield</option>
+									<option value="author" data-zg-str="color-by-author">First author</option>
+									<option value="publication" data-zg-str="color-by-publication">Publication</option>
+									<option value="type" data-zg-str="color-by-type">Item type</option>
+								</select>
+							</label>
+							<!-- What the node colours mean. Rebuilt on every render, so it only
+							     ever lists colours actually visible after the filters, and hidden
+							     until there is something to explain.
+
+							     Directly under the control that decides them, and in the same
+							     group, with no header and no fold of its own: the menu above it
+							     already says "colour: year", so a heading repeating it was the
+							     same sentence twice, and a separate fold was one more thing to
+							     open before the key could be read. It is the menu's answer, and
+							     it goes where the menu goes -- folding the section folds both. -->
+							<div id="legend" hidden="hidden">
+								<div id="legend-body"></div>
+							</div>
+						</div>
+
+						<div class="group">
+							<!-- How far an isolation reaches. Always visible: it is a setting
+							     about how you read a graph, and one you want to be able to find
+							     before you have isolated anything. -->
+							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
+								<span data-zg-str="isolate-depth">Isolation depth</span>
+								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
+							</label>
+						</div>
+					</div>
+				</div>
+
 				<!-- Where the edges came from: one switch per strategy, built out of the
 				     payload, and the floor a derived edge's confidence has to clear to
 				     be drawn at all. The threshold is here rather than among the display
@@ -224,7 +311,10 @@
 							<label class="via-toggle" data-zg-title="strategy-openalex-run-hint" title="Ask OpenAlex which works each paper with a DOI cites (uses the OpenAlex API)">
 								<input id="openalex-refs" type="checkbox"/>
 								<span class="dot" id="openalex-refs-dot"></span>
-								<span data-zg-str="strategy-openalex-run">OpenAlex references</span>
+								<span class="via-name" data-zg-str="strategy-openalex-run">OpenAlex references</span>
+								<!-- This strategy has no row in the list below -- its switch is
+								     this one -- so what it found is counted here. -->
+								<span class="via-count" id="openalex-refs-count"></span>
 							</label>
 							<!-- Offline, unlike the one above, but switched for the other
 							     reason: it is the only strategy that adds NODES rather
@@ -235,7 +325,7 @@
 							<label class="via-toggle" data-zg-title="strategy-ref-strings-run-hint" title="Read each entry in your papers' reference lists and add the works they name, including those with no DOI">
 								<input id="ref-strings" type="checkbox"/>
 								<span class="dot" id="ref-strings-dot"></span>
-								<span data-zg-str="strategy-ref-strings-run">Parsed references</span>
+								<span class="via-name" data-zg-str="strategy-ref-strings-run">Parsed references</span>
 							</label>
 						</div>
 						<div id="strategies" class="group"></div>
@@ -419,86 +509,6 @@
 							</div>
 						</div>
 					</div>
-					</div>
-				</div>
-
-				<!-- How the items that survived are drawn: which of them are drawn at
-				     all, which are labelled, how big each is and what its colour
-				     means. What the renderer is allowed to STOP drawing is a question
-				     about the engine before it is one about paint, so it is asked
-				     under Energy -- see the performance mode checkbox there. -->
-				<div class="section" id="sec-display">
-					<button class="section-toggle" id="sec-display-toggle" type="button" aria-expanded="true" aria-controls="sec-display-body" title="Collapse this section">
-						<span class="section-chevron"></span>
-						<span class="section-title" data-zg-str="section-display">Graph Display</span>
-					</button>
-					<div class="section-body" id="sec-display-body">
-						<div class="group">
-							<label data-zg-title="hide-isolated-hint" title="Leave out papers that have no edge left on the graph as it is filtered now.">
-								<input id="hide-isolated" type="checkbox"/>
-								<span data-zg-str="hide-isolated">Hide unconnected</span>
-							</label>
-							<!-- Whether the names an outside reference already has are left
-							     off the canvas. Nothing is derived or fetched for it -- it
-							     decides which of the names the graph already has get asked for
-							     room in the label pass, so it is paint and costs a repaint. Off
-							     by default, which leaves the names drawn: a ghost with no name
-							     is a grey dot whose only way of saying what it is is the
-							     tooltip. On is for a graph with more outside references than
-							     papers, where the DOI tails they fall back to are noise over
-							     the collection. -->
-							<label id="hide-ghost-names-label" data-zg-title="scope-hide-external-names-hint" title="Leave the names off every outside reference, so they are drawn as unlabelled dots.">
-								<input id="hide-ghost-names" type="checkbox"/>
-								<span data-zg-str="scope-hide-external-names">Hide outside names</span>
-							</label>
-							<!-- Applies to outside refs as well as held items. "global citations"
-							     needs the counts "query node metadata" fetches, so picking it
-							     switches that on -- in the item selection section -- and
-							     rebuilds, rather than sitting here greyed out: the user asked
-							     for the sizing, not for a lecture about a prerequisite. The
-							     lookup is still never entered on its own. -->
-							<label data-zg-title="size-by-hint" title="What a node's size shows: how many papers here cite it, or how often it is cited worldwide (turns on &quot;Query node metadata&quot;).">
-								<span data-zg-str="size-by">Size</span>
-								<select id="size-by">
-									<option value="here" data-zg-str="size-by-here">Cited here</option>
-									<option value="global" data-zg-str="size-by-global">Global citations</option>
-								</select>
-							</label>
-							<label data-zg-title="color-by-hint" title="What a node's colour shows. The key underneath lists the colours on screen.">
-								<span data-zg-str="color-by">Colour</span>
-								<select id="color-by">
-									<option value="year" data-zg-str="color-by-year">Year</option>
-									<option value="collection" data-zg-str="color-by-collection">Collection</option>
-									<option value="cluster" data-zg-str="color-by-cluster">Subfield</option>
-									<option value="author" data-zg-str="color-by-author">First author</option>
-									<option value="publication" data-zg-str="color-by-publication">Publication</option>
-									<option value="type" data-zg-str="color-by-type">Item type</option>
-								</select>
-							</label>
-							<!-- What the node colours mean. Rebuilt on every render, so it only
-							     ever lists colours actually visible after the filters, and hidden
-							     until there is something to explain.
-
-							     Directly under the control that decides them, and in the same
-							     group, with no header and no fold of its own: the menu above it
-							     already says "colour: year", so a heading repeating it was the
-							     same sentence twice, and a separate fold was one more thing to
-							     open before the key could be read. It is the menu's answer, and
-							     it goes where the menu goes -- folding the section folds both. -->
-							<div id="legend" hidden="hidden">
-								<div id="legend-body"></div>
-							</div>
-						</div>
-
-						<div class="group">
-							<!-- How far an isolation reaches. Always visible: it is a setting
-							     about how you read a graph, and one you want to be able to find
-							     before you have isolated anything. -->
-							<label id="depth-label" data-zg-title="isolate-depth-hint" title="How many edges out from an isolated node stays lit. 0 lights the isolated nodes and nothing else.">
-								<span data-zg-str="isolate-depth">Isolation depth</span>
-								<input id="isolate-depth" type="number" min="0" max="4" step="1" value="1"/>
-							</label>
-						</div>
 					</div>
 				</div>
 			</div>

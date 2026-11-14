@@ -72,6 +72,37 @@
 		return translate ? translate(id, args) : fallback;
 	}
 
+	/**
+	 * What a VALUE is called on screen, where that is not the value itself.
+	 *
+	 * One facet needs it. An item type is `conferencePaper` in the data and
+	 * "Conference Paper" in Zotero's own columns, and only graph.js knows the
+	 * second -- it comes with the payload, in the user's language. So graph.js
+	 * installs a namer, as it installs the translator above, and everything in
+	 * here that shows a value asks it: a completion row, a chip.
+	 *
+	 * The value stays the identity. A mask picked off the list still holds the
+	 * id, so it survives Zotero changing language and a tab restored from last
+	 * session; what the reader sees and can type towards is the name. Matching
+	 * answers to either -- see hit() -- because a list that offers "Conference
+	 * Paper" and a box that finds nothing for "conference" would be two halves
+	 * of one control disagreeing.
+	 *
+	 * Without a namer, and for every value it has no other word for, a value is
+	 * shown as itself.
+	 */
+	var namer = null;
+
+	function setNamer(fn) {
+		namer = typeof fn === 'function' ? fn : null;
+	}
+
+	function valueLabel(field, value) {
+		if (!namer || !field) return String(value);
+		var s = namer(field, value);
+		return s == null || s === '' ? String(value) : String(s);
+	}
+
 	/** What a field is called on screen. */
 	function fieldLabel(name) {
 		for (var i = 0; i < FIELDS.length; i++) {
@@ -357,10 +388,18 @@
 
 	// --- matching ---------------------------------------------------------
 
-	function hit(values, op, needle) {
+	/** A value passes as itself or as what it is shown as -- see valueLabel(). */
+	function hit(field, values, op, needle) {
 		for (var i = 0; i < values.length; i++) {
-			var s = String(values[i]).toLowerCase();
+			var value = String(values[i]);
+			var s = value.toLowerCase();
 			if (op === 'is' ? s === needle : s.indexOf(needle) >= 0) return true;
+			if (!namer) continue;
+			// Nearly every value is its own name, and those were just asked.
+			var name = valueLabel(field, value);
+			if (name === value) continue;
+			name = name.toLowerCase();
+			if (op === 'is' ? name === needle : name.indexOf(needle) >= 0) return true;
 		}
 		return false;
 	}
@@ -377,11 +416,11 @@
 			return false;
 		}
 		var needle = String(t.value).toLowerCase();
-		if (field) return hit(fac[field] || [], t.op, needle);
+		if (field) return hit(field, fac[field] || [], t.op, needle);
 		// A bare term is asked of every facet at once. That is what lets
 		// "Tales" work without the user having to know which field it lives in.
 		for (var j = 0; j < NAMES.length; j++) {
-			if (hit(fac[NAMES[j]] || [], t.op, needle)) return true;
+			if (hit(NAMES[j], fac[NAMES[j]] || [], t.op, needle)) return true;
 		}
 		return false;
 	}
@@ -413,18 +452,21 @@
 		return (f.field || '*') + '|' + f.terms.map(termKey).sort().join('|');
 	}
 
-	function termLabel(t) {
+	function termLabel(t, field) {
 		if (t.op === 'range') {
 			if (t.lo != null && t.hi != null) {
 				return t.lo === t.hi ? String(t.lo) : t.lo + '–' + t.hi;
 			}
 			return t.lo != null ? '≥' + t.lo : '≤' + t.hi;
 		}
+		// A pinned value reads as what it is called; a substring is the
+		// reader's own text and reads as typed.
+		var shown = t.op === 'is' ? valueLabel(field, t.value) : t.value;
 		// '~' marks a substring. Pinned values are the common case and read
 		// plainly; the odd one out is the one that has to be marked. A value
 		// with a comma in it is quoted, or a three-value chip would read as
 		// four and there would be no telling where one value ended.
-		var v = t.value.indexOf(',') >= 0 ? '"' + t.value + '"' : t.value;
+		var v = shown.indexOf(',') >= 0 ? '"' + shown + '"' : shown;
 		return (t.op === 'contains' ? '~' : '') + v;
 	}
 
@@ -432,7 +474,7 @@
 	 *  title attribute carries the long form. */
 	function describe(f) {
 		var what = f.field ? fieldLabel(f.field) : tr('field-any-short', null, 'Any');
-		return what + ': ' + f.terms.map(termLabel).join(', ');
+		return what + ': ' + f.terms.map(function (t) { return termLabel(t, f.field); }).join(', ');
 	}
 
 	// --- completions ------------------------------------------------------
@@ -520,7 +562,10 @@
 				for (var v = 0; v < values.length; v++) {
 					var value = String(values[v]);
 					if (!value) continue;
-					if (term && value.toLowerCase().indexOf(term) < 0) continue;
+					// Typed towards what the row will say, or towards what it
+					// is: the row is found either way.
+					if (term && value.toLowerCase().indexOf(term) < 0
+						&& valueLabel(name, value).toLowerCase().indexOf(term) < 0) continue;
 					if (chosen.has(value.toLowerCase())) continue;
 					var id = name + ' ' + value;
 					if (seen.has(id)) continue;
@@ -543,7 +588,8 @@
 		function valueRow(rec) {
 			return {
 				kind: 'value',
-				label: rec.value,
+				// What the value is called. The term below is still the value.
+				label: valueLabel(rec.field, rec.value),
 				// Which facet the value came from, named the way the panel names
 				// it: a bare search spans all of them, and Nature the journal is
 				// not Nature the collection.
@@ -592,6 +638,8 @@
 	global.ZGFilters = {
 		FIELDS: FIELDS,
 		setTranslator: setTranslator,
+		setNamer: setNamer,
+		valueLabel: valueLabel,
 		fieldLabel: fieldLabel,
 		fieldKey: fieldKey,
 		fieldFor: fieldFor,
