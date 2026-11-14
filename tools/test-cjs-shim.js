@@ -6238,6 +6238,96 @@ check('autobuild gates the controls that build by themselves, and no button', ()
 });
 
 /**
+ * The other half of the switch: a box moved with Autobuild off is an order for
+ * the NEXT build, and must change nothing about the graph on screen.
+ *
+ * It did, because what is drawn asked the boxes rather than the payload.
+ * Unticking Outside refs took every ghost off the canvas at the next repaint
+ * -- in the real page the stats line went from "21 outside (10 named) · 308
+ * edges" to "217 edges" on a move of the confidence slider, with no rebuild
+ * sent -- and greyed "Cited by" over ghosts that were still there. Unticking
+ * the lookup resized the graph out of "global citations". And "what is
+ * missing" opened an empty list beside a box already ticked for a build that
+ * had not run.
+ */
+check('with Autobuild off, a scope box not built yet changes nothing on screen', () => {
+	const label = () => ({ classList: { off: null, toggle(name, on) { this.off = on; } } });
+	const labels = { 'min-cites-label': label(), 'hide-ghost-names-label': label() };
+	const sent = [];
+	let rebuilds = 0;
+	const page = liftPage({
+		functions: ['builtWith', 'syncEnabled', 'renderGaps', 'openGaps'],
+		globals: {
+			raw: { options: { includeExternal: true, enrich: true }, external: [], meta: { phase: 'done' } },
+			elIncludeExternal: { checked: false },
+			elEnrich: { checked: false },
+			elMinCites: { disabled: false },
+			elHideGhostNames: { disabled: false },
+			elSizeBy: { value: 'global' },
+			el: id => labels[id],
+			pending: true,
+			gapsOpen: false,
+			gapRows: [],
+			Gaps: { rank: () => ({ rows: [], total: 0 }) },
+			believedEdges: () => [],
+			clusters: () => ({ of: new Map() }),
+			markGaps: () => {},
+			emit: msg => sent.push(msg),
+			rebuildNow: () => { rebuilds++; },
+		},
+	});
+
+	// Built with outside refs and the lookup; both boxes unticked for the next build.
+	page.syncEnabled();
+	if (page.elMinCites.disabled || page.elHideGhostNames.disabled || labels['min-cites-label'].classList.off) {
+		throw new Error('the controls over the ghosts went dead while the ghosts are still drawn');
+	}
+	if (page.elSizeBy.value !== 'global') throw new Error('an unticked lookup resized a graph that still has its counts');
+	page.openGaps();
+	if (rebuilds) throw new Error('"what is missing" rebuilt a graph that already has its outside references');
+	if (page.elIncludeExternal.checked) throw new Error('"what is missing" overruled a box set for the next build');
+	const rows = sent.find(m => m.type === 'gaps-rows');
+	if (!rows || rows.lookup !== true) throw new Error('the list disowned the counts it was ranked with');
+
+	// Built without either; both boxes ticked for the next build.
+	page.raw = { options: { includeExternal: false, enrich: false }, external: [], meta: { phase: 'done' } };
+	page.elIncludeExternal.checked = true;
+	page.elEnrich.checked = true;
+	page.syncEnabled();
+	if (!page.elMinCites.disabled) throw new Error('"Cited by" is live with no ghost on screen to count');
+	// The mode just picked survives the wait for its counts, as it always did.
+	if (page.elSizeBy.value !== 'global') throw new Error('a lookup on its way lost the sizing that asked for it');
+	sent.length = 0;
+	page.openGaps();
+	if (rebuilds !== 1) throw new Error('"what is missing" opened an empty list beside a build that was never run');
+	if (sent.find(m => m.type === 'gaps-rows').lookup !== false) throw new Error('the list claimed counts nobody fetched');
+
+	// The same boxes with nothing pending is a build already on its way: Autobuild
+	// is on and sent it. Not asked for twice.
+	page.pending = false;
+	page.openGaps();
+	if (rebuilds !== 1) throw new Error('a build already running was asked for again');
+
+	// Neither built nor asked for: tick the box and build, as before.
+	page.elIncludeExternal.checked = false;
+	page.elEnrich.checked = false;
+	page.syncEnabled();
+	if (page.elSizeBy.value !== 'here') throw new Error('sizing by counts nobody has or wants');
+	page.openGaps();
+	if (rebuilds !== 2 || !page.elIncludeExternal.checked) throw new Error('"what is missing" no longer asks for outside references');
+
+	// A payload from before options were stamped: the box is the only record.
+	page.raw = { external: [] };
+	if (page.builtWith('includeExternal', { checked: true }) !== true) throw new Error('no options, and the box was not believed');
+
+	// And the canvas itself, which nothing here can run.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes("let showGhosts = builtWith('includeExternal', elIncludeExternal)")) {
+		throw new Error('render() decides whether to draw outside references by the box');
+	}
+});
+
+/**
  * The item pane's toggle is on the bar before anything has been clicked.
  *
  * It shipped hidden until the panel existed, on the reasoning that the pane
