@@ -689,6 +689,8 @@
 	 * mode. Handing force-graph its OWN arrays back is what triggers the
 	 * burst: graphData is the one prop it re-anneals for, it sets alpha to 1
 	 * itself, and the warmup ticks run inside that update.
+	 *
+	 * Asked for, not done on the spot -- see strikeSoon().
 	 */
 	function reheat() {
 		if (!fg) return;
@@ -696,6 +698,50 @@
 			fg.d3ReheatSimulation();
 			return;
 		}
+		strikeSoon();
+	}
+
+	/**
+	 * The static layout's burst, once the asking has stopped.
+	 *
+	 * A burst is PERF_WARMUP ticks run back to back with nothing painted, and
+	 * its cost is the graph's: measured on 1,500 papers, 1.4 to 2.6 seconds of
+	 * a main thread that answers nothing. A slider fires `input` for every step
+	 * its thumb crosses, each step came through reheat(), and each one struck
+	 * -- so dragging "edge pull" across its travel froze the window for the
+	 * length of a burst per step, a dozen times over, to show a dozen layouts
+	 * of which only the last was ever asked for. Dragging a group's flag did
+	 * the same per mouse move.
+	 *
+	 * So the burst waits until nothing has asked for one for STRIKE_WAIT_MS.
+	 * Not once a frame: a frame is far shorter than a burst, so that would only
+	 * queue the same dozen behind one another. The forces themselves are set at
+	 * once by whoever called -- the wait is only on the anneal that answers
+	 * them -- and while the thumb is moving the readout beside it still follows.
+	 *
+	 * With the engine running none of this applies: a reheat there is one
+	 * assignment, and the layout answering as the thumb moves is the point.
+	 */
+	const STRIKE_WAIT_MS = 120;
+	let strikeTimer = null;
+
+	function strikeSoon() {
+		window.clearTimeout(strikeTimer);
+		strikeTimer = window.setTimeout(strike, STRIKE_WAIT_MS);
+	}
+
+	/** A burst that is about to happen anyway, or has no static layout left to
+	 *  happen to, is not owed any more. */
+	function strikeSpent() {
+		window.clearTimeout(strikeTimer);
+		strikeTimer = null;
+	}
+
+	function strike() {
+		strikeTimer = null;
+		// The engine came back while this waited: perfEngine() reheated on the
+		// way, and there are ticks to answer with again.
+		if (!fg || PERF.physics) return;
 		let d = fg.graphData();
 		if (d) fg.graphData({ nodes: d.nodes, links: d.links });
 	}
@@ -2756,13 +2802,18 @@
 		if (movedStructure || movedRadii) thaw();
 
 		if (movedStructure) {
+			// With the engine off this IS the burst, run against the forces as
+			// they now stand -- so one still waiting has been answered.
+			strikeSpent();
 			fg.graphData({ nodes, links });
 			return;
 		}
 		// Skipping graphData leaves force-graph holding the previous link
-		// objects. That is safe precisely because the signature covers every
-		// field anything reads off them: identical signature, interchangeable
-		// arrays -- and the old ones have their endpoints already resolved.
+		// array. That is safe because it holds the same OBJECTS: linkFor()
+		// hands out one per edge and rewrites its fields in place, so what is
+		// drawn off them -- confidence, strategies, DOI -- is already current,
+		// and the ends are already resolved. See structureSig() for the one
+		// kind of link that is not the same object twice.
 		if (movedRadii) {
 			// Only the collision force caches radii, so with it switched off
 			// there is nothing to rebuild and nothing to reheat FOR -- a
@@ -2783,9 +2834,24 @@
 
 	/**
 	 * Everything a new graphData would tell force-graph that it does not
-	 * already know: which nodes are on screen, and every edge property that is
-	 * drawn or that the layout prices. Taken from the fresh arrays, before
-	 * force-graph resolves link endpoints from ids to node objects.
+	 * already know, which is what the LAYOUT is made of: which nodes are on
+	 * screen, and which of them each edge joins.
+	 *
+	 * Not what is drawn on an edge. This used to sign confidence, strategies
+	 * and DOI as well, on the reasoning that force-graph would otherwise go on
+	 * holding links that said something stale -- but a link is the same object
+	 * every render and linkFor() has already rewritten those fields on it, and
+	 * nothing the layout prices reads any of them: linkStrength() goes by
+	 * degree and pins. So a build phase that found a second strategy for edges
+	 * already drawn, or a strategy switched off that every one of its edges
+	 * survived, re-annealed the whole graph to change a colour -- and in the
+	 * static mode that is a blocking burst each time.
+	 *
+	 * The exception is a pair the payload lists twice. Only the first of the
+	 * two is the cache's object; the second is made afresh each render, so
+	 * force-graph would be left holding last render's. Those still carry what
+	 * is drawn on them into the signature, and a change to it still goes
+	 * through graphData.
 	 */
 	function structureSig(nodes, links) {
 		let out = [];
@@ -2795,8 +2861,13 @@
 			// Through endId(): a link handed back out of linkCache has already
 			// had its ends resolved to node objects, and an object stringifies
 			// to the same thing whichever node it is.
-			out.push(endId(l.source) + '>' + endId(l.target) + ':' + l.confidence
-				+ ':' + l.via.join('+') + ':' + (l.doi || ''));
+			let from = endId(l.source);
+			let to = endId(l.target);
+			let sig = from + '>' + to;
+			if (linkCache.get(from + SIG_SEP + to) !== l) {
+				sig += ':' + l.confidence + ':' + l.via.join('+') + ':' + (l.doi || '');
+			}
+			out.push(sig);
 		}
 		return out.join(SIG_SEP);
 	}
@@ -2819,8 +2890,8 @@
 	 * Reused, a link keeps its colour, and the pool grows only by edges it has
 	 * never seen. Its fields are rewritten each time because what is drawn can
 	 * change under one id pair -- a strategy switched off shortens `via` -- and
-	 * when the structure did not change they are rewritten with what they
-	 * already were, which is what lets updateGraph() go on skipping graphData.
+	 * being rewritten on the object force-graph already holds is what lets
+	 * updateGraph() skip graphData for a change that is only drawn.
 	 */
 	function linkFor(e, via) {
 		let key = e.from + SIG_SEP + e.to;
