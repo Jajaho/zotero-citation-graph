@@ -296,7 +296,10 @@ single paper. The page holds the other half of that bargain: **cited by ≥** co
 *here* cite an outside work, so it can never exceed the number of papers held, and at the default of
 2 a graph of one would hide every ghost it has. The first payload that says how many papers are held
 clamps it to fit — once, and never again, since a number the reader has moved since is theirs
-(`applyScope()` in `content/graph.js`).
+(`applyScope()` in `content/graph.js`). The fitted number is saved with the tab like any other
+change to the view: the tab's settings are first saved 300ms after it opens, usually before that
+payload, and a restored tab takes a saved number for the reader's own — so an unsaved fit came back
+as the 2 it had replaced.
 
 **Rows can still be lost on the way in.** `itemRecord()` declines an item with no title, so ten
 selected rows can become seven nodes. When the two numbers differ the stats line says so —
@@ -612,6 +615,11 @@ radius on screen, between a 13px floor and a 28px ceiling, and shrinks to fit
 the circle where it can; on a small node it simply overhangs, and the halo
 stroke keeps it readable over the edges underneath.
 
+A paper with no author is named by the first word of its title longer than
+three letters, and a word is letters, the marks that ride on them, and digits —
+in any script (`NOT_WORD`). `\W` is ASCII's idea of one: it drew *Étude sur la
+lumière* as `tude1905` and a Greek title as its year alone.
+
 **The legend, directly under the colour and size controls**, is headed `Coloured by <mode>` — the
 sentence the panel's colour control just made — and says what those colours mean: a labelled
 gradient for `year`, one swatch per key for `collection`, `subfield`, `first author`,
@@ -776,6 +784,12 @@ all, so it borrows the shed: freeze the picture, reheat behind it, spend back do
 over a few invisible ticks. While a node is carried the decay is pinned at 0 and
 nothing else is done, so a held graph drags at the energy it is held at.
 
+A shed puts back the decay it found when it began, and under a hold that is the
+hold's 0. So switching the hold off while one is in flight — a node dropped a
+few ticks ago — does not write the engine's decay itself: it tells the shed what
+to hand back (`settleDecay`), and the shed finishes. Written directly, the 0 came
+back over it when the shed landed, and with the hold off nothing moved it again.
+
 Measured on 1,500 nodes with the mouse untouched, as pixels changing over 600ms:
 at rest with the hold off, 0. Switched to 0.05: 236,000 at three seconds, 231,400
 at ten, 207,700 at twenty-two, 201,400 at forty-three — a layout still working,
@@ -845,7 +859,11 @@ publication: Nature, Nature Reviews, APL     one mask, three ways to pass it
 narrowing happens between them, so every chip added narrows what is left and
 none can widen it — the graph you end up with is the intersection of every mask
 you laid down. Backspace on an empty box lifts the last chip; the `✕` on a chip
-lifts that one.
+lifts that one. A press on a chip does not take the focus out of the box: the box
+is authoring from the first value picked off the list, its blur ends the edit and
+rebuilds the chips, and a button replaced between press and release raises no
+click — the first press on a `✕` did nothing. The `✕` leaves the box itself, once
+its mask is gone.
 
 Eight facets can be masked on: `author`, `year`, `tag`, `type`, `publication`,
 `collection`, `cluster` (the subfield, see above), `title`. A bare term with no
@@ -988,6 +1006,14 @@ item, so they ring like anything else but contribute nothing to the selection.
 
 See *[The item pane, beside the graph](#the-item-pane-beside-the-graph)* for what
 the pane says about a pick of none, one and several.
+
+Two keys work on the pick: **Ctrl-A** (Cmd on a Mac) picks every node on screen,
+and **P** pins the pick, or unpins it when all of it is pinned. They stand down
+only where a key belongs to the control it was pressed on (`ownsKey()`): a field
+that takes text keeps both, and a `<select>` keeps its bare letters, which are
+its type-ahead. A checkbox or a slider keeps neither — one of those holds the
+focus from the moment it is clicked, and counting every `<input>` as a text field
+left both keys dead after any trip to the sidebar.
 
 **Isolating** dims everything more than `isolation depth` edges from the node —
 in both directions, so you see what it cites *and* what cites it. It is a view
@@ -1743,7 +1769,8 @@ tools/
   it) and each owner supplies its elements, an `onChange`, and `candidates(skip)`: the facets
   completions are drawn from, with the mask being widened left out. The completion list itself is
   one shared DOM node with a `suggestBox` pointer, which is sound precisely because only one box
-  can hold the focus. Escape inside a box closes the list, then the edit, then the text — and once
+  can hold the focus. A box's blur runs a tick late, by which time the focus — and the list — may
+  be the other box's, so it closes the list only while `suggestBox` still names it. Escape inside a box closes the list, then the edit, then the text — and once
   there is nothing left in there to close it is let through, so the card wrapping the second box
   can still be shut with it.
 - **A group is a force, not a filter.** `groupOf` maps a node id to the point its groups pull it

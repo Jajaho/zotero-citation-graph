@@ -475,7 +475,18 @@
 			if (lastAlpha == null || lastAlpha < level * (1 - HOLD_SLOP)) shedTo(level);
 		}
 		else {
-			if (baseDecay !== null) fg.d3AlphaDecay(baseDecay);
+			// A shed in flight runs on a decay of its own and puts back the one
+			// it found when it began -- which, begun under a hold, is the hold's:
+			// 0. thaw() would restore that a few ticks AFTER this had set the
+			// engine's own, and with the hold off nothing would ever move it
+			// again: the very layout that never cools, with the control that
+			// says so switched off. So the shed is told what to hand back, and
+			// left to finish -- cut short, it would let go of the graph at
+			// whatever alpha it had got down to.
+			if (baseDecay !== null) {
+				if (settleDecay !== null) settleDecay = baseDecay;
+				else fg.d3AlphaDecay(baseDecay);
+			}
 			holdForCollide();
 			applySettle();
 		}
@@ -967,7 +978,15 @@
 		if (!held) return;
 		citesClamped = true;
 		let cap = Math.max(1, Math.min(2, held));
-		if (Number(elMinCites.value) > cap) elMinCites.value = String(cap);
+		if (Number(elMinCites.value) > cap) {
+			elMinCites.value = String(cap);
+			// Saved like any other change to the view. The tab's settings are
+			// first saved 300ms after it opens, which is usually before the
+			// payload that says how many papers there are -- so what was kept
+			// was the 2, and a restored tab takes a saved number for the
+			// reader's own and never fits it again.
+			viewChanged();
+		}
 	}
 
 	window.zgSetStatus = function (text) {
@@ -1044,6 +1063,11 @@
 		return m ? Number(m[1]) : null;
 	}
 
+	/** Everything that is not part of a word, in any script: letters, the marks
+	 *  that ride on them, and digits are. \W is ASCII's idea of one -- it took
+	 *  the É off "Étude" and every letter off a title in Greek. */
+	const NOT_WORD = /[^\p{L}\p{M}\p{N}]/gu;
+
 	/**
 	 * The always-visible node label, in the usual citekey form: first author's
 	 * surname followed by the year, e.g. "Kucsko2013". Falls back through the
@@ -1054,8 +1078,8 @@
 		let author = (item.creators || [])[0];
 		if (!author) {
 			let word = String(item.title || '').split(/\s+/)
-				.find(w => w.replace(/\W/g, '').length > 3);
-			author = word ? word.replace(/\W/g, '') : '';
+				.find(w => w.replace(NOT_WORD, '').length > 3);
+			author = word ? word.replace(NOT_WORD, '') : '';
 		}
 		author = author.replace(/\s+/g, '');
 		if (!author && !y) return '?';
@@ -2001,6 +2025,13 @@
 				let chip = document.createElement('span');
 				chip.className = 'chip';
 				if (i === editing) chip.classList.add('editing');
+				// A press on a chip must not take the focus out of the box. While
+				// the box is authoring -- which it is from the first value picked
+				// off the list -- its blur ends the edit and rebuilds these chips,
+				// between the press and the release: the button under the pointer
+				// was replaced, no click was raised, and the first press on a
+				// chip's ✕ did nothing at all.
+				chip.addEventListener('mousedown', e => e.preventDefault());
 				let text = document.createElement('button');
 				text.type = 'button';
 				text.className = 'chip-text';
@@ -2012,7 +2043,13 @@
 				x.className = 'chip-x';
 				x.textContent = '✕';
 				x.title = t('chip-remove');
-				x.addEventListener('click', () => removeFilter(i));
+				x.addEventListener('click', () => {
+					removeFilter(i);
+					// The press no longer takes the focus out of the box, so the
+					// box is left here instead, as that press always left it: the
+					// list it had open was completing a mask that has just gone.
+					input.blur();
+				});
 				chip.appendChild(text);
 				chip.appendChild(x);
 				chips.appendChild(chip);
@@ -2028,7 +2065,10 @@
 		// Leaving the box ends the edit: everything committed is on the chip
 		// already, so there is nothing in the text worth keeping.
 		input.addEventListener('blur', () => window.setTimeout(() => {
-			hideSuggest();
+			// The list is shared, and by now it may be another box's: going from
+			// the panel's box to a group's opens the list there on focus, and
+			// this timer then closed it.
+			if (suggestBox === box) hideSuggest();
 			if (editing >= 0) {
 				endEdit();
 				renderChips();
@@ -6497,8 +6537,7 @@
 			}
 			return;
 		}
-		let target = e.target;
-		if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+		if (ownsKey(e.target, mod)) return;
 		// A menu holds the node it was opened over, and gives it back to the
 		// layout when it closes: a pin written in between would be undone by
 		// that release. The same order zgMenuPicked() keeps.
@@ -6519,6 +6558,27 @@
 			togglePinPicked();
 		}
 	});
+
+	/**
+	 * Whether a key belongs to the control it was pressed on rather than to the
+	 * graph.
+	 *
+	 * A field that takes text keeps all of them. That used to be every <input>
+	 * there is, which on this page is mostly checkboxes and sliders -- and one
+	 * of those holds the focus from the moment it is clicked, so Ctrl-A and P
+	 * were dead after any trip to the sidebar until something else was clicked.
+	 * Neither has a use for a letter or a select-all.
+	 *
+	 * A <select> is the one in between: a bare letter is its type-ahead -- P
+	 * would jump to an option -- but it has no select-all of its own to keep.
+	 */
+	function ownsKey(target, mod) {
+		if (!target || !target.tagName) return false;
+		if (target.isContentEditable || target.tagName === 'TEXTAREA') return true;
+		if (target.tagName === 'SELECT') return !mod;
+		if (target.tagName !== 'INPUT') return false;
+		return !/^(checkbox|radio|range|button|submit|reset|image|color|file)$/.test(target.type);
+	}
 
 	/**
 	 * Pin the pick, or unpin it when it is all pinned already -- one key that
@@ -7340,10 +7400,13 @@
 		let n = searchRows[i];
 		if (!n || !fg) return;
 		if (Number.isFinite(n.x) && Number.isFinite(n.y)) fg.centerAt(n.x, n.y, REFRAME_MS);
-		setIsolated(new Set([n.id]));
 		// The pick, not a toggle of it: a row chosen out of the search results
 		// is "show me this one", and a second visit to the same paper must not
 		// answer by deselecting it.
+		//
+		// And the pick only. This used to isolate the paper as well, left over
+		// from when a click did: every search dimmed the rest of the graph, and
+		// replaced whatever neighbourhoods had been lit on purpose.
 		paneEngaged = true;
 		setPicked(new Set([n.id]));
 		hideSearch();
