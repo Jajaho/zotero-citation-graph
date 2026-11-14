@@ -40,7 +40,10 @@
 		{ name: 'type', label: 'Item type' },
 		{ name: 'publication', label: 'Publication' },
 		{ name: 'collection', label: 'Collection' },
-		{ name: 'cluster', label: 'Subfield' },
+		// `en` is the en-US keyword, written out where it is not the name: the
+		// one English word the box answers to that another locale's .ftl does
+		// not hold. See fieldFor().
+		{ name: 'cluster', label: 'Subfield', en: 'subfield' },
 		{ name: 'title', label: 'Title' },
 	];
 
@@ -106,13 +109,20 @@
 	}
 
 	/**
-	 * Keyword -> field name, for both the localised keyword and the field's own
-	 * name.
+	 * Keyword -> field name, for the localised keyword, the field's own name and
+	 * the en-US keyword.
 	 *
-	 * Both, always, and not only in English: a chip authored before Zotero's
-	 * language changed still spells its field the old way, and the two
+	 * All three, always, and not only in English: a chip authored before
+	 * Zotero's language changed still spells its field the old way, and the
 	 * vocabularies do not collide -- every localised keyword either equals a
 	 * field's own name or is a word in another language.
+	 *
+	 * The en-US keyword is its own case because it is not always the name. The
+	 * subfield facet is `cluster` in here and "subfield:" on an English panel,
+	 * so answering to names alone left "subfield:" -- the word an English
+	 * screenshot or a note to a colleague spells it with -- a bare search for
+	 * that literal text under any other language. The locale's own word is
+	 * asked first, so it wins if the two ever meet.
 	 *
 	 * Case-folded on both sides. The keyword is offered capitalised where the
 	 * language wants it that way, and nobody typing into a filter box holds the
@@ -123,6 +133,9 @@
 		if (NAMES.indexOf(w) >= 0) return w;
 		for (var i = 0; i < FIELDS.length; i++) {
 			if (fieldKey(FIELDS[i].name).toLowerCase() === w) return FIELDS[i].name;
+		}
+		for (var j = 0; j < FIELDS.length; j++) {
+			if (FIELDS[j].en === w) return FIELDS[j].name;
 		}
 		return null;
 	}
@@ -292,18 +305,34 @@
 		return t.lo != null ? '>=' + t.lo : '<=' + t.hi;
 	}
 
+	/**
+	 * Whether a substring has to be written `~"..."` to come back as itself.
+	 *
+	 * Written bare, the box reads a value its own way: it splits on a comma,
+	 * unwraps a quote, takes a leading `~` for the marker, trims the spaces off
+	 * both ends, reads "2013" or ">2010" under year as a span of years, and
+	 * takes "author: x" with no field in front of it for a mask on authors.
+	 * Each of those is a different mask from the one the chip was showing.
+	 */
+	function mustQuote(v, field) {
+		if (/[,"]/.test(v) || v.charAt(0) === '~') return true;
+		if (v !== v.trim()) return true;
+		if (field === 'year' && parseYear(v)) return true;
+		var colon = v.indexOf(':');
+		return !field && colon >= 0 && fieldFor(v.slice(0, colon).trim()) !== null;
+	}
+
 	/** One term as the box would spell it. parse(toInput(f)) must give f back:
 	 *  the chips are editable, so this round trip is load-bearing. */
-	function termText(t) {
+	function termText(t, field) {
 		if (t.op === 'range') return rangeText(t);
 		if (t.op === 'is') return quote(t.value);
-		return /[,"]/.test(t.value) || t.value.charAt(0) === '~'
-			? '~' + quote(t.value)
-			: t.value;
+		return mustQuote(t.value, field) ? '~' + quote(t.value) : t.value;
 	}
 
 	function toInput(f) {
-		return (f.field ? fieldKey(f.field) + ': ' : '') + f.terms.map(termText).join(', ');
+		return (f.field ? fieldKey(f.field) + ': ' : '')
+			+ f.terms.map(function (t) { return termText(t, f.field); }).join(', ');
 	}
 
 	/**
@@ -511,27 +540,36 @@
 		ranked.sort(function (a, b) {
 			return b.count - a.count || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0);
 		});
-		for (var s = 0; s < ranked.length && out.length < limit; s++) {
-			out.push({
+		function valueRow(rec) {
+			return {
 				kind: 'value',
-				label: ranked[s].value,
+				label: rec.value,
 				// Which facet the value came from, named the way the panel names
 				// it: a bare search spans all of them, and Nature the journal is
 				// not Nature the collection.
-				hint: fieldLabel(ranked[s].field),
+				hint: fieldLabel(rec.field),
 				// Shown on the row only while the search spans every facet: once
 				// the mask names one, repeating it on each row says nothing.
-				facet: p.field ? null : fieldLabel(ranked[s].field),
-				count: ranked[s].count,
-				field: ranked[s].field,
-				term: quote(ranked[s].value),
-			});
+				facet: p.field ? null : fieldLabel(rec.field),
+				count: rec.count,
+				field: rec.field,
+				term: quote(rec.value),
+			};
 		}
 
 		// The escape hatch: whatever was typed, as a substring. Last, and
 		// dropped when a value already on the list says the same thing.
+		//
+		// Its row is held back before the values are dealt out. It used to be
+		// appended after them and the list cut to length, which took it away
+		// exactly when it was wanted: with a dozen values matching, the one row
+		// that means "all of these" was the thirteenth.
 		var free = partial ? parseTerm(p.field, p.raw[p.raw.length - 1]) : null;
-		if (free && free.op === 'contains') {
+		if (free && free.op !== 'contains') free = null;
+		var room = free ? Math.max(0, limit - 1) : limit;
+		var s = 0;
+		for (; s < ranked.length && out.length < room; s++) out.push(valueRow(ranked[s]));
+		if (free) {
 			var dup = out.some(function (o) {
 				return o.kind === 'value' && o.label.toLowerCase() === term;
 			});
@@ -541,9 +579,11 @@
 					label: termLabel(free),
 					hint: tr('suggest-free', null, 'Anything containing this'),
 					field: p.field,
-					term: termText(free),
+					term: termText(free, p.field),
 				});
 			}
+			// Said already by a value on the list, so the slot goes back to them.
+			else if (s < ranked.length && out.length < limit) out.push(valueRow(ranked[s]));
 		}
 
 		return out.slice(0, limit);

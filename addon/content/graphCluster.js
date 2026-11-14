@@ -103,46 +103,82 @@
 		// every reference look rarer than it is.
 		var cap = Math.max(MIN_CAP, Math.floor(maxShare * refs.size));
 
-		var shared = new Map();
-		var works = [...citers.keys()].sort();
-		for (var t = 0; t < works.length; t++) {
-			var group = citers.get(works[t]);
-			if (group.length < 2 || group.length > cap) continue;
-			group = group.slice().sort();
-			for (var x = 0; x < group.length; x++) {
-				for (var y = x + 1; y < group.length; y++) {
-					var k = group[x] + ' ' + group[y];
-					shared.set(k, (shared.get(k) || 0) + 1);
+		// Every paper that can be one end of a pair, numbered in the order the
+		// pairs are returned in. From here down a paper is its number. The
+		// counting below runs once for every two papers sharing a reference --
+		// half a million times for 1,500 papers with ordinary bibliographies --
+		// and it used to build a "keyA keyB" string and look it up in a map
+		// each time, then split every key back apart and sort what came out.
+		// Counted into an array it takes about a fifth of the time, and 5,000
+		// papers no longer need most of a gigabyte for the keys.
+		var direction = direct > 0 ? cites : [];
+		var seen = new Set(refs.keys());
+		for (var d = 0; d < direction.length; d++) seen.add(direction[d].to);
+		var ids = [...seen].sort();
+		var n = ids.length;
+		var index = new Map();
+		var size = new Float64Array(n);
+		for (var k = 0; k < n; k++) {
+			index.set(ids[k], k);
+			var own = refs.get(ids[k]);
+			size[k] = own ? own.size : 0;
+		}
+
+		// rows[a]: the groups of co-citers a is in, each in ascending order.
+		var rows = new Array(n);
+		var aside = new Array(n);  // aside[a]: the b > a that a cites, or is cited by
+		for (var r = 0; r < n; r++) { rows[r] = []; aside[r] = null; }
+		citers.forEach(function (group) {
+			if (group.length < 2 || group.length > cap) return;
+			var members = new Int32Array(group.length);
+			for (var g = 0; g < group.length; g++) members[g] = index.get(group[g]);
+			members.sort();
+			for (var q = 0; q < members.length; q++) rows[members[q]].push(members);
+		});
+		for (var j = 0; j < direction.length; j++) {
+			var from = index.get(direction[j].from);
+			var to = index.get(direction[j].to);
+			var lo = from < to ? from : to;
+			(aside[lo] || (aside[lo] = [])).push(from < to ? to : from);
+		}
+
+		// One row at a time: everything a shares with each b > a, tallied in an
+		// array indexed by b and read back out in order. Rows ascending and b
+		// ascending within a row is the (a, b) order of the result, so nothing
+		// is sorted afterwards either.
+		var count = new Int32Array(n);
+		var cited = new Uint8Array(n);
+		var out = [];
+		for (var a = 0; a < n; a++) {
+			var touched = [];
+			var groups = rows[a];
+			for (var t = 0; t < groups.length; t++) {
+				var m = groups[t];
+				for (var y = m.length - 1; y >= 0 && m[y] > a; y--) {
+					var b = m[y];
+					if (count[b]++ === 0) touched.push(b);
 				}
 			}
-		}
-
-		var pairs = new Map();
-		shared.forEach(function (count, k) {
-			var ab = k.split(' ');
-			// Salton cosine. Without it a paper with a 60-entry bibliography
-			// would couple to everything simply for being long-winded.
-			var w = count / Math.sqrt(refs.get(ab[0]).size * refs.get(ab[1]).size);
-			pairs.set(k, { a: ab[0], b: ab[1], w: w });
-		});
-		if (direct > 0) {
-			for (var j = 0; j < cites.length; j++) {
-				var from = cites[j].from;
-				var to = cites[j].to;
-				var lo = from < to ? from : to;
-				var hi = from < to ? to : from;
-				var pk = lo + ' ' + hi;
-				var p = pairs.get(pk);
-				if (!p) pairs.set(pk, p = { a: lo, b: hi, w: 0 });
-				// A cites B and B cites A is one relation seen twice, not two.
-				if (!p.direct) { p.w += direct; p.direct = true; }
+			var also = aside[a];
+			if (also) {
+				for (var z = 0; z < also.length; z++) {
+					if (count[also[z]] === 0 && !cited[also[z]]) touched.push(also[z]);
+					// A cites B and B cites A is one relation seen twice, not two.
+					cited[also[z]] = 1;
+				}
+			}
+			touched.sort(function (p, q) { return p - q; });
+			for (var u = 0; u < touched.length; u++) {
+				var v = touched[u];
+				// Salton cosine. Without it a paper with a 60-entry bibliography
+				// would couple to everything simply for being long-winded.
+				var pair = { a: ids[a], b: ids[v], w: count[v] ? count[v] / Math.sqrt(size[a] * size[v]) : 0 };
+				if (cited[v]) { pair.w += direct; pair.direct = true; }
+				out.push(pair);
+				count[v] = 0;
+				cited[v] = 0;
 			}
 		}
-
-		var out = [...pairs.values()];
-		out.sort(function (p, q) {
-			return p.a < q.a ? -1 : p.a > q.a ? 1 : p.b < q.b ? -1 : p.b > q.b ? 1 : 0;
-		});
 		return { pairs: out, refs: refs };
 	}
 
