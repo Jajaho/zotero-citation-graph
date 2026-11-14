@@ -309,11 +309,14 @@ zotero-citation-graph-add-collection-label = Sammlung
 zotero-citation-graph-add-new-collection = Neue Sammlung…
 zotero-citation-graph-add-cancel = Abbrechen
 zotero-citation-graph-add-confirm = Hinzufügen
+zotero-citation-graph-add-confirm-held = Zur Sammlung hinzufügen
+zotero-citation-graph-add-held-note = Bereits in deiner Bibliothek. Der vorhandene Eintrag wird hier einsortiert; nichts wird doppelt angelegt.
 zotero-citation-graph-add-bad-doi = Keine brauchbare DOI: { $doi }
 zotero-citation-graph-add-adding = { $doi } wird hinzugefügt…
 zotero-citation-graph-add-failed = { $doi } konnte nicht hinzugefügt werden: { $message }
 zotero-citation-graph-add-no-metadata = Keine Metadaten gefunden für { $doi }
 zotero-citation-graph-add-done = „{ $title }“ hinzugefügt
+zotero-citation-graph-add-filed = „{ $title }“ einsortiert — war bereits in deiner Bibliothek.
 zotero-citation-graph-add-elsewhere = „{ $title }“ zu einer anderen Sammlung hinzugefügt — dieser Graph bleibt unverändert.
 zotero-citation-graph-add-rebuilding = „{ $title }“ hinzugefügt — wird neu aufgebaut…
 

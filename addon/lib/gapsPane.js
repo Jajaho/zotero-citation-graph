@@ -43,6 +43,11 @@ let splitPane = require('./splitPane.js');
  */
 const MAX_ROWS = 25;
 
+// Core's own cross, the one it closes a banner and clears a field with. Taken
+// from Zotero rather than shipped, like the node menu's icons: here the file is
+// reachable. See lib/nodeMenu.js ICONS.
+const CLOSE_ICON = 'chrome://zotero/skin/16/universal/x-8.svg';
+
 const GAPS_CSS = `
 	.zg-gaps {
 		flex: 1;
@@ -62,6 +67,24 @@ const GAPS_CSS = `
 		min-width: 0;
 		font-weight: 600;
 		color: var(--fill-primary);
+	}
+	/* A toolbarbutton with no label is drawn from its image alone, and the image
+	   paints itself with context-fill -- which resolves to nothing unless the two
+	   properties below say what it is. Set inline as well, where the button is
+	   built, for the reason nodeMenu.js gives. */
+	.zg-gaps-close {
+		flex: 0 0 auto;
+		margin: 0;
+		padding: 4px;
+		border-radius: 5px;
+		-moz-context-properties: fill, fill-opacity;
+		fill: var(--fill-secondary);
+	}
+	.zg-gaps-close:hover {
+		background: var(--fill-quinary);
+	}
+	.zg-gaps-close:active {
+		background: var(--fill-quarternary);
 	}
 	/* Outside the scroller, so it is still there at the bottom of a list of
 	   twenty-five. */
@@ -159,6 +182,14 @@ function ensure(entry) {
 	let close = doc.createXULElement('toolbarbutton');
 	close.className = 'zg-gaps-close';
 	close.setAttribute('tooltiptext', l10n.t('gaps-close'));
+	// It had a class nothing styled, no label and no image: a button with
+	// nothing to draw, found by its tooltip or not at all. A picture for the
+	// eye and a name for everything that reads the button rather than sees it
+	// -- not a `label`, which a toolbarbutton would print beside the picture.
+	close.setAttribute('aria-label', l10n.t('gaps-close'));
+	close.setAttribute('image', CLOSE_ICON);
+	close.style.setProperty('-moz-context-properties', 'fill, fill-opacity');
+	close.style.setProperty('fill', 'var(--fill-secondary)');
 	// Closing means going back to the paper, which is the only other thing this
 	// deck can be showing -- so the button is the canvas menu's second state by
 	// another route, and both end in face().
@@ -198,8 +229,9 @@ function ensure(entry) {
 	pane.deck.appendChild(box);
 	// `drawn` is the rows on screen by gap key, and `lit` the ones the page says
 	// are in the pick. Both are the pane's, because a redraw rebuilds every row
-	// and the marks have to land again on whatever came back.
-	pane.gaps = { box: box, body: body, foot: foot, drawn: new Map(), lit: new Set() };
+	// and the marks have to land again on whatever came back. `sig` is what the
+	// rows on screen were drawn from -- see rows().
+	pane.gaps = { box: box, body: body, foot: foot, drawn: new Map(), lit: new Set(), sig: null };
 	return pane.gaps;
 }
 
@@ -237,8 +269,17 @@ function open(entry, tell) {
 	// each of those would otherwise close the list. See itemPane.face().
 	entry.itemPane.pinned = gaps.box;
 
+	// What the list is being opened over, which is what closing it has to come
+	// back to if nothing is drawn underneath in the meantime. face() only ever
+	// recorded a page that a render drew WHILE the list was up, so a list opened
+	// over "27 items in this view", a note or the batch-editing offer and then
+	// closed handed back core's item pane instead -- the paper last looked at,
+	// with nothing selected.
+	let under = entry.itemPane.facing;
+
 	if (splitPane.collapsed(entry)) splitPane.setCollapsed(entry, false);
 	itemPane.face(entry.itemPane, gaps.box);
+	if (under && under !== gaps.box) entry.itemPane.behind = under;
 }
 
 function close_(entry) {
@@ -247,7 +288,8 @@ function close_(entry) {
 	// Closing is what the pin was holding out for, so this is the one caller
 	// that lifts it -- and what comes up is the page the renders underneath
 	// drew and could not show, which is whatever the selection last became
-	// while the list was up.
+	// while the list was up, or the page the list was opened over when it did
+	// not change at all. See open().
 	pane.pinned = null;
 	itemPane.face(pane, pane.behind || pane.details);
 }
@@ -271,12 +313,24 @@ function rows(entry, msg, send) {
 	let gaps = entry.itemPane.gaps;
 	let doc = entry.win.document;
 
+	let list = Array.isArray(msg.rows) ? msg.rows.slice(0, MAX_ROWS) : [];
+
+	// The page pushes on every render, and most renders change nothing here: a
+	// slider moved, a node was dragged, the pick changed. Rebuilding twenty-five
+	// rows for each of those threw away whichever row had the keyboard focus --
+	// and with it the reader's place in the list -- to draw the same list again.
+	// So what the rows are drawn FROM is remembered, and a payload that says the
+	// same thing draws nothing. The marks are not part of it: they arrive in a
+	// message of their own, straight after this one.
+	let sig = signature(list, msg);
+	if (sig !== null && sig === gaps.sig) return;
+	gaps.sig = sig;
+
 	gaps.body.textContent = '';
 	gaps.drawn.clear();
 	gaps.foot.textContent = '';
 	gaps.foot.hidden = true;
 
-	let list = Array.isArray(msg.rows) ? msg.rows.slice(0, MAX_ROWS) : [];
 	if (!list.length) {
 		let note = doc.createElement('div');
 		note.className = 'zg-gaps-empty';
@@ -312,6 +366,23 @@ function rows(entry, msg, send) {
 		gaps.foot.appendChild(div);
 	}
 	gaps.foot.hidden = !foot.length;
+}
+
+/**
+ * Everything a draw reads, as one string to compare the next payload against.
+ *
+ * Whole rows rather than the handful of fields row() prints: a field added to a
+ * row tomorrow is then a reason to redraw without anyone remembering to list it
+ * here, and the cost of being too careful is one redraw that was not needed.
+ */
+function signature(list, msg) {
+	try {
+		return JSON.stringify([list, msg.total, !!msg.building, !!msg.lookup]);
+	}
+	catch (e) {
+		// Nothing a JSON payload can carry gets here; a draw is the safe answer.
+		return null;
+	}
 }
 
 function row(entry, g, send) {
@@ -358,6 +429,11 @@ function row(entry, g, send) {
 		e.stopPropagation();
 		add.disabled = true;
 		add.setAttribute('label', '…');
+		// This row no longer shows what its payload said, so the next payload
+		// redraws whatever it says: an add that ends without a rebuild is
+		// answered with the very same rows, and that redraw is what gives the
+		// button back.
+		if (entry.itemPane && entry.itemPane.gaps) entry.itemPane.gaps.sig = null;
 		// Chrome answers by rebuilding, after which this work is held and drops
 		// off the list by itself. When nothing was added -- the dialog was
 		// cancelled, the DOI resolved to nothing -- the page is told instead,
