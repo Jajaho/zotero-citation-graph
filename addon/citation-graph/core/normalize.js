@@ -110,17 +110,64 @@ function decodePercentEscapes(s) {
  *
  * These are not hypotheses. Each was read out of a PDF in the sample library
  * whose citation went missing because of it, and each cost a real edge.
+ *
+ * A DOI that ends its entry is followed by things that are not its
+ * continuation, and two of them start the way a continuation does:
+ *
+ *   the next entry's number  -- "doi:10.1038/nature12373. 15. Smith J" is where
+ *                               entry 14 stops and entry 15 starts. Joined, it
+ *                               read 10.1038/nature12373.15, so in a numbered
+ *                               list that prints its DOIs last, every one of
+ *                               them named a work nobody holds. Refused when
+ *                               the digits read as a marker and the marker
+ *                               before it is in sight -- see opensEntry
+ *   another identifier       -- "...011001. arXiv:2101.00001" and "...12373.
+ *                               PMID:23903748". A word that ends in a colon is
+ *                               a label, and no DOI continues with one
  */
 function healDoiLineBreaks(s) {
 	return String(s)
 		.replace(/(\b10\.)[ \t]+(?=\d{4,9})/g, '$1')
 		.replace(/(\b10\.\d{4,9}\/)[ \t]+(?=[-._;()\/:<>a-zA-Z0-9]*\d)/g, '$1')
-		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[.\/])[ \t]+(?=\d)/g, '$1')
+		// After a slash the DOI cannot have ended, so only a period is asked
+		// whether an entry starts behind it.
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[.\/])[ \t]+(?=\d)/g,
+			(m, doi, at, all) => (doi.endsWith('.') && opensEntry(all, at + m.length) ? m : doi))
 		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[a-zA-Z0-9])[ \t]+(?=\.\d)/g, '$1')
 		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*\))[ \t]+(?=\d)/g,
-			(m, doi) => ((doi.match(/\(/g) || []).length === (doi.match(/\)/g) || []).length ? doi : m))
-		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*\.)[ \t]+(?=[A-Za-z]{2,}[-._;()\/:<>A-Za-z0-9]*\d)/g, '$1')
+			(m, doi, at, all) => ((doi.match(/\(/g) || []).length === (doi.match(/\)/g) || []).length
+				&& !opensEntry(all, at + m.length) ? doi : m))
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*\.)[ \t]+(?![A-Za-z]{2,}:)(?=[A-Za-z]{2,}[-._;()\/:<>A-Za-z0-9]*\d)/g, '$1')
 		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*[a-zA-Z0-9])[ \t]+(?=\(\d{1,4}\)\d)/g, '$1');
+}
+
+// What follows the digits of an entry marker, as refParse's two marker patterns
+// have it: "15. Smith", "15 Smith", and the superscript set flush, "15S. Smith".
+const AFTER_MARKER = '(?:[\\]).]?\\s+["\'“‘]?[A-Z]|[\\]).]["\'“‘]?[A-Z]|[A-Z][.a-z])';
+const ENTRY_MARKER = new RegExp('^([1-9]\\d{0,2})' + AFTER_MARKER);
+// How far back the marker before it can be: one entry, at refParse's cap.
+const ONE_ENTRY_BACK = 1500;
+
+/**
+ * Do the digits at `at` open the next entry of a numbered list?
+ *
+ * The shape alone does not say. A DOI wrapped before its last segment and
+ * followed by the next entry of an UNNUMBERED list reads exactly like a
+ * marker -- "...2009.11. 123 Smith, J." -- and Elsevier ends its DOIs in three
+ * digits, so refusing on shape would cut those short instead. What tells the
+ * two apart is the list itself: a marker has the one before it a single entry
+ * back, and a DOI's last digits do not. One or two may be missing, as
+ * markerRun allows.
+ */
+function opensEntry(s, at) {
+	const m = ENTRY_MARKER.exec(s.slice(at, at + 12));
+	if (!m) return false;
+	const n = Number(m[1]);
+	const before = s.slice(Math.max(0, at - ONE_ENTRY_BACK), at);
+	for (let k = n - 1; k >= 1 && k >= n - 3; k--) {
+		if (new RegExp('(?:^|[\\s[(])' + k + AFTER_MARKER).test(before)) return true;
+	}
+	return false;
 }
 
 /**

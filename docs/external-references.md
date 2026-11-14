@@ -165,6 +165,13 @@ resolve(ctx)   {Promise<Metadata[]>}   ctx = { refs, options, signal, onProgress
 `refs` are `{ key, ns, id }` — already parsed, so a provider never re-implements
 `parseExternalKey`. A provider is only ever handed refs whose `ns` it declared in `supports`.
 
+A provider that fails part-way throws, with what it had answered by then on the error as
+`partial`. The runner merges and caches those like any answer and then reports the error, so a
+failure costs the names that were not fetched and no others. `enrich/openalex.js` goes on past
+one failed request — a batch the filter cannot take must not starve the batches behind it — and
+stops after two in a row, which is the service and not the batch. The `openalex` edge strategy
+follows the same rule, and still draws the edges of the papers that were answered or cached.
+
 ### Why the chain is fill-first, not first-wins
 
 `enrich()` runs the selected providers in order and merges **per field**, keeping the first
@@ -543,6 +550,25 @@ only-this-strategy-found-it column is still the way to settle that.
 anywhere, and its list is one line, so the heading search had nothing to find and the
 line-counting run saw a run of one. `segment()` now also recognises a single line carrying an
 ascending marker run.
+
+**Two reference lists under two headings.** A PDF that carries its supplement has the paper's
+list and the supplement's, each under its own "References", and the last heading won: every
+strategy read the supplement's handful of entries and none of the paper's. An earlier heading
+now takes over when a list starts under it too — `splitEntries` reads at least five dated
+entries in the first 4,000 characters — and the section runs from there to the end, through
+every later list. A heading-shaped line with prose under it, as a table of contents has, does
+not qualify, and an earlier list shorter than five entries leaves the last heading in charge.
+The same rule reads a book's chapter lists from the first one on, body text between them
+included, where it used to read only the last chapter's.
+
+**The next entry's number read as the DOI going on.** `healDoiLineBreaks` closes a gap after a
+period when a digit follows, and in a numbered list that prints its DOIs last the digit that
+follows is the next entry's marker: `doi:10.1038/nature12373. 15. Smith J` became
+`10.1038/nature12373.15`. The digits are now left alone when they read as a marker *and* the
+marker before them is within one entry's length — the second half is what keeps
+`…jmr.2009.11. 123 Smith, J.` healing in an unnumbered list, where the same shape is the DOI's
+own last segment. A word ending in a colon (`arXiv:`, `PMID:`, `hdl:`) is a label and is never
+joined on either.
 
 ### The things we cannot fix, and how they fail
 

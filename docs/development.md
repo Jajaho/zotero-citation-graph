@@ -67,6 +67,8 @@ knowing before reading the graph:
   count) through OpenAlex, after which they carry the same `Surname2013` citekey label as a real
   node, plus a title, authors and a global citation count in the tooltip. It is one batched
   request per 50 DOIs, works without an API key, and is the only network access the plugin makes.
+  A request that fails costs its own batch: the batches that were answered are named and cached,
+  and the next build asks only for the rest.
 
 There are a lot of them, and the long tail is noise. Measured library-wide:
 

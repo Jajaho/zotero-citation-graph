@@ -1,7 +1,7 @@
 'use strict';
 
 const { flattenPdfText } = require('../core/normalize');
-const { markerRun } = require('./refParse');
+const { markerRun, splitEntries } = require('./refParse');
 
 /**
  * Reference-section segmentation.
@@ -22,6 +22,10 @@ const HEADING = /^\s*(\d+\.?\s*)?(references|bibliography|literature cited|works
 // is captured, because what chains one entry to the next is that the numbers
 // climb rather than that the lines are adjacent -- see step 2.
 const NUMBERED = /^\s*[\[(]?(\d{1,3})[\]).]\s+\S/;
+// How much of the text under an earlier heading is read to decide whether a
+// reference list starts there: a dozen entries' worth, and little enough that
+// the question stays "does a list start HERE" however long the document is.
+const HEAD_CHARS = 4000;
 
 function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFraction = 0.5 } = {}) {
 	if (!text || text.length < 200) return { text: '', flat: '', quality: 'none' };
@@ -30,11 +34,35 @@ function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFrac
 	// 1. Explicit heading, searched from the end (papers cite the word
 	//    "references" in body text far more often than they head a section
 	//    with it).
-	for (let i = lines.length - 1; i >= 0; i--) {
-		if (HEADING.test(lines[i])) {
-			const t = lines.slice(i + 1).join('\n');
-			if (t.trim().length > 100) return finish(t, 'heading');
+	//
+	//    The last heading is not always the paper's own. A PDF that carries its
+	//    supplement has two reference lists, each under its own heading, and
+	//    taking the last one handed every strategy the supplement's three
+	//    entries in place of the paper's forty. So an earlier heading takes
+	//    over when a reference list starts under it too, and the section then
+	//    runs from there to the end, through every list after it. The same
+	//    rule reads a bibliography whose pages each repeat the heading from its
+	//    first page rather than its last, and a book with a list per chapter
+	//    from its first list on -- chapters between them included, as whatever
+	//    followed a single heading always was.
+	//
+	//    "A list starts under it" is splitEntries' judgement, the one
+	//    ref-strings parses by, so a heading-shaped line in a table of
+	//    contents, with prose under it, does not claim the document.
+	const heads = [];
+	for (let i = 0; i < lines.length; i++) {
+		if (HEADING.test(lines[i])) heads.push(i);
+	}
+	for (let h = heads.length - 1; h >= 0; h--) {
+		const t = lines.slice(heads[h] + 1).join('\n');
+		if (t.trim().length <= 100) continue;
+		for (let e = 0; e < h; e++) {
+			const under = headOf(lines, heads[e] + 1, heads[e + 1]);
+			if (splitEntries(under).entries.length >= minNumberedRun) {
+				return finish(lines.slice(heads[e] + 1).join('\n'), 'heading');
+			}
 		}
+		return finish(t, 'heading');
 	}
 
 	// 2. No heading: the last run of numbered entries, from where it really
@@ -120,6 +148,13 @@ function segment(text, { tailFraction = 0.4, minNumberedRun = 5, maxNumberedFrac
 
 function finish(t, quality) {
 	return { text: t, flat: flattenPdfText(t), quality };
+}
+
+/** The first HEAD_CHARS of lines[from..to), without joining what is not read. */
+function headOf(lines, from, to) {
+	let s = '';
+	for (let i = from; i < to && s.length < HEAD_CHARS; i++) s += lines[i] + '\n';
+	return s.slice(0, HEAD_CHARS);
 }
 
 /**

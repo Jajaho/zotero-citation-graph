@@ -227,6 +227,38 @@ check('a DOI a PDF broke in half is put back together, and prose is not', () => 
 	if (findDois('the stub 10.1016/j is not a DOI').length) throw new Error('stub DOI emitted');
 });
 
+check('the next entry\'s number and another identifier are not joined onto a DOI', () => {
+	const { findDois, flattenPdfText } = require_('./citation-graph/core/normalize');
+	const dois = text => findDois(flattenPdfText(text));
+	const same = (text, want) => {
+		const got = dois(text);
+		if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(text + ' -> ' + JSON.stringify(got));
+	};
+	// A numbered list that prints its DOIs last: where entry 14 stops, entry 15
+	// starts with digits, and "a digit follows" read them as the DOI going on.
+	// 10.1038/nature12373.15 names nothing, so the held paper lost its edge and
+	// a ghost took its place -- once per entry, down the whole list.
+	const N = ['10.1038/nature12373'];
+	same('14. Kucsko G. A title. Nature. 2013;500:54-58. doi:10.1038/nature12373.\n15. Smith J, Jones K. Another.', N);
+	same('14 G. Kucsko, Nature 500, 54 (2013). doi:10.1038/nature12373. 15 J. Smith, Another title.', N);
+	same('14G. Kucsko, Nature 500, 54 (2013). doi:10.1038/nature12373. 15S. Smith, Another title.', N);
+	same('(14) Kucsko, G. J. Eng. Mech. 2004. DOI: 10.1061/(ASCE)0733-9399(2004)130:8(951) 15. Smith, J.',
+		['10.1061/(asce)0733-9399(2004)130:8(951)']);
+	// A label is not a continuation either.
+	same('doi:10.1103/PhysRevX.12.011001. arXiv:2101.00001', ['10.1103/physrevx.12.011001']);
+	same('doi:10.1038/nature12373. PMID:23903748', N);
+	same('doi:10.1038/nature12373. hdl:2027.42/62810', N);
+	// What must still heal. Digits after a period are a marker only when the
+	// marker before them is in sight: in an unnumbered list the same shape is
+	// the DOI's own last segment, followed by the next entry's surname.
+	same('Jones, K. (2009). A title. J. Magn. Reson. 201, 1. https://doi.org/10.1016/j.jmr.2009.11.\n'
+		+ '123 Smith, J. (2010). Another.', ['10.1016/j.jmr.2009.11.123']);
+	same('13. Jones K. A title. https://doi.org/10.1016/j.jmr.2009.11.\n123.\n14. Smith J. Another.',
+		['10.1016/j.jmr.2009.11.123']);
+	same('https://doi.org/10.1103/PhysRevLett.\n125.260502. Smith', ['10.1103/physrevlett.125.260502']);
+	same('https://doi.org/10.1088/0022-3727/38/\n10A/001', ['10.1088/0022-3727/38/10a/001']);
+});
+
 check('a numeric-style reference naming no title is still resolved', () => {
 	const cg = require_('./citation-graph/index.js');
 	// The citing paper prints the APS/AIP form: no title, no DOI, just the
@@ -286,6 +318,47 @@ check('a locator with the wrong journal or the wrong year draws nothing', () => 
 			if (r.edges.length) throw new Error('case ' + i + ' drew ' + JSON.stringify(r.edges));
 		});
 	});
+});
+
+check('a journal known only by its full name is still named by its abbreviation', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const { namesJournal } = require_('./citation-graph/edges/locatorMatch.js');
+	// No journalAbbreviation, which is how most items arrive: the name to match
+	// is "Journal of Applied Physics", and `J.` had to equal `journal` exactly.
+	const held = (publication) => ({ key: 'A', itemType: 'journalArticle', title: 'Heat transport in thin dielectric films',
+		doi: null, date: '1997', creators: ['Lee'], publication, volume: '81', pages: '2590-2595' });
+	const citing = { key: 'B', itemType: 'journalArticle', title: 'A later paper citing it in a numeric style',
+		doi: null, date: '2002', creators: ['Cahill'], publication: 'Review of Scientific Instruments',
+		volume: '73', pages: '2959' };
+	const edges = async (publication, ref) => (await cg.build({
+		listItems: async () => [held(publication), citing],
+		getAttachments: async k => (k === 'B' ? [{ key: 'B1', parentKey: 'B', contentType: 'application/pdf' }] : []),
+		getAttachmentText: async () => 'Introduction. '.repeat(30) + '\nReferences\n' + ref + '\n',
+		getPdfLinkUris: async () => [],
+	}, { offline: true, enable: ['locator-match'] })).edges;
+
+	const drawn = await edges('Journal of Applied Physics', '13 S.-M. Lee and D. G. Cahill, J. Appl. Phys. 81, 2590 (1997).');
+	if (!drawn.some(e => e.from === 'B' && e.to === 'A')) throw new Error('J. Appl. Phys. did not name the journal');
+	// An author's initial is not the journal's: `J.` followed by a surname, and
+	// an `S.` that would otherwise be all of "Science".
+	for (const [publication, ref] of [
+		['Journal of Applied Physics', '13 J. Smith, Appl. Phys. Lett. 81, 2590 (1997).'],
+		['Science', '13 S.-M. Lee and D. G. Cahill, Nature 81, 2590 (1997).'],
+	]) {
+		const got = await edges(publication, ref);
+		if (got.length) throw new Error(publication + ' named by ' + ref + ': ' + JSON.stringify(got));
+	}
+
+	const words = s => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter(Boolean);
+	const names = (ref, tokens) => namesJournal(words(ref), tokens);
+	if (!names('B. Author, J. Am. Chem. Soc.', ['journal', 'american', 'chemical', 'society'])) throw new Error('J. Am. Chem. Soc.');
+	if (!names('B. Author, J. de Phys.', ['journal', 'physique'])) throw new Error('J. de Phys.');
+	// Initials alone name nothing, and neither does one for the last word.
+	if (names('J. C. P. Smith, Nature', ['journal', 'chemical', 'physics'])) throw new Error('initials alone named a journal');
+	if (names('J. C. Smith, Phys. Rev. B', ['journal', 'chemical', 'physics'])) throw new Error('an author named a journal');
+	// The series letter is a word of the NAME, and still has to agree exactly.
+	if (!names('A. Author, Phys. Rev. B', ['physical', 'review', 'b'])) throw new Error('Phys. Rev. B');
+	if (names('A. Author, Phys. Rev. D', ['physical', 'review', 'b'])) throw new Error('Phys. Rev. D read as B');
 });
 
 check('graphBuilder runs end-to-end against a stub adapter', () => {
@@ -572,6 +645,37 @@ check('openalex references resolve to held papers, and a warm cache asks nothing
 	if (pairs(warm) !== 'AAAAAAAA>BBBBBBBB') throw new Error('without outside refs: ' + pairs(warm));
 });
 
+check('a failed OpenAlex request keeps the edges of the papers that were answered', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = ['a', 'b', 'c', 'd'].map(x => ({ key: x.toUpperCase().repeat(8), itemType: 'journalArticle',
+		title: 'Paper ' + x, doi: '10.1000/' + x }));
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async () => [],
+		getAttachmentText: async () => null,
+		getPdfLinkUris: async () => [],
+	};
+	// Two requests of two papers. The first answers -- A cites B -- and the
+	// second is a 429. The throw used to discard A's edge with it.
+	let requests = 0;
+	const fetchImpl = async (url) => {
+		if (++requests > 1) return { ok: false, status: 429, statusText: 'Too Many Requests', json: async () => ({}) };
+		return fakeOpenAlex([
+			{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/a', referenced_works: ['https://openalex.org/W2'] },
+			{ id: 'https://openalex.org/W2', doi: 'https://doi.org/10.1000/b', referenced_works: [] },
+		])(url);
+	};
+	const m = new Map();
+	const cache = { get: k => m.get(k) || null, set: (k, v) => m.set(k, v) };
+	const r = await cg.build(adapter, { enable: ['openalex'],
+		providers: { openalex: { fetchImpl, cache, batchSize: 2 } } });
+	if (!r.edges.some(e => e.from === 'AAAAAAAA' && e.to === 'BBBBBBBB')) throw new Error('lost the answered edge: ' + JSON.stringify(r.edges));
+	if (r.meta.errors.length !== 1 || !/429/.test(r.meta.errors[0].message)) throw new Error('errors: ' + JSON.stringify(r.meta.errors));
+	// A batch that failed is not remembered as "OpenAlex does not know these".
+	if (m.has('doi:10.1000/c') || m.has('doi:10.1000/d')) throw new Error('a failed batch was cached as unknown');
+	if (!m.has('doi:10.1000/a')) throw new Error('the answered batch was not cached');
+});
+
 check('an OpenAlex ID OpenAlex does not return is marked gone, and a DOI is not', () => {
 	const cg = require_('./citation-graph/index.js');
 	// W4285719527 and friends: references a paper's OpenAlex record still
@@ -712,6 +816,47 @@ check('a failing enricher costs names, not the run', () => {
 		// The enricher after the failure still ran.
 		if (!r.metadata['doi:10.1/a']) throw new Error('one failure lost the whole chain');
 	});
+});
+
+check('a failed OpenAlex request costs its own batch, not the ones that were answered', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const keys = Array.from({ length: 10 }, (_, i) => 'doi:10.1234/a' + i);
+	// Five requests of two DOIs. Each answers what it was asked, unless told to fail.
+	const lookup = (failOn) => {
+		const calls = [];
+		const fetchImpl = async (url) => {
+			calls.push(url);
+			if (failOn(calls.length)) return { ok: false, status: 429, statusText: 'Too Many Requests', json: async () => ({}) };
+			const ids = new URL(url).searchParams.get('filter').slice('doi:'.length).split('|');
+			return fakeOpenAlex(ids.map((d, i) => ({ id: 'https://openalex.org/W' + calls.length + i,
+				doi: 'https://doi.org/' + d, display_name: 'Title of ' + d, publication_year: 2010,
+				authorships: [], cited_by_count: 3 })))(url);
+		};
+		const store = new Map();
+		const cache = { get: k => store.get(k) || null, set: (k, v) => store.set(k, v) };
+		return { calls, store, run: () => cg.enrich(keys, { enable: ['openalex'], cache,
+			providers: { openalex: { fetchImpl, batchSize: 2 } } }) };
+	};
+
+	// The third of five fails. It used to take the first two with it: nothing
+	// named, nothing cached, and all five asked again on the next build.
+	const one = lookup(n => n === 3);
+	const r = await one.run();
+	if (r.meta.errors.length !== 1 || !/429/.test(r.meta.errors[0].message)) throw new Error('errors: ' + JSON.stringify(r.meta.errors));
+	if (r.meta.resolved !== 8) throw new Error('named ' + r.meta.resolved + ' of 10, expected the 8 that were answered');
+	if (r.metadata['doi:10.1234/a4'] || r.metadata['doi:10.1234/a5']) throw new Error('the failed batch was named');
+	if (one.store.size !== 8) throw new Error('cached ' + one.store.size + ', expected 8');
+	if (one.calls.length !== 5) throw new Error(one.calls.length + ' requests: a single failure ended the run');
+	// So the next build asks for the one batch it is missing.
+	one.calls.length = 0;
+	const again = await one.run();
+	if (one.calls.length !== 1 || again.meta.fromCache !== 8) throw new Error('retry asked ' + one.calls.length + ' times');
+
+	// Two in a row is the service, not the batch: the rest are not sent.
+	const down = lookup(n => n >= 2);
+	const d = await down.run();
+	if (down.calls.length !== 3) throw new Error(down.calls.length + ' requests against a service that is down');
+	if (d.meta.resolved !== 2 || d.meta.errors.length !== 1) throw new Error(JSON.stringify(d.meta));
 });
 
 check('enrichment honours the global offline switch', () => {
@@ -6601,6 +6746,40 @@ check('a numbered run in body text cannot claim the whole document', () => {
 	if (seg.quality === 'numbered' && seg.text.length > (early + rest).length * 0.5) {
 		throw new Error('claimed ' + seg.text.length + ' of ' + (early + rest).length + ' chars');
 	}
+});
+
+check('a supplement\'s reference list does not replace the paper\'s own', () => {
+	const { segment } = require_('./citation-graph/edges/refSection.js');
+	// A PDF that carries its supplement has two lists under two headings. The
+	// last heading won, so every strategy read the supplement's three entries
+	// and none of the paper's forty.
+	const body = 'Body text sentence number one about physics and diamonds and spins. '.repeat(120);
+	const main = Array.from({ length: 40 }, (_, i) => '[' + (i + 1) + '] A. Author' + i
+		+ ', Main reference title number ' + (i + 1) + ' about something, Phys. Rev. B ' + (80 + i) + ', '
+		+ (1000 + i) + ' (2010).').join('\n');
+	const supp = Array.from({ length: 3 }, (_, i) => '[S' + (i + 1) + '] S. Supp' + i
+		+ ', Supplementary reference title number ' + (i + 1) + ' on methods, Rev. Sci. Instrum. ' + (70 + i)
+		+ ', ' + (2000 + i) + ' (2005).').join('\n');
+	const methods = 'Supplementary methods text about the apparatus. '.repeat(40);
+	const both = segment(body + '\nReferences\n' + main + '\nSupplementary Material\n' + methods
+		+ '\nReferences\n' + supp + '\n');
+	if (both.quality !== 'heading') throw new Error('quality: ' + both.quality);
+	if (!both.text.includes('Main reference title number 1 ')) throw new Error('the paper\'s own list is gone');
+	if (!both.text.includes('Supplementary reference title number 1 ')) throw new Error('the supplement\'s list is gone');
+	if (both.text.includes('Body text sentence')) throw new Error('swept in the body text');
+
+	// The other half: a heading-shaped line with prose under it -- a table of
+	// contents does this -- is not where a list starts, and the last heading
+	// still wins. So does it when the earlier list is too short to be sure of.
+	const prose = ('Recent work (Smith et al., 2010; Jones, 2012) has shown that the effect persists, '
+		+ 'and Lee (2015) extended it to thin films.\n').repeat(60);
+	const toc = segment('Contents\nIntroduction\nReferences\n' + prose + body + '\nReferences\n' + main + '\n');
+	if (toc.text.includes('Recent work')) throw new Error('a contents line claimed the document');
+	if (!toc.text.startsWith('[1] A. Author0')) throw new Error('lost the list: ' + toc.text.slice(0, 40));
+	const short = segment(body + '\nReferences\n' + main.split('\n').slice(0, 3).join('\n')
+		+ '\nSupplementary Material\n' + methods + '\nReferences\n' + supp + '\n[S4] One more entry here (2006).'
+		+ '\n[S5] And another entry here (2007).\n');
+	if (!short.text.startsWith('[S1]')) throw new Error('three entries took over: ' + short.text.slice(0, 40));
 });
 
 check('the citation style is read off the section, not guessed per entry', () => {

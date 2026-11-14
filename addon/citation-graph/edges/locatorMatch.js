@@ -57,23 +57,59 @@ const STOP = new Set(['of', 'the', 'and', 'on', 'in', 'for', 'a', 'an',
  *
  * Order matters and is cheap to demand: it is what stops `Appl. Phys. Lett.`
  * from being read as `Journal of Applied Physics` with the words rearranged.
+ *
+ * Exact agreement is the rule for a short word of the journal's NAME. It was
+ * also applied to a short word of the reference, and there it failed the very
+ * example above: an item that carries no journalAbbreviation is known by its
+ * full name, and `J.` is not `journal`. Every `J. Appl. Phys.` and `J. Am.
+ * Chem. Soc.` citing such an item drew nothing.
+ *
+ * So a word of one or two letters in the reference may stand for a word of
+ * four or more in the name that starts with it -- as an INITIAL, which is held
+ * to more than a prefix is, because the window before a locator is mostly
+ * author initials and every one of them starts some journal's name:
+ *
+ *   - the name's next word must follow it directly (`de`, `of` and the like
+ *     aside): `J.` is Journal in `J. Appl. Phys.` and an author in `J. Smith,
+ *     Appl. Phys. Lett.`. For the same reason it cannot stand for the last
+ *     word, or for a name of one word -- no `S.` is Science
+ *   - some word of the name must still agree on three characters, so a run of
+ *     initials alone, `J. C. P. Smith`, names nothing
  */
 function namesJournal(windowWords, tokens) {
-	let at = 0;
-	for (const t of tokens) {
-		let hit = -1;
+	// An initial can be the wrong one -- the author's `J.` rather than the
+	// journal's -- so the first word that agrees is not always the one to take,
+	// and the walk comes back to try the next. A state that failed once fails
+	// again, which is what keeps a window of look-alike words from costing more
+	// than its length times the name's.
+	const failed = new Set();
+	const walk = (k, at, pinned, initials, word) => {
+		if (k === tokens.length) return !initials || word;
+		const state = (k * (windowWords.length + 1) + at) * 8 + (pinned ? 4 : 0) + (initials ? 2 : 0) + (word ? 1 : 0);
+		if (failed.has(state)) return false;
 		for (let i = at; i < windowWords.length; i++) {
-			const w = windowWords[i];
-			const n = Math.min(w.length, t.length);
-			const ok = n >= 3
-				? (w.startsWith(t.slice(0, n)) || t.startsWith(w.slice(0, n)))
-				: w === t;
-			if (ok) { hit = i; break; }
+			const how = agreement(windowWords[i], tokens[k]);
+			if (how && !(how === INITIAL && k + 1 === tokens.length)
+					&& walk(k + 1, i + 1, how === INITIAL, initials || how === INITIAL, word || how === WORD)) {
+				return true;
+			}
+			// Directly after an initial: this word or, past a stop word, the next.
+			if (pinned && !STOP.has(windowWords[i])) break;
 		}
-		if (hit < 0) return false;
-		at = hit + 1;
-	}
-	return true;
+		failed.add(state);
+		return false;
+	};
+	return walk(0, 0, false, false, false);
+}
+
+const WORD = 1, EXACT = 2, INITIAL = 3;
+
+/** How a word of the reference agrees with a word of the journal's name, if it does. */
+function agreement(w, t) {
+	const n = Math.min(w.length, t.length);
+	if (n >= 3) return (w.startsWith(t.slice(0, n)) || t.startsWith(w.slice(0, n))) ? WORD : 0;
+	if (w === t) return EXACT;
+	return t.length >= 4 && t.startsWith(w) ? INITIAL : 0;
 }
 
 function journalTokens(name) {
