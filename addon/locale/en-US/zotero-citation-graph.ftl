@@ -218,6 +218,10 @@ zotero-citation-graph-stats-building = Building…
 # on screen is finished but is not all of it.
 zotero-citation-graph-stats-stopped = stopped early
 
+# What the canvas is called to a screen reader: that it is the graph, and the
+# stats line above as $stats, which is the one-sentence account of what is on it.
+zotero-citation-graph-canvas-label = Citation graph: { $stats }
+
 # On the stats line of a graph built from a selection, and only when the two
 # numbers differ: how many of the rows the user picked became papers. The rest
 # were notes, attachments of a paper already here, or records with no title,

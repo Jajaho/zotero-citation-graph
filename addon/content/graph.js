@@ -960,6 +960,8 @@
 		anchorNext = adopted && placeAdopted(adopted, next.edges) ? adopted.now : null;
 		raw = next;
 		raw.external = raw.external || [];
+		// The names are a payload's: see names().
+		nodeNames = null;
 		// Chrome owns the scope options; reflect what it actually used, which
 		// matters after a rebuild that was still in flight.
 		//
@@ -1298,13 +1300,94 @@
 	 * every paper from one publisher and carries no information.
 	 */
 	function ghostLabel(x) {
-		if (x.title || (x.creators && x.creators.length)) {
+		if (ghostNamed(x)) {
 			return shortLabel({ creators: x.creators, title: x.title }, x.year);
 		}
 		let s = String(x.id || '');
 		let slash = s.indexOf('/');
 		let tail = slash >= 0 ? s.slice(slash + 1) : s;
 		return tail.length > 20 ? tail.slice(0, 19) + '…' : tail;
+	}
+
+	/** Whether an outside reference has a name to be called by, or only its
+	 *  identifier. */
+	function ghostNamed(x) {
+		return !!(x.title || (x.creators && x.creators.length));
+	}
+
+	/**
+	 * The name every node of a payload is drawn under, by key -- with a letter
+	 * on the ones that would otherwise share one.
+	 *
+	 * Smith wrote two papers in 2019 and both were "Smith2019": two nodes with
+	 * one name, on the canvas, in the search list, and as two rows with the
+	 * same `label` in an exported GraphML. They are Smith2019a and Smith2019b
+	 * now, the way a bibliography tells them apart.
+	 *
+	 * Which is which has to stay put. A name is how a node is found again, so
+	 * it must not depend on what else is on screen: the letters are dealt over
+	 * the whole payload, held items and outside references alike, whatever the
+	 * masks, the confidence slider or "Cited by" are hiding at the moment.
+	 * Hide Smith2019a and the other is still Smith2019b. That also means a
+	 * paper can wear a letter with its namesake out of sight -- which says,
+	 * truly, that this graph has another.
+	 *
+	 * And in an order that belongs to the papers. Held items first, oldest in
+	 * the library first (the item id only ever grows), so adding a third
+	 * Smith2019 names it "c" and leaves the two there alone; then the outside
+	 * references by key. Held before outside, because a lookup landing gives
+	 * outside references their names a phase after the held items had theirs,
+	 * and must not reshuffle those.
+	 *
+	 * Only names in the citekey form are lettered. An outside reference with
+	 * nothing but an identifier is drawn as the tail of it, cut to length, and
+	 * a letter after that would read as part of the DOI; "?" is a paper with
+	 * nothing to call it by, and "?a" would be no better.
+	 */
+	function nameNodes(items, external) {
+		let out = new Map();
+		let sharing = new Map();
+		let take = (key, label, lettered) => {
+			out.set(key, label);
+			if (!lettered || label === '?') return;
+			let keys = sharing.get(label);
+			if (keys) keys.push(key);
+			else sharing.set(label, [key]);
+		};
+		let byKey = (a, b) => (a.key < b.key ? -1 : (a.key > b.key ? 1 : 0));
+		let held = items.slice().sort((a, b) => (Number(a.itemID) || 0) - (Number(b.itemID) || 0) || byKey(a, b));
+		for (let it of held) take(it.key, shortLabel(it, year(it)), true);
+		for (let x of external.slice().sort(byKey)) take(x.key, ghostLabel(x), ghostNamed(x));
+		for (let [label, keys] of sharing) {
+			if (keys.length < 2) continue;
+			// After a year the letter needs nothing before it. After a name
+			// alone it would read as part of the name -- Kucskoa -- so it is
+			// set off.
+			let join = /\p{N}$/u.test(label) ? '' : '-';
+			keys.forEach((key, i) => out.set(key, label + join + suffixLetters(i)));
+		}
+		return out;
+	}
+
+	/** a, b, ... z, aa, ab: the 0-based nth suffix. */
+	function suffixLetters(n) {
+		let s = '';
+		for (let i = n + 1; i > 0; i = Math.floor((i - 1) / 26)) {
+			s = String.fromCharCode(97 + ((i - 1) % 26)) + s;
+		}
+		return s;
+	}
+
+	/**
+	 * The names of the payload on screen, worked out once for it: render()
+	 * runs on every step of a slider, and nothing it is given there can change
+	 * what a paper is called. zgSetData() throws them away with the payload.
+	 */
+	let nodeNames = null;
+
+	function names() {
+		if (!nodeNames) nodeNames = nameNodes(raw.items || [], raw.external || []);
+		return nodeNames;
 	}
 
 	/**
@@ -2895,7 +2978,7 @@
 			n.deg = deg;
 			n.inDeg = inDegree[it.key] || 0;
 			n.citedByGlobal = it.citedByGlobal != null ? it.citedByGlobal : null;
-			n.label = shortLabel(it, n.year);
+			n.label = names().get(it.key);
 			nodes.push(n);
 		}
 		for (let [key, { x, cites }] of visibleGhosts) {
@@ -2909,7 +2992,7 @@
 			// A famous paper you do not hold is not a gap in your library.
 			n.meta = x;
 			n.citedByGlobal = x.citedByGlobal != null ? x.citedByGlobal : null;
-			n.label = ghostLabel(x);
+			n.label = names().get(key);
 			nodes.push(n);
 		}
 
@@ -3188,6 +3271,29 @@
 		// because nothing else on screen tells this graph from a complete one.
 		else if (raw.meta && raw.meta.stopped) stats.push(t('stats-stopped'));
 		elStats.textContent = stats.join(' · ');
+		describeCanvas(elStats.textContent);
+	}
+
+	/**
+	 * What the canvas is, for a reader who cannot see it.
+	 *
+	 * A <canvas> is a hole in the page to anything that reads one out: no
+	 * role, no name, nothing inside. It cannot be made to say what the graph
+	 * shows -- that is the item pane's job, and the search field's -- but it
+	 * can say that it is a picture and of how much: the stats line, which is
+	 * already the one-sentence account of what is drawn, kept in step with it.
+	 *
+	 * On the canvas force-graph made, so not before there is one; and only
+	 * written when it changes, since render() comes through here on every
+	 * step of a slider.
+	 */
+	function describeCanvas(stats) {
+		let canvas = elGraph.querySelector('canvas');
+		if (!canvas) return;
+		let label = t('canvas-label', { stats });
+		if (canvas.getAttribute('aria-label') === label) return;
+		canvas.setAttribute('role', 'img');
+		canvas.setAttribute('aria-label', label);
 	}
 
 	/**
@@ -6883,7 +6989,44 @@
 		elMenu.hidden = false;
 		if (opener) positionUnder(elMenu, opener);
 		else positionAt(elMenu, event);
+		// A menu asked for from a button may have been asked for with Enter,
+		// and then the arrows have to have somewhere to start from. One raised
+		// at the pointer leaves the focus where it was.
+		if (opener) focusMenuItem(0);
 	}
+
+	/**
+	 * Move the focus among the menu's entries that can be picked: `to` is 0
+	 * for the first, -1 for the last, and `step` goes on from wherever the
+	 * focus is, round the ends.
+	 */
+	function focusMenuItem(to, step) {
+		let items = Array.from(elMenu.querySelectorAll('.menu-item:not([disabled])'));
+		if (!items.length) return;
+		let at = to < 0 ? items.length + to : to;
+		if (step) {
+			let from = items.indexOf(document.activeElement);
+			at = from < 0 ? (step > 0 ? 0 : items.length - 1) : (from + step + items.length) % items.length;
+		}
+		items[at].focus();
+	}
+
+	// The keys a menu is worked with once the focus is in it. Enter and Space
+	// are the entry's own -- each is a button -- and Escape is the window's,
+	// which closes the menu before anything else; hideMenu() hands the focus
+	// back. Tab leaves, and a menu left behind open would be one more thing to
+	// close: it goes, and the focus moves on from the button it hung from.
+	elMenu.addEventListener('keydown', (e) => {
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			e.preventDefault();
+			focusMenuItem(0, e.key === 'ArrowDown' ? 1 : -1);
+		}
+		else if (e.key === 'Home' || e.key === 'End') {
+			e.preventDefault();
+			focusMenuItem(e.key === 'Home' ? 0 : -1);
+		}
+		else if (e.key === 'Tab') hideMenu();
+	});
 
 	/**
 	 * Which button the menu is hanging from, if it is hanging from one.
@@ -6915,8 +7058,14 @@
 	});
 
 	function hideMenu() {
+		// Read before the menu goes: a menu worked from the keyboard has the
+		// focus inside it, and hiding the focused element drops the focus on
+		// the document, a Tab away from the top of the page. It goes back to
+		// the button the menu hung from.
+		let back = menuFor && elMenu.contains(document.activeElement) ? menuFor : null;
 		elMenu.hidden = true;
 		menuFrom(null);
+		if (back) back.focus();
 		// A native menu is chrome's to take down, and chrome answers by saying
 		// so -- see zgMenuClosed, which is where the hold is given up in that
 		// case. Releasing here as well would hand the node back to the layout
@@ -6945,6 +7094,8 @@
 		let b = document.createElement('button');
 		b.type = 'button';
 		b.className = 'menu-item';
+		// What #menu's own role promises its children are.
+		b.setAttribute('role', 'menuitem');
 		b.appendChild(Icons.svg(icon));
 		let text = document.createElement('span');
 		text.className = 'menu-label';
