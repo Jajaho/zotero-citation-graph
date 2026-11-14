@@ -1288,6 +1288,72 @@ check('label sizing shrinks to the node but never below the floor', () => {
 });
 
 /**
+ * A name already on screen is tested at 85% of its box, so that a layout
+ * jittering by a pixel a frame does not strobe the names on a boundary. That
+ * slack was applied at rest too, where nothing jitters -- so a graph came to
+ * rest with whatever names had drifted across each other on the way still
+ * lying across each other, for good: a stopped graph is not judged again until
+ * something moves.
+ *
+ * So the slack is the moving layout's alone. Once the engine stops a shown
+ * name is tested whole, and because the frame the engine stops on was still a
+ * moving one, the stop asks for one more. That holds in the static mode too,
+ * where a burst "stops" with no tick before it.
+ */
+check('names that drifted across each other give way once the layout has stopped', () => {
+	const L = loadLabels();
+	const pass = L.pass();
+	const seen = { thaws: 0, repaints: 0, fits: 0 };
+	const page = liftPage({
+		functions: ['placeLabel', 'labelSlack', 'engineTicked', 'engineStopped'],
+		consts: ['LABEL_PAD', 'LABEL_INK', 'LABEL_STICKY'],
+		globals: {
+			labelPass: pass, labelHideGhosts: false, labelViewW: 800, labelViewH: 600, labelSticky: 1,
+			dimmed: () => false,
+			// Every name 100px wide in 14px type.
+			labelMetrics: () => ({ w: 100, px: 14 }),
+			engineLive: false, engineDue: true,
+			shed() {}, thaw() { seen.thaws++; }, repaint() { seen.repaints++; }, firstFit() { seen.fits++; },
+		},
+	});
+	const PAD = vm.runInContext('LABEL_PAD', page);
+	const STICKY = vm.runInContext('LABEL_STICKY', page);
+	const half = 100 / 2 + PAD;
+	// One frame's pass over a shown name and a second, `apart` px from it.
+	const judge = (apart) => {
+		pass.begin(40, 1000, 0, 0);
+		page.labelSticky = page.labelSlack();
+		const a = { label: 'A', x: 100, y: 100, _labelLit: 1 };
+		const b = { label: 'B', x: 100 + apart, y: 100, _labelLit: 1 };
+		page.placeLabel(a, null, 1, 0, 0, false);
+		page.placeLabel(b, null, 1, 0, 0, false);
+		return a._labelWant + ',' + b._labelWant;
+	};
+	// Brushing: past the slack's reach, inside the whole box's.
+	const brushing = half + half * STICKY + 1;
+
+	// While the layout moves, a brushed name keeps its place.
+	page.engineTicked();
+	if (!page.engineLive || page.engineDue) throw new Error('a tick did not say the layout is moving');
+	if (judge(brushing) !== '1,1') throw new Error('a name merely brushed lost its place mid-layout');
+
+	// Stopped: thawed as a stop always was, one more frame asked for, and in
+	// that frame the brushed name gives way.
+	page.engineStopped();
+	if (page.engineLive) throw new Error('the stop did not say the layout is at rest');
+	if (seen.thaws !== 1) throw new Error('the stop no longer ends a settle');
+	if (seen.repaints !== 1) throw new Error('the stop asked for ' + seen.repaints + ' frames, not the one the names are owed');
+	if (seen.fits !== 1) throw new Error('the stop did not offer the first fit');
+	if (judge(brushing) !== '1,0') throw new Error('two names still lie across each other at rest');
+
+	// And the air between two names that both stay: 3px a side, where 1px let
+	// two citekeys read as one word.
+	if (PAD !== 3) throw new Error('names are kept ' + PAD + 'px apart');
+	if (judge(100 + 4) !== '1,0') throw new Error('two names 4px apart were both kept');
+	if (judge(100 + 2 * PAD) !== '1,1') throw new Error('two names with their air between them were not both kept');
+});
+
+/**
  * The cited-by threshold, fitted to a graph too small to meet it.
  *
  * It counts how many papers HERE cite an outside work, so it can never exceed
@@ -5999,11 +6065,12 @@ check('going to a search result picks the paper and leaves the isolation alone',
 	let pick = null;
 	let centred = null;
 	const page = liftPage({
-		functions: ['goTo'],
+		functions: ['goTo', 'cameraTaken'],
 		globals: {
 			searchRows: [{ id: 'K1', x: 3, y: 4 }],
 			fg: { centerAt: (x, y) => { centred = [x, y]; } },
 			REFRAME_MS: 400,
+			cameraTouched: false,
 			paneEngaged: false,
 			setIsolated: () => { isolations++; },
 			setPicked: (ids) => { pick = [...ids]; },
@@ -6015,7 +6082,10 @@ check('going to a search result picks the paper and leaves the isolation alone',
 	if (isolations) throw new Error('a search result was isolated, not just picked');
 	if (!pick || pick.join() !== 'K1') throw new Error('the paper was not picked');
 	if (!centred || centred[0] !== 3 || !page.paneEngaged) throw new Error('the paper was not centred and described');
+	// Where to look is now the reader's choice, so the first fit leaves it be.
+	if (!page.cameraTouched) throw new Error('going to a paper did not count as moving the camera');
 });
+
 
 /**
  * The graph's keys stand down inside a field that takes text, and that used to
@@ -6995,6 +7065,233 @@ check('the legend names an item type as Zotero does, and colours it by its id', 
 	// A new payload is a new set of names, not last one's.
 	page.raw = { items: [{ key: 'A', itemType: 'conferencePaper', itemTypeName: 'Conference Paper' }] };
 	if (page.typeName('conferencePaper') !== 'Conference Paper') throw new Error('the names outlived their payload');
+});
+
+/**
+ * A node's tooltip was one line of everything on force-graph's own see-through
+ * slab: the title, the counts, and then the same sentence about clicking, on
+ * every hover, with no author and no venue though the payload has both. It is
+ * a card now -- title; who, when, where; the two counts -- and it is markup,
+ * so what is held here is as much that nothing from a library or off the
+ * network reaches innerHTML unescaped as what the lines say.
+ */
+check('a node\'s tooltip is a card of what it is, who wrote it where, and how much it is cited', () => {
+	const lift = (code) => liftPage({
+		functions: ['itemTooltip', 'ghostTooltip', 'tipCard', 'tipCount', 'tipCounts', 'creatorList', 'escapeHtml'],
+		globals: { t: pageStrings(code), isPinned: n => !!n.pin },
+	});
+	const page = lift('en-US');
+	const grouped = (3904).toLocaleString();
+
+	const held = page.itemTooltip({
+		name: 'Spin <i>readout</i> & noise', creators: ['Mwangi'], year: 1992,
+		publication: 'Physical Review Letters', inDeg: 5, citedByGlobal: 3904,
+	});
+	const want = '<div class="tip-title">Spin &lt;i&gt;readout&lt;/i&gt; &amp; noise</div>'
+		+ '<div class="tip-meta">Mwangi · 1992 · Physical Review Letters</div>'
+		+ '<div class="tip-counts"><b>5</b> papers here cite it · <b>' + grouped + '</b> worldwide</div>';
+	if (held !== want) throw new Error('a paper\'s card reads ' + held);
+	if (/click/i.test(held)) throw new Error('the gestures are still said on every hover');
+
+	// A line with nothing to say is left out; a paper with only a title is one.
+	const bare = page.itemTooltip({ name: 'T', creators: [], year: null, publication: null, inDeg: 0, citedByGlobal: null });
+	if (bare !== '<div class="tip-title">T</div>') throw new Error('a bare paper\'s card reads ' + bare);
+	// The sentence is the locale's and keeps its plural; the number is set apart.
+	const counts = (n) => (page.itemTooltip(Object.assign({ name: 'T', creators: [] }, n)).match(/tip-counts">(.*)<\/div>$/) || [])[1];
+	if (counts({ inDeg: 1 }) !== '<b>1</b> paper here cites it') throw new Error('one citer reads ' + counts({ inDeg: 1 }));
+	// Nothing here cites it: said beside a worldwide count, where it is the point.
+	if (counts({ inDeg: 0, citedByGlobal: 12 }) !== 'No paper here cites it · <b>12</b> worldwide') {
+		throw new Error('an uncited paper reads ' + counts({ inDeg: 0, citedByGlobal: 12 }));
+	}
+	if (counts({ inDeg: 2, pin: true }) !== '<b>2</b> papers here cite it · pinned') throw new Error('a pin is not said');
+
+	// An outside reference: the same card, saying first that it is one. Its
+	// name may be all there is -- a DOI -- and its details come off the network.
+	const ghost = page.ghostTooltip({
+		name: '10.1/x<y', inDeg: 2,
+		meta: { creators: ['A', 'B', 'C', 'D'], year: 2019, venue: 'Nature <b>', citedByGlobal: null },
+	});
+	const wantGhost = '<div class="tip-title">10.1/x&lt;y</div>'
+		+ '<div class="tip-meta"><span class="tip-tag">Not in this graph</span> · A, B, C et al. · 2019 · Nature &lt;b&gt;</div>'
+		+ '<div class="tip-counts"><b>2</b> papers here cite it</div>';
+	if (ghost !== wantGhost) throw new Error('an outside reference\'s card reads ' + ghost);
+	if (!page.ghostTooltip({ name: '10.1/x', inDeg: 1, meta: { title: 'A title' } }).startsWith('<div class="tip-title">A title</div>')) {
+		throw new Error('a named outside reference is not headed by its title');
+	}
+
+	// Every locale's sentence has to keep the number where the page can find it.
+	for (const code of fs.readdirSync(localeDir)) {
+		const line = lift(code).itemTooltip({ name: 'T', creators: [], inDeg: 5, citedByGlobal: 3904 });
+		if (!line.includes('<b>5</b>') || !line.includes('<b>' + grouped + '</b>')) {
+			throw new Error(code + ': a count is not set apart in ' + line);
+		}
+	}
+
+	// And the card itself. The library injects `.float-tooltip-kap` with a
+	// see-through background after this sheet has loaded, so the rule here has
+	// to outrank it, not merely follow it.
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+	const m = css.match(/\n([^\n{}]*\.float-tooltip-kap) \{([^}]*)\}/);
+	if (!m) throw new Error('content/graph.css does not style the tooltip');
+	if (!outranks(specificity(m[1]), specificity('.float-tooltip-kap'))) {
+		throw new Error(m[1] + ' does not outrank the library\'s own rule');
+	}
+	for (const decl of ['background: var(--material-background)', 'border: var(--material-border)', 'font: inherit', 'max-width: 300px']) {
+		if (!m[2].includes(decl)) throw new Error('the tooltip card has no "' + decl + '"');
+	}
+});
+
+/**
+ * What a click, a double click and a right click do, which the tooltip said on
+ * every hover: now said once per profile, on the status line, when the first
+ * graph is finished. Under whatever else the line has to say -- chrome clears
+ * the line as a build ends, which is exactly when this is offered.
+ */
+check('the gestures are said once per profile, under whatever else the status line says', () => {
+	const tab = (store, over) => {
+		const timers = [];
+		const page = liftPage({
+			functions: ['offerHint', 'endHint'],
+			consts: ['HINT_SEEN_KEY', 'HINT_MS'],
+			globals: Object.assign({
+				raw: { meta: { phase: 'done' } }, drawnNodes: [{}],
+				hint: '', hintOffered: false, hintTimer: null,
+				elStatus: { textContent: '' },
+				t: pageStrings('en-US'),
+				window: {
+					localStorage: store,
+					setTimeout: (fn) => { timers.push(fn); return timers.length; },
+					clearTimeout() {},
+				},
+			}, over),
+		});
+		page.timers = timers;
+		return page;
+	};
+	const profile = () => {
+		const kept = new Map();
+		return { getItem: k => (kept.has(k) ? kept.get(k) : null), setItem: (k, v) => { kept.set(k, String(v)); } };
+	};
+	const SAID = pageStrings('en-US')('hint-gestures');
+	if (!/click/i.test(SAID) || SAID === 'hint-gestures') throw new Error('en-US has no hint to give');
+
+	// Not while a build is landing, not for one that failed, not on an empty graph.
+	const store = profile();
+	let page = tab(store, { raw: { meta: { phase: 'text' } }, elStatus: { textContent: 'Scanning PDFs… 3/10' } });
+	page.offerHint();
+	if (page.hint || page.hintOffered) throw new Error('the hint was offered over a build still landing');
+	page.raw = { meta: { phase: 'done', failed: 'boom' } };
+	page.offerHint();
+	page.raw = { meta: { phase: 'done' } };
+	page.drawnNodes = [];
+	page.offerHint();
+	if (page.hint || page.hintOffered) throw new Error('the hint was offered with nothing to click on');
+
+	// The first finished graph: kept beside the line while the line is busy...
+	page.drawnNodes = [{}];
+	page.offerHint();
+	if (page.hint !== SAID) throw new Error('the first finished graph offered ' + JSON.stringify(page.hint));
+	if (page.elStatus.textContent !== 'Scanning PDFs… 3/10') throw new Error('the hint overwrote a status');
+	// ...which is what zgSetStatus shows when chrome clears the line.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!/window\.zgSetStatus = function \(text\) \{[^}]*elStatus\.textContent = text \|\| hint \|\| '';\s*\};/.test(js)) {
+		throw new Error('a cleared status line no longer shows the hint that is waiting under it');
+	}
+	// It goes when its time is up, and takes only itself off the line.
+	page.elStatus.textContent = SAID;
+	page.timers[0]();
+	if (page.hint || page.elStatus.textContent) throw new Error('the hint outstayed its time');
+
+	// On an idle line it is simply shown; a status that arrived in the
+	// meantime is not what the timer clears.
+	page = tab(profile());
+	page.offerHint();
+	if (page.elStatus.textContent !== SAID) throw new Error('an idle line does not show the hint');
+	page.elStatus.textContent = 'Looking up works…';
+	page.endHint();
+	if (page.elStatus.textContent !== 'Looking up works…') throw new Error('ending the hint cleared a status');
+
+	// The next tab of the same profile has nothing to say.
+	page = tab(store);
+	page.offerHint();
+	if (page.hint) throw new Error('the same profile was told twice');
+
+	// No storage at all: once per tab is the most that can be kept.
+	const denied = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
+	page = tab(denied);
+	page.offerHint();
+	if (page.hint !== SAID) throw new Error('a page without storage never says it');
+	page.endHint();
+	page.offerHint();
+	if (page.hint) throw new Error('a page without storage says it on every payload');
+});
+
+/**
+ * Nothing framed a graph but the reframe button: fifteen hundred papers opened
+ * running off every edge of the window. The first FINISHED graph of a tab is
+ * now fitted when its layout comes to rest -- once, and not at all if the
+ * reader has already moved the camera, because from then on it is theirs.
+ */
+check('the first finished graph is fitted once, and never over the reader\'s own view', () => {
+	let fits = 0;
+	const tab = (over) => liftPage({
+		functions: ['firstFit', 'cameraTaken', 'reframeAsked', 'engineTicked', 'engineStopped'],
+		globals: Object.assign({
+			fg: {}, raw: { meta: { phase: 'done' } }, drawnNodes: [{}],
+			fitSpent: false, cameraTouched: false, engineLive: false, engineDue: false,
+			reframe: () => { fits++; }, shed() {}, thaw() {}, repaint() {},
+		}, over),
+	});
+	const rest = (page) => { page.engineTicked(); page.engineStopped(); };
+
+	// A build lands in phases, and each one's layout comes to rest: no fit
+	// until the graph is whole, then one, then never again.
+	let page = tab({ raw: { meta: { phase: 'text' } } });
+	rest(page);
+	if (fits || page.fitSpent) throw new Error('a graph still being built was fitted');
+	page.raw = { meta: { phase: 'done' } };
+	rest(page);
+	if (fits !== 1) throw new Error('the first finished graph was fitted ' + fits + ' times');
+	page.raw = { meta: { phase: 'done' } };
+	rest(page);
+	rest(page);
+	if (fits !== 1) throw new Error('a later payload moved the camera again');
+
+	// The reader got there first: a wheel, a drag, a search result.
+	fits = 0;
+	page = tab();
+	page.cameraTaken();
+	rest(page);
+	if (fits) throw new Error('the fit overrode a view the reader had chosen');
+	if (!page.fitSpent) throw new Error('the forfeited fit is still owed');
+
+	// The button is theirs too: it fits because they asked, and that is the end of it.
+	page = tab();
+	page.reframeAsked();
+	if (fits !== 1 || !page.cameraTouched) throw new Error('the reframe button is not the reader\'s own');
+	rest(page);
+	if (fits !== 1) throw new Error('the graph was fitted again after the reader had framed it');
+
+	// Nothing drawn is nothing to frame, and the fit is kept for what arrives.
+	fits = 0;
+	page = tab({ drawnNodes: [] });
+	rest(page);
+	if (fits || page.fitSpent) throw new Error('an empty graph spent the fit');
+
+	// The wiring the lifted functions cannot show: who tells the page the
+	// camera was taken, and the payload that lands on a layout already at rest.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	for (const [what, needle] of [
+		['a wheel over the canvas', "elGraph.addEventListener('wheel', cameraTaken,"],
+		['a drag of the canvas', '.onZoom(() => { if (canvasHeld) cameraTaken(); })'],
+		['the reframe button', "elReframe.addEventListener('click', reframeAsked)"],
+		['the canvas menu\'s reframe', 'run: reframeAsked,'],
+		['a finished payload on a resting layout', 'if (!engineLive && !engineDue) firstFit();'],
+		['an update that sets the layout going', 'if (movedStructure || (movedRadii && PERF.collide)) engineDue = true;'],
+	]) {
+		if (!js.includes(needle)) throw new Error(what + ' is no longer wired to the first fit');
+	}
 });
 
 /**

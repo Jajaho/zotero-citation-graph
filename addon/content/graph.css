@@ -1511,6 +1511,56 @@ body {
 	inset: 0;
 }
 
+/*
+ * The tooltip, as a card.
+ *
+ * The element is force-graph's own and so was its look, from a <style> the
+ * library injects: white 12px sans-serif on a 60% black slab. See-through, so
+ * the names under it showed between its words; a fixed 12px, so it ignored
+ * the font size Zotero is set to; and a slab of the wrong colour in either
+ * scheme. It is now what every other floating thing on this page is -- the
+ * menu, the completion list, the detail card: opaque, in the page's own
+ * tokens, with a hairline and a shadow.
+ *
+ * #graph in the selector is what lets this win. The library's rule is a bare
+ * class and is injected after this sheet has loaded, so a bare class here
+ * would lose to it on order.
+ *
+ * Wrapped rather than one long line: the library sizes it max-content, which
+ * is as wide as its longest line, and a title is often longer than 300px.
+ */
+#graph .float-tooltip-kap {
+	max-width: 300px;
+	padding: 7px 10px;
+	border: var(--material-border);
+	border-radius: 6px;
+	background: var(--material-background);
+	color: var(--fill-primary);
+	font: inherit;
+	text-align: left;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* The three lines of a node's card -- see tipCard() in graph.js. An edge's
+   tooltip is one line of plain text and wears the card alone. */
+.tip-title {
+	font-weight: 600;
+}
+
+.tip-meta,
+.tip-counts {
+	margin-top: 1px;
+	color: var(--fill-secondary);
+}
+
+/* The numbers are what the line is for. */
+.tip-counts b {
+	font-weight: 600;
+	color: var(--fill-primary);
+}
+
 /* Centred under the bar, where the eye already is.
 
    It sat in the bottom-left corner, out of the way of the nodes -- which is

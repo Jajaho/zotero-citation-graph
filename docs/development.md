@@ -642,6 +642,35 @@ three letters, and a word is letters, the marks that ride on them, and digits �
 in any script (`NOT_WORD`). `\W` is ASCII's idea of one: it drew *Étude sur la
 lumière* as `tude1905` and a Greek title as its year alone.
 
+**Which names are drawn** is decided for the whole frame at once
+(`reserveLabels()`, over the greedy pass in `labelLayout.js`): the names are
+offered room in a fixed order of importance, each reserves its glyphs plus
+`LABEL_PAD` — 3px a side; at 1px two citekeys read as one word — and one that
+would lie across a name already placed is left out. A name already on screen is
+tested at `LABEL_STICKY`, 85% of its box, *while the layout is moving*, so that
+a node jittering by a pixel a frame does not strobe the name on a boundary.
+At rest it is tested whole (`labelSlack()`). The slack used to apply there too,
+where nothing jitters, so a graph came to rest with whatever names had drifted
+across each other still lying across each other, and a stopped graph is not
+judged again until something moves. The frame the engine stops on is still a
+moving one, so `engineStopped()` asks for one more — and it is told of a stop in
+the static mode as well, where a burst is run inside the update and "stops" on
+the next frame with no tick before it.
+
+**The tooltip is a card** — `tipCard()`: the title; authors, year and venue; then
+how many papers here cite it and how often the world does, the two counts named
+apart as they always were. It was one line on force-graph's own slab, a
+see-through 60% black in a fixed 12px sans-serif, half of it the same sentence
+about clicking on every hover. The slab is styled over in `graph.css` (the
+library injects its rule after the sheet loads, so the selector carries
+`#graph` to outrank it) and the gestures are said once: `offerHint()` puts them
+on the status line the first time a profile sees a finished graph, for fifteen
+seconds or until a paper is clicked, *under* whatever else the line says —
+chrome clears the line as a build ends, which is exactly when the hint is
+offered, so `zgSetStatus('')` shows it rather than wiping it. A tooltip is
+`innerHTML`, so every word from a library or off the network is escaped on its
+way into the card.
+
 **The legend, directly under the colour and size controls**, is headed `Coloured by <mode>` — the
 sentence the panel's colour control just made — and says what those colours mean: a labelled
 gradient for `year`, one swatch per key for `collection`, `subfield`, `first author`,
@@ -654,12 +683,27 @@ putting away without putting the controls away with it.
 
 **The reframe button, in the top bar**, zooms and centres the view on the
 bounding box of every node currently drawn, with a margin. It is the way back
-from a lost viewport, and there is no other one: the layout wanders as later
+from a lost viewport: the layout wanders as later
 build phases add edges, a rebuild can land a graph far outside the zoom the last
 one was read at, and dragging a node pans nothing. The margin is a tenth of the
 smaller viewport dimension, capped at 40px — the graph runs in a narrow Zotero
 pane as well as a full tab, and a fixed 40px a side would there be a third of
 the window spent on nothing.
+
+**It is pressed once for the reader** (`firstFit()`): when the first *finished*
+graph of a tab comes to rest, and never again. A tab used to open at whatever
+zoom force-graph gives a new graph — 4 over the cube root of the node count —
+so fifteen hundred papers ran off every edge of the window. Finished, because a
+build lands in phases and a fit to the first frames a graph about to grow; at
+rest, because a layout still flying apart has no size to fit; once, because
+after that the camera is the reader's and a later payload must not take it. And
+not at all if they moved it first: a wheel over the canvas, a drag of it, the
+button or its menu entry, and going to a search result each call
+`cameraTaken()`. Where the camera *is* cannot answer that — force-graph's zoom
+callback does not say what moved it, and there is no resting place to compare
+against. The view saved with a tab holds no camera, so a restored tab is fitted
+like a new one.
+
 
 **The search field, on the right of the bar**, finds a paper and goes to it. It is
 deliberately *not* a second filter: the sidebar's chips already narrow the graph, and typing
