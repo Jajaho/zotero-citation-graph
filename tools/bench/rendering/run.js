@@ -34,7 +34,7 @@
  *     --baseline <file>    compare against an earlier --json and show deltas
  *     --firefox <path>     override the browser binary
  *     --headed             show the browser (for watching a scenario misbehave)
- *     --timeout <seconds>  give up after this long (default 240)
+ *     --timeout <seconds>  give up after this long (default 240, 7200 with --matrix)
  */
 
 const fs = require('fs');
@@ -533,7 +533,10 @@ function matrixMarkdown(m) {
 
 async function main() {
 	const binary = findFirefox();
-	const timeout = Number(opt('timeout', 240)) * 1000;
+	// The matrix is fourteen variants three times over, about fifty minutes at
+	// 1,500 items on a software rasteriser -- a limit sized for the single run
+	// throws all of it away at the end.
+	const timeout = Number(opt('timeout', flag('matrix') ? 7200 : 240)) * 1000;
 
 	let resolveResults;
 	const got = new Promise((r) => { resolveResults = r; });
