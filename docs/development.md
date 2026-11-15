@@ -1353,8 +1353,10 @@ screen. The page writes the document (`content/graphExport.js`, pure) and chrome
 saves it through Zotero's file picker (`lib/exportFile.js`).
 
 - **SVG** is written from the page's own geometry, not captured from the canvas:
-  circles and collection wedges as paths, each edge as the same outline the
-  canvas fills (arrow head included), and names as `<text>` so
+  circles and collection wedges as paths, each edge as the outline the canvas
+  fills for a translucent edge (arrow head included; an opaque one the canvas
+  leaves to force-graph's stroke and head, which is faster and has no alpha to
+  count twice), and names as `<text>` so
   `inkscape --export-latex` can typeset them. It is drawn at the current zoom —
   an edge's width, a head and a name's type size are screen sizes — and carries
   the names that would have room at that zoom over the whole graph, so zoom in

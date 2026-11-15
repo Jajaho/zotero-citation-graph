@@ -3169,13 +3169,14 @@
 				// trigonometry, and a curvature of 0 leaves the link with no control
 				// points at all -- so force-graph draws it with lineTo instead of
 				// working one out per link per frame and running quadraticCurveTo.
-				// With batch on, force-graph's own heads are length 0 and neither
-				// pass runs: one carrier link draws every edge, head and all --
-				// see drawEdge().
-				.linkDirectionalArrowLength(() => (PERF.arrows && !PERF.batch ? arrowLen(arrowScale) : 0))
+				// With batch on, a translucent edge is force-graph's to skip: one
+				// carrier link draws every one of them, head and all -- see
+				// drawEdge(). An opaque edge is handed back, line and head, since
+				// there is no second coat to show -- see handedBack().
+				.linkDirectionalArrowLength(l => (PERF.arrows && (!PERF.batch || handedBack(l)) ? arrowLen(arrowScale) : 0))
 				.linkDirectionalArrowRelPos(1)
 				.linkCurvature(() => (PERF.curves ? LINK_CURVE : 0))
-				.linkCanvasObjectMode(() => (PERF.batch ? 'replace' : undefined))
+				.linkCanvasObjectMode(l => (PERF.batch && !handedBack(l) ? 'replace' : undefined))
 				.linkCanvasObject(drawEdge)
 				// A closure over the switch rather than a re-set accessor, for the
 				// reason the whole chain is: force-graph re-initialises on some
@@ -4517,8 +4518,11 @@
 	 * link of the array being drawn, picked afresh every frame by
 	 * pickCarrier().
 	 *
-	 * PERF.batch hands the edges back to force-graph, for the benchmark: its
-	 * own stroke, its own arrow pass, and the overlay that comes with them.
+	 * Translucent edges only. An opaque one has no alpha to count twice, and
+	 * force-graph draws it faster than this does -- see handedBack().
+	 *
+	 * PERF.batch off hands every edge back to force-graph, for the benchmark:
+	 * its own stroke, its own arrow pass, and the overlay that comes with them.
 	 */
 	/**
 	 * How big a head is, in three numbers: a size in the graph, and a floor and
@@ -4595,6 +4599,8 @@
 		for (let i = 0; i < links.length; i++) {
 			let l = links[i];
 			let color = linkColor(l) || 'rgba(0,0,0,0.28)';
+			// force-graph strokes this one itself, after this pass.
+			if (opaqueColor(color)) continue;
 			let run = edgeRuns.get(color);
 			if (!run) edgeRuns.set(color, run = []);
 			run.push(l);
@@ -4616,6 +4622,54 @@
 		for (let i = 0; i < run.length; i++) traceEdge(ctx, run[i], runScale);
 		ctx.fillStyle = color;
 		ctx.fill();
+	}
+
+	/**
+	 * Whether force-graph draws this edge itself: whenever its colour is opaque.
+	 *
+	 * The outline above exists for alpha, and an opaque edge has none -- a head
+	 * laid over its own line shows nothing under it. What the outline costs
+	 * instead is the single fill: all edges of a colour are one path, and with
+	 * the tint off (perf mode, or edges uncoloured) that is every edge in the
+	 * graph in one path of a few thousand outlines. A software rasteriser
+	 * fills that far slower than it strokes the same edges as lines -- at
+	 * 1,500 papers a zoom frame took 54ms with the tint off against 31ms with
+	 * it on, which made the mode that is meant to be cheaper the dearer one.
+	 * force-graph's stroke and its own head pass, at the same width and the
+	 * same head, drew the same frame in 15ms.
+	 *
+	 * Asked per link, per frame, by three callers, so it rides on linkColor's
+	 * memo and a cache of the answer per colour string.
+	 */
+	function handedBack(l) {
+		return opaqueColor(linkColor(l));
+	}
+
+	const opaqueSeen = new Map();   // colour string -> whether it is opaque
+
+	function opaqueColor(c) {
+		let o = opaqueSeen.get(c);
+		if (o === undefined) {
+			o = isOpaque(c);
+			opaqueSeen.set(c, o);
+		}
+		return o;
+	}
+
+	/** Opaque by its own syntax. Anything it cannot read is taken as
+	 *  translucent, which costs speed and never a doubled coat. */
+	function isOpaque(c) {
+		if (typeof c !== 'string') return false;
+		c = c.trim().toLowerCase();
+		if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(c)) return true;
+		if (/^#[0-9a-f]{8}$/.test(c)) return c.slice(7) === 'ff';
+		if (/^#[0-9a-f]{4}$/.test(c)) return c.slice(4) === 'f';
+		let m = /^(?:rgb|hsl)a?\(([^)]*)\)$/.exec(c);
+		if (!m) return false;
+		let parts = m[1].split(/[\s,/]+/).filter(Boolean);
+		if (parts.length < 4) return true;
+		let a = parts[3];
+		return a.charAt(a.length - 1) === '%' ? parseFloat(a) >= 100 : parseFloat(a) >= 1;
 	}
 
 	/**
@@ -4771,7 +4825,16 @@
 	 *  not. */
 	function pickCarrier() {
 		let links = fg.graphData().links;
-		edgeCarrier = links.length ? links[0] : null;
+		// The first link force-graph will still hand the page: one it draws
+		// itself never reaches drawEdge(), and a carrier that never arrives
+		// leaves every translucent edge undrawn.
+		edgeCarrier = null;
+		for (let i = 0; i < links.length; i++) {
+			if (!handedBack(links[i])) {
+				edgeCarrier = links[i];
+				return;
+			}
+		}
 	}
 
 	function drawNode(node, ctx, globalScale) {
