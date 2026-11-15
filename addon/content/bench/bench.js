@@ -484,10 +484,25 @@ var SCENARIOS = [
 			await settle(cx);
 			var slider = D.getElementById('min-conf');
 			if (!slider) return null;
-			return await record(cx.frames, function (i) {
-				slider.value = String(0.3 + (i % 12) * 0.05);
+			// Handed back afterwards, for the reason reframe() exists: the
+			// slider is page state, and left where the last frame put it every
+			// scenario after this one draws a graph with its weaker edges
+			// filtered out. In a matrix that is most of them -- a row that ran
+			// after a filter measured ~14ms, the baseline before one ~23ms, and
+			// every switch came out 20-45% "faster", the two optimisations
+			// included.
+			var was = slider.value;
+			try {
+				return await record(cx.frames, function (i) {
+					slider.value = String(0.3 + (i % 12) * 0.05);
+					slider.dispatchEvent(new W.Event('input', { bubbles: true }));
+				});
+			}
+			finally {
+				slider.value = was;
 				slider.dispatchEvent(new W.Event('input', { bubbles: true }));
-			});
+				await quiesce();
+			}
 		},
 	},
 ];
