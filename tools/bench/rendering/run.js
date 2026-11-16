@@ -2,21 +2,27 @@
 'use strict';
 
 /**
- * Run the graph rendering benchmark in headless Firefox and print the numbers.
+ * Run the graph rendering benchmark and print the numbers: in headless Firefox
+ * by default, in a real Firefox window with --gpu, or inside Zotero itself with
+ * --app zotero.
  *
- * Firefox rather than a browser that is easier to automate: Zotero 7 is Firefox
- * 115 ESR, so this is the same rasteriser, the same text shaping and the same
- * compositor. Numbers from Chromium would be a real measurement of the wrong
- * renderer, which is worse than none because it looks like an answer.
+ * Firefox rather than a browser that is easier to automate: Zotero is built on
+ * Gecko (Zotero 10 on Gecko 140 ESR), so this is the same rasteriser, the same
+ * text shaping and the same compositor. Numbers from Chromium would be a real
+ * measurement of the wrong renderer, which is worse than none because it looks
+ * like an answer.
  *
- * Absolute figures still belong to Zotero itself -- see the README beside this file
- * for opening the same page there. What this is for is the other question, and
- * the one asked far more often: did that change make it faster, and by how
- * much. For a comparison, both runs measured the same way on the same machine
- * minutes apart, Firefox is exactly right.
+ * Headless Firefox answers the question asked most often -- did that change make
+ * it faster, and by how much -- because both runs are measured the same way on
+ * the same machine minutes apart. It draws in software, though, so its absolute
+ * figures are not a user's. --app zotero gives those: the same page in Zotero,
+ * on the GPU. See the README beside this file.
  *
  * No browser-driver dependency. The page is served over http by serve.js and
  * posts its results back to it, which is all the channel a benchmark needs.
+ * The one question a page cannot answer -- was the canvas on the GPU -- goes to
+ * Firefox over marionette.js, sixty lines of our own, and to Zotero through
+ * the runner add-on in zotero-runner/.
  *
  * Usage:
  *   node tools/bench/rendering/run.js [options]
@@ -34,14 +40,39 @@
  *     --baseline <file>    compare against an earlier --json and show deltas
  *     --firefox <path>     override the browser binary
  *     --headed             show the browser (for watching a scenario misbehave)
- *     --timeout <seconds>  give up after this long (default 240, 7200 with --matrix)
+ *     --timeout <seconds>  give up after this long (default 240, 2400 in Zotero,
+ *                          7200 with --matrix)
+ *
+ *   Where it runs, and on what:
+ *     --gpu                draw on the GPU: a real window instead of headless,
+ *                          and the run fails loudly if the canvas was not on
+ *                          the GPU after all
+ *     --app zotero         run inside Zotero instead of Firefox: a throwaway
+ *                          profile and data directory, never your own. The
+ *                          figures a user would see. Always a real window.
+ *     --zotero <path>      override the Zotero binary
+ *     --canvas software    turn Gecko's accelerated canvas off. Against a --gpu
+ *                          run this is the check that the GPU did the drawing
+ *     --ref <git-ref>      measure that version's graph page (e.g. v0.74.1) with
+ *                          today's harness, so two versions run the same test
+ *     --addon <dir>        measure the addon/ tree in <dir> instead
+ *     --timing <how>       readback (default for headless) or interval (default
+ *                          with --gpu and --app zotero). See TIMING in bench.js:
+ *                          a read-back stalls a GPU canvas, so GPU runs time
+ *                          the interval between frames, with vsync off
+ *
+ * Every run records which renderer drew it (zotero-runner/gfx-probe.js): the
+ * report says GPU or CPU, compositor and adapter, so a fallback to software
+ * cannot pass for a GPU number.
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const net = require('net');
 const { spawn, execFileSync } = require('child_process');
 const { serve } = require('./serve.js');
+const { chromeEval } = require('./marionette.js');
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes('--' + name);
@@ -89,7 +120,7 @@ function findFirefox() {
 	catch (e) { /* nothing on PATH */ }
 	throw new Error(
 		'could not find Firefox. Install it, or pass --firefox <path>, or set '
-		+ 'FIREFOX_BIN. Zotero 7 is Firefox 115 ESR, so Firefox is what makes '
+		+ 'FIREFOX_BIN. Zotero is built on Gecko, so Firefox is what makes '
 		+ 'these numbers comparable to Zotero.');
 }
 
@@ -100,7 +131,7 @@ function findFirefox() {
  * the user's own browsing cannot move a number -- and so that running this
  * never touches the profile they actually browse with.
  */
-function makeProfile() {
+function makeProfile(extra = []) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zg-bench-'));
 	fs.writeFileSync(path.join(dir, 'user.js'), [
 		'user_pref("browser.shell.checkDefaultBrowser", false);',
@@ -114,8 +145,150 @@ function makeProfile() {
 		'user_pref("dom.min_background_timeout_value", 4);',
 		'user_pref("privacy.reduceTimerPrecision", false);',
 		'user_pref("dom.animations.mainthread-synchronization-with-geometric-animations", true);',
-	].join('\n'));
+		// A real window that something else covers is "occluded", and Gecko
+		// stops painting it. A forty-minute sweep in a window you then work
+		// over would measure the throttle. Off, it paints regardless.
+		'user_pref("widget.windows.window_occlusion_tracking.enabled", false);',
+		...gfxPrefs(),
+		...extra,
+	].join('\n') + '\n');
 	return dir;
+}
+
+/** --canvas software: Gecko's accelerated canvas off, everything else as it
+ *  ships. Compositing stays on the GPU, so what changes is only who rasterises
+ *  the canvas -- which is the question a --gpu run has to be checked against. */
+function gfxPrefs() {
+	const out = [];
+	const canvas = opt('canvas', null);
+	if (canvas != null) {
+		if (canvas !== 'software') throw new Error('--canvas takes "software", not ' + canvas);
+		out.push('user_pref("gfx.canvas.accelerated", false);');
+	}
+	// Interval timing measures how fast frames come, so the display must not
+	// set the pace: at 60 Hz anything under 16.7 ms reads as 16.7. Zero is
+	// Gecko's "as fast as possible" refresh driver.
+	if (timing() === 'interval') out.push('user_pref("layout.frame_rate", 0);');
+	return out;
+}
+
+/** How bench.js times a frame. A GPU canvas is timed by interval, because a
+ *  read-back stalls it; see TIMING in bench.js. */
+function timing() {
+	const t = opt('timing', null);
+	if (t != null) {
+		if (t !== 'readback' && t !== 'interval') throw new Error('--timing is readback or interval, not ' + t);
+		return t;
+	}
+	return flag('gpu') || opt('app', 'firefox') === 'zotero' ? 'interval' : 'readback';
+}
+
+const pstr = (s) => JSON.stringify(String(s));
+
+/** A free loopback port, for Marionette. */
+function freePort() {
+	return new Promise((resolve, reject) => {
+		const s = net.createServer();
+		s.unref();
+		s.on('error', reject);
+		s.listen(0, '127.0.0.1', () => {
+			const { port } = s.address();
+			s.close(() => resolve(port));
+		});
+	});
+}
+
+/**
+ * End every process started with this profile, and only those.
+ *
+ * child.kill() is not enough. The Microsoft Store's firefox.exe is a launcher
+ * that starts the real browser and exits, and Zotero on Windows runs a launcher
+ * process above the browser process. Either way the PID we hold is not the
+ * process holding the window. The profile path is unique to this run, so a
+ * browser process that has it on its command line is ours.
+ *
+ * A browser process, by name, and never the PowerShell doing the stopping. Its
+ * own command line carries the profile path too, being the filter, and the
+ * first version matched itself: depending on process order it ended itself
+ * before it reached the browser, and a Zotero from one run went on
+ * benchmarking for half an hour under the next.
+ *
+ * Content processes do not carry the profile path; they exit with the parent.
+ * Afterwards the browser is asked for again, and a survivor is reported.
+ */
+function stopByProfile(child, profile) {
+	try { child.kill(); } catch (e) { /* already gone */ }
+	if (process.platform !== 'win32') return;
+	const marker = path.basename(profile).replace(/'/g, "''");
+	const ours = "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID"
+		+ " -and $_.Name -match '^(firefox|zotero)\\.exe$' -and $_.CommandLine -like '*" + marker + "*' }";
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			const left = execFileSync('powershell', ['-NoProfile', '-Command',
+				ours + " | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };"
+				+ ' Start-Sleep -Milliseconds 500; @(' + ours + ').Count'],
+			{ encoding: 'utf8', timeout: 60000 }).trim();
+			if (left === '0') return;
+		}
+		catch (e) { /* try again */ }
+	}
+	console.error('\n  could not stop the browser started with ' + profile
+		+ ' -- end it by hand before the next run, or it will compete with it');
+}
+
+/** rmSync, a few times: Windows keeps a dead process's files locked a moment. */
+async function removeDir(dir) {
+	for (let i = 0; i < 10; i++) {
+		try { fs.rmSync(dir, { recursive: true, force: true }); return; }
+		catch (e) { await new Promise((r) => setTimeout(r, 500)); }
+	}
+}
+
+/* ------------------------------------------------------------------ *
+ * Which page: this checkout's, or an older version's
+ * ------------------------------------------------------------------ */
+
+/**
+ * The addon/ tree to measure.
+ *
+ * --ref writes that version's addon/ to a temp directory and puts today's
+ * harness (content/bench/) over it. Not the version's own harness: the
+ * benchmark has changed under it. Until 0.75.1 the fixture's outside references
+ * carried their key under the wrong name and the page drew none of them, so an
+ * old harness measures a smaller graph than a new one, and the comparison would
+ * be of two different tests.
+ *
+ * Written out file by file with git show, not git archive: extracting a tar
+ * from node means either a dependency or whichever tar is on PATH, and on
+ * Windows the Git-for-Windows one reads "C:\..." as a remote host.
+ */
+function prepareAddon() {
+	const here = path.join(__dirname, '..', '..', '..');
+	const dir = opt('addon', null);
+	if (dir) {
+		const root = path.resolve(dir);
+		if (!fs.existsSync(path.join(root, 'manifest.json'))) throw new Error('no manifest.json in ' + root);
+		return { root, label: root, cleanup: null };
+	}
+	const ref = opt('ref', null);
+	if (!ref) return { root: path.join(here, 'addon'), label: 'working tree', cleanup: null };
+
+	const git = (args, enc = 'utf8') => execFileSync('git', args,
+		{ cwd: here, encoding: enc, maxBuffer: 256 * 1024 * 1024 });
+	const sha = git(['rev-parse', '--short', ref + '^{commit}']).trim();
+	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zg-bench-ref-'));
+	const root = path.join(tmp, 'addon');
+	const files = git(['ls-tree', '-r', '--name-only', ref, '--', 'addon/'])
+		.split('\n').filter(Boolean);
+	for (const f of files) {
+		const out = path.join(tmp, f);
+		fs.mkdirSync(path.dirname(out), { recursive: true });
+		fs.writeFileSync(out, git(['show', ref + ':' + f], 'buffer'));
+	}
+	const bench = path.join(here, 'addon', 'content', 'bench');
+	fs.rmSync(path.join(root, 'content', 'bench'), { recursive: true, force: true });
+	fs.cpSync(bench, path.join(root, 'content', 'bench'), { recursive: true });
+	return { root, label: ref + ' (' + sha + ') with today\'s harness', cleanup: tmp };
 }
 
 /* ------------------------------------------------------------------ *
@@ -151,6 +324,23 @@ function table(head, rows) {
 	return out.join('\n');
 }
 
+/** One line on what drew the run. A run from before the probe existed, or one
+ *  whose probe failed, says so rather than letting a reader assume. */
+function rendererLine(run) {
+	const g = run.gfx;
+	if (!g) return 'not recorded';
+	if (g.error) return 'probe failed: ' + g.error;
+	let s = g.summary || (g.canvas + ' canvas');
+	if (g.prefs && g.prefs['gfx.canvas.accelerated'] === false) s += ' (accelerated canvas switched off)';
+	return s;
+}
+
+function timingLine(run) {
+	return run.env && run.env.timing === 'interval'
+		? 'interval between painted frames, vsync off (no read-back)'
+		: 'frame start to a one-pixel read-back';
+}
+
 function report(run, baseline) {
 	const lines = [];
 	const c = run.config || {};
@@ -159,6 +349,9 @@ function report(run, baseline) {
 		+ (c.external || 0) + ' outside refs · viewport ' + c.vw + '×' + c.vh
 		+ ' · dpr ' + (run.env && run.env.dpr));
 	lines.push('  ' + ((run.env && run.env.agent) || '').replace(/^Mozilla\/5\.0 /, ''));
+	if (run.page) lines.push('  page: ' + run.page);
+	lines.push('  renderer: ' + rendererLine(run));
+	lines.push('  timing: ' + timingLine(run));
 	lines.push('');
 
 	const ids = Object.keys(run.scenarios || {});
@@ -287,13 +480,17 @@ function markdown(run, baseline, basePath) {
 	L.push('| viewport | ' + c.vw + ' x ' + c.vh + ' at dpr ' + e.dpr + ' |');
 	L.push('| sampling | ' + c.frames + ' frames x ' + (c.repeat || 1) + ' repeats per scenario |');
 	L.push('| engine | ' + String(e.agent || '').replace(/^Mozilla\/5\.0 /, '') + ' |');
+	if (run.page) L.push('| page | ' + run.page + ' |');
+	L.push('| renderer | ' + rendererLine(run) + ' |');
+	L.push('| timing | ' + timingLine(run) + ' |');
 	L.push('');
-	L.push('> Headless Firefox renders in **software**, so these absolute times are');
-	L.push('> slower than a GPU-composited Zotero. They are here to be compared with');
-	L.push('> each other, not quoted as what a user sees. Zotero 7 is Firefox 115 ESR,');
-	L.push('> so the renderer is the same family; `npm run bench:open` takes the same');
-	L.push('> measurements inside Zotero itself.');
-	L.push('');
+	if (!run.gfx || run.gfx.canvas !== 'gpu') {
+		L.push('> This run drew the canvas in **software**, so these absolute times are');
+		L.push('> slower than a GPU-composited Zotero. They are here to be compared with');
+		L.push('> each other, not quoted as what a user sees. `--gpu` measures on the');
+		L.push('> GPU, and `--app zotero` inside Zotero itself.');
+		L.push('');
+	}
 
 	const ids = Object.keys(run.scenarios || {});
 	if (ids.length) {
@@ -528,20 +725,11 @@ function matrixMarkdown(m) {
 }
 
 /* ------------------------------------------------------------------ *
- * Driving it
+ * Launching: Firefox, or Zotero
  * ------------------------------------------------------------------ */
 
-async function main() {
-	const binary = findFirefox();
-	// The matrix is fourteen variants three times over, about fifty minutes at
-	// 1,500 items on a software rasteriser -- a limit sized for the single run
-	// throws all of it away at the end.
-	const timeout = Number(opt('timeout', flag('matrix') ? 7200 : 240)) * 1000;
-
-	let resolveResults;
-	const got = new Promise((r) => { resolveResults = r; });
-	const server = await serve({ onResults: resolveResults });
-
+/** The page's query string, shared by both apps. */
+function benchQuery() {
 	const q = new URLSearchParams({ auto: '1' });
 	q.set('n', opt('n', '1500'));
 	q.set('frames', opt('frames', '90'));
@@ -560,32 +748,177 @@ async function main() {
 	// browser session. Not one run per variant: see the header of the matrix
 	// section in bench.js for what that measured instead.
 	if (flag('matrix')) q.set('matrix', '1');
-	const url = 'http://127.0.0.1:' + server.port + '/content/bench/bench.html?' + q;
+	q.set('timing', timing());
+	return q;
+}
 
-	const profile = makeProfile();
-	const args = ['--profile', profile, '--no-remote', '--new-instance'];
-	if (!flag('headed')) args.push('--headless');
+const PROBE = fs.readFileSync(path.join(__dirname, 'zotero-runner', 'gfx-probe.js'), 'utf8');
+
+/**
+ * Firefox: the page over http from serve.js, results posted back to it, and
+ * the renderer asked over Marionette once the run is over -- after, so that a
+ * GPU that gave up halfway through is reported as having given up.
+ */
+async function launchFirefox(server, q) {
+	const binary = findFirefox();
+	const mport = await freePort();
+	const profile = makeProfile(['user_pref("marionette.port", ' + mport + ');']);
+	const url = 'http://127.0.0.1:' + server.port + '/content/bench/bench.html?' + q;
+	const args = ['--profile', profile, '--no-remote', '--new-instance', '--marionette'];
+	if (!flag('headed') && !flag('gpu')) args.push('--headless');
 	args.push(url);
 
 	console.log('\n  ' + binary);
 	console.log('  ' + url);
 
-	const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+	const child = spawn(binary, args, {
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: Object.assign({}, process.env, { MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: '1' }),
+	});
 	let stderr = '';
 	child.stderr.on('data', (d) => { stderr += d; });
+	return {
+		stderr: () => stderr,
+		async gfx() {
+			try {
+				return await chromeEval(mport, PROBE + '\nreturn zgGfxProbe();', 15000);
+			}
+			catch (e) { return { error: 'Marionette: ' + e.message }; }
+		},
+		async stop() {
+			stopByProfile(child, profile);
+			await removeDir(profile);
+		},
+	};
+}
+
+function findZotero() {
+	const override = opt('zotero', process.env.ZOTERO_BIN);
+	if (override) {
+		if (!fs.existsSync(override)) throw new Error('no Zotero at ' + override);
+		return override;
+	}
+	const candidates = {
+		win32: ['C:\\Program Files\\Zotero\\zotero.exe', 'C:\\Program Files (x86)\\Zotero\\zotero.exe',
+			path.join(os.homedir(), 'AppData\\Local\\Zotero\\zotero.exe')],
+		darwin: ['/Applications/Zotero.app/Contents/MacOS/zotero'],
+		linux: ['/usr/lib/zotero/zotero', '/opt/zotero/zotero', path.join(os.homedir(), 'Zotero_linux-x86_64/zotero')],
+	}[process.platform] || [];
+	for (const p of candidates) if (fs.existsSync(p)) return p;
+	throw new Error('could not find Zotero. Pass --zotero <path> or set ZOTERO_BIN.');
+}
+
+/**
+ * Zotero: a second, separate Zotero with a throwaway profile AND a throwaway
+ * data directory. Your own Zotero can stay open; it is never touched. Zotero
+ * locks its database, so a second copy pointed at the same data directory
+ * would refuse to start -- or worse -- and the data directory is the thing
+ * the profile would otherwise default to.
+ *
+ * The plugin under test and the runner add-on are installed as proxy files
+ * (see tools/install-dev.ps1 for why each detail is the way it is): a file
+ * named for the add-on id whose first line is the directory, UTF-8, no BOM.
+ * A fresh profile has no extensions.lastAppBuildId, so Zotero scans them.
+ */
+async function launchZotero(server, q, addonRoot) {
+	const binary = findZotero();
+	const pluginId = JSON.parse(fs.readFileSync(path.join(addonRoot, 'manifest.json'), 'utf8'))
+		.applications.zotero.id;
+	const runnerDir = path.join(__dirname, 'zotero-runner');
+	const runnerId = JSON.parse(fs.readFileSync(path.join(runnerDir, 'manifest.json'), 'utf8'))
+		.applications.zotero.id;
+
+	q.set('report', 'window');
+	const page = 'resource://zotero-citation-graph/content/bench/bench.html?' + q;
+	const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zg-bench-data-'));
+	const profile = makeProfile([
+		'user_pref("extensions.zotero.useDataDir", true);',
+		'user_pref("extensions.zotero.dataDir", ' + pstr(dataDir) + ');',
+		'user_pref("extensions.zotero.firstRun2", false);',
+		'user_pref("extensions.zotero.firstRunGuidance", false);',
+		'user_pref("extensions.zotero.sync.autoSync", false);',
+		'user_pref("extensions.zotero.automaticScraperUpdates", false);',
+		'user_pref("extensions.autoDisableScopes", 0);',
+		'user_pref("extensions.zgbench.page", ' + pstr(page) + ');',
+		'user_pref("extensions.zgbench.sink", ' + pstr('http://127.0.0.1:' + server.port) + ');',
+	]);
+	const ext = path.join(profile, 'extensions');
+	fs.mkdirSync(ext);
+	fs.writeFileSync(path.join(ext, pluginId), addonRoot, { encoding: 'utf8' });
+	fs.writeFileSync(path.join(ext, runnerId), runnerDir, { encoding: 'utf8' });
+
+	console.log('\n  ' + binary);
+	console.log('  ' + page);
+
+	const child = spawn(binary, ['-no-remote', '-profile', profile], { stdio: ['ignore', 'pipe', 'pipe'] });
+	let stderr = '';
+	child.stderr.on('data', (d) => { stderr += d; });
+	return {
+		stderr: () => stderr,
+		// Posted by the runner before it opens the page; see zotero-runner/.
+		async gfx() { return null; },
+		async stop() {
+			stopByProfile(child, profile);
+			await removeDir(profile);
+			await removeDir(dataDir);
+		},
+	};
+}
+
+/* ------------------------------------------------------------------ *
+ * Driving it
+ * ------------------------------------------------------------------ */
+
+async function main() {
+	const app = opt('app', 'firefox');
+	if (app !== 'firefox' && app !== 'zotero') throw new Error('--app is firefox or zotero, not ' + app);
+	// The matrix is fourteen variants three times over, about fifty minutes at
+	// 1,500 items on a software rasteriser -- a limit sized for the single run
+	// throws all of it away at the end. In Zotero one repeat of every scenario
+	// takes about four minutes, and Zotero takes a while to start.
+	const timeout = Number(opt('timeout', flag('matrix') ? 7200 : (app === 'zotero' ? 2400 : 240))) * 1000;
+
+	const addon = prepareAddon();
+	let resolveResults;
+	const got = new Promise((r) => { resolveResults = r; });
+	let posted = null;
+	const server = await serve({
+		root: addon.root,
+		onResults: resolveResults,
+		onGfx: (g) => { posted = g; },
+	});
+
+	const q = benchQuery();
+	const runner = app === 'zotero'
+		? await launchZotero(server, q, addon.root)
+		: await launchFirefox(server, q);
 
 	const timer = setTimeout(() => {
+		const err = runner.stderr();
 		resolveResults({ errors: ['timed out after ' + (timeout / 1000) + 's'
-			+ (stderr ? ' — browser said: ' + stderr.trim().split('\n').slice(-3).join(' / ') : '')] });
+			+ (err ? ' — browser said: ' + err.trim().split('\n').slice(-3).join(' / ') : '')] });
 	}, timeout);
 
 	const run = await got;
 	clearTimeout(timer);
 
-	try { child.kill(); } catch (e) { /* already gone */ }
+	run.gfx = (await runner.gfx()) || posted || null;
+	run.page = addon.label;
+	run.app = app;
+	await runner.stop();
 	await server.close();
-	try { fs.rmSync(profile, { recursive: true, force: true }); }
-	catch (e) { /* a locked profile dir is not worth failing the run over */ }
+	if (addon.cleanup) await removeDir(addon.cleanup);
+
+	// A --gpu run that was not on the GPU is not a slower GPU run, it is a
+	// software run with the wrong name on it. Say so where it cannot be missed.
+	run.errors = run.errors || [];
+	if ((flag('gpu') || app === 'zotero') && opt('canvas', null) == null
+		&& (!run.gfx || run.gfx.canvas !== 'gpu')) {
+		const msg = 'NOT ON THE GPU: the canvas was drawn in software (' + rendererLine(run)
+			+ '). These are not GPU numbers.';
+		run.errors.unshift(msg);
+		if (flag('gpu')) console.error('\n  ' + msg);
+	}
 
 	let baseline = null;
 	const basePath = opt('baseline', null);

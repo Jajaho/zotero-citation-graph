@@ -150,6 +150,40 @@ var frames = [];
 var recording = false;
 
 /**
+ * How a frame is timed: 'readback' (the default) or 'interval'.
+ *
+ * readback: from the start of the frame to a one-pixel read-back after it,
+ * minus the read-back's own fixed cost. Exact for a canvas drawn in software,
+ * where the drawing happens on this thread and the read-back only waits for it.
+ *
+ * interval: from the start of one painted frame to the start of the next, with
+ * no read-back at all. This is the one for a canvas on the GPU. Gecko records a
+ * GPU canvas's calls and replays them in the GPU process, so a read-back is a
+ * synchronous round trip to that process every frame: it stalls a pipeline
+ * that in real use runs alongside the main thread, and charges the stall to
+ * the renderer. Measured on an RTX 2070 SUPER, that made the GPU canvas look
+ * 45% SLOWER than software at rest. The interval instead is what the pipeline
+ * delivers: whichever stage is slowest, main thread or GPU, sets it, because
+ * the canvas stops taking work when the GPU falls behind. run.js turns vsync
+ * off for these runs (layout.frame_rate = 0); at 60 Hz every frame faster than
+ * 16.7 ms would read as 16.7.
+ *
+ * Painted frame to painted frame, idle frames in between included. `filter`
+ * moves the slider once a frame and the page does not repaint on every one of
+ * those; counting only back-to-back painted frames recorded nothing for it at
+ * all. The gap a reader sees between two pictures is the measure, and with
+ * vsync off an idle frame costs well under a millisecond. A gap over
+ * MAX_GAP_MS is a pause in the scenario rather than a frame, and is dropped.
+ */
+var TIMING = new URLSearchParams(location.search).get('timing') === 'interval'
+	? 'interval' : 'readback';
+
+/** interval timing: when the last painted frame began, or null before the
+ *  first painted frame of a recording. */
+var lastPaintStart = null;
+var MAX_GAP_MS = 1000;
+
+/**
  * How many frames force-graph has actually painted.
  *
  * Needed because its animation cycle reschedules itself every frame whether or
@@ -186,6 +220,14 @@ function hookFrames() {
 			var painted = paintCount;
 			var t0 = W.performance.now();
 			cb(ts);
+			if (TIMING === 'interval') {
+				if (paintCount === painted) return;
+				if (lastPaintStart != null && t0 - lastPaintStart <= MAX_GAP_MS) {
+					frames.push(t0 - lastPaintStart);
+				}
+				lastPaintStart = t0;
+				return;
+			}
 			flush();
 			// Only frames on which the renderer actually drew.
 			//
@@ -215,6 +257,7 @@ function poke() {
 /** Record `count` frames, driving repaints if `drive` is given. */
 async function record(count, drive) {
 	frames = [];
+	lastPaintStart = null;
 	recording = true;
 	var i = 0;
 	// Capped in FRAMES OFFERED, not frames kept: now that idle frames are
@@ -890,7 +933,8 @@ async function runAll(which) {
 	}
 	hookFrames();
 	hookPaint();
-	out.env.flushCost = calibrateFlush();
+	out.env.timing = TIMING;
+	out.env.flushCost = TIMING === 'readback' ? calibrateFlush() : 0;
 
 	var data = ZGFixture.collection({ n: p.n, seed: p.seed, edgeRatio: p.ratio });
 	out.config.edges = data.edges.length;
@@ -1141,10 +1185,20 @@ function busy(on) {
  *
  * Posted to the server that served this page when there is one -- that is how
  * a headless run gets its numbers out without a browser-driver dependency. In
- * Zotero there is no server, so the JSON goes to the clipboard and the title
- * says the run is done, which is what a person needs.
+ * Zotero there is no server: run by hand, the JSON goes to the clipboard and
+ * the title says the run is done, which is what a person needs; run by
+ * run.js --app zotero, it stays in the window for the runner add-on.
  */
 async function report(o) {
+	// run.js --app zotero: the runner add-on reads `results` out of this window
+	// once the title says done. No clipboard -- the clipboard is the whole
+	// desktop's, and a throwaway Zotero has no business replacing what the
+	// person running the benchmark last copied.
+	if (new URLSearchParams(location.search).get('report') === 'window') {
+		results = o;
+		document.title = 'benchmark done';
+		return;
+	}
 	var body = JSON.stringify(o, null, '\t');
 	if (location.protocol === 'http:' || location.protocol === 'https:') {
 		try {

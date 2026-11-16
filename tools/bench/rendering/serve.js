@@ -21,7 +21,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const addonDir = path.join(__dirname, '..', '..', '..', 'addon');
+const defaultRoot = path.join(__dirname, '..', '..', '..', 'addon');
 
 const TYPES = {
 	'.html': 'text/html; charset=utf-8',
@@ -40,33 +40,38 @@ const TYPES = {
  * static server that will serve `../../../.ssh/id_rsa` to anything that asks
  * is not a thing to leave in a repository whatever its intended lifetime.
  */
-function resolve(urlPath) {
+function resolve(root, urlPath) {
 	const clean = decodeURIComponent(urlPath.split('?')[0]);
-	const full = path.resolve(addonDir, '.' + clean);
-	const rel = path.relative(addonDir, full);
+	const full = path.resolve(root, '.' + clean);
+	const rel = path.relative(root, full);
 	if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
 	return full;
 }
 
 /**
- * @param {object} o  {port, onResults}
+ * @param {object} o  {port, root, onResults, onGfx}
+ *   root     the addon/ tree to serve (default: this checkout's). run.js
+ *            --ref points it at an older version's page with today's harness.
+ *   onGfx    what the Zotero runner says the renderer is (see zotero-runner/).
  * @returns {Promise<{port:number, close:function}>}
  */
 function serve(o = {}) {
+	const root = o.root || defaultRoot;
+	const sinks = { '/results': o.onResults, '/gfx': o.onGfx };
 	const server = http.createServer((req, res) => {
-		if (req.method === 'POST' && req.url === '/results') {
+		if (req.method === 'POST' && req.url in sinks) {
 			let body = '';
 			req.on('data', (c) => { body += c; });
 			req.on('end', () => {
 				res.writeHead(204).end();
 				let parsed = null;
 				try { parsed = JSON.parse(body); }
-				catch (e) { parsed = { errors: ['unparseable results: ' + e.message] }; }
-				if (o.onResults) o.onResults(parsed);
+				catch (e) { parsed = { errors: ['unparseable ' + req.url.slice(1) + ': ' + e.message] }; }
+				if (sinks[req.url]) sinks[req.url](parsed);
 			});
 			return;
 		}
-		const file = resolve(req.url === '/' ? '/content/bench/bench.html' : req.url);
+		const file = resolve(root, req.url === '/' ? '/content/bench/bench.html' : req.url);
 		if (!file) return res.writeHead(403).end('outside addon/');
 		fs.readFile(file, (err, data) => {
 			if (err) return res.writeHead(404).end('not found: ' + req.url);

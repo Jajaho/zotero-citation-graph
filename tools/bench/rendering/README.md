@@ -16,6 +16,10 @@ npm run bench -- --baseline before.json    compare against it
 npm run bench -- --only steady,zoom --n 5000
 npm run bench -- --perf '{"physics":false}'   with a renderer switch off
 npm run bench -- --headed                  watch it drive the page
+npm run bench -- --gpu                     in a real window, canvas on the GPU
+npm run bench -- --app zotero              inside Zotero (throwaway profile)
+npm run bench -- --app zotero --ref v0.74.1    an older version, same harness
+npm run bench -- --gpu --canvas software   the check that the GPU did the drawing
 npm run bench:sweep                        every performance switch, one at a time
 npm run bench:open                         run it by hand, in Zotero
 npm run bench:serve                        serve it for a browser, no runner
@@ -23,16 +27,24 @@ npm run bench:serve                        serve it for a browser, no runner
 
 ## Which numbers, from where
 
-**Firefox, automated** — for *did this change help?* Zotero 7 is Firefox 115
-ESR: same rasteriser, same text shaping, same compositor family. For two runs
-on one machine minutes apart, this is exactly the right instrument, and it is
-the question asked far more often.
+**Headless Firefox** (the default) — for *did this change help?* It is quick,
+it needs no window, and two runs on one machine minutes apart compare fairly.
+It draws everything in software, so its absolute times are not what a user
+sees; both sides of a comparison pay that equally.
 
-**Zotero, by hand** — for *how fast is it really?* Absolute figures belong to
-the application being tuned. `npm run bench:open` prints the snippet.
+**Zotero, automated** (`--app zotero`) — for *how fast is it for a user?*
+Zotero 10 runs on Gecko 140 ESR with its own graphics settings, and draws the
+graph in a tab of its main window. This runs the same page there, on the GPU,
+in a second Zotero with a throwaway profile and data directory. Your own Zotero
+can stay open; it is never touched. See [On the GPU](#on-the-gpu-and-in-zotero).
 
-Headless runs render in software, so absolute frame times are slower than a
-GPU-composited Zotero. Comparisons are unaffected — both sides pay it.
+**Firefox in a window** (`--gpu`) — a GPU run without Zotero. Release Firefox
+is newer than Zotero's Gecko, so prefer `--app zotero` for figures to quote.
+
+Every run records which renderer drew it. The report's `renderer:` line says
+whether the canvas was on the GPU or the CPU, which compositor, and which
+adapter. A `--gpu` run that fell back to software says so in capitals instead of
+passing for a GPU number.
 
 ## Scenarios
 
@@ -153,7 +165,8 @@ glyph reaches a pixel, so timing the calls alone measures command submission
 and reports a flattering fiction. Every frame ends with a one-pixel
 `getImageData`, which forces the queue to drain — inside the timed region,
 because that is the point, with its own fixed cost calibrated per run and
-subtracted.
+subtracted. That is right for a canvas drawn in software. A canvas on the GPU
+is timed differently, for the reason in the next section.
 
 **The input is seeded and shaped.** Same seed, same collection, so an A/B
 compares two builds and not two dice rolls. Citation counts are heavy-tailed
@@ -167,6 +180,79 @@ references to the shape the builder and chrome give them — `key`, `ns` and the
 bare `id` — because it has happened: they once carried their key under `id`,
 the page looked each one up under a `key` it did not have, and every run drew
 the held items alone while its header counted the outside references in.
+
+## On the GPU, and in Zotero
+
+### Timing a GPU canvas: interval, not read-back
+
+Gecko records a GPU canvas's drawing calls and replays them in the GPU process.
+A read-back is therefore a synchronous round trip to that process, every frame:
+it stalls a pipeline that in real use runs alongside the main thread, and
+charges the stall to the renderer. On an RTX 2070 SUPER that made the GPU
+canvas look 45% slower than software at rest (steady 32.8 ms against 22.3 ms).
+
+So `--gpu` and `--app zotero` time frames by **interval** (`--timing
+interval`): from the start of one painted frame to the start of the next, with
+no read-back at all. Whichever stage is slowest — the main thread or the GPU —
+sets that interval, because the canvas stops taking work when the GPU falls
+behind. vsync is switched off for these runs (`layout.frame_rate = 0`), since
+at 60 Hz every frame under 16.7 ms would read as 16.7.
+
+The two methods agree where both are valid. With the accelerated canvas off,
+the same run read 22.3 ms by read-back and 22.5 ms by interval at rest.
+
+`fps@best` on an interval run is the rate the pipeline can sustain. A display
+shows at most its refresh rate, so anything above 60 is headroom, not frames a
+user sees.
+
+`--no-wall` is the right choice for these runs: with vsync off the layout
+anneals faster in wall-clock time than it would on a 60 Hz display, so the
+time to a settled graph would flatter.
+
+### Was the GPU doing the drawing?
+
+The renderer line says the canvas *may* be drawn on the GPU: hardware
+WebRender, `ACCELERATED_CANVAS2D` available, `gfx.canvas.accelerated` on. It
+cannot say a given canvas *was*. Gecko falls back per canvas: a path more
+complex than `gfx.canvas.accelerated.gpu-path-complexity` (4,000) is drawn in
+software, and a canvas whose frames are mostly software work
+(`profile-fallback-ratio`) is moved to the CPU for good. Nothing reports either.
+
+The check is a second run with `--canvas software`, which turns the accelerated
+canvas off and leaves everything else as it was. If the two runs match, the GPU
+was not doing the work, whatever the renderer line says.
+
+### How the Zotero run works
+
+`run.js --app zotero` starts a second Zotero with `-no-remote`, a throwaway
+profile, and `extensions.zotero.dataDir` pointed at a throwaway directory, so it
+never opens your database. Two add-ons are installed as proxy files: the plugin
+under test, and `zotero-runner/`, which
+
+1. records the renderer (`gfx-probe.js`, the same file `run.js` sends to
+   Firefox over Marionette),
+2. waits for the plugin's `resource://` root, then opens the benchmark in a
+   Zotero tab inside a `<browser type="content">`, exactly as `graphTab.js`
+   hosts the graph,
+3. posts the results to `serve.js` when the page's title says it is done.
+
+When the results arrive, `run.js` ends every process whose command line names
+that profile, and nothing else, then deletes the profile and the data
+directory.
+
+Two Zotero details shaped it. Marionette cannot be used: its session waits for
+`browser-idle-startup-tasks-finished`, which Zotero never sends. And Zotero
+starts add-ons one at a time, waiting for each `startup()`, so the runner
+returns at once and works in the background — otherwise it would hold back the
+plugin whose page it is waiting for.
+
+### Comparing versions
+
+`--ref <git-ref>` writes that version's `addon/` to a temp directory and puts
+today's `content/bench/` over it. Not the version's own harness: until 0.75.1
+the fixture's outside references carried their key under the wrong name and
+the page drew none of them, so an old harness measures a smaller graph. Run the
+two versions alternately, more than once, and compare best against best.
 
 ## Measuring a performance switch
 

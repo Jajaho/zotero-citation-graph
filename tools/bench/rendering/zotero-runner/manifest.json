@@ -1,0 +1,14 @@
+{
+	"manifest_version": 2,
+	"name": "Citation Graph benchmark runner",
+	"version": "1.0.0",
+	"description": "Development only. Opens the rendering benchmark in a throwaway Zotero profile and posts the results back to run.js.",
+	"applications": {
+		"zotero": {
+			"id": "zg-bench-runner@jajaho.dev",
+			"update_url": "https://127.0.0.1/never-updated.json",
+			"strict_min_version": "7.0",
+			"strict_max_version": "12.*"
+		}
+	}
+}
