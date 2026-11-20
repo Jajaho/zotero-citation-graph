@@ -432,7 +432,9 @@ third-party notices present.
 
 ### Release
 
-Bump the version in `package.json`, `addon/manifest.json` and `updates.json` on `dev`. CI does not run
+Bump the version in `package.json`, `addon/manifest.json` and `updates.json` on `dev`. The new
+`updates.json` entry's `update_link` ends in the release asset's name, `.XPI` in upper case (see
+below); `npm run verify` names the exact URL if it is wrong. CI does not run
 on `dev` by itself, so check it first with **Run workflow** on `dev`. Then bring `main` up to
 `dev` with a fast-forward from your machine:
 

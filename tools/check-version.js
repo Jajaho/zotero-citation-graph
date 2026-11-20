@@ -60,17 +60,28 @@ function readVersions({ assert = false, tag = null } = {}) {
 	// is not required to exist, but if it does it must not lag the manifest.
 	const updatesPath = path.join(root, 'updates.json');
 	if (fs.existsSync(updatesPath)) {
+		let updates = null;
 		try {
-			const updates = JSON.parse(fs.readFileSync(updatesPath, 'utf8'));
+			updates = JSON.parse(fs.readFileSync(updatesPath, 'utf8'));
+		} catch (e) {
+			problems.push(`updates.json is not valid JSON: ${e.message}`);
+		}
+		if (updates) {
 			const id = manifest.applications && manifest.applications.zotero
 				? manifest.applications.zotero.id
 				: null;
 			const list = (updates.addons && id && updates.addons[id] && updates.addons[id].updates) || [];
-			if (!list.some(u => u.version === manifest.version)) {
+			const entry = list.find(u => u.version === manifest.version);
+			if (!entry) {
 				problems.push(`updates.json has no entry for version ${manifest.version}`);
+			} else if (VERSION_RE.test(manifest.version)) {
+				// Every installed copy downloads from this link, so a wrong one is a
+				// 404 on every user's update check, not a cosmetic slip.
+				const want = updateLink(manifest.version);
+				if (entry.update_link !== want) {
+					problems.push(`updates.json update_link for ${manifest.version} is ${entry.update_link}, expected ${want}`);
+				}
 			}
-		} catch (e) {
-			problems.push(`updates.json is not valid JSON: ${e.message}`);
 		}
 	}
 
@@ -78,19 +89,6 @@ function readVersions({ assert = false, tag = null } = {}) {
 		throw new Error(problems.join('\n  - '));
 	}
 	return { version: manifest.version, pkg: pkg.version, manifest: manifest.version, problems };
-}
-
-if (require.main === module) {
-	const argv = process.argv.slice(2);
-	const tagIdx = argv.indexOf('--tag');
-	const tag = tagIdx === -1 ? null : argv[tagIdx + 1];
-
-	const { version, problems } = readVersions({ tag });
-	if (problems.length) {
-		console.error('version check failed:\n  - ' + problems.join('\n  - '));
-		process.exit(1);
-	}
-	console.log(`version ok: ${version}${tag ? ` (tag ${tag})` : ''}`);
 }
 
 /**
@@ -121,8 +119,38 @@ function xpiName(version) {
  * not care about either the case or the type. Releases up to v0.76.5 were
  * attached as .xpi and keep that name, because their links must not move.
  */
+const LAST_LOWERCASE_ASSET = '0.76.5';
+
 function assetName(version) {
-	return xpiName(version).replace(/\.xpi$/, '.XPI');
+	return compareVersions(version, LAST_LOWERCASE_ASSET) <= 0
+		? xpiName(version)
+		: xpiName(version).replace(/\.xpi$/, '.XPI');
 }
 
-module.exports = { readVersions, xpiName, assetName };
+/** The URL updates.json must give Zotero for this version: the release asset. */
+function updateLink(version) {
+	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+	const repo = pkg.repository.url.replace(/^git\+/, '').replace(/\.git$/, '');
+	return `${repo}/releases/download/v${version}/${assetName(version)}`;
+}
+
+function compareVersions(a, b) {
+	const x = a.split('.').map(Number), y = b.split('.').map(Number);
+	for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+	return 0;
+}
+
+module.exports = { readVersions, xpiName, assetName, updateLink };
+
+if (require.main === module) {
+	const argv = process.argv.slice(2);
+	const tagIdx = argv.indexOf('--tag');
+	const tag = tagIdx === -1 ? null : argv[tagIdx + 1];
+
+	const { version, problems } = readVersions({ tag });
+	if (problems.length) {
+		console.error('version check failed:\n  - ' + problems.join('\n  - '));
+		process.exit(1);
+	}
+	console.log(`version ok: ${version}${tag ? ` (tag ${tag})` : ''}`);
+}
