@@ -454,6 +454,14 @@ that `updates.json`'s `update_link` is the URL the asset will have, and attaches
 XPI is attached: GitHub shows each asset's SHA-256 on the release page. Afterwards it downloads
 the asset through that link and compares hashes.
 
+The asset is named `zotero-citation-graph-<version>.XPI`, in upper case, and `update_link` has to
+end in that name. GitHub sets the type it serves an asset with from the asset's name: a lower-case
+`.xpi` is served as `application/x-xpinstall`, and Firefox answers that by trying to install the
+plugin into itself instead of downloading it. `.XPI` is served as `application/octet-stream`. The
+workflow fails if the asset is served as `x-xpinstall`. The built file in `dist/` keeps its
+lower-case `.xpi`. Releases up to v0.76.5 have lower-case assets and keep them, because their
+links must not move. Their notes tell Firefox users to use *Save Link As…*.
+
 It never overwrites an asset. If the release already has the XPI with the same bytes, it does
 nothing; if the bytes differ, it fails and leaves the release alone. To attach the XPI to a
 release that is missing it, run the workflow by hand (**Run workflow**, with the tag). v0.72.4

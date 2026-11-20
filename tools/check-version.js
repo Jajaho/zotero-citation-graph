@@ -109,4 +109,20 @@ function xpiName(version) {
 	return `${pkg.name}-${version}.xpi`;
 }
 
-module.exports = { readVersions, xpiName };
+/**
+ * The name the XPI is attached to a GitHub release under, which is also the
+ * last part of its update_link in updates.json.
+ *
+ * Upper-case .XPI on purpose. GitHub sets an asset's Content-Type from its name
+ * and ignores the one the upload sends: a name ending in .xpi is served as
+ * application/x-xpinstall, and Firefox answers that by trying to install the
+ * plugin into itself instead of saving it. The match is case-sensitive, so
+ * .XPI is served as application/octet-stream and simply downloads. Zotero does
+ * not care about either the case or the type. Releases up to v0.76.5 were
+ * attached as .xpi and keep that name, because their links must not move.
+ */
+function assetName(version) {
+	return xpiName(version).replace(/\.xpi$/, '.XPI');
+}
+
+module.exports = { readVersions, xpiName, assetName };

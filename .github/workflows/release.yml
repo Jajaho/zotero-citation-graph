@@ -76,75 +76,70 @@ jobs:
 
       # The asset has to be at the URL updates.json gives Zotero. Check that
       # before uploading, so a link pointing at a different name fails here
-      # and not as a 404 on every user's update check.
+      # and not as a 404 on every user's update check. The asset's name is
+      # passed on to the steps below as ASSET.
+      #
+      # Tags before assetName() existed attach under the .xpi name their
+      # updates.json already links to, so running this by hand on an old tag
+      # still puts the XPI where that release's link expects it.
       - name: Check updates.json points at this asset
         run: |
           node -e '
             const fs = require("fs");
-            const { readVersions, xpiName } = require("./tools/check-version.js");
+            const { readVersions, xpiName, assetName = xpiName } = require("./tools/check-version.js");
             const { version } = readVersions({ assert: true });
             const id = JSON.parse(fs.readFileSync("addon/manifest.json", "utf8")).applications.zotero.id;
             const entry = JSON.parse(fs.readFileSync("updates.json", "utf8"))
               .addons[id].updates.find(u => u.version === version);
-            const want = `https://github.com/${process.env.REPO}/releases/download/${process.env.TAG}/${xpiName(version)}`;
+            const want = `https://github.com/${process.env.REPO}/releases/download/${process.env.TAG}/${assetName(version)}`;
             if (entry.update_link !== want) {
               console.error(`::error::updates.json update_link is ${entry.update_link}, expected ${want}`);
               process.exit(1);
             }
             console.log(`update_link ok: ${want}`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `ASSET=${assetName(version)}\n`);
           '
 
       # Never overwrite an asset that is already there. If it holds the same
       # bytes there is nothing to do. If it holds different bytes, something
       # other than the tag produced it, and that is for a person to look at.
       #
-      # The asset is uploaded as application/octet-stream, not the
-      # application/x-xpinstall that `gh release upload` guesses from the
-      # extension: GitHub serves an asset with the type it was uploaded under,
-      # and Firefox answers x-xpinstall by trying to install the XPI into
-      # itself instead of saving it. Zotero's updater does not look at the type.
-      # An asset with the same bytes but the old type is uploaded again, so
-      # running this by hand on an older tag fixes that release's download.
+      # The upload goes through the REST endpoint because the asset's name
+      # differs from the built file's (.XPI, not .xpi; see assetName() in
+      # tools/check-version.js), and `gh release upload` names an asset after
+      # its file. GitHub sets the served Content-Type from that name.
       - name: Attach to release
         run: |
           set -euo pipefail
           file=$(ls dist/*.xpi)
-          name=$(basename "$file")
           local_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
           release=$(gh api "repos/$REPO/releases/tags/$TAG")
-          existing=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .digest' <<<"$release")
-          existing_type=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .content_type' <<<"$release")
-          upload() {
+          existing=$(jq -r --arg n "$ASSET" '.assets[] | select(.name == $n) | .digest' <<<"$release")
+          if [ -z "$existing" ]; then
             upload_url=$(jq -r '.upload_url | split("{")[0]' <<<"$release")
             curl -sSf -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "Content-Type: application/octet-stream" \
               --data-binary @"$file" \
-              "$upload_url?name=$name" >/dev/null
-          }
-          if [ -z "$existing" ]; then
-            upload
-            echo "attached $name ($local_digest)"
-          elif [ "$existing" = "$local_digest" ] && [ "$existing_type" != "application/octet-stream" ]; then
-            id=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .id' <<<"$release")
-            gh api -X DELETE "repos/$REPO/releases/assets/$id"
-            upload
-            echo "re-attached $name as application/octet-stream (was $existing_type), same bytes ($local_digest)"
+              "$upload_url?name=$ASSET" >/dev/null
+            echo "attached $ASSET ($local_digest)"
           elif [ "$existing" = "$local_digest" ]; then
-            echo "$name already attached with the same bytes ($local_digest)"
+            echo "$ASSET already attached with the same bytes ($local_digest)"
           else
-            echo "::error::$name is already attached with $existing, but the tag builds $local_digest"
+            echo "::error::$ASSET is already attached with $existing, but the tag builds $local_digest"
             exit 1
           fi
 
       # Fetch it the way Zotero will, through the link updates.json gives, and
-      # check those are the bytes we built.
+      # check those are the bytes we built. Then check the type it is served
+      # under: application/x-xpinstall means a click on the download link in
+      # Firefox becomes an attempt to install the plugin into Firefox.
       - name: Download via update_link and compare
         run: |
           set -euo pipefail
           file=$(ls dist/*.xpi)
-          url="https://github.com/$REPO/releases/download/$TAG/$(basename "$file")"
+          url="https://github.com/$REPO/releases/download/$TAG/$ASSET"
           curl -sSLf --retry 5 --retry-delay 3 -o /tmp/published.xpi "$url"
           want=$(sha256sum "$file" | cut -d' ' -f1)
           got=$(sha256sum /tmp/published.xpi | cut -d' ' -f1)
@@ -153,11 +148,11 @@ jobs:
             exit 1
           fi
           echo "published asset matches: $got"
-          # The type GitHub serves it under, after redirects. x-xpinstall here
-          # means a browser download turns into a Firefox add-on install.
           type=$(curl -sSLI --retry 5 --retry-delay 3 -o /dev/null -w '%{content_type}' "$url")
           if [ "$type" = "application/x-xpinstall" ]; then
-            echo "::error::$url is served as $type, which Firefox tries to install"
-            exit 1
+            case "$ASSET" in
+              *.xpi) echo "::warning::$url is served as $type, which Firefox tries to install. This tag predates the .XPI asset name." ;;
+              *) echo "::error::$url is served as $type, which Firefox tries to install"; exit 1 ;;
+            esac
           fi
           echo "served as: $type"
