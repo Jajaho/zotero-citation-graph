@@ -97,17 +97,40 @@ jobs:
       # Never overwrite an asset that is already there. If it holds the same
       # bytes there is nothing to do. If it holds different bytes, something
       # other than the tag produced it, and that is for a person to look at.
+      #
+      # The asset is uploaded as application/octet-stream, not the
+      # application/x-xpinstall that `gh release upload` guesses from the
+      # extension: GitHub serves an asset with the type it was uploaded under,
+      # and Firefox answers x-xpinstall by trying to install the XPI into
+      # itself instead of saving it. Zotero's updater does not look at the type.
+      # An asset with the same bytes but the old type is uploaded again, so
+      # running this by hand on an older tag fixes that release's download.
       - name: Attach to release
         run: |
           set -euo pipefail
           file=$(ls dist/*.xpi)
           name=$(basename "$file")
           local_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
-          existing=$(gh api "repos/$REPO/releases/tags/$TAG" \
-            --jq ".assets[] | select(.name == \"$name\") | .digest")
+          release=$(gh api "repos/$REPO/releases/tags/$TAG")
+          existing=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .digest' <<<"$release")
+          existing_type=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .content_type' <<<"$release")
+          upload() {
+            upload_url=$(jq -r '.upload_url | split("{")[0]' <<<"$release")
+            curl -sSf -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "$upload_url?name=$name" >/dev/null
+          }
           if [ -z "$existing" ]; then
-            gh release upload "$TAG" "$file" --repo "$REPO"
+            upload
             echo "attached $name ($local_digest)"
+          elif [ "$existing" = "$local_digest" ] && [ "$existing_type" != "application/octet-stream" ]; then
+            id=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .id' <<<"$release")
+            gh api -X DELETE "repos/$REPO/releases/assets/$id"
+            upload
+            echo "re-attached $name as application/octet-stream (was $existing_type), same bytes ($local_digest)"
           elif [ "$existing" = "$local_digest" ]; then
             echo "$name already attached with the same bytes ($local_digest)"
           else
@@ -130,3 +153,11 @@ jobs:
             exit 1
           fi
           echo "published asset matches: $got"
+          # The type GitHub serves it under, after redirects. x-xpinstall here
+          # means a browser download turns into a Firefox add-on install.
+          type=$(curl -sSLI --retry 5 --retry-delay 3 -o /dev/null -w '%{content_type}' "$url")
+          if [ "$type" = "application/x-xpinstall" ]; then
+            echo "::error::$url is served as $type, which Firefox tries to install"
+            exit 1
+          fi
+          echo "served as: $type"
