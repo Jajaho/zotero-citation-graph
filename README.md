@@ -63,9 +63,9 @@ offline strategies.
 
 ## Installation for Users
 
-1. Download `zotero-citation-graph-x.x.x.xpi` from the [latest release](https://github.com/Jajaho/zotero-citation-graph/releases/latest).
+1. Download `zotero-citation-graph-x.x.x.XPI` from the [latest release](https://github.com/Jajaho/zotero-citation-graph/releases/latest). Releases up to v0.76.5 name it `.xpi`, which Firefox tries to install into itself: right-click it and choose *Save Link As…* instead.
 2. Open Zotero, navigate to Tools > Plugins.
-3. Select the ⚙️ (gear) icon > Install Plugin from File... and select the `.xpi` file.
+3. Select the ⚙️ (gear) icon > Install Plugin from File... and select the `.XPI` file.
 4. Congratulations, your installation is complete. Verify it by right clicking on a collection in your library: it should show *View Citation Graph* with the plugin icon in front of it.
 
 ### Updating
