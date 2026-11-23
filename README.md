@@ -92,27 +92,6 @@ There are two ways to construct a graph, both accessible from the context menu (
 
 ![Opening a citation graph from a selection of items and from a collection](docs/media/constructing-a-graph.gif)
 
-### While a Graph Builds
-
-The first build reads every PDF in the collection, which can take a few minutes on a large library.
-The progress card shows the current step, how far along it is, and a **Stop** button that keeps what has been found so far.
-Beside them, one of seven small scenes plays at a time, so there is something to watch meanwhile:
-
-<table>
-<tr>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/read-dark.gif"><img src="docs/media/scenes/read-light.gif" width="112" alt="Somebody holding up a paper, its lines filling in one after another"></picture><br><sub>Reading papers…</sub></td>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/guess-dark.gif"><img src="docs/media/scenes/guess-light.gif" width="112" alt="Somebody scratching their head under a thought bubble that swaps a question mark for initials"></picture><br><sub>Guessing author names…</sub></td>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/wash-dark.gif"><img src="docs/media/scenes/wash-light.gif" width="112" alt="A washing machine with a paper turning in its drum"></picture><br><sub>DOIng laundry…</sub></td>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/decipher-dark.gif"><img src="docs/media/scenes/decipher-light.gif" width="112" alt="Somebody sweeping a magnifying glass over three lines of scrawl"></picture><br><sub>Deciphering unreadable handwriting…</sub></td>
-</tr>
-<tr>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/font-dark.gif"><img src="docs/media/scenes/font-light.gif" width="112" alt="Aa in three typefaces, and a judge's paddle raised with a verdict on each"></picture><br><sub>Judging font choices…</sub></td>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/love-dark.gif"><img src="docs/media/scenes/love-light.gif" width="112" alt="Somebody holding up a beating heart to a flask that sends up small hearts of its own"></picture><br><sub>Falling in love with science…</sub></td>
-<td align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/scenes/world-dark.gif"><img src="docs/media/scenes/world-light.gif" width="112" alt="Somebody polishing a turning globe until it sparkles"></picture><br><sub>Making the world a better place…</sub></td>
-<td></td>
-</tr>
-</table>
-
 
 
 ### Managing Sources considered by the Graph
