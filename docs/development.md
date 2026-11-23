@@ -1041,6 +1041,12 @@ apart by quoting: `"Nature"` is pinned, `nat` is a substring. Quoting is also ho
 a value containing a comma survives the split — `publication: "Ann. Phys., Lpz."`
 is one value, not two — and `~"a, b"` is a substring that contains one.
 
+Both forms compare without case and without accents: `author: muller` finds
+Müller, and so does `"muller"`, which is exact about the whole value rather than
+about its diacritics. A name is typed on whatever keyboard is to hand, and a PDF
+may deliver the same name decomposed. Letters that are not a base and a mark
+(ø, ß, ł) are compared as they are.
+
 A chip put back in the box is written so that the box reads the same mask back.
 Most substrings go back bare. The ones the box would read its own way go back as
 `~"…"`: one with a space at either end, which it would trim; one that opens with

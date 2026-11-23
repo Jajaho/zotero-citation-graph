@@ -59,9 +59,9 @@ zotero-citation-graph-scope-subcollections-hint = Include items from every subco
 zotero-citation-graph-scope-external = Outside refs
 zotero-citation-graph-scope-external-hint = Show cited works that are not in this graph
 zotero-citation-graph-scope-min-cites = Cited by ≥
-zotero-citation-graph-scope-min-cites-hint = Hide outside works cited by fewer than this many of your papers
+zotero-citation-graph-scope-min-cites-hint = Hide outside references cited by fewer than this many of your papers
 zotero-citation-graph-scope-enrich = Query node metadata
-zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside works (uses the OpenAlex API)
+zotero-citation-graph-scope-enrich-hint = Look up citation counts, and titles and authors for outside references (uses the OpenAlex API)
 
 # Whether the names an outside reference already has are left off the canvas.
 # Nothing is fetched for this one -- that is the entry above.
@@ -141,7 +141,7 @@ zotero-citation-graph-strategy-title-match-hint = Titles of papers in this graph
 zotero-citation-graph-strategy-locator-match-hint = References that print no title and no DOI, matched by the journal, volume and page they do print. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-hint = The works OpenAlex lists as referenced by each paper. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-openalex-run = OpenAlex references
-zotero-citation-graph-strategy-openalex-run-hint = Ask OpenAlex which works each paper with a DOI cites, which finds references in PDFs that neither link nor print DOIs (uses the OpenAlex API; answers are cached for 30 days). The outside works it finds are named only with "Query node metadata" on.
+zotero-citation-graph-strategy-openalex-run-hint = Ask OpenAlex which works each paper with a DOI cites, which finds references in PDFs that neither link nor print DOIs (uses the OpenAlex API; answers are cached for 30 days). The outside references it finds are named only with "Query node metadata" on.
 zotero-citation-graph-strategy-ref-strings-hint = Works named in your papers’ reference lists, read from the text of the entries themselves. Untick to hide the edges only this strategy found.
 zotero-citation-graph-strategy-ref-strings-run = Parsed references
 zotero-citation-graph-strategy-ref-strings-run-hint = Read every entry in your papers’ reference lists and add the works they name, including those with no DOI anywhere. Needs "Outside refs" to draw them. Works offline; it adds nodes rather than edges, so ticking it rebuilds.
@@ -181,7 +181,12 @@ zotero-citation-graph-export-hint = Export the graph
 zotero-citation-graph-isolation-chip = Isolated: { $count -> [one] { $count } paper *[other] { $count } papers } · depth { $depth }
 
 zotero-citation-graph-search-placeholder = Search
-zotero-citation-graph-search-hint = Find a paper on the canvas and go to it (Ctrl+F). This does not filter the graph — Advanced Search (Ctrl+Shift+F) and the filter box in the sidebar do that.
+# The key that adds to a pick, as the hints name it: { $mod } in a message is
+# one of these two, and which one is the platform's. Nothing asks for them by
+# name but the bundle itself (shareModifier in content/ftl.js).
+zotero-citation-graph-key-mod = Ctrl
+zotero-citation-graph-key-mod-mac = ⌘
+zotero-citation-graph-search-hint = Find a paper on the canvas and go to it ({ $mod }+F). This does not filter the graph — Advanced Search ({ $mod }+Shift+F) and the filter box in the sidebar do that.
 zotero-citation-graph-search-mode = Quick Search mode
 zotero-citation-graph-search-advanced = Advanced Search
 zotero-citation-graph-adv-collapse = Collapse Advanced Search
@@ -195,8 +200,8 @@ zotero-citation-graph-search-empty = No paper on screen matches
 
 zotero-citation-graph-status-loading = Loading…
 zotero-citation-graph-status-rebuilding = Rebuilding…
-zotero-citation-graph-status-looking-up = Looking up names…
-zotero-citation-graph-status-dropping-names = Dropping looked-up names…
+zotero-citation-graph-status-looking-up = Looking up works…
+zotero-citation-graph-status-dropping-names = Dropping looked-up details…
 zotero-citation-graph-bad-payload = Bad payload: { $message }
 
 # A build in flight, drawn as a bar in the status line's place. $text is the
@@ -264,13 +269,13 @@ zotero-citation-graph-tooltip-cited-here = { $count -> [0] No paper here cites i
 zotero-citation-graph-tooltip-cited-global = { $count } worldwide
 # The gap list's line for the same count, which has no "here" beside it to be
 # read against.
-zotero-citation-graph-tooltip-citations-total = { $count } citations total
+zotero-citation-graph-tooltip-citations-total = { $count -> [one] { $count } citation total *[other] { $count } citations total }
 zotero-citation-graph-tooltip-pinned = pinned
 zotero-citation-graph-tooltip-et-al = { $names } et al.
 
 # What the three gestures on a paper do. It was the end of every tooltip; it is
 # now said once per profile, on the status line, when the first graph is built.
-zotero-citation-graph-hint-gestures = Click a paper to pick it (Ctrl to add) · double-click to isolate · right-click for actions
+zotero-citation-graph-hint-gestures = Click a paper to pick it ({ $mod } to add) · double-click to isolate · right-click for actions
 
 
 ## Filter chips and the completion list.
@@ -312,7 +317,7 @@ zotero-citation-graph-field-any-short = Any
 # The same mask, spelled out in the chip's tooltip.
 zotero-citation-graph-field-any = Any field
 
-zotero-citation-graph-chip-remove = Lift this mask
+zotero-citation-graph-chip-remove = Remove this filter
 zotero-citation-graph-chip-click-to-edit = Click to edit
 # The terms of one mask, joined. They widen the mask, hence "or".
 zotero-citation-graph-chip-or-join = { ", or " }
@@ -362,9 +367,9 @@ zotero-citation-graph-menu-isolate-hint-undim = undim everything
 zotero-citation-graph-menu-isolate-hint-only = dim everything but this node
 zotero-citation-graph-menu-isolate-hint-depth = dim everything more than { $depth -> [one] { $depth } edge *[other] { $depth } edges } away
 zotero-citation-graph-menu-add-to-isolation = Add to isolation
-zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood around this node too, keeping the rest — or Ctrl-double-click it
+zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood around this node too, keeping the rest — or { $mod }-double-click it
 zotero-citation-graph-menu-remove-from-isolation = Remove from isolation
-zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node — or Ctrl-double-click it
+zotero-citation-graph-menu-remove-from-isolation-hint = stop lighting the neighbourhood around this node — or { $mod }-double-click it
 
 zotero-citation-graph-menu-pin = Pin node
 zotero-citation-graph-menu-pin-hint = hold it at this spot; drag it to move the pin — or select it and press P
@@ -414,7 +419,7 @@ zotero-citation-graph-build-loading-selection = Loading the selected items…
 zotero-citation-graph-build-reading-text = Reading indexed text…
 zotero-citation-graph-build-reading-text-progress = Reading indexed text… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = Scanning PDFs…
-zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count } PDFs for DOI links…
+zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count -> [one] { $count } PDF *[other] { $count } PDFs } for DOI links…
 zotero-citation-graph-build-scanning-pdfs-progress = Scanning PDFs for DOI links… { $done }/{ $total }
 zotero-citation-graph-build-openalex-references = Asking OpenAlex for references…
 zotero-citation-graph-build-openalex-progress = Asking OpenAlex for references… { $done }/{ $total }
@@ -467,7 +472,7 @@ zotero-citation-graph-gaps-close = Close
 zotero-citation-graph-gaps-caption = The number is how many of your items cite the work.
 zotero-citation-graph-gaps-empty = Nothing is cited by two of your papers and missing.
 zotero-citation-graph-gaps-building = Still reading the items…
-zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light it, double-click to isolate, Ctrl to add
+zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light it, double-click to isolate, { $mod } to add
 zotero-citation-graph-gaps-off-screen = That work is not on the graph — a filter is hiding it.
 zotero-citation-graph-gaps-add = Add to Zotero
 zotero-citation-graph-gaps-add-no-doi = No DOI to add this by

@@ -32,7 +32,13 @@
 		return String(s == null ? '' : s)
 			// eslint-disable-next-line no-control-regex
 			.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
-			.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1')
+			// Half a surrogate pair on its own is not a character, and XML has
+			// no way to write one. Under the `u` flag a class of surrogates
+			// matches only the lone ones -- a whole pair is one code point, and
+			// is not in it. Without the flag this took two alternatives and a
+			// captured neighbour, and of two lone halves in a row the second
+			// was that neighbour: consumed by the first match, and left in.
+			.replace(/[\uD800-\uDFFF]/gu, '')
 			.replace(/[&<>"']/g, function (c) {
 				return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c];
 			});

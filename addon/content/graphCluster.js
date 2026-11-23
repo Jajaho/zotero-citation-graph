@@ -493,6 +493,13 @@
 			if (taken.has(label)) {
 				for (var s = 0; s < ranked.length && taken.has(label); s++) {
 					if (picked.indexOf(ranked[s].term) >= 0) continue;
+					// By a term of its own, under the rule the name was picked
+					// by: the next in rank is as often as not half of a pair
+					// already in the name, and "error correction / correction"
+					// tells nobody which cluster this is. With nothing else to
+					// add it is numbered below.
+					var again = ranked[s].term.split(' ').some(function (w) { return words.has(w); });
+					if (again) continue;
 					label = picked.concat([ranked[s].term]).join(LABEL_SEP);
 				}
 				var n = 2;

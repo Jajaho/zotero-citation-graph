@@ -96,6 +96,9 @@
 			return;
 		}
 		bundle = ZGFtl.bundle(data.source, data.locale, PREFIX);
+		// Chrome says which platform this is; it knows, and the page would be
+		// guessing from a user-agent string.
+		bundle.shareModifier(!!data.mac);
 		applyStatic(global.document);
 		var fns = listeners;
 		listeners = [];

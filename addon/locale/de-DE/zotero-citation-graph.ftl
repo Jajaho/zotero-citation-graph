@@ -31,12 +31,12 @@ zotero-citation-graph-scope-subcollections-hint = Einträge aus allen Untersamml
 zotero-citation-graph-scope-external = Externe Referenzen
 zotero-citation-graph-scope-external-hint = Zitierte Arbeiten anzeigen, die nicht in diesem Graphen sind
 zotero-citation-graph-scope-min-cites = Zitiert von ≥
-zotero-citation-graph-scope-min-cites-hint = Externe Arbeiten ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
+zotero-citation-graph-scope-min-cites-hint = Externe Referenzen ausblenden, die von weniger als so vielen deiner Einträge zitiert werden
 zotero-citation-graph-scope-enrich = Knotenmetadaten abfragen
-zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Arbeiten nachschlagen (nutzt die OpenAlex-API)
+zotero-citation-graph-scope-enrich-hint = Zitationszahlen sowie Titel und Autoren externer Referenzen nachschlagen (nutzt die OpenAlex-API)
 
 zotero-citation-graph-scope-hide-external-names = Externe Namen ausblenden
-zotero-citation-graph-scope-hide-external-names-hint = Externe Arbeiten im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
+zotero-citation-graph-scope-hide-external-names-hint = Externe Referenzen im Graphen nicht beschriften, sodass sie unbeschriftete Punkte bleiben.
 
 zotero-citation-graph-color-by = Knotenfarbe
 zotero-citation-graph-color-by-year = Jahr
@@ -65,7 +65,7 @@ zotero-citation-graph-group-pull-hint = Wie stark jeder Anker die Einträge anzi
 zotero-citation-graph-pin-pull = Nadelzug
 zotero-citation-graph-pin-pull-hint = Wie viel stärker die Kanten eines angehefteten Knotens ziehen. Bei 0 hält eine Nadel nur den Knoten, auf dem sie steckt.
 zotero-citation-graph-drag-alpha = Ziehenergie
-zotero-citation-graph-drag-alpha-hint = Wie stark ein gezogener Knoten den übrigen Graphen aufrührt. Bei 0 bewegt sich nur der Knoten, den Sie ziehen; bei 1 antwortet das ganze Layout.
+zotero-citation-graph-drag-alpha-hint = Wie stark ein gezogener Knoten den übrigen Graphen aufrührt. Bei 0 bewegt sich nur der Knoten, den du ziehst; bei 1 antwortet das ganze Layout.
 zotero-citation-graph-hold = In Bewegung halten
 zotero-citation-graph-hold-hint = Hält das Layout auf gleichbleibender Energie in Arbeit, so wie während ein Knoten gehalten wird. Bei 0 ist es aus; höher köchelt stärker. Es hält von selbst nie an.
 zotero-citation-graph-hold-off = aus
@@ -102,11 +102,11 @@ zotero-citation-graph-rebuild-pending-hint = Die Optionen haben sich geändert, 
 zotero-citation-graph-autobuild-hint = Neu aufbauen, sobald sich eine Option ändert, die das erfordert. Aus wird nichts neu abgeleitet, bis du auf „Neu aufbauen“ drückst.
 zotero-citation-graph-strategy-pdf-links-hint = DOI-Hyperlinks in deinen PDFs. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-text-doi-hint = DOIs in den Literaturverzeichnissen im indexierten Text deiner Einträge. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
-zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieser Sammlung, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
+zotero-citation-graph-strategy-title-match-hint = Titel von Einträgen dieses Graphen, gefunden im Literaturverzeichnis eines anderen Eintrags. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-locator-match-hint = Literaturangaben ohne Titel und ohne DOI, erkannt an Zeitschrift, Band und Seite, die sie sehr wohl nennen. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-openalex-hint = Die Werke, die OpenAlex als von einem Eintrag zitiert führt. Abwählen blendet die Kanten aus, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-openalex-run = OpenAlex-Referenzen
-zotero-citation-graph-strategy-openalex-run-hint = OpenAlex fragen, welche Arbeiten jeder Eintrag mit DOI zitiert. So findet sich auch die Literatur von PDFs, die keine DOIs verlinken oder abdrucken (nutzt die OpenAlex-API; Antworten werden 30 Tage zwischengespeichert). Die externen Arbeiten, die dabei gefunden werden, bekommen nur mit „Knotenmetadaten abfragen“ einen Namen.
+zotero-citation-graph-strategy-openalex-run-hint = OpenAlex fragen, welche Arbeiten jeder Eintrag mit DOI zitiert. So findet sich auch die Literatur von PDFs, die keine DOIs verlinken oder abdrucken (nutzt die OpenAlex-API; Antworten werden 30 Tage zwischengespeichert). Die externen Referenzen, die dabei gefunden werden, bekommen nur mit „Knotenmetadaten abfragen“ einen Namen.
 zotero-citation-graph-strategy-ref-strings-hint = Arbeiten, die in den Literaturverzeichnissen deiner Texte genannt werden, aus dem Text der Einträge selbst gelesen. Abwählen, um die Kanten auszublenden, die nur diese Strategie gefunden hat.
 zotero-citation-graph-strategy-ref-strings-run = Literaturangaben lesen
 zotero-citation-graph-strategy-ref-strings-run-hint = Jeden Eintrag in den Literaturverzeichnissen deiner Texte lesen und die genannten Arbeiten aufnehmen – auch die ganz ohne DOI. Zum Anzeigen ist „Externe Referenzen“ nötig. Funktioniert offline; es entstehen neue Knoten statt nur Kanten, daher wird beim Ankreuzen neu gebaut.
@@ -133,7 +133,11 @@ zotero-citation-graph-export-hint = Graphen exportieren
 zotero-citation-graph-isolation-chip = Isoliert: { $count } Knoten · Tiefe { $depth }
 
 zotero-citation-graph-search-placeholder = Suchen
-zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern (Strg+F). Das filtert den Graphen nicht — das tun die Erweiterte Suche (Strg+Umschalt+F) und das Filterfeld in der Seitenleiste.
+# Die Taste, die zur Auswahl hinzufügt, wie die Hinweise sie nennen: { $mod }
+# in einer Meldung ist eine dieser beiden, je nach Plattform.
+zotero-citation-graph-key-mod = Strg
+zotero-citation-graph-key-mod-mac = ⌘
+zotero-citation-graph-search-hint = Eine Arbeit auf der Fläche finden und ansteuern ({ $mod }+F). Das filtert den Graphen nicht — das tun die Erweiterte Suche ({ $mod }+Umschalt+F) und das Filterfeld in der Seitenleiste.
 zotero-citation-graph-search-mode = Schnellsuche-Modus
 zotero-citation-graph-search-advanced = Erweiterte Suche
 zotero-citation-graph-adv-collapse = Erweiterte Suche einklappen
@@ -147,8 +151,8 @@ zotero-citation-graph-search-empty = Keine angezeigte Arbeit passt dazu
 
 zotero-citation-graph-status-loading = Wird geladen…
 zotero-citation-graph-status-rebuilding = Wird neu aufgebaut…
-zotero-citation-graph-status-looking-up = Namen werden nachgeschlagen…
-zotero-citation-graph-status-dropping-names = Nachgeschlagene Namen werden verworfen…
+zotero-citation-graph-status-looking-up = Arbeiten werden nachgeschlagen…
+zotero-citation-graph-status-dropping-names = Nachgeschlagene Angaben werden verworfen…
 zotero-citation-graph-bad-payload = Ungültige Daten: { $message }
 
 zotero-citation-graph-progress-step = Schritt { $step } von { $steps } · { $text }
@@ -192,13 +196,13 @@ zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen
 # eine Zahl zeigt.
 zotero-citation-graph-tooltip-cited-here = { $count -> [0] Hier von keinem Eintrag zitiert [one] Hier von { $count } Eintrag zitiert *[other] Hier von { $count } Einträgen zitiert }
 zotero-citation-graph-tooltip-cited-global = { $count } weltweit
-zotero-citation-graph-tooltip-citations-total = { $count } Zitationen insgesamt
+zotero-citation-graph-tooltip-citations-total = { $count -> [one] { $count } Zitation insgesamt *[other] { $count } Zitationen insgesamt }
 zotero-citation-graph-tooltip-pinned = angeheftet
 zotero-citation-graph-tooltip-et-al = { $names } u. a.
 
 # Was die drei Gesten auf einem Eintrag tun. Wird einmal pro Profil in der
 # Statuszeile gezeigt, wenn der erste Graph aufgebaut ist.
-zotero-citation-graph-hint-gestures = Klick auf einen Eintrag wählt ihn aus (Strg fügt hinzu) · Doppelklick isoliert · Rechtsklick für Aktionen
+zotero-citation-graph-hint-gestures = Klick auf einen Eintrag wählt ihn aus ({ $mod } fügt hinzu) · Doppelklick isoliert · Rechtsklick für Aktionen
 
 
 ## Filter-Chips und die Vorschlagsliste.
@@ -230,7 +234,7 @@ zotero-citation-graph-fieldkey-title = Titel
 zotero-citation-graph-field-any-short = Alle
 zotero-citation-graph-field-any = Jedes Feld
 
-zotero-citation-graph-chip-remove = Diese Maske abnehmen
+zotero-citation-graph-chip-remove = Diesen Filter entfernen
 zotero-citation-graph-chip-click-to-edit = Zum Bearbeiten klicken
 zotero-citation-graph-chip-or-join = { ", oder " }
 zotero-citation-graph-chip-is = ist { $value }
@@ -278,9 +282,9 @@ zotero-citation-graph-menu-isolate-hint-undim = alles wieder aufhellen
 zotero-citation-graph-menu-isolate-hint-only = alles außer diesem Knoten abdunkeln
 zotero-citation-graph-menu-isolate-hint-depth = alles abdunkeln, was mehr als { $depth -> [one] { $depth } Kante *[other] { $depth } Kanten } entfernt ist
 zotero-citation-graph-menu-add-to-isolation = Zur Isolation hinzufügen
-zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens zusätzlich aufhellen, den Rest behalten — oder Strg-Doppelklick
+zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens zusätzlich aufhellen, den Rest behalten — oder { $mod }-Doppelklick
 zotero-citation-graph-menu-remove-from-isolation = Aus der Isolation nehmen
-zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen — oder Strg-Doppelklick
+zotero-citation-graph-menu-remove-from-isolation-hint = die Umgebung dieses Knotens nicht mehr aufhellen — oder { $mod }-Doppelklick
 
 zotero-citation-graph-menu-pin = Knoten anheften
 zotero-citation-graph-menu-pin-hint = an dieser Stelle festhalten; zum Verschieben ziehen — oder auswählen und P drücken
@@ -322,7 +326,7 @@ zotero-citation-graph-build-loading-selection = Ausgewählte Einträge werden ge
 zotero-citation-graph-build-reading-text = Indexierter Text wird gelesen…
 zotero-citation-graph-build-reading-text-progress = Indexierter Text wird gelesen… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = PDFs werden durchsucht…
-zotero-citation-graph-build-scanning-pdfs-count = { $count } PDFs werden nach DOI-Links durchsucht…
+zotero-citation-graph-build-scanning-pdfs-count = { $count -> [one] { $count } PDF wird *[other] { $count } PDFs werden } nach DOI-Links durchsucht…
 zotero-citation-graph-build-scanning-pdfs-progress = PDFs werden nach DOI-Links durchsucht… { $done }/{ $total }
 zotero-citation-graph-build-openalex-references = Referenzen werden bei OpenAlex abgefragt…
 zotero-citation-graph-build-reading-references = Literaturverzeichnisse werden gelesen…
@@ -370,7 +374,7 @@ zotero-citation-graph-gaps-close = Schließen
 zotero-citation-graph-gaps-caption = Die Zahl sagt, wie viele deiner Einträge das Werk zitieren.
 zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Einträge zitiert und fehlt.
 zotero-citation-graph-gaps-building = Die Einträge werden noch gelesen…
-zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — klicken zum Hervorheben, doppelklicken zum Isolieren, Strg zum Hinzufügen
+zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — klicken zum Hervorheben, doppelklicken zum Isolieren, { $mod } zum Hinzufügen
 zotero-citation-graph-gaps-off-screen = Dieses Werk ist nicht im Graphen — ein Filter blendet es aus.
 zotero-citation-graph-gaps-add = Zu Zotero hinzufügen
 zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe

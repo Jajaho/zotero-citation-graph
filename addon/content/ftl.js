@@ -229,18 +229,44 @@
 	function bundle(source, locale, prefix) {
 		var messages = parse(source);
 		var pre = prefix || '';
-		return {
+		var shared = null;
+		var api = {
 			locale: locale || null,
 			messages: messages,
 			has: function (id) {
 				return (pre + id) in messages;
 			},
+			/**
+			 * A variable every message may use without its caller passing it.
+			 * A caller's own argument of the same name still wins.
+			 */
+			share: function (name, value) {
+				if (!shared) shared = Object.create(null);
+				shared[name] = value;
+			},
+			/**
+			 * Share `$mod`, the key that adds to a pick: Ctrl, and Cmd on a
+			 * Mac, where the page has always read either and the strings said
+			 * "Ctrl" regardless -- the one key that does something else there,
+			 * since Ctrl-click raises the context menu. Each locale names the
+			 * two itself (key-mod, key-mod-mac); "Strg" is a translation.
+			 */
+			shareModifier: function (mac) {
+				var id = mac ? 'key-mod-mac' : 'key-mod';
+				api.share('mod', api.has(id) ? api.t(id) : (mac ? '⌘' : 'Ctrl'));
+			},
 			t: function (id, args) {
 				var pattern = messages[pre + id];
 				if (pattern == null) return id;
-				return format(pattern, args, locale);
+				if (!shared) return format(pattern, args, locale);
+				var all = Object.create(null);
+				var name;
+				for (name in shared) all[name] = shared[name];
+				if (args) for (name in args) all[name] = args[name];
+				return format(pattern, all, locale);
 			},
 		};
+		return api;
 	}
 
 	return { parse: parse, format: format, bundle: bundle };

@@ -6945,6 +6945,10 @@ function referencedIds() {
 	for (const mode of ['year', 'collection', 'cluster', 'author', 'publication', 'type']) {
 		ids.add('color-by-' + mode);
 	}
+	// What { $mod } stands for. The bundle asks for one of them itself, by
+	// platform: shareModifier() in content/ftl.js.
+	ids.add('key-mod');
+	ids.add('key-mod-mac');
 	// Two per facet: the label on the chip, and the keyword the box parses.
 	for (const f of ['author', 'year', 'tag', 'type', 'publication', 'collection', 'cluster', 'title']) {
 		ids.add('field-' + f);
@@ -10785,3 +10789,158 @@ Promise.all(pending).then(() => {
 	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
 	process.exit(failures ? 1 : 0);
 });
+// --- the audit backlog (#24): pure modules and locales ----------------------
+
+check('a filter finds Müller for "muller", and the other way round', () => {
+	const F = loadFilters();
+	const lib = [
+		{ creators: ['Müller', 'Lončar'], year: 2019, itemType: 'journalArticle', publication: 'Física Aplicada',
+			collections: ['Études'], title: 'Thermométrie à l\'échelle nanométrique' },
+		{ creators: ['Muller'], year: 2020, itemType: 'journalArticle', publication: 'Nature',
+			collections: ['Plain'], title: 'A plain title' },
+		{ creators: ['Smith'], year: 2021, itemType: 'book', publication: null, collections: ['Plain'], title: 'Another' },
+	].map(F.facets);
+	const who = text => lib.map((fac, i) => (F.matches(F.parse(text), fac) ? i : '')).join('');
+	// Typed without the accent, as a keyboard without one types it.
+	if (who('author: muller') !== '01') throw new Error('author: muller -> ' + who('author: muller'));
+	if (who('author: loncar') !== '0') throw new Error('author: loncar -> ' + who('author: loncar'));
+	if (who('publication: fisica') !== '0') throw new Error('publication: fisica -> ' + who('publication: fisica'));
+	if (who('thermometrie a l\'echelle') !== '0') throw new Error('bare -> ' + who('thermometrie a l\'echelle'));
+	// Typed with it, it still finds the value that has it -- and the one that
+	// does not, which is the same name off another publisher's page.
+	if (who('author: Müller') !== '01') throw new Error('author: Müller -> ' + who('author: Müller'));
+	// An exact term is exact about the whole value, not about its accents.
+	if (who('author: "muller"') !== '01') throw new Error('exact -> ' + who('author: "muller"'));
+	if (who('author: "mull"') !== '') throw new Error('exact matched a part: ' + who('author: "mull"'));
+	// A decomposed spelling (u + combining diaeresis) is the same name.
+	if (who('author: müller') !== '01') throw new Error('decomposed -> ' + who('author: müller'));
+
+	// The completion list is found the same way, and does not offer a value the
+	// mask already has under its other spelling.
+	const rows = F.suggest('author: mull', lib).filter(o => o.kind === 'value').map(o => o.label).sort().join(' ');
+	if (rows !== 'Muller Müller') throw new Error('suggested: ' + rows);
+	const again = F.suggest('author: "Muller", mul', lib).filter(o => o.kind === 'value').map(o => o.label).join(' ');
+	if (again !== '') throw new Error('offered what the mask has: ' + again);
+	// And two spellings of one term are one term.
+	if (F.parse('author: muller, müller').terms.length !== 1) throw new Error('two spellings, two terms');
+});
+
+check('a cluster name widened to tell it from another does not repeat a word', () => {
+	const C = loadCluster();
+	// Two clusters about the same thing, by the same two words. The second has
+	// to be told apart, and the term next in line for it is half of the pair
+	// it already has.
+	const titles = new Map([
+		['A1', 'Error correction'], ['A2', 'Error correction'], ['A3', 'Error correction'],
+		['B1', 'Error correction thresholds'], ['B2', 'Error correction thresholds'],
+		['B3', 'Error correction'], ['B4', 'Error correction'],
+	]);
+	const members = new Map([[0, ['A1', 'A2', 'A3']], [1, ['B1', 'B2', 'B3', 'B4']]]);
+	const names = C.nameCommunities(members, titles, { labelTerms: 1 });
+	const second = names.get(1);
+	if (second === names.get(0)) throw new Error('two clusters share the name ' + second);
+	const words = second.replace(/\(\d+\)/, '').split(/[^a-z]+/).filter(Boolean);
+	if (new Set(words).size !== words.length) throw new Error('repeats a word: ' + JSON.stringify(second));
+	// It is told apart by what the other does not have.
+	if (!/thresholds/.test(second)) throw new Error('not widened by its own term: ' + JSON.stringify(second));
+
+	// With nothing of its own to add it is numbered, not padded with halves.
+	const same = new Map([[0, ['A1', 'A2', 'A3']], [1, ['B3', 'B4']]]);
+	const numberedName = C.nameCommunities(same, titles, { labelTerms: 1 }).get(1);
+	if (numberedName !== 'error correction (2)') throw new Error('got ' + JSON.stringify(numberedName));
+});
+
+check('the export drops every lone surrogate, two in a row included', () => {
+	const X = loadExport();
+	const lo = '\uDC00', lo2 = '\uDC01', hi = '\uD83D';
+	const cases = [
+		['a' + lo + lo2 + 'b', 'ab'],
+		[lo + lo2, ''],
+		['a' + hi + hi + 'b', 'ab'],
+		['a' + lo + lo2 + lo + 'b', 'ab'],
+		// A pair is a character and stays; a lone half beside one goes.
+		['a😀b', 'a😀b'],
+		['😀' + lo + lo2, '😀'],
+		[hi + '😀', '😀'],
+	];
+	for (const [given, want] of cases) {
+		const got = X.escapeXml(given);
+		if (got !== want) {
+			const hex = s => [...s].map(c => c.codePointAt(0).toString(16)).join(' ');
+			throw new Error(hex(given) + ' -> ' + hex(got) + ', expected ' + hex(want));
+		}
+	}
+	if (X.escapeXml('<a & "b">') !== '&lt;a &amp; &quot;b&quot;&gt;') throw new Error('escaping changed');
+});
+
+check('one citation and one PDF are counted in the singular, in both locales', () => {
+	const want = {
+		'en-US': { one: ['1 citation total', 'Scanning 1 PDF for DOI links…'], many: ['2 citations total', 'Scanning 2 PDFs for DOI links…'] },
+		'de-DE': { one: ['1 Zitation insgesamt', '1 PDF wird nach DOI-Links durchsucht…'],
+			many: ['2 Zitationen insgesamt', '2 PDFs werden nach DOI-Links durchsucht…'] },
+	};
+	for (const code of Object.keys(want)) {
+		const t = pageStrings(code);
+		const got = n => [t('tooltip-citations-total', { count: n }), t('build-scanning-pdfs-count', { count: n })];
+		if (JSON.stringify(got(1)) !== JSON.stringify(want[code].one)) throw new Error(code + ': ' + JSON.stringify(got(1)));
+		if (JSON.stringify(got(2)) !== JSON.stringify(want[code].many)) throw new Error(code + ': ' + JSON.stringify(got(2)));
+	}
+});
+
+check('the key that adds to a pick is named Cmd on a Mac, by both sides of the bridge', async () => {
+	const IDS = ['search-hint', 'hint-gestures', 'menu-add-to-isolation-hint', 'menu-remove-from-isolation-hint'];
+	for (const code of ['en-US', 'de-DE']) {
+		const source = readLocale(code);
+		// No message names the key itself any more: the page reads Ctrl or Cmd,
+		// and on a Mac a Ctrl-click is the context menu.
+		for (const [id, pattern] of Object.entries(Ftl.parse(source))) {
+			if (/key-mod/.test(id)) continue;
+			if (/\b(Ctrl|Strg)\b/.test(pattern)) throw new Error(code + '/' + id + ' names the key: ' + pattern);
+		}
+		const key = code === 'de-DE' ? 'Strg' : 'Ctrl';
+		for (const mac of [false, true]) {
+			const b = Ftl.bundle(source, code, PREFIX);
+			b.shareModifier(mac);
+			const all = IDS.map(id => b.t(id)).concat(b.t('gaps-row-hint', { count: 2 })).join('\n');
+			if (/\{/.test(all)) throw new Error(code + ': a hole was left: ' + all);
+			const says = mac ? '⌘' : key;
+			if (all.split(says).length - 1 !== 6) throw new Error(code + (mac ? ' (mac)' : '') + ' does not say ' + says + ' six times:\n' + all);
+			if (mac && new RegExp('\\b' + key + '\\b').test(all)) throw new Error(code + ' says ' + key + ' on a Mac');
+		}
+	}
+	// A caller's own argument wins over the shared one, and a bundle nobody
+	// told about the platform still fills the hole.
+	const b = Ftl.bundle(PREFIX + 'x = { $mod } and { $count }', 'en-US', PREFIX);
+	b.shareModifier(false);
+	if (b.t('x', { count: 3 }) !== 'Ctrl and 3' || b.t('x', { mod: 'Alt', count: 3 }) !== 'Alt and 3') throw new Error(b.t('x', { count: 3 }));
+
+	// Chrome tells the page which platform it is, and uses the same key itself.
+	const l10n = require_('./lib/l10n.js');
+	await l10nReady;
+	if (l10n.contentBundle().mac !== false) throw new Error('mac: ' + l10n.contentBundle().mac);
+	if (!/Ctrl to add$/.test(l10n.t('gaps-row-hint', { count: 2 }))) throw new Error(l10n.t('gaps-row-hint', { count: 2 }));
+});
+
+check('the strings call one thing by one name', () => {
+	const en = pageStrings('en-US');
+	const de = pageStrings('de-DE');
+	// A chip is a filter everywhere else on the panel.
+	if (/mask/i.test(en('chip-remove')) || /Maske/.test(de('chip-remove'))) throw new Error(en('chip-remove') + ' / ' + de('chip-remove'));
+	// What is outside the graph is an outside reference: the checkbox and the
+	// legend say so, and three hints said "works".
+	for (const [code, source] of [['en-US', readLocale('en-US')], ['de-DE', readLocale('de-DE')]]) {
+		for (const [id, pattern] of Object.entries(Ftl.parse(source))) {
+			if (/outside works?\b|[Ee]xterner? Arbeit|[Ee]xternen Arbeit/.test(pattern)) throw new Error(code + '/' + id + ': ' + pattern);
+		}
+	}
+	// The lookup looks up works, as its own progress line says.
+	if (en('status-looking-up') !== en('lookup-phase')) throw new Error(en('status-looking-up'));
+	if (de('status-looking-up') !== de('lookup-phase')) throw new Error(de('status-looking-up'));
+	// German addresses the reader as du throughout, and a graph is not always
+	// of a collection.
+	for (const [id, pattern] of Object.entries(Ftl.parse(readLocale('de-DE')))) {
+		if (/\b(Sie|Ihre[nmrs]?|Ihr|Ihnen)\b/.test(pattern)) throw new Error('de-DE/' + id + ' is formal: ' + pattern);
+	}
+	if (/Sammlung/.test(de('strategy-title-match-hint'))) throw new Error(de('strategy-title-match-hint'));
+});
+

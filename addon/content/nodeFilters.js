@@ -388,17 +388,37 @@
 
 	// --- matching ---------------------------------------------------------
 
+	/**
+	 * A value as it is compared: lower case, and without its accents.
+	 *
+	 * A name is typed on whatever keyboard is to hand, and "muller" is how
+	 * most of them type Müller. Lower-casing alone made that a different
+	 * author, so the mask came back empty for a paper that was on screen.
+	 * Decomposed and stripped of its combining marks, each spelling is the
+	 * other -- and so is a name a PDF delivered already decomposed, which
+	 * did not match its own precomposed self either. Letters that are not a
+	 * base and a mark (ø, ß, ł) are left as they are.
+	 *
+	 * Nearly every value is plain ASCII, and those skip the work.
+	 */
+	var NON_ASCII = /[^\u0000-\u007f]/;
+	var MARKS = /[\u0300-\u036f]/g;
+	function fold(s) {
+		s = String(s).toLowerCase();
+		return NON_ASCII.test(s) ? s.normalize('NFD').replace(MARKS, '') : s;
+	}
+
 	/** A value passes as itself or as what it is shown as -- see valueLabel(). */
 	function hit(field, values, op, needle) {
 		for (var i = 0; i < values.length; i++) {
 			var value = String(values[i]);
-			var s = value.toLowerCase();
+			var s = fold(value);
 			if (op === 'is' ? s === needle : s.indexOf(needle) >= 0) return true;
 			if (!namer) continue;
 			// Nearly every value is its own name, and those were just asked.
 			var name = valueLabel(field, value);
 			if (name === value) continue;
-			name = name.toLowerCase();
+			name = fold(name);
 			if (op === 'is' ? name === needle : name.indexOf(needle) >= 0) return true;
 		}
 		return false;
@@ -415,7 +435,7 @@
 			}
 			return false;
 		}
-		var needle = String(t.value).toLowerCase();
+		var needle = fold(t.value);
 		if (field) return hit(field, fac[field] || [], t.op, needle);
 		// A bare term is asked of every facet at once. That is what lets
 		// "Tales" work without the user having to know which field it lives in.
@@ -443,7 +463,7 @@
 	function termKey(t) {
 		return t.op === 'range'
 			? 'r|' + t.lo + '|' + t.hi
-			: t.op + '|' + String(t.value).toLowerCase();
+			: t.op + '|' + fold(t.value);
 	}
 
 	/** Identity, so the same mask cannot be laid down twice. Terms are sorted:
@@ -500,7 +520,7 @@
 		limit = limit || 12;
 		var p = split(text);
 		var partial = p.raw[p.raw.length - 1].trim().replace(/^~/, '').replace(/^"|"$/g, '');
-		var term = partial.toLowerCase();
+		var term = fold(partial);
 		var out = [];
 
 		// Values already in this mask. Offering one again would be a no-op, and
@@ -508,7 +528,7 @@
 		var chosen = new Set();
 		for (var c = 0; c < p.raw.length - 1; c++) {
 			var t = parseTerm(p.field, p.raw[c]);
-			if (t && t.op !== 'range') chosen.add(String(t.value).toLowerCase());
+			if (t && t.op !== 'range') chosen.add(fold(t.value));
 		}
 
 		// A field name still being typed. Only before any term is committed to
@@ -564,9 +584,9 @@
 					if (!value) continue;
 					// Typed towards what the row will say, or towards what it
 					// is: the row is found either way.
-					if (term && value.toLowerCase().indexOf(term) < 0
-						&& valueLabel(name, value).toLowerCase().indexOf(term) < 0) continue;
-					if (chosen.has(value.toLowerCase())) continue;
+					if (term && fold(value).indexOf(term) < 0
+						&& fold(valueLabel(name, value)).indexOf(term) < 0) continue;
+					if (chosen.has(fold(value))) continue;
 					var id = name + ' ' + value;
 					if (seen.has(id)) continue;
 					seen.add(id);
@@ -617,7 +637,7 @@
 		for (; s < ranked.length && out.length < room; s++) out.push(valueRow(ranked[s]));
 		if (free) {
 			var dup = out.some(function (o) {
-				return o.kind === 'value' && o.label.toLowerCase() === term;
+				return o.kind === 'value' && fold(o.label) === term;
 			});
 			if (!dup) {
 				out.push({

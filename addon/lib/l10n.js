@@ -88,6 +88,7 @@ async function load(rootURI) {
 			_locale = locale;
 			_source = source;
 			_bundle = Ftl.bundle(source, locale, PREFIX);
+			_bundle.shareModifier(isMac());
 			return;
 		}
 		catch (e) {
@@ -116,7 +117,17 @@ function attr(id, name, args) {
  * locale it was chosen for, which is what Intl.PluralRules is asked about there.
  */
 function contentBundle() {
-	return { locale: _locale, source: _source || '' };
+	return { locale: _locale, source: _source || '', mac: isMac() };
+}
+
+/** Whether the key that adds to a pick is Cmd. See shareModifier() in ftl.js. */
+function isMac() {
+	try {
+		return !!Zotero.isMac;
+	}
+	catch (e) {
+		return false;
+	}
 }
 
 module.exports = { load, t, attr, contentBundle, LOCALES, PREFIX };
