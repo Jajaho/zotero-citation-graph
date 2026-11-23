@@ -1702,16 +1702,14 @@ body {
  * of the canvas to its right and no more, and the card -- now at least as wide
  * as its longest line -- was cut short in a pane it would have fitted twice.
  *
- * And 1.6 times the size the rest of the page would make it. The status
- * line it stands in for is a note in the margin; this is the only thing on
- * screen for the minutes a build runs, with a drawing on it that has a face,
- * and at the page's own size both were too small to read across a desk.
- * --zg-card is that one number: the type is scaled by it, and every length
- * of the card and of what is on it is written as a multiple of it, so the
- * card is the same card at any value. Nothing outside #progress reads it.
+ * The type and the button are the page's own size, as everything else on the
+ * page is. 0.77.1 to 0.77.3 drew the whole card at 1.6 times that, type and
+ * all, and it looked like a card from another program held up to a magnifying
+ * glass. What is larger than the page would make it is the drawing, which has
+ * a figure in it and needs the pixels, and the room around it; the two lines
+ * of type stand together at the middle of its height.
  */
 #progress {
-	--zg-card: 1.6;
 	position: absolute;
 	top: 8px;
 	left: 10px;
@@ -1723,13 +1721,12 @@ body {
 	grid-template-columns: auto minmax(0, 1fr) auto auto;
 	align-items: center;
 	box-sizing: border-box;
-	padding: calc(5px * var(--zg-card)) calc(6px * var(--zg-card)) calc(6px * var(--zg-card)) calc(8px * var(--zg-card));
+	padding: 8px 8px 8px 10px;
 	border: 1px solid var(--border);
-	border-radius: calc(6px * var(--zg-card));
+	border-radius: 6px;
 	background: var(--surface);
 	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 	color: var(--fill-primary);
-	font-size: calc(var(--zotero-font-size, 13px) * var(--zg-card));
 }
 
 /* display: grid above is an author rule, which the UA's [hidden] does not beat. */
@@ -1739,6 +1736,7 @@ body {
 
 #progress-text {
 	grid-area: 1 / 2;
+	align-self: end;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1748,7 +1746,8 @@ body {
 /* Digits of one width, so the label beside it does not shiver as they turn. */
 #progress-count {
 	grid-area: 1 / 3;
-	margin-inline-start: calc(10px * var(--zg-card));
+	align-self: end;
+	margin-inline-start: 10px;
 	color: var(--fill-secondary);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
@@ -1773,9 +1772,8 @@ body {
 
 #progress-stop {
 	grid-area: 1 / 4 / span 2;
-	margin-inline-start: calc(10px * var(--zg-card));
-	padding: calc(1px * var(--zg-card)) calc(8px * var(--zg-card));
-	border-radius: calc(4px * var(--zg-card));
+	margin-inline-start: 12px;
+	padding: 1px 8px;
 }
 
 #progress-stop:hover:not([disabled]),
@@ -1796,9 +1794,9 @@ body {
 
 #progress-bar {
 	grid-area: 3 / 1 / auto / -1;
-	margin-top: calc(5px * var(--zg-card));
-	height: calc(3px * var(--zg-card));
-	border-radius: calc(2px * var(--zg-card));
+	margin-top: 8px;
+	height: 3px;
+	border-radius: 2px;
 	background: var(--fill-quarternary);
 	overflow: hidden;
 }
@@ -1871,9 +1869,9 @@ body {
  */
 #progress-stage {
 	grid-area: 1 / 1 / span 2;
-	width: calc(32px * var(--zg-card));
-	height: calc(32px * var(--zg-card));
-	margin-inline-end: calc(8px * var(--zg-card));
+	width: 48px;
+	height: 48px;
+	margin-inline-end: 10px;
 	color: var(--fill-secondary);
 }
 
@@ -1885,10 +1883,10 @@ body {
 	overflow: visible;
 	fill: none;
 	stroke: currentColor;
-	/* In the drawing's own units, of which the stage is 32 across: a little
-	   under 2px on the card as it is sized, which is what a figure this small
-	   can be drawn with. */
-	stroke-width: 1.2;
+	/* In the drawing's own units, of which the stage is 32 across and each
+	   one and a half pixels: a line of 1.2px, the weight of core's own
+	   icons. A heavier one is what made the drawing look enlarged. */
+	stroke-width: 0.8;
 	stroke-linecap: round;
 	stroke-linejoin: round;
 }
@@ -1934,8 +1932,9 @@ body {
 	grid-area: 2 / 2 / auto / span 2;
 	display: grid;
 	min-width: 0;
+	align-self: start;
 	color: var(--fill-secondary);
-	font-size: calc(var(--zotero-font-size, 13px) * 0.9231 * var(--zg-card));
+	font-size: calc(var(--zotero-font-size, 13px) * 0.9231);
 }
 
 #progress-lines > span {
@@ -2084,7 +2083,7 @@ body {
 }
 
 .scene-decipher .handle {
-	stroke-width: 2.4;
+	stroke-width: 1.8;
 }
 
 .scene-decipher .head {

@@ -1932,7 +1932,7 @@ tools/
   (*Guessing author names…*), bends over a scrawl with a magnifying glass, holds up a verdict on
   *Aa* in three typefaces, holds a heart out to a flask, and polishes the world with a cloth. The
   washing machine (*DOIng laundry…*) works alone: a figure goes in where it has something to do
-  that 51px can show, and beside a drum it has not. The figure is the same one throughout
+  that 48px can show, and beside a drum it has not. The figure is the same one throughout
   (`.person`: a round head, a dot for an eye, a line each for the body and the limbs), and every
   `.eye` blinks on one clock. In 0.77.1 and 0.77.2 the things themselves had the faces — a sheet
   of paper in glasses, a flask with hearts for eyes — which was a misreading of what was asked
@@ -1965,13 +1965,14 @@ tools/
   one turn and starts again, and is clipped to the outline by the one `<clipPath>` in the page
   (`#zg-scene-globe`). Under `prefers-reduced-motion` every
   animation is off and each scene is the drawing it is at rest; the lines still take their turns.
-  **The card is 1.6 times the page's size**, by one number: `--zg-card` on `#progress`. The type
-  is scaled by it and every length on the card is written as a multiple of it — the stage is
-  `calc(32px * var(--zg-card))`, 51px — so the drawing, its line and the bar grow together, and
-  `npm test` holds that no length on the card is left in bare pixels. At the page's own size a
-  32px drawing was too small to read, and the card is the only thing on screen for the minutes a
-  build runs. The drawings are in their own 32-unit space with a 1.2-unit stroke, so they need
-  nothing changed to be drawn at another size.
+  **The card's type is the page's own size, and only the drawing is larger.** 0.77.1 to 0.77.3
+  scaled the whole card by 1.6 through one number (`--zg-card`): type of 21px, a button to match
+  and a line of nearly 2px beside a page set in 13px, which looked like a card from another
+  program under a magnifying glass. The number is gone. The stage is 48px, because a figure needs
+  the pixels, and its line is 0.8 of the drawing's 32 units — 1.2px, the weight of core's own
+  icons, where the heavier line was what made it look enlarged. The phase and the scene's line
+  stand together at the middle of the stage's height (`align-self: end` over `start`), and the
+  card has a little more room round it than the status line it replaces.
   With the scenes the card is centred between two insets (`left`/`right` with `width:
   fit-content`), not hung from `left: 50%`, which offered it only the half of the canvas to its
   right and cut a card short in a pane it would have fitted.
