@@ -172,7 +172,7 @@ Requirements: Node ≥ 18. The plugin has **zero runtime dependencies**; the one
 must agree) plus the test suite — the same checks CI runs before it builds.
 Because the packer writes fixed timestamps and a fixed entry order, building the
 same commit twice produces byte-identical XPIs, which is what makes the
-published `SHA256SUMS` verifiable by anyone.
+SHA-256 GitHub shows for each release asset verifiable by anyone.
 
 Development setup, the edit/restart loop and the project's invariants are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
