@@ -110,6 +110,9 @@ const jsonWrites = [];
 // The IOUtils every module is handed, by name: a check that needs a file to be
 // there, or a read to take its time, swaps one method and puts it back.
 let harnessIO = null;
+// And the fetch they are handed. There is no network here; a check that wants
+// OpenAlex to answer -- or to refuse -- swaps this and puts it back.
+let harnessFetch = () => { throw new Error('network disabled in this harness'); };
 
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
@@ -132,7 +135,7 @@ const require_ = shim.makeRequire(rootURI, {
 	},
 	PathUtils: { join: (...p) => p.join('/'), parent: p => p.slice(0, p.lastIndexOf('/')) },
 	setTimeout, clearTimeout,
-	fetch: () => { throw new Error('network disabled in this harness'); },
+	fetch: (...args) => harnessFetch(...args),
 });
 
 // Started here rather than inside a check, because several checks want the
@@ -12237,6 +12240,347 @@ check('the page asks for the gap list\'s rows again when the list comes back int
 	// Told again what it already knows, it does not draw again.
 	page.window.zgGapsShowing(JSON.stringify({ showing: true }));
 	if (rendered !== 1 || synced !== 3) throw new Error(rendered + ' renders, ' + synced + ' syncs');
+});
+
+// --- OpenAlex's daily allowance ----------------------------------------------
+
+/** A response OpenAlex refuses with: a status, a body (or none that parses),
+ *  and the headers it reports its allowance in. */
+function refusal(status, body, headers = {}) {
+	return {
+		ok: false,
+		status,
+		statusText: { 401: 'Unauthorized', 403: 'Forbidden', 429: 'Too Many Requests' }[status] || '',
+		headers: { get: name => (name in headers ? headers[name] : null) },
+		json: async () => {
+			if (body === undefined) throw new Error('not JSON');
+			return body;
+		},
+	};
+}
+
+const DAILY = () => refusal(429, { error: 'Rate limit exceeded', reason: 'daily_budget' },
+	{ 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '6814' });
+
+/**
+ * OpenAlex answers 429 both for a request sent too fast and for a day's
+ * allowance that is spent, and the plugin read them as one: "OpenAlex 429 Too
+ * Many Requests", tried a second time, on the status line. The second is over
+ * at midnight UTC and not before -- unless the request went without a key, in
+ * which case a free key ends it now. So it is told apart, by the body's
+ * `reason` and failing that by the allowance the headers report, and so is a
+ * key OpenAlex will not take.
+ */
+check('a spent OpenAlex allowance is told apart from a request sent too fast', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const keys = Array.from({ length: 6 }, (_, i) => 'doi:10.4321/q' + i);
+	// Three requests of two DOIs. The first is answered and the rest refused.
+	const lookup = async (refuse, apiKey) => {
+		const calls = [];
+		const fetchImpl = async (url, init) => {
+			calls.push(init);
+			if (calls.length > 1) return refuse();
+			const ids = new URL(url).searchParams.get('filter').slice('doi:'.length).split('|');
+			return fakeOpenAlex(ids.map((d, i) => ({ id: 'https://openalex.org/W9' + i, doi: 'https://doi.org/' + d,
+				display_name: 'Title of ' + d, publication_year: 2011, authorships: [], cited_by_count: 4 })))(url);
+		};
+		const r = await cg.enrich(keys, { enable: ['openalex'], providers: { openalex: { fetchImpl, batchSize: 2, apiKey } } });
+		if (r.meta.errors.length !== 1) throw new Error('errors: ' + JSON.stringify(r.meta.errors));
+		return { asked: calls.length, error: r.meta.errors[0], resolved: r.meta.resolved };
+	};
+
+	// The day's allowance, with no key: named, and not asked a second time.
+	const spent = await lookup(DAILY);
+	if (spent.error.code !== 'quota') throw new Error('not recognised: ' + JSON.stringify(spent.error));
+	if (spent.error.detail.keyless !== true || spent.error.detail.resetSeconds !== 6814) throw new Error(JSON.stringify(spent.error.detail));
+	if (spent.error.message !== 'OpenAlex 429 Too Many Requests') throw new Error('the message changed: ' + spent.error.message);
+	if (spent.asked !== 2) throw new Error(spent.asked + ' requests against an allowance that is spent');
+	if (spent.resolved !== 2) throw new Error('the batch that was answered was lost: ' + spent.resolved);
+	// With a key it is the key's allowance, which a key cannot fix.
+	const keyed = await lookup(DAILY, 'KEY');
+	if (keyed.error.code !== 'quota' || keyed.error.detail.keyless !== false) throw new Error(JSON.stringify(keyed.error));
+
+	// Too fast is a plain failure, as it always was: two in a row end the run.
+	const fast = await lookup(() => refusal(429, { error: 'Rate limit exceeded', reason: 'requests_per_second', retryAfter: 0.01 },
+		{ 'X-RateLimit-Remaining': '0', 'Retry-After': '1' }));
+	if (fast.error.code || fast.error.detail) throw new Error('a request sent too fast read as a spent allowance: ' + JSON.stringify(fast.error));
+	if (fast.asked !== 3) throw new Error(fast.asked + ' requests');
+
+	// A body that says nothing is judged by the allowance in the headers...
+	const silent = await lookup(() => refusal(429, undefined, { 'X-RateLimit-Remaining': '0' }));
+	if (silent.error.code !== 'quota' || silent.error.detail.resetSeconds !== null) throw new Error(JSON.stringify(silent.error));
+	const some = await lookup(() => refusal(429, {}, { 'X-RateLimit-Remaining': '412' }));
+	if (some.error.code) throw new Error('an allowance with 412 left read as spent');
+	// ...and a 429 with neither is the plain error, whatever sent it.
+	const bare = await lookup(async () => ({ ok: false, status: 429, statusText: 'Too Many Requests', json: async () => ({}) }));
+	if (bare.error.code || bare.asked !== 3) throw new Error(JSON.stringify(bare));
+
+	// A key OpenAlex does not know fails every request the same way.
+	const unknown = await lookup(() => refusal(401, { error: 'Invalid or missing API key', message: 'API key not found.' }), 'WRONG');
+	if (unknown.error.code !== 'key' || unknown.asked !== 2) throw new Error(JSON.stringify(unknown));
+	const waiting = await lookup(() => refusal(403, { error: 'Forbidden', reason: 'key_not_activated' }), 'NEW');
+	if (waiting.error.code !== 'key') throw new Error(JSON.stringify(waiting.error));
+	// Without one there is no key to have got wrong, and a 403 can be anything.
+	const anonymous = await lookup(() => refusal(401, { error: 'Invalid or missing API key' }));
+	if (anonymous.error.code) throw new Error('a 401 with no key sent blamed the key');
+	const blocked = await lookup(() => refusal(403, { error: 'Forbidden' }), 'KEY');
+	if (blocked.error.code) throw new Error('a 403 that does not mention the key blamed it');
+});
+
+check('the OpenAlex references strategy says the same of a spent allowance, and keeps its edges', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = ['a', 'b', 'c', 'd', 'e', 'f'].map(x => ({ key: x.toUpperCase().repeat(8), itemType: 'journalArticle',
+		title: 'Paper ' + x, doi: '10.2000/' + x }));
+	const adapter = {
+		listItems: async () => items,
+		getAttachments: async () => [],
+		getAttachmentText: async () => null,
+		getPdfLinkUris: async () => [],
+	};
+	let requests = 0;
+	const fetchImpl = async (url) => {
+		if (++requests > 1) return DAILY();
+		return fakeOpenAlex([
+			{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.2000/a', referenced_works: ['https://openalex.org/W2'] },
+			{ id: 'https://openalex.org/W2', doi: 'https://doi.org/10.2000/b', referenced_works: [] },
+		])(url);
+	};
+	const r = await cg.build(adapter, { enable: ['openalex'], providers: { openalex: { fetchImpl, batchSize: 2 } } });
+	const err = r.meta.errors[0];
+	if (r.meta.errors.length !== 1 || err.provider !== 'openalex' || err.code !== 'quota' || err.detail.keyless !== true) {
+		throw new Error('errors: ' + JSON.stringify(r.meta.errors));
+	}
+	// Three batches, and the third is not sent after the second was refused.
+	if (requests !== 2) throw new Error(requests + ' requests');
+	if (!r.edges.some(e => e.from === 'AAAAAAAA' && e.to === 'BBBBBBBB')) throw new Error('lost the answered edge');
+	// A failure that names no kind is reported as it always was.
+	const plain = await cg.build(adapter, { enable: ['openalex'],
+		providers: { openalex: { fetchImpl: () => { throw new Error('offline'); }, batchSize: 2 } } });
+	if (JSON.stringify(plain.meta.errors) !== '[{"provider":"openalex","message":"offline"}]') throw new Error(JSON.stringify(plain.meta.errors));
+});
+
+/**
+ * What a pass that ran out says when it ends: a card on the page when a key
+ * would end the wait, a line when only time or a corrected key will.
+ */
+check('a spent allowance with no key is a card, and with one a line that says how long', async () => {
+	await l10nReady;
+	const { endLine, failureLine, cleanKey } = require_('./lib/graphTab.js');
+	const tab = () => {
+		const cards = [];
+		return { cards, entry: { quota: null, browser: { contentWindow: { wrappedJSObject: {
+			zgSetQuota: json => cards.push(JSON.parse(json)),
+		} } } } };
+	};
+	const spent = (keyless, resetSeconds = 7200) => ({ provider: 'openalex', message: 'OpenAlex 429 Too Many Requests',
+		code: 'quota', detail: { keyless, resetSeconds } });
+	const other = { provider: 'text-doi', message: 'getAttachmentText(X1): disk says no' };
+
+	// The lookup ran out and nothing else went wrong: the card, and no line.
+	let t = tab();
+	if (endLine(t.entry, [], [spent(true)]) !== '') throw new Error('the card and a line both said it');
+	if (JSON.stringify(t.cards) !== '[{"hours":2}]' || t.entry.quota.pass !== 'lookup') throw new Error(JSON.stringify([t.cards, t.entry.quota]));
+	// The references ran out, which a lookup cannot put back: the build is what
+	// a key continues. And the line is left to what else failed.
+	t = tab();
+	const line = endLine(t.entry, [other, spent(true, 600)], [spent(true, 600)]);
+	if (line !== 'One step failed: text-doi: getAttachmentText(X1): disk says no') throw new Error(line);
+	if (JSON.stringify(t.cards) !== '[{"hours":1}]' || t.entry.quota.pass !== 'build') throw new Error(JSON.stringify([t.cards, t.entry.quota]));
+	// A response that did not say when: the clock does, and it is within a day.
+	t = tab();
+	endLine(t.entry, [], [spent(true, null)]);
+	if (!(t.cards[0].hours >= 1 && t.cards[0].hours <= 24)) throw new Error('hours: ' + JSON.stringify(t.cards));
+
+	// With a key there is nothing to offer but the time.
+	t = tab();
+	const keyed = endLine(t.entry, [], [spent(false)]);
+	if (keyed !== 'Your OpenAlex key\'s allowance for today is used up. OpenAlex answers again in about 2 hours.') throw new Error(keyed);
+	if (endLine(t.entry, [spent(false, 1800)], []) !== 'Your OpenAlex key\'s allowance for today is used up. OpenAlex answers again in about an hour.') {
+		throw new Error('the singular: ' + endLine(t.entry, [spent(false, 1800)], []));
+	}
+	// And a key OpenAlex will not take is the thing to look at, before anything.
+	const refused = endLine(t.entry, [other], [{ provider: 'openalex', message: 'OpenAlex 401 Unauthorized', code: 'key' }]);
+	if (refused !== 'OpenAlex did not accept the API key. Check it in Zotero\'s settings, under Citation Graph.') throw new Error(refused);
+	if (t.cards.length || t.entry.quota) throw new Error('a card for something a key does not fix: ' + JSON.stringify(t.cards));
+
+	// Anything else is the line it always was.
+	if (endLine(t.entry, [other], null) !== failureLine([other]) || endLine(t.entry, [], []) !== '') throw new Error('a plain failure');
+
+	// A pasted key, as it can be sent in a header.
+	if (cleanKey('  ab c\r\n') !== 'abc' || cleanKey(7) !== '' || cleanKey('   ') !== '') throw new Error('cleanKey');
+	if (cleanKey('k'.repeat(200)).length !== 200 || cleanKey('k'.repeat(201)) !== '') throw new Error('cleanKey: length');
+});
+
+checkAlone('a lookup that runs out of allowance asks for a key, and goes on with the one it is given', async () => {
+	await l10nReady;
+	const graphTab = require_('./lib/graphTab.js');
+	const papers = backlogPapers();
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	// Prefs that keep what they are given and tell their observers, as core's do.
+	const KEY = 'zoteroCitationGraph.openalex.apiKey';
+	const prefs = {};
+	const observers = [];
+	Zotero.Prefs = {
+		get: name => (name in prefs ? prefs[name] : null),
+		set(name, value) {
+			prefs[name] = value;
+			for (const o of observers.filter(o => o.name === name)) o.fn(value);
+		},
+		registerObserver(name, fn) {
+			const o = { name, fn };
+			observers.push(o);
+			return o;
+		},
+		unregisterObserver(o) {
+			observers.splice(observers.indexOf(o), 1);
+		},
+	};
+	// OpenAlex, with nothing left for a caller without a key.
+	const asked = [];
+	const realFetch = harnessFetch;
+	harnessFetch = async (url, init) => {
+		const auth = (init && init.headers && init.headers.Authorization) || null;
+		asked.push(auth);
+		if (!auth) return DAILY();
+		return fakeOpenAlex([{ id: 'https://openalex.org/W77', doi: 'https://doi.org/10.5555/another',
+			display_name: 'Another paper entirely', publication_year: 2020, authorships: [], cited_by_count: 5 }])(url);
+	};
+	let unwatch = () => {};
+	try {
+		const tab = await fakeLiveTab({ collection: liveCollection(papers) });
+		unwatch = graphTab.watchChrome(tab.win);
+		await tab.built();
+		await until('the first build letting go', () => tab.sent('zgSetProgress').pop() === null);
+		const after = from => fn => tab.calls.slice(from).filter(c => c.fn === fn).map(c => c.value);
+		const lookup = async (start) => {
+			const from = tab.calls.length;
+			start();
+			const done = await tab.built(from);
+			await until('the lookup letting go', () => after(from)('zgSetProgress').pop() === null);
+			return { from, done, said: after(from) };
+		};
+		const count = done => done.items.find(i => i.key === 'BBBBBBBB').citedByGlobal;
+
+		// No key: the card, with the hours on it, and no "429" on the line.
+		let pass = await lookup(() => tab.emit({ type: 'lookup', on: true }));
+		let card = pass.said('zgSetQuota').pop();
+		if (!card || !(card.hours >= 1 && card.hours <= 24)) throw new Error('no card: ' + JSON.stringify(pass.said('zgSetQuota')));
+		if (pass.said('zgSetStatus').pop() !== '') throw new Error('the line: ' + JSON.stringify(pass.said('zgSetStatus').pop()));
+		if (asked.join() !== '') throw new Error('asked ' + asked.length + ' times against a spent allowance');
+		if (count(pass.done) != null) throw new Error('a count out of a refusal');
+
+		// A key pasted into the card: kept, cleaned, and the lookup -- not the
+		// build -- run again with it.
+		asked.length = 0;
+		pass = await lookup(() => tab.emit({ type: 'openalex-key', key: '  pasted-key\n' }));
+		if (prefs[KEY] !== 'pasted-key') throw new Error('the key was not kept: ' + JSON.stringify(prefs));
+		if (pass.said('zgSetQuota')[0] !== null) throw new Error('the card stayed up: ' + JSON.stringify(pass.said('zgSetQuota')));
+		if (asked.join() !== 'Bearer pasted-key') throw new Error('asked as: ' + asked.join());
+		if (count(pass.done) !== 5) throw new Error('the lookup did not go on: ' + JSON.stringify(pass.done.items));
+		if (pass.said('zgSetStatus').some(l => /Loading collection|Reading indexed text|Scanning PDFs/.test(l))) {
+			throw new Error('the graph was derived again: ' + JSON.stringify(pass.said('zgSetStatus')));
+		}
+		if (pass.said('zgSetQuota').length !== 1) throw new Error('one key started ' + pass.said('zgSetQuota').length + ' passes');
+
+		// The card again, and this time the key is typed into the Settings pane.
+		delete prefs[KEY];
+		await lookup(() => tab.emit({ type: 'lookup', on: false }));
+		pass = await lookup(() => tab.emit({ type: 'lookup', on: true }));
+		if (!pass.said('zgSetQuota').pop()) throw new Error('no card the second time');
+		asked.length = 0;
+		pass = await lookup(() => Zotero.Prefs.set(KEY, 'settings-key'));
+		if (asked.join() !== 'Bearer settings-key' || count(pass.done) !== 5) throw new Error('a key from Settings did not continue: ' + asked.join());
+
+		// "Not now" is an answer: a key that turns up later starts nothing here.
+		delete prefs[KEY];
+		await lookup(() => tab.emit({ type: 'lookup', on: false }));
+		pass = await lookup(() => tab.emit({ type: 'lookup', on: true }));
+		if (!pass.said('zgSetQuota').pop()) throw new Error('no card the third time');
+		tab.emit({ type: 'openalex-quota-dismiss' });
+		const from = tab.calls.length;
+		asked.length = 0;
+		Zotero.Prefs.set(KEY, 'later-key');
+		await new Promise(r => setTimeout(r, 30));
+		if (asked.length || after(from)('zgSetData').length) throw new Error('a declined card started a pass');
+	}
+	finally {
+		harnessFetch = realFetch;
+		unwatch();
+	}
+});
+
+check('the key card says how long the wait is, takes a key, and can be declined', () => {
+	const card = (code) => {
+		const emitted = [];
+		const page = liftPage({ functions: ['showQuota', 'submitQuotaKey', 'dismissQuota'], globals: {
+			elQuota: { hidden: true },
+			elQuotaBody: { textContent: '' },
+			elQuotaKey: { value: 'left over' },
+			elQuotaContinue: { disabled: false },
+			emit: m => emitted.push(JSON.stringify(m)),
+			t: pageStrings(code || 'en-US'),
+		} });
+		page.emitted = emitted;
+		return page;
+	};
+	const page = card();
+	page.showQuota({ hours: 2 });
+	if (page.elQuota.hidden) throw new Error('the card did not come up');
+	if (!/^Requests without a key .* A free key has its own, .* in about 2 hours\.$/.test(page.elQuotaBody.textContent)) {
+		throw new Error(page.elQuotaBody.textContent);
+	}
+	// Nothing to continue with until there is a key.
+	if (page.elQuotaKey.value !== '' || !page.elQuotaContinue.disabled) throw new Error('the field was not empty, or Continue was live');
+	page.submitQuotaKey();
+	page.elQuotaKey.value = '   ';
+	page.submitQuotaKey();
+	if (page.emitted.length) throw new Error('an empty field was sent: ' + page.emitted.join());
+	// A key: sent once, trimmed, and the button waits for chrome's answer.
+	page.elQuotaKey.value = '  abc123 ';
+	page.elQuotaContinue.disabled = false;
+	page.submitQuotaKey();
+	if (page.emitted.join() !== '{"type":"openalex-key","key":"abc123"}') throw new Error(page.emitted.join());
+	if (!page.elQuotaContinue.disabled || page.elQuota.hidden) throw new Error('the card did not wait');
+	// Chrome's answer is the null that takes it down, and the key with it.
+	page.showQuota(null);
+	if (!page.elQuota.hidden || page.elQuotaKey.value !== '') throw new Error('the card, or the key, was left');
+
+	// One hour is said as one, and no hours at all is still an hour.
+	page.showQuota({ hours: 1 });
+	if (!/in about an hour\.$/.test(page.elQuotaBody.textContent)) throw new Error(page.elQuotaBody.textContent);
+	page.showQuota({});
+	if (!/in about an hour\.$/.test(page.elQuotaBody.textContent)) throw new Error('no hours: ' + page.elQuotaBody.textContent);
+	// Declined: put away, and chrome told.
+	page.elQuotaKey.value = 'half a key';
+	page.dismissQuota();
+	if (!page.elQuota.hidden || page.elQuotaKey.value !== '') throw new Error('"Not now" left the card');
+	if (page.emitted.pop() !== '{"type":"openalex-quota-dismiss"}') throw new Error('chrome was not told');
+
+	const de = card('de-DE');
+	de.showQuota({ hours: 1 });
+	if (!/in etwa einer Stunde wieder\.$/.test(de.elQuotaBody.textContent)) throw new Error(de.elQuotaBody.textContent);
+	de.showQuota({ hours: 5 });
+	if (!/in etwa 5 Stunden wieder\.$/.test(de.elQuotaBody.textContent)) throw new Error(de.elQuotaBody.textContent);
+
+	// The card is in the page, wired to what chrome sends, and its link is the
+	// address the Settings pane names.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
+	if (!/window\.zgSetQuota = function \(json\) \{[^}]*JSON\.parse\(json\)[\s\S]{0,80}?showQuota\(q\);\s*\};/.test(js)) {
+		throw new Error('window.zgSetQuota no longer parses what chrome sends and draws it');
+	}
+	if (!js.includes('const QUOTA_KEY_URL = \'https://openalex.org/settings/api\';')
+			|| !/emit\(\{ type: 'open-url', url: QUOTA_KEY_URL \}\)/.test(js)) {
+		throw new Error('the link to the key is not the one the card opens');
+	}
+	if (!readLocale('en-US').includes('openalex.org/settings/api in your browser')) throw new Error('the hint names another address');
+	for (const id of ['quota', 'quota-title', 'quota-body', 'quota-get', 'quota-key', 'quota-continue', 'quota-dismiss']) {
+		if (!html.includes('id="' + id + '"')) throw new Error('no #' + id + ' in graph.html');
+	}
+	if (!/<div id="quota"[^>]*hidden="hidden"/.test(html)) throw new Error('the card is on screen before anything asked for it');
+	if (!/<button id="quota-continue"[^>]*disabled="disabled"/.test(html)) throw new Error('Continue is live with no key');
 });
 
 Promise.all(pending).then(() => {

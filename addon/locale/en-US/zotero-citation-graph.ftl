@@ -448,6 +448,21 @@ zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total }
 zotero-citation-graph-build-errors = { $count -> [one] One step failed *[other] { $count } steps failed }: { $what }
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 zotero-citation-graph-build-failed = Could not build the graph: { $message }
+# OpenAlex has stopped answering for the day. Without a key that is a card on
+# the graph, with a link to a free key, a field for it and Continue; with a key
+# there is only the wait, and with a key OpenAlex does not know only the
+# correction, so those two are status lines. { $hours } is whole hours until
+# midnight UTC, never fewer than one.
+zotero-citation-graph-quota-title = OpenAlex's allowance without a key is used up for today
+zotero-citation-graph-quota-body = Requests without a key share one small daily allowance with everyone on your network. A free key has its own, ten times the size. Without one, OpenAlex answers again in about { $hours -> [one] an hour *[other] { $hours } hours }.
+zotero-citation-graph-quota-get = Get a free key
+zotero-citation-graph-quota-get-hint = Opens openalex.org/settings/api in your browser
+zotero-citation-graph-quota-key-placeholder = Paste the key here
+zotero-citation-graph-quota-continue = Continue
+zotero-citation-graph-quota-continue-hint = Keep the key and go on from where OpenAlex stopped answering
+zotero-citation-graph-quota-dismiss = Not now
+zotero-citation-graph-openalex-quota-keyed = Your OpenAlex key's allowance for today is used up. OpenAlex answers again in about { $hours -> [one] an hour *[other] { $hours } hours }.
+zotero-citation-graph-openalex-key-refused = OpenAlex did not accept the API key. Check it in Zotero's settings, under Citation Graph.
 
 
 ## Adding an outside reference to the library.

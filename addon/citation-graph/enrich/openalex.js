@@ -13,9 +13,10 @@ const { normDoi } = require('../core/normalize');
  *   filter=doi:a|b|...  select=id,doi,display_name,publication_year,
  *                              authorships,cited_by_count,type,primary_location
  *
- * 50 DOIs per call. The sample library's 4,564 ghost DOIs are 92 calls; at the
- * post-Feb-2026 pricing of 10 credits per list request that is 920 credits,
- * inside even the keyless daily allowance.
+ * 50 DOIs per call. The sample library's 4,564 ghost DOIs are 92 calls; at
+ * $0.0001 a list request, as the response headers price one in November 2026,
+ * that is under a cent, inside even the keyless daily allowance of $0.10 --
+ * when nobody else on the network has spent it. See httpError().
  *
  * AUTH, as of 13 Feb 2026: `mailto` and the polite pool are gone -- the
  * parameter is ignored by the server -- and requests are billed against an API
@@ -107,6 +108,13 @@ module.exports.id = register({
 				}
 				catch (err) {
 					failure = failure || err;
+					// A spent allowance or a refused key is the service at the
+					// first refusal, not the second: nothing sent after it is
+					// answered either.
+					if (endsTheAsking(err)) {
+						failure = err;
+						break batches;
+					}
 					if (++failedInARow >= GIVE_UP_AFTER) break batches;
 					continue;
 				}
@@ -165,7 +173,7 @@ function pageSize(n) {
 
 /**
  * Every work a filter matches, following the pages until the count the first
- * one reported is met. Throws on a response that is not ok.
+ * one reported is met. Throws on a response that is not ok: see httpError().
  *
  * @param {URL} url  the request, to which a `page` is added past the first
  * @returns {Promise<Object[]>}
@@ -175,7 +183,7 @@ async function fetchWorks(fetch_, url, init) {
 	for (let page = 1; page <= MAX_PAGES; page++) {
 		if (page > 1) url.searchParams.set('page', String(page));
 		const res = await fetch_(url.toString(), init);
-		if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
+		if (!res.ok) throw await httpError(res, init);
 		const json = await res.json();
 		const got = (json && json.results) || [];
 		for (const w of got) results.push(w);
@@ -183,6 +191,83 @@ async function fetchWorks(fetch_, url, init) {
 		if (!got.length || !(total > results.length)) break;
 	}
 	return results;
+}
+
+// What an error says in `code` when it is one a caller can do something about:
+// the day's allowance is spent, or the key that was sent is not one OpenAlex
+// knows.
+const QUOTA = 'quota';
+const BAD_KEY = 'key';
+
+/** Whether an error is the service's answer to every request, not to this one. */
+function endsTheAsking(err) {
+	return !!err && (err.code === QUOTA || err.code === BAD_KEY);
+}
+
+/**
+ * A response that is not ok, as an error -- and one a caller can act on when
+ * what it says is something the user can put right.
+ *
+ * OpenAlex answers 429 for two things that want opposite handling. Too many
+ * requests in one second is over in a second. The daily allowance being spent
+ * is over at midnight UTC, and for a caller with no key it is also the one
+ * failure the user can end themselves: requests without a key draw on a tenth
+ * of a free key's allowance, and share that tenth with everyone behind the
+ * same IP address -- a whole campus, often. Both read "OpenAlex 429 Too Many
+ * Requests", which told the user nothing a key would have fixed.
+ *
+ * The body tells them apart with `reason: "daily_budget"`. Read defensively:
+ * a body that is not JSON, or one that names no reason, is judged by the
+ * allowance the headers report instead, and a 429 that says neither is left
+ * as the plain error it always was.
+ *
+ * `detail.keyless` is whether the request went without a key, which decides
+ * what there is to offer; `detail.resetSeconds` is how long until the
+ * allowance is whole again, where the response says.
+ *
+ * The other one is a key that was sent and refused: 401 for a key OpenAlex
+ * does not know, 403 for one whose owner has not yet confirmed it. Every
+ * request fails the same way until the key is corrected, and "OpenAlex 401
+ * Unauthorized" did not say that the key was the thing to look at.
+ */
+async function httpError(res, init) {
+	const err = new Error(`OpenAlex ${res.status} ${res.statusText}`);
+	const keyless = !(init && init.headers && init.headers.Authorization);
+	const refused = res.status === 401 || res.status === 403;
+	if (res.status !== 429 && !(refused && !keyless)) return err;
+	let body = null;
+	try {
+		body = await res.json();
+	}
+	catch (e) { /* not JSON: the status and the headers are all there is */ }
+	const said = name => (body && typeof body[name] === 'string' ? body[name] : '');
+
+	if (refused) {
+		// A 403 can be other things than the key; a 401 with one sent cannot.
+		if (res.status === 401 || /key/i.test(said('reason') + ' ' + said('error'))) err.code = BAD_KEY;
+		return err;
+	}
+
+	const header = (name) => {
+		try {
+			const v = res.headers && typeof res.headers.get === 'function' ? res.headers.get(name) : null;
+			return v == null || v === '' ? null : Number(v);
+		}
+		catch (e) {
+			return null;
+		}
+	};
+	const reason = said('reason');
+	const remaining = header('X-RateLimit-Remaining');
+	const spent = reason ? reason === 'daily_budget' : remaining != null && remaining <= 0;
+	if (!spent) return err;
+	const reset = header('X-RateLimit-Reset');
+	err.code = QUOTA;
+	err.detail = {
+		keyless,
+		resetSeconds: Number.isFinite(reset) && reset > 0 ? reset : null,
+	};
+	return err;
 }
 
 /**
@@ -254,5 +339,8 @@ function surname(displayName) {
 
 module.exports.toMetadata = toMetadata;
 module.exports.fetchWorks = fetchWorks;
+module.exports.QUOTA = QUOTA;
+module.exports.BAD_KEY = BAD_KEY;
+module.exports.endsTheAsking = endsTheAsking;
 module.exports.pageSize = pageSize;
 module.exports.surname = surname;

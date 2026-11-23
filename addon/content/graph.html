@@ -792,6 +792,35 @@
 				<div id="progress-bar" role="progressbar" aria-labelledby="progress-text"
 					aria-valuemin="0" aria-valuemax="100"><i id="progress-fill"></i></div>
 			</div>
+
+			<!-- OpenAlex has stopped answering for the day, and there was no key:
+			     the one failure of a build that its reader can end, so it is a
+			     card with the way out on it and not a line saying "429". A link
+			     to the free key, a field to paste it into, and Continue, which
+			     has chrome keep the key and run again the pass that ran out --
+			     see endLine() in lib/graphTab.js, which is what puts this up,
+			     and zgSetQuota in graph.js.
+
+			     Under the status line and not in its place: the line may have
+			     another failure to report, and the two are not the same news.
+			     The body carries no data-zg-str because it has a number in it,
+			     which showQuota() fills. -->
+			<div id="quota" role="group" aria-labelledby="quota-title" hidden="hidden">
+				<div id="quota-title" data-zg-str="quota-title">OpenAlex's allowance without a key is used up for today</div>
+				<div id="quota-body"></div>
+				<div id="quota-actions">
+					<button id="quota-get" type="button" data-zg-str="quota-get"
+						data-zg-title="quota-get-hint"
+						title="Opens openalex.org/settings/api in your browser">Get a free key</button>
+					<input id="quota-key" type="text" autocomplete="off" spellcheck="false"
+						data-zg-placeholder="quota-key-placeholder" placeholder="Paste the key here"
+						data-zg-aria-label="quota-key-placeholder" aria-label="Paste the key here"/>
+					<button id="quota-continue" type="button" disabled="disabled" data-zg-str="quota-continue"
+						data-zg-title="quota-continue-hint"
+						title="Keep the key and go on from where OpenAlex stopped answering">Continue</button>
+					<button id="quota-dismiss" type="button" data-zg-str="quota-dismiss">Not now</button>
+				</div>
+			</div>
 		</div>
 	</div>
 

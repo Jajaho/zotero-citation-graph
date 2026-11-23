@@ -116,4 +116,22 @@ function parseExternalKey(key) {
 	return i > 0 ? { ns: key.slice(0, i), id: key.slice(i + 1) } : null;
 }
 
-module.exports = { edge, edgeKey, externalKey, isExternalKey, parseExternalKey, EXTERNAL_NS };
+/**
+ * A provider's failure, as `meta.errors` carries it: who, and what it said.
+ *
+ * And what KIND of failure, where the provider could tell. A message is for
+ * reading; `code` is for a caller that can do something about it -- 'quota',
+ * from enrich/openalex.js, is the one there is so far -- and `detail` is
+ * whatever the provider knows that the doing needs. Neither is set for an
+ * error that names no kind, so a list of plain failures is what it always was.
+ */
+function failure(provider, err) {
+	const out = { provider, message: err && err.message };
+	if (err && typeof err.code === 'string') {
+		out.code = err.code;
+		if (err.detail && typeof err.detail === 'object') out.detail = { ...err.detail };
+	}
+	return out;
+}
+
+module.exports = { edge, edgeKey, externalKey, isExternalKey, parseExternalKey, failure, EXTERNAL_NS };

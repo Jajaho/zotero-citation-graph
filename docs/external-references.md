@@ -127,6 +127,13 @@ Two consequences of the Feb 2026 OpenAlex change, both now applied to `edges/ope
 `mailto` polite-pool parameter is **ignored by the server** and has been removed, and the key
 moves to an `Authorization: Bearer` header so it does not appear in URLs, logs, or error text.
 
+Checked again in November 2026, from the response headers of a keyless request: a list call is
+priced at $0.0001, not the 10 credits above, and the allowance is $0.10 a day without a key and
+$1 with a free one. The keyless allowance is **shared by everyone behind one IP address**, so
+"comfortably inside" holds for the plugin's own calls and not for a campus network's. When it is
+spent the plugin asks for a key instead of reporting a 429 — see "A pass that ran out of
+OpenAlex's allowance asks for a key" in `docs/development.md`.
+
 ---
 
 ## Part 3 — Where enrichment lives, and why not in `edges/`
@@ -171,6 +178,12 @@ failure costs the names that were not fetched and no others. `enrich/openalex.js
 one failed request — a batch the filter cannot take must not starve the batches behind it — and
 stops after two in a row, which is the service and not the batch. The `openalex` edge strategy
 follows the same rule, and still draws the edges of the papers that were answered or cached.
+
+An error may say what kind it is: a string `code`, and a `detail` object with whatever acting on
+it needs. `failure()` in `core/types.js` copies both into `meta.errors` beside `provider` and
+`message`, for `build()` and `enrich()` alike. OpenAlex sets two — `quota`, the day's allowance
+is spent, with `detail: { keyless, resetSeconds }`, and `key`, the key that was sent was refused
+— and stops asking at the first of either.
 
 ### Why the chain is fill-first, not first-wins
 

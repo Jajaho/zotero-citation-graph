@@ -1,7 +1,7 @@
 'use strict';
 
 const enrichRegistry = require('./enrichRegistry');
-const { parseExternalKey } = require('./types');
+const { parseExternalKey, failure } = require('./types');
 
 /**
  * Which Metadata fields the fill-first merge carries. `key` is the identity and
@@ -94,7 +94,7 @@ async function enrich(keys, config = {}) {
 				// Nor its own: what it had answered before it failed comes on the
 				// error as `partial`, and is merged and cached like any answer.
 				take(err && err.partial);
-				errors.push({ provider: p.id, message: err && err.message });
+				errors.push(failure(p.id, err));
 			}
 		}
 		perProvider[p.id] = { asked: refs.length, resolved, ms: Date.now() - started };

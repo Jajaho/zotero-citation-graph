@@ -346,6 +346,16 @@ zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $don
 zotero-citation-graph-build-errors = { $count -> [one] Ein Schritt ist fehlgeschlagen *[other] { $count } Schritte sind fehlgeschlagen }: { $what }
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
 zotero-citation-graph-build-failed = Der Graph konnte nicht aufgebaut werden: { $message }
+zotero-citation-graph-quota-title = Das OpenAlex-Kontingent ohne Schlüssel ist für heute aufgebraucht
+zotero-citation-graph-quota-body = Anfragen ohne Schlüssel teilen sich ein kleines Tageskontingent mit allen in deinem Netzwerk. Ein kostenloser Schlüssel hat ein eigenes, zehnmal so groß. Ohne ihn antwortet OpenAlex in etwa { $hours -> [one] einer Stunde *[other] { $hours } Stunden } wieder.
+zotero-citation-graph-quota-get = Kostenlosen Schlüssel holen
+zotero-citation-graph-quota-get-hint = Öffnet openalex.org/settings/api im Browser
+zotero-citation-graph-quota-key-placeholder = Schlüssel hier einfügen
+zotero-citation-graph-quota-continue = Fortsetzen
+zotero-citation-graph-quota-continue-hint = Den Schlüssel speichern und dort weitermachen, wo OpenAlex nicht mehr geantwortet hat
+zotero-citation-graph-quota-dismiss = Nicht jetzt
+zotero-citation-graph-openalex-quota-keyed = Das Tageskontingent deines OpenAlex-Schlüssels ist aufgebraucht. OpenAlex antwortet in etwa { $hours -> [one] einer Stunde *[other] { $hours } Stunden } wieder.
+zotero-citation-graph-openalex-key-refused = OpenAlex hat den API-Schlüssel nicht akzeptiert. Prüfe ihn in den Zotero-Einstellungen unter „Zitationsgraph“.
 
 
 ## Eine externe Referenz zur Bibliothek hinzufügen.

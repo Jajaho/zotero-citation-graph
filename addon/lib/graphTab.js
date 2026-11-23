@@ -29,6 +29,7 @@ let l10n = require('./l10n.js');
 let trace = require('./trace.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
+let { QUOTA, BAD_KEY } = require('../citation-graph/enrich/openalex.js');
 
 // Ordered fastest-first. Every EDGE strategy here is offline; `openalex` is
 // registered but never selected, so no edge build reaches the network. The
@@ -908,6 +909,10 @@ function mount(win, tabID, container, scope, config, options, view) {
 		view,
 		built: null,
 		building: false,
+		// Set while the page is showing the card that asks for an OpenAlex key:
+		// which pass ran out of allowance, and so which one a key continues.
+		// See endLine().
+		quota: null,
 		// The nodes the user has pointed at, as item IDs. Empty until the
 		// first click, the same way a freshly opened library tab has nothing
 		// selected.
@@ -1047,6 +1052,26 @@ async function handleMessage(win, tabID, scope, msg) {
 		case 'stop-build': {
 			let entry = open_.get(tabID);
 			if (entry) stopBuild(entry);
+			break;
+		}
+		// The key card's field -- see endLine(). The key is kept where the
+		// Settings pane keeps it, and the pass that ran out is run again: what
+		// it had been answered is in the caches, so it goes on from there.
+		// Saving the key is itself what the observer in watchChrome() resumes
+		// on, so by the second line here there may be nothing left to do.
+		case 'openalex-key': {
+			let key = cleanKey(msg.key);
+			if (!open_.get(tabID) || !key) break;
+			setPref('openalex.apiKey', key);
+			await resumeAfterQuota(tabID);
+			break;
+		}
+		// "Not now" on the same card. The page has already put it away; this is
+		// so that a key entered in Settings an hour later does not start a
+		// build in a tab that said it did not want one.
+		case 'openalex-quota-dismiss': {
+			let entry = open_.get(tabID);
+			if (entry) entry.quota = null;
 			break;
 		}
 		// The page's settings changed -- see snapshotView() in graph.js. Kept
@@ -1282,6 +1307,8 @@ async function runBuild(tabID) {
 	let alive = () => open_.get(tabID) === entry && entry.generation === generation;
 
 	entry.building = true;
+	// Whatever this build runs out of, it is not what the last one did.
+	clearQuota(entry);
 	// The last finished derivation stops being this tab's the moment another is
 	// started: it describes a graph that is on its way out. Left standing, it
 	// was still what adoptAdded() folded a new paper into -- so a paper added
@@ -1700,7 +1727,7 @@ async function buildPhases(entry, alive) {
 	// failure here must cost names and nothing else -- the graph is already
 	// on screen and correct by this point.
 	if (!toLookUp.length) {
-		status(failureLine(baseMeta.errors));
+		if (alive()) status(endLine(entry, baseMeta.errors, []));
 		return;
 	}
 	await lookUpNames(entry, alive, entry.built, progress);
@@ -1761,6 +1788,7 @@ async function runLookup(tabID) {
 	let built = entry.built;
 
 	entry.building = true;
+	clearQuota(entry);
 	try {
 		if (!entry.options.enrich) {
 			// Switching it off takes the names back off and nothing else: same
@@ -1952,7 +1980,7 @@ async function lookUpNames(entry, alive, built, progress) {
 	for (let err of enriched.meta.errors) {
 		Zotero.logError(new Error(`[zotero-citation-graph] enrich ${err.provider}: ${err.message}`));
 	}
-	status(failureLine([...(baseMeta.errors || []), ...enriched.meta.errors]));
+	status(endLine(entry, baseMeta.errors, enriched.meta.errors));
 }
 
 /**
@@ -1973,6 +2001,93 @@ function failureLine(errors) {
 		count: list.length,
 		what: (first.provider ? first.provider + ': ' : '') + first.message,
 	});
+}
+
+/**
+ * What a pass says when it ends -- and, for the one failure its user can end
+ * themselves, the card that offers the way.
+ *
+ * OpenAlex answers requests without a key out of a small daily allowance that
+ * everyone behind the same IP address draws on, so on a campus network it can
+ * be spent before this plugin has asked for anything. That arrived as "One
+ * step failed: openalex: OpenAlex 429 Too Many Requests", which is true and
+ * says nothing of the fact that a free key has an allowance of its own, ten
+ * times the size. So that failure is not a line: the page is sent a card with
+ * a link to the key and a field to paste it into (zgSetQuota in graph.js), and
+ * `entry.quota` remembers which pass to run again once there is one -- the
+ * build when the references ran out, the lookup when only the names did. The
+ * line is left to whatever else failed.
+ *
+ * With a key there is nothing to offer but the time, and a key OpenAlex will
+ * not take is the same: both are a line, naming what to wait for or correct.
+ *
+ * Only ever called for a pass that is still the tab's own.
+ *
+ * @param {Object[]} buildErrors   what the strategies reported
+ * @param {Object[]} lookupErrors  what the enrichers did
+ */
+function endLine(entry, buildErrors, lookupErrors) {
+	let fromBuild = (buildErrors || []).filter(e => e && e.message);
+	let all = [...fromBuild, ...(lookupErrors || []).filter(e => e && e.message)];
+	if (all.some(e => e.code === BAD_KEY)) return l10n.t('openalex-key-refused');
+	let spent = all.find(e => e.code === QUOTA);
+	if (!spent) return failureLine(all);
+
+	let detail = spent.detail || {};
+	let hours = hoursUntilReset(detail.resetSeconds);
+	if (detail.keyless === false) return l10n.t('openalex-quota-keyed', { hours });
+
+	entry.quota = { pass: fromBuild.some(e => e.code === QUOTA) ? 'build' : 'lookup' };
+	send(entry, 'zgSetQuota', { hours });
+	return failureLine(all.filter(e => e.code !== QUOTA));
+}
+
+/**
+ * Whole hours until OpenAlex's allowance is back, never fewer than one.
+ *
+ * From the response where it said, and from the clock where it did not: the
+ * allowance is the day's, and OpenAlex's day ends at midnight UTC.
+ */
+function hoursUntilReset(seconds) {
+	let s = Number(seconds);
+	if (!Number.isFinite(s) || s <= 0) s = 86400 - (Math.floor(Date.now() / 1000) % 86400);
+	return Math.max(1, Math.ceil(s / 3600));
+}
+
+/**
+ * A pasted key, as it can be sent: without the spaces and line ends a
+ * copy brings with it, and '' for anything that is not text or is too long to
+ * be a key at all. It travels in a header, which is why it is cleaned here and
+ * not left to fail there.
+ */
+function cleanKey(key) {
+	if (typeof key !== 'string') return '';
+	let k = key.replace(/\s+/g, '');
+	return k.length <= 200 ? k : '';
+}
+
+/** Take the key card down, on the page and in what this side remembers. */
+function clearQuota(entry) {
+	if (!entry.quota) return;
+	entry.quota = null;
+	send(entry, 'zgSetQuota', null);
+}
+
+/**
+ * Run again the pass that ran out of allowance, now that there is a key.
+ *
+ * A lookup where only the lookup ran out, since that leaves the layout being
+ * read alone; a build otherwise. Neither starts from nothing -- the papers
+ * that were answered are in the caches. A tab with no card up has nothing to
+ * continue, which is also what makes a second call for the same key harmless.
+ */
+async function resumeAfterQuota(tabID) {
+	let entry = open_.get(tabID);
+	if (!entry || !entry.quota) return;
+	let { pass } = entry.quota;
+	clearQuota(entry);
+	if (pass === 'lookup' && entry.built) await runLookup(tabID);
+	else await runBuild(tabID);
 }
 
 /**
@@ -2690,6 +2805,22 @@ function watchChrome(win) {
 		Zotero.logError(e);
 	}
 
+	// The OpenAlex key, for the tabs that are waiting on one: a key typed into
+	// the Settings pane continues them exactly as one pasted into the card
+	// does. See endLine() and resumeAfterQuota().
+	try {
+		let id = Zotero.Prefs.registerObserver('zoteroCitationGraph.openalex.apiKey', () => {
+			if (!pref('openalex.apiKey')) return;
+			for (let [tabID, entry] of [...open_]) {
+				if (entry.quota) resumeAfterQuota(tabID).catch(e => Zotero.logError(e));
+			}
+		});
+		undo.push(() => Zotero.Prefs.unregisterObserver(id));
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+
 	for (let pref of ['fontSize', 'uiDensity']) {
 		try {
 			let id = Zotero.Prefs.registerObserver(pref, () => pushChrome(null));
@@ -2796,7 +2927,7 @@ module.exports = {
 	open, openSelection, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
 	reopen, duplicate, refocus, watchCollections,
 	// Exported for the checks on what is taken from a message and from a build.
-	addTargetFor, knownOptions, itemIDsOf, failureLine,
+	addTargetFor, knownOptions, itemIDsOf, failureLine, endLine, cleanKey,
 	watchChrome,
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
 	selectedLibraryID, selectItems, holdsItems,

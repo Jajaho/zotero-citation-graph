@@ -3,7 +3,7 @@
 const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
 const { normDoi } = require('../core/normalize');
-const { toMetadata, fetchWorks, pageSize } = require('../enrich/openalex');
+const { toMetadata, fetchWorks, pageSize, endsTheAsking } = require('../enrich/openalex');
 
 /**
  * Strategy: OpenAlex `referenced_works`.
@@ -14,10 +14,13 @@ const { toMetadata, fetchWorks, pageSize } = require('../enrich/openalex');
  * so the union beat either alone by 32%. That complementarity is the reason to
  * keep it switchable rather than pick a winner.
  *
- * Cost: one list call per 50 items (10 credits each, post-Feb-2026 pricing). A
- * 500-item collection is ~10 calls. OpenAlex has required an API key since
- * 13 Feb 2026; anonymous access still works at a tenth of the free daily
- * allowance, which is why this runs without configuration.
+ * Cost: one list call per 50 items, at $0.0001 a call as the response headers
+ * price it in November 2026. A 500-item collection is ~10 calls. OpenAlex has
+ * required an API key since 13 Feb 2026; anonymous access still works at a
+ * tenth of the free daily allowance -- 1,000 calls to a free key's 10,000 --
+ * which is why this runs without configuration. That tenth is shared by
+ * everyone behind one IP address, so it can be spent before this has asked
+ * for anything: see httpError() in enrich/openalex.js for what happens then.
  *
  * The `mailto` polite-pool parameter was removed on the same date and is now
  * ignored by the server, so it is not sent. The key goes in an Authorization
@@ -105,6 +108,11 @@ module.exports.id = register({
 				}
 				catch (err) {
 					failure = failure || err;
+					// As there: a spent allowance or a refused key ends it at once.
+					if (endsTheAsking(err)) {
+						failure = err;
+						break;
+					}
 					if (++failedInARow >= GIVE_UP_AFTER) break;
 					continue;
 				}

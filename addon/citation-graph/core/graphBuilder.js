@@ -2,7 +2,7 @@
 
 const registry = require('./registry');
 const { CollectionIndex } = require('./collectionIndex');
-const { edgeKey, isExternalKey, parseExternalKey } = require('./types');
+const { edgeKey, isExternalKey, parseExternalKey, failure } = require('./types');
 const { flattenPdfText } = require('./normalize');
 const { segment } = require('../edges/refSection');
 const { refSignature } = require('../edges/refParse');
@@ -211,7 +211,7 @@ async function build(adapter, config = {}) {
 		}
 		catch (err) {
 			// One failing strategy must not lose the others' work.
-			errors.push({ provider: p.id, message: err && err.message });
+			errors.push(failure(p.id, err));
 		}
 		perProvider[p.id] = { produced, newEdges: unique, ms: Date.now() - started };
 	}

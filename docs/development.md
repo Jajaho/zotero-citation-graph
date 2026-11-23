@@ -1913,6 +1913,24 @@ tools/
   on the wire: `enrich/openalex.js` hands its signal to `fetch()`, which wants a real
   `AbortSignal`, so chrome's `{ aborted }` flag cannot be given to it — the requests already out
   come back and are cached, and are not drawn.
+- **A pass that ran out of OpenAlex's allowance asks for a key.** Requests without a key draw on
+  $0.10 a day — 1,000 list calls — shared by everyone behind one IP address, so on a campus
+  network it can be spent before the plugin has asked for anything. OpenAlex answers that with a
+  429 whose body says `reason: "daily_budget"`, the same status as a request sent too fast
+  (`requests_per_second`); `httpError()` in `enrich/openalex.js` tells them apart and marks the
+  error `code: 'quota'` with `detail: { keyless, resetSeconds }`, and both loops stop at the first
+  such refusal instead of the second. `failure()` in `core/types.js` carries `code` and `detail`
+  into `meta.errors`. `endLine()` in `lib/graphTab.js` is what a pass now ends its status line
+  with: for a keyless `quota` it sends `zgSetQuota({ hours })` and remembers in `entry.quota`
+  which pass to run again — the build when the references strategy ran out, the lookup when only
+  the names did — and leaves the line to whatever else failed. The page draws a card (`#quota`,
+  `showQuota()`) with a link to `openalex.org/settings/api`, a field and Continue, which sends
+  `openalex-key`: chrome cleans the key, keeps it in `openalex.apiKey` and calls
+  `resumeAfterQuota()`. A key typed into the Settings pane does the same through the pref
+  observer in `watchChrome()`; "Not now" sends `openalex-quota-dismiss`, which forgets the
+  pass. A new pass takes the card down with `zgSetQuota(null)`. With a key there is nothing to
+  offer, so a spent key is the line `openalex-quota-keyed`, and a key OpenAlex refuses (401, or
+  a 403 that names the key: `code: 'key'`) is `openalex-key-refused`.
 - **The page draws that as a bar in the status line's place** (`showProgress()`, `#progress`):
   *Step 2 of 4 · Scanning PDFs for DOI links*, *37 / 160*, Stop, and a 3px track under the three.
   In its place and not beside it, because the two say the same thing; `#status` is only hidden,

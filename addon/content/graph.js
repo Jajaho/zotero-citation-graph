@@ -876,6 +876,12 @@
 	let elProgressStop = el('progress-stop');
 	let elProgressBar = el('progress-bar');
 	let elProgressFill = el('progress-fill');
+	let elQuota = el('quota');
+	let elQuotaBody = el('quota-body');
+	let elQuotaGet = el('quota-get');
+	let elQuotaKey = el('quota-key');
+	let elQuotaContinue = el('quota-continue');
+	let elQuotaDismiss = el('quota-dismiss');
 	// The scenes a build is watched by, and the line that goes with each --
 	// see playScenes().
 	let elScenes = Array.from(elProgress.querySelectorAll('#progress-stage > .scene'));
@@ -1211,6 +1217,86 @@
 	elProgressStop.addEventListener('click', () => {
 		elProgressStop.disabled = true;
 		emit({ type: 'stop-build' });
+	});
+
+	/**
+	 * OpenAlex has stopped answering for the day and there was no key: the
+	 * card that says so, and offers the way on.
+	 *
+	 * Requests without a key draw on a small daily allowance shared by
+	 * everyone on the same network, so it can be gone before this graph asked
+	 * for anything. A free key has an allowance of its own. Chrome sends
+	 * { hours } -- how long until OpenAlex answers again without one -- when a
+	 * pass ends that way, and a bare `null` when the card has nothing left to
+	 * ask: a new pass has started. See endLine() in lib/graphTab.js.
+	 *
+	 * The three ways off the card each tell chrome, which owns what happens
+	 * next: the link is opened there because this page cannot open a browser,
+	 * the key is kept there because this page has no prefs, and "Not now" is
+	 * said so that a key entered in Settings later does not start a build in
+	 * a tab that declined one.
+	 */
+	const QUOTA_KEY_URL = 'https://openalex.org/settings/api';
+
+	window.zgSetQuota = function (json) {
+		let q;
+		try {
+			q = JSON.parse(json);
+		}
+		catch (e) {
+			return;
+		}
+		showQuota(q);
+	};
+
+	function showQuota(q) {
+		let on = !!q && typeof q === 'object';
+		elQuota.hidden = !on;
+		// An empty field either way: a card that comes back is a new question,
+		// and one that is put away must not keep a key in the page.
+		elQuotaKey.value = '';
+		elQuotaContinue.disabled = true;
+		if (!on) return;
+		let hours = Number(q.hours);
+		elQuotaBody.textContent = t('quota-body', { hours: hours >= 1 ? Math.round(hours) : 1 });
+	}
+
+	function submitQuotaKey() {
+		let key = elQuotaKey.value.trim();
+		if (!key) return;
+		// Pressed, and waiting on chrome: its answer is the `null` that takes
+		// the card down as the pass starts again.
+		elQuotaContinue.disabled = true;
+		emit({ type: 'openalex-key', key });
+	}
+
+	function dismissQuota() {
+		showQuota(null);
+		emit({ type: 'openalex-quota-dismiss' });
+	}
+
+	elQuotaGet.addEventListener('click', () => {
+		emit({ type: 'open-url', url: QUOTA_KEY_URL });
+		// Where the key goes when the reader comes back with it.
+		elQuotaKey.focus();
+	});
+	elQuotaKey.addEventListener('input', () => {
+		elQuotaContinue.disabled = !elQuotaKey.value.trim();
+	});
+	elQuotaContinue.addEventListener('click', submitQuotaKey);
+	elQuotaDismiss.addEventListener('click', dismissQuota);
+	// Enter in the field is Continue, and Escape anywhere on the card is "Not
+	// now" -- kept from the window's own Escape, which would take an isolation
+	// or a pick off the graph behind the card instead.
+	elQuota.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && e.target === elQuotaKey) {
+			e.preventDefault();
+			submitQuotaKey();
+		}
+		else if (e.key === 'Escape') {
+			e.stopPropagation();
+			dismissQuota();
+		}
 	});
 
 	/**

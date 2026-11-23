@@ -2370,6 +2370,89 @@ body {
 	cursor: default;
 }
 
+/*
+ * The card that asks for an OpenAlex key -- see #quota in graph.html.
+ *
+ * The build card's shape and place, a line lower: it hangs under the status
+ * line, which may have a failure of its own to report, and is centred between
+ * two insets as that card is and for the same reason. No wider than a short
+ * paragraph reads well at; the row of controls wraps before the field is
+ * squeezed to nothing in a narrow pane.
+ */
+#quota {
+	position: absolute;
+	top: 38px;
+	left: 10px;
+	right: 10px;
+	width: fit-content;
+	max-width: 440px;
+	margin-inline: auto;
+	z-index: 8;
+	box-sizing: border-box;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+	color: var(--fill-primary);
+}
+
+#quota-title {
+	font-weight: 600;
+	margin-bottom: 3px;
+}
+
+#quota-body {
+	color: var(--muted);
+	line-height: 1.4;
+	margin-bottom: 8px;
+}
+
+#quota-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+/* The filter box's look, at the width the row has left for it. */
+#quota-key {
+	flex: 1 1 140px;
+	min-width: 0;
+	font: inherit;
+	box-sizing: border-box;
+	padding: 3px 6px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--bg);
+	color: var(--fg);
+}
+
+/* And the Rebuild button's, for all three. */
+#quota button {
+	font: inherit;
+	padding: 3px 8px;
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	background: var(--zg-input-background);
+	color: var(--fill-primary);
+	cursor: pointer;
+}
+
+#quota button:hover:not([disabled]) {
+	background: var(--zg-input-hover);
+}
+
+#quota button:active:not([disabled]) {
+	background: var(--fill-quarternary);
+}
+
+/* Nothing to continue with until there is a key in the field. */
+#quota button[disabled] {
+	opacity: 0.5;
+	cursor: default;
+}
+
 /* The card an empty collection gets instead of a graph. Centred rather than
    parked in a corner: there is nothing else on the canvas to compete with it,
    and a message about the whole tab should not look like an aside about one
