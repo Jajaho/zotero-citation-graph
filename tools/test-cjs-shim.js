@@ -711,8 +711,7 @@ check('an OpenAlex ID OpenAlex does not return is marked gone, and a DOI is not'
 	const fetchImpl = async (url) => fakeOpenAlex(/ids.openalex/.test(decodeURIComponent(url)) ? [
 		{ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/one',
 			display_name: 'Still here', publication_year: 2001, authorships: [], cited_by_count: 7 },
-		// Asked for by ID, matched back to the DOI's key because that was asked
-		// for too -- and still not gone.
+		// Asked for by ID and by DOI: it answers both, and is not gone.
 		{ id: 'https://openalex.org/W3', doi: 'https://doi.org/10.1000/three',
 			display_name: 'Both ways', publication_year: 2003, authorships: [], cited_by_count: 2 },
 	] : [])(url);
@@ -725,9 +724,17 @@ check('an OpenAlex ID OpenAlex does not return is marked gone, and a DOI is not'
 		if (m['openalex:W2'].title) throw new Error('a gone work was named');
 		if (m['openalex:W1'].gone || m['openalex:W1'].title !== 'Still here') throw new Error('W1: ' + JSON.stringify(m['openalex:W1']));
 		if (m['openalex:W3'] && m['openalex:W3'].gone) throw new Error('W3 came back under its DOI and was called gone');
+		// Both of its nodes are named. Filed under the DOI alone, the other
+		// stayed nameless, was asked about again on every build, and never
+		// learned the DOI that folds the two into one.
+		for (const key of ['openalex:W3', 'doi:10.1000/three']) {
+			if (!m[key] || m[key].title !== 'Both ways' || m[key].doi !== '10.1000/three') {
+				throw new Error(key + ' was not named: ' + JSON.stringify(m[key]));
+			}
+		}
 		if (m['doi:10.1000/nobody']) throw new Error('an unknown DOI was judged: ' + JSON.stringify(m['doi:10.1000/nobody']));
 		// Answered, not named: the count of names stays a count of names.
-		if (r.meta.resolved !== 2) throw new Error('resolved ' + r.meta.resolved);
+		if (r.meta.resolved !== 3) throw new Error('resolved ' + r.meta.resolved);
 	});
 });
 
@@ -10385,6 +10392,392 @@ check('an export is saved where the user said, under a name made safe', async ()
 	}
 	finally {
 		ChromeUtils.importESModule = real;
+	}
+});
+
+// --- the audit backlog (#24): derivation ------------------------------------
+
+/** An adapter over `items` whose one attachment per paper is `texts[key]`. An
+ *  Error there is a read that rejects. */
+function backlogAdapter(items, texts) {
+	return {
+		listItems: async () => items,
+		getAttachments: async k => (texts[k] != null ? [{ key: k + '1', parentKey: k, contentType: 'application/pdf' }] : []),
+		getAttachmentText: async (attKey) => {
+			const t = texts[attKey.slice(0, -1)];
+			if (t instanceof Error) throw t;
+			return t || null;
+		},
+		getPdfLinkUris: async () => [],
+	};
+}
+const BACKLOG_BODY = 'Body text that is long enough to be read as a document. '.repeat(10);
+const arrows = edges => edges.map(e => e.from + '>' + e.to).sort().join(' ');
+/** Enough further entries for splitEntries to believe the list. */
+const FILLER_REFS = [
+	'A. Other, "Some entirely different work about lasers and optics," Opt. Lett. 1, 2 (2019).',
+	'B. Third, "Yet another different work about magnetometry," Phys. Rev. 3, 4 (2018).',
+	'C. Fourth, "A fourth work on the topic of spin relaxation," Phys. Rev. 5, 6 (2017).',
+	'D. Fifth, "One more work on the topic of spin coherence," Phys. Rev. 7, 8 (2016).',
+];
+const numbered = entries => entries.map((e, i) => '[' + (i + 1) + '] ' + e).join('\n') + '\n';
+
+check('a paper held twice does not cite its own copy, and its DOI names one of them', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'COPYONE1', title: 'A paper the library holds twice over', doi: '10.1000/same.1', date: '2020', creators: ['Smith'] },
+		{ key: 'COPYTWO2', title: 'A paper the library holds twice over', doi: 'https://doi.org/10.1000/SAME.1', date: '2020', creators: ['Smith'] },
+		{ key: 'CITING03', title: 'Another paper that cites the first', doi: '10.1000/c.3', date: '2021', creators: ['Jones'] },
+	];
+	// Each copy's PDF prints the paper's own DOI, as a footer does; the third
+	// paper cites it by DOI and by title.
+	const own = BACKLOG_BODY + '\nReferences\n[1] J. Doe, Something else entirely, 2019.\n'
+		+ '[2] Footer text https://doi.org/10.1000/same.1 and enough more of it to pass the floor a section has.\n';
+	const texts = {
+		COPYONE1: own,
+		COPYTWO2: own,
+		CITING03: BACKLOG_BODY + '\nReferences\n[1] J. Smith, A paper the library holds twice over, J. Test 1, 2 (2020). doi:10.1000/same.1\n'
+			+ '[2] J. Doe, Something else entirely and long enough to count, J. Test 3, 4 (2019).\n',
+	};
+	const r = await cg.build(backlogAdapter(items, texts), { offline: true, enable: ['text-doi', 'title-match'] });
+	// It used to be COPYONE1>COPYTWO2 (the footer, read as a citation of the
+	// twin) and CITING03 to both copies: the DOI named the last holder and
+	// the title the first.
+	if (arrows(r.edges) !== 'CITING03>COPYONE1') throw new Error('edges: ' + arrows(r.edges));
+	if (r.edges[0].via.length !== 2) throw new Error('the two strategies named different copies: ' + r.edges[0].via);
+
+	const { CollectionIndex } = cg;
+	const index = new CollectionIndex(items);
+	if (!index.sameWork('COPYONE1', 'COPYTWO2')) throw new Error('one DOI, two works');
+	if (index.sameWork('COPYONE1', 'CITING03')) throw new Error('two DOIs, one work');
+	// A shared title is not a shared identity, and neither is having no DOI.
+	const untold = new CollectionIndex([{ key: 'A', title: 'Editorial' }, { key: 'B', title: 'Editorial' }]);
+	if (untold.sameWork('A', 'B')) throw new Error('two items without a DOI were called one work');
+	if (!untold.sameWork('A', 'A')) throw new Error('an item is not itself');
+});
+
+check('a marker set flush against its author is still taken off the entry', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// "[1]Smith, J." is how the splitter finds it, so it is how the parser gets
+	// it. With the marker left on, no anchored author pattern matched.
+	const apa = n => `[${n}]Smith, J. A., & Jones, B. (2019). Thermal transport in layered materials at low temperature. Journal of Things, 12(3), 45-67.`;
+	const p = R.parseEntry(apa(1), R.detectStyle([apa(1), apa(2), apa(3)]));
+	if (p.surname !== 'Smith') throw new Error('surname: ' + p.surname);
+	if (/\[/.test(p.authors)) throw new Error('the marker is in the authors: ' + p.authors);
+
+	// A Nature list set that way read as APA, which finds no title in it.
+	const nature = [
+		'1.Kucsko, G. et al. Nanometre-scale thermometry in a living cell. Nature 500, 54–58 (2013).',
+		'2.Maze, J. R. et al. Nanoscale magnetic sensing with an individual electronic spin in diamond. Nature 455, 644–647 (2008).',
+		'3.Balasubramanian, G. et al. Nanoscale imaging magnetometry with diamond spins under ambient conditions. Nature 455, 648–651 (2008).',
+	];
+	const style = R.detectStyle(nature);
+	if (style !== 'nature') throw new Error('style: ' + style);
+	const k = R.parseEntry(nature[0], style);
+	if (k.title !== 'Nanometre-scale thermometry in a living cell' || k.surname !== 'Kucsko') {
+		throw new Error(JSON.stringify([k.surname, k.title]));
+	}
+	// With its space it parses as it did, and a number that is not a marker
+	// stays: a capital has to follow one that has no space.
+	const spaced = R.parseEntry(nature[0].replace('1.', '1. '), 'nature');
+	if (spaced.title !== k.title) throw new Error('spaced: ' + spaced.title);
+	const t = R.parseEntry('[4] J. Roe, "3.5 GHz resonators made of single-crystal diamond," Appl. Phys. Lett. 1, 2 (2015).', 'ieee');
+	if (t.title !== '3.5 GHz resonators made of single-crystal diamond') throw new Error('title: ' + t.title);
+});
+
+check('a DOI that wraps at one of its own hyphens keeps it', () => {
+	const N = require_('./citation-graph/core/normalize');
+	const text = 'J. Heat Transfer. doi:10.1016/0017-\n9310(69)90011-8.\nSee https://doi.org/10.1038/s41586-\n  020-2649-2 for more.';
+	const dois = N.findDois(N.flattenPdfText(text));
+	if (JSON.stringify(dois) !== JSON.stringify(['10.1016/0017-9310(69)90011-8', '10.1038/s41586-020-2649-2'])) {
+		throw new Error(JSON.stringify(dois));
+	}
+	// A word broken at the margin still loses the hyphen that broke it, and so
+	// does one that merely follows a DOI on the same line.
+	if (N.flattenPdfText('nitrogen-va-\ncancy centres') !== 'nitrogen-vacancy centres') throw new Error('prose kept its break');
+	if (N.flattenPdfText('doi:10.1000/abc.1 and a ther-\nmometer') !== 'doi:10.1000/abc.1 and a thermometer') {
+		throw new Error(N.flattenPdfText('doi:10.1000/abc.1 and a ther-\nmometer'));
+	}
+});
+
+check('an entry with an arXiv id still finds the paper the library holds by its title', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'CITING01', title: 'Citing paper with a list of references', date: '2022', creators: ['Doe'] },
+		{ key: 'HELDPRE2', title: 'Quantum sensing with diamond spins at room temperature', date: '2021', creators: ['Smith'] },
+	];
+	const refs = numbered(['J. Smith, "Quantum sensing with diamond spins at room temperature," arXiv:2101.00001 (2021).',
+		'E. Else, "A preprint that nobody here holds, about something else," arXiv:1905.01234 (2019).', ...FILLER_REFS]);
+	const r = await cg.build(backlogAdapter(items, { CITING01: BACKLOG_BODY + '\nReferences\n' + refs }),
+		{ offline: true, enable: ['ref-strings'], includeExternal: true });
+	const to = r.edges.map(e => e.to);
+	// It returned from the arXiv branch with a ghost, beside the paper's own node.
+	if (!to.includes('HELDPRE2')) throw new Error('no edge to the held preprint: ' + to.join(' '));
+	if (to.includes('arxiv:2101.00001')) throw new Error('the held preprint is also a ghost');
+	// One the library does not hold is still an outside reference under its id.
+	if (!to.includes('arxiv:1905.01234')) throw new Error('lost the outside preprint: ' + to.join(' '));
+});
+
+check('a title inside a longer held title is not cited by a citation of the longer one', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'CITING01', title: 'Citing paper with a list of references', date: '2022', creators: ['Doe'] },
+		{ key: 'SHORTER2', title: 'Quantum sensing with nitrogen vacancy centers', date: '2015', creators: ['Short'] },
+		{ key: 'LONGER03', title: 'Quantum sensing with nitrogen vacancy centers in diamond under high pressure', date: '2019', creators: ['Long'] },
+		{ key: 'SAMEAS04', title: 'Quantum sensing with nitrogen-vacancy centers', date: '2016', creators: ['Twin'] },
+	];
+	const longer = '[1] A. Long, Quantum sensing with nitrogen vacancy centers in diamond under high pressure, Phys. Rev. 1, 2 (2019).\n'
+		+ '[2] B. Other, Some other paper that is of no concern here, J. Other 3, 4 (2018).\n';
+	const build = refs => cg.build(backlogAdapter(items, { CITING01: BACKLOG_BODY + '\nReferences\n' + refs }),
+		{ offline: true, enable: ['title-match'] });
+	const one = await build(longer);
+	if (arrows(one.edges) !== 'CITING01>LONGER03') throw new Error('cites the longer only, got: ' + arrows(one.edges));
+	// Cited in its own right, the shorter one is found -- and so is the other
+	// item of the same title, as two held items with one title always were.
+	const both = await build(longer + '[3] C. Short, Quantum sensing with nitrogen vacancy centers, Rev. Mod. Phys. 5, 6 (2015).\n');
+	if (arrows(both.edges) !== 'CITING01>LONGER03 CITING01>SAMEAS04 CITING01>SHORTER2') throw new Error('got: ' + arrows(both.edges));
+});
+
+check('a short title needs the entry\'s author or year behind it', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'CITING01', title: 'Citing paper with a list of references', date: '2022', creators: ['Doe'] },
+		{ key: 'GENERIC2', title: 'Introduction', date: '1990', creators: ['Held'] },
+		{ key: 'SENSING3', title: 'Quantum sensing', date: '2017', creators: ['Degen'] },
+		{ key: 'BYYEAR04', title: 'Diamond photonics', date: '2011', creators: ['Aharonovich'] },
+		{ key: 'LONGONE5', title: 'A title quite long enough to be nobody else\'s', date: '2001', creators: ['Unparsed'] },
+	];
+	const refs = numbered([
+		// Somebody else's "Introduction", twenty years on.
+		'J. Stranger, "Introduction," in Some Book of Essays (Publisher, 2011).',
+		'C. L. Degen, F. Reinhard, and P. Cappellaro, "Quantum sensing," Rev. Mod. Phys. 89, 035002 (2017).',
+		// The author is not the one Zotero has first, and the year is.
+		'B. Greentree, "Diamond photonics," Nat. Photonics 5, 397 (2011).',
+		'N. Obody, "A title quite long enough to be nobody else\'s," J. Test 1, 2 (1995).',
+		...FILLER_REFS]);
+	const r = await cg.build(backlogAdapter(items, { CITING01: BACKLOG_BODY + '\nReferences\n' + refs }),
+		{ offline: true, enable: ['ref-strings'] });
+	if (arrows(r.edges) !== 'CITING01>BYYEAR04 CITING01>LONGONE5 CITING01>SENSING3') throw new Error('got: ' + arrows(r.edges));
+	const conf = Object.fromEntries(r.edges.map(e => [e.to, e.confidence]));
+	if (conf.SENSING3 !== 0.8 || conf.BYYEAR04 !== 0.65 || conf.LONGONE5 !== 0.65) throw new Error(JSON.stringify(conf));
+});
+
+check('a journal with no word to match is named by no window, not by every one', () => {
+	const L = require_('./citation-graph/edges/locatorMatch.js');
+	const N = require_('./citation-graph/core/normalize');
+	const index = L.locatorIndex([
+		{ key: 'CJK', volume: '81', pages: '2590-2595', publication: '物理学报', date: '1997' },
+		{ key: 'STOP', volume: '12', pages: '100', publication: 'The', date: '2001' },
+		{ key: 'REAL', volume: '89', pages: '035002', publication: 'Reviews of Modern Physics', date: '2017' },
+	]);
+	if (index.has('81 2590') || index.has('12 100')) throw new Error('a journal without tokens was indexed');
+	if (!index.has('89 035002')) throw new Error('a journal with tokens was not');
+	if (L.namesJournal(['j', 'appl', 'phys'], [])) throw new Error('no tokens matched a window');
+	const flat = N.normTitle('13 S.-M. Lee and D. G. Cahill, J. Appl. Phys. 81, 2590 (1997). 14 A. Nobody, Phys. Rev. 12, 100 (2001). '
+		+ '15 C. L. Degen, Rev. Mod. Phys. 89, 035002 (2017).');
+	const hits = L.scanLocators(flat, index, { journalWindow: 80, requireYear: true, yearWindow: 40 }, 'SELF').map(h => h.key);
+	if (hits.join(' ') !== 'REAL') throw new Error('hits: ' + hits.join(' '));
+});
+
+check('a read that rejects costs its own attachment, not the strategy', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'BROKEN01', title: 'First citing paper, whose file cannot be read', date: '2022', creators: ['Doe'], doi: '10.1000/a.1' },
+		{ key: 'NOLIST02', title: 'A paper whose attachments cannot be listed', date: '2022', creators: ['Moe'], doi: '10.1000/n.2' },
+		{ key: 'CITING03', title: 'Second citing paper, whose file can', date: '2022', creators: ['Roe'], doi: '10.1000/b.3' },
+		{ key: 'CITED004', title: 'A cited paper that the second one cites', date: '2020', creators: ['Poe'], doi: '10.1000/c.4' },
+	];
+	const adapter = backlogAdapter(items, {
+		BROKEN01: new Error('disk says no'),
+		CITING03: BACKLOG_BODY + '\nReferences\n[1] E. Poe, A cited paper that the second one cites, J. Test 1, 2 (2020). doi:10.1000/c.4\n'
+			+ '[2] J. Doe, Something else entirely and long enough to count, J. Test 3, 4 (2019).\n',
+	});
+	const list = adapter.getAttachments;
+	adapter.getAttachments = async (k) => {
+		if (k === 'NOLIST02') throw new Error('no such item');
+		return list(k);
+	};
+	adapter.getPdfLinkUris = async (attKey) => {
+		if (attKey === 'CITING031') throw new Error('not a PDF after all');
+		return [];
+	};
+	const sections = new Map();
+	const r = await cg.build(adapter, { offline: true, enable: ['text-doi', 'title-match', 'pdf-links'], sections });
+	// The first paper's rejection used to end text-doi and title-match before
+	// either reached the third paper.
+	if (arrows(r.edges) !== 'CITING03>CITED004') throw new Error('edges: ' + arrows(r.edges));
+	if (r.edges[0].via.slice().sort().join(' ') !== 'text-doi title-match') throw new Error('via: ' + r.edges[0].via);
+	// Each failure once, however many strategies met it.
+	const said = r.meta.errors.map(e => e.message).sort();
+	const want = ['getAttachmentText(BROKEN011): disk says no', 'getAttachments(NOLIST02): no such item',
+		'getPdfLinkUris(CITING031): not a PDF after all'];
+	if (JSON.stringify(said) !== JSON.stringify(want)) throw new Error('errors: ' + JSON.stringify(r.meta.errors));
+	// And the failed read is not handed on as "no text": the next build asks again.
+	if (sections.has('BROKEN011')) throw new Error('a failed read was carried over');
+	if (!sections.has('CITING031')) throw new Error('a good read was not');
+});
+
+check('a DOI out of a link sheds .pdf and ;jsessionid', () => {
+	const N = require_('./citation-graph/core/normalize');
+	const cases = {
+		'https://journals.aps.org/prb/pdf/10.1103/PhysRevB.80.115202.pdf': '10.1103/physrevb.80.115202',
+		'https://www.sciencedirect.com/science/article/pii/10.1016/j.carbon.2020.01.001;jsessionid=AB12CD?x=1': '10.1016/j.carbon.2020.01.001',
+		'https://link.springer.com/content/pdf/10.1007/s00339-020-1.pdf': '10.1007/s00339-020-1',
+		// What a DOI may really contain is left alone.
+		'https://doi.org/10.1002/1521-396X(200009)181:1<99::AID-PSSA99>3.0.CO;2-5': '10.1002/1521-396x(200009)181:1<99::aid-pssa99>3.0.co;2-5',
+		'https://doi.org/10.1000/pdf.2019.004': '10.1000/pdf.2019.004',
+	};
+	for (const [url, want] of Object.entries(cases)) {
+		const got = N.findDois(url);
+		if (got.length !== 1 || got[0] !== want) throw new Error(url + ' -> ' + JSON.stringify(got));
+	}
+	if (N.normDoi('10.1103/PhysRevB.80.115202.pdf') !== '10.1103/physrevb.80.115202') throw new Error('normDoi kept .pdf');
+});
+
+check('a roman section number, "Notes and references" and "Literatur" head a reference list', () => {
+	const { segment } = require_('./citation-graph/edges/refSection.js');
+	const body = 'Body text that is long enough to be read as a document. '.repeat(40);
+	const refs = '\n[1] A. One, First paper title here, J. Test 1, 1 (2001).\n[2] B. Two, Second paper title here, J. Test 2, 2 (2002).\n'
+		+ '[3] C. Three, Third paper title here, J. Test 3, 3 (2003).\n';
+	for (const heading of ['VII. REFERENCES', 'IV REFERENCES', 'Notes and references', 'Literatur', 'Literaturverzeichnis',
+		'References cited', '7. References', 'References']) {
+		const seg = segment(body + '\n' + heading + refs);
+		if (seg.quality !== 'heading') throw new Error(JSON.stringify(heading) + ' read as ' + seg.quality);
+		if (!seg.text.startsWith('[1] A. One')) throw new Error(JSON.stringify(heading) + ' starts at ' + JSON.stringify(seg.text.slice(0, 20)));
+	}
+	// A sentence that ends in the word is not a heading, and neither is a word
+	// that merely starts with the letters of a numeral.
+	for (const line of ['as listed in the references', 'Civil references', 'Literature']) {
+		const seg = segment(body + '\n' + line + refs);
+		if (seg.quality === 'heading') throw new Error(JSON.stringify(line) + ' was read as a heading');
+	}
+});
+
+/** A fake OpenAlex that pages as the real one does: `per-page` results from
+ *  `page` on, and the count of everything the filter matched. */
+function pagedOpenAlex(works, calls = []) {
+	return async (url) => {
+		calls.push(url);
+		const q = new URL(url).searchParams;
+		const per = Number(q.get('per-page'));
+		const page = Number(q.get('page') || 1);
+		const asked = q.get('filter').slice(q.get('filter').indexOf(':') + 1).split('|');
+		const hits = works.filter(w => asked.includes(w.doi.slice('https://doi.org/'.length)));
+		return { ok: true, status: 200, json: async () => ({ meta: { count: hits.length }, results: hits.slice((page - 1) * per, page * per) }) };
+	};
+}
+
+check('a work OpenAlex holds twice does not push another off the page', async () => {
+	const cg = require_('./citation-graph/index.js');
+	const O = require_('./citation-graph/enrich/openalex.js');
+	const work = (id, doi, extra) => Object.assign({ id: 'https://openalex.org/' + id, doi: 'https://doi.org/' + doi,
+		display_name: 'Title of ' + doi, publication_year: 2010, authorships: [], cited_by_count: 3 }, extra);
+	// Two DOIs, three records: the first DOI has a stub beside its record.
+	const works = [work('W1', '10.1000/one', { referenced_works: ['https://openalex.org/W3'] }),
+		work('W9', '10.1000/one', { referenced_works: [] }),
+		work('W2', '10.1000/two', { referenced_works: ['https://openalex.org/W3'] }),
+		work('W3', '10.1000/three', { referenced_works: [] })];
+
+	// The lookup. A page of exactly two held W1 and W9, and 10.1000/two was
+	// never named.
+	const calls = [];
+	const r = await cg.enrich(['doi:10.1000/one', 'doi:10.1000/two'], { enable: ['openalex'],
+		providers: { openalex: { fetchImpl: pagedOpenAlex(works, calls) } } });
+	if (!r.metadata['doi:10.1000/two'] || r.metadata['doi:10.1000/two'].title !== 'Title of 10.1000/two') {
+		throw new Error('pushed off the page: ' + JSON.stringify(Object.keys(r.metadata)));
+	}
+	if (calls.length !== 1) throw new Error(calls.length + ' requests for one batch');
+
+	// More matches than a page holds are followed to the end, by the count.
+	const paged = [];
+	const url = new URL('https://api.openalex.org/works?per-page=1&filter=doi:10.1000/one|10.1000/two');
+	const all = await O.fetchWorks(pagedOpenAlex(works, paged), url, {});
+	if (all.map(w => w.id.slice(-2)).join(' ') !== 'W1 W9 W2') throw new Error('pages: ' + all.map(w => w.id).join(' '));
+	if (paged.length !== 3 || /[?&]page=/.test(paged[0]) || !/[?&]page=3/.test(paged[2])) throw new Error(paged.join('\n'));
+	if (O.pageSize(50) !== 100 || O.pageSize(150) !== 200 || O.pageSize(0) !== 1) throw new Error('pageSize');
+
+	// The edge strategy, where the DOI pushed off was remembered as a paper
+	// with no references, and the stub replaced the record by coming second.
+	const items = [
+		{ key: 'ONE', title: 'The first held paper', doi: '10.1000/one', date: '2010' },
+		{ key: 'TWO', title: 'The second held paper', doi: '10.1000/two', date: '2010' },
+		{ key: 'THREE', title: 'The third held paper', doi: '10.1000/three', date: '2009' },
+	];
+	const store = new Map();
+	const cache = { get: k => store.get(k) || null, set: (k, v) => store.set(k, v) };
+	const g = await cg.build(backlogAdapter(items, {}), { enable: ['openalex'],
+		providers: { openalex: { fetchImpl: pagedOpenAlex(works), batchSize: 2, cache } } });
+	if (arrows(g.edges) !== 'ONE>THREE TWO>THREE') throw new Error('edges: ' + arrows(g.edges) + ' ' + JSON.stringify(g.meta.errors));
+	if (store.get('doi:10.1000/one').id !== 'https://openalex.org/W1') throw new Error('the stub won: ' + JSON.stringify(store.get('doi:10.1000/one')));
+	if (store.get('doi:10.1000/two').refs.length !== 1) throw new Error('remembered as citing nothing');
+});
+
+check('the longest run of markers is the one the walk from every start found, in one pass', () => {
+	const R = require_('./citation-graph/edges/refParse.js');
+	// The loop this replaced: from each marker, take every later one that
+	// numbers one to three above the last taken.
+	const walk = (marks, minRun) => {
+		let best = null;
+		for (let start = 0; start < marks.length; start++) {
+			if (marks[start].n < 1) continue;
+			const run = [marks[start]];
+			let expected = marks[start].n + 1;
+			for (let k = start + 1; k < marks.length; k++) {
+				if (marks[k].n < expected || marks[k].n > expected + 2) continue;
+				run.push(marks[k]);
+				expected = marks[k].n + 1;
+			}
+			if (!best || run.length > best.length) best = run;
+		}
+		return best && best.length >= minRun ? best : null;
+	};
+	const rand = mulberry32(24);
+	for (let round = 0; round < 300; round++) {
+		const count = Math.floor(rand() * 60);
+		const span = 1 + Math.floor(rand() * 40);
+		const marks = Array.from({ length: count }, (_, i) => ({ index: i * 10, n: Math.floor(rand() * span) }));
+		// Half the time a real list is in there among the strays.
+		if (round % 2) for (let n = 1; n <= 12; n++) marks.splice(Math.floor(rand() * marks.length), 0, { index: -n, n });
+		const minRun = 1 + Math.floor(rand() * 6);
+		const was = walk(marks, minRun);
+		const is = R.longestRun(marks, minRun);
+		if ((was === null) !== (is === null) || (was && (was.length !== is.length || was.some((m, i) => m !== is[i])))) {
+			throw new Error('round ' + round + ': ' + JSON.stringify(was) + ' became ' + JSON.stringify(is));
+		}
+	}
+	if (R.longestRun([], 1) !== null || R.longestRun([{ index: 0, n: 0 }], 1) !== null) throw new Error('a run of nothing');
+
+	// A table of numbers swept into a guessed section: 937 ms at 32,000
+	// markers when every start walked its own run, and four times that here.
+	const many = Array.from({ length: 64000 }, (_, i) => ({ index: i, n: (i * 7) % 900 + 1 }));
+	const t0 = Date.now();
+	R.longestRun(many, 3);
+	const ms = Date.now() - t0;
+	if (ms > 1000) throw new Error('took ' + ms + 'ms');
+});
+
+check('the section two strategies scan is folded once', async () => {
+	const S = require_('./citation-graph/edges/refSection.js');
+	const N = require_('./citation-graph/core/normalize');
+	let reads = 0;
+	const seg = { quality: 'heading', get flat() { reads++; return '[1] J. Smith, Nanometre-Scale Thermométry, 2013.'; } };
+	const first = S.normalizedFlat(seg);
+	if (first !== N.normTitle(seg.flat)) throw new Error('not normTitle of the flat text: ' + first);
+	reads = 0;
+	if (S.normalizedFlat(seg) !== first || reads !== 0) throw new Error('folded again: ' + reads + ' reads');
+
+	// Through a build: title-match and locator-match are handed one section.
+	const cg = require_('./citation-graph/index.js');
+	const items = [
+		{ key: 'CITING01', title: 'Citing paper with a list of references', date: '2022', creators: ['Doe'] },
+		{ key: 'CITED002', title: 'Thermal conductivity of amorphous solids above the plateau', date: '1987',
+			creators: ['Cahill'], publication: 'Physical Review B', volume: '35', pages: '4067-4073' },
+	];
+	const text = BACKLOG_BODY + '\nReferences\n[1] D. G. Cahill and R. O. Pohl, Thermal conductivity of amorphous solids above the plateau, '
+		+ 'Phys. Rev. B 35, 4067 (1987).\n[2] J. Doe, Something else entirely and long enough to count, J. Test 3, 4 (2019).\n';
+	const r = await cg.build(backlogAdapter(items, { CITING01: text }), { offline: true, enable: ['title-match', 'locator-match'] });
+	if (arrows(r.edges) !== 'CITING01>CITED002' || r.edges[0].via.length !== 2) {
+		throw new Error(arrows(r.edges) + ' via ' + (r.edges[0] && r.edges[0].via));
 	}
 });
 

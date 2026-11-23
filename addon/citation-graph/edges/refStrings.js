@@ -4,6 +4,7 @@ const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
 const { readSection } = require('./refSection');
 const { splitEntries, detectStyle, parseEntry, refSignature } = require('./refParse');
+const { normTitle } = require('../core/normalize');
 
 /**
  * Strategy: every work named in the reference section, whether or not anything
@@ -63,6 +64,10 @@ module.exports.id = register({
 		// because one parsed entry is less evidence than a whole section.
 		titleConfidence: 0.8,
 		titleConfidenceNoAuthor: 0.65,
+		// Under this many characters (normalized) a title is one that several
+		// works share, and the match needs the entry's author or year behind
+		// it. Title-match's floor, for the same reason it has one.
+		corroborateBelow: 30,
 		// A paper cannot cite something published after it; one year of slack
 		// for preprint/issue-date mismatches. Same rule as title-match.
 		rejectImpossibleYear: true,
@@ -122,7 +127,10 @@ function resolve(item, p, ctx) {
 	// 10.1017/jfm.2024.69 Published online by Cambridge University Press") that
 	// the split left on the entry above it. The entry is still a reference, so
 	// it is resolved by its other fields.
-	if (p.doi && index.lookupDoi(p.doi) === item.key) p = { ...p, doi: null };
+	// "Its own" by the work rather than by the key: a paper held twice has one
+	// DOI and two keys, and lookupDoi can only answer with one of them.
+	const own = p.doi && index.lookupDoi(p.doi);
+	if (own && index.sameWork(own, item.key)) p = { ...p, doi: null };
 
 	// 1-2. A printed DOI. Self-validating, so it outranks everything parsed.
 	if (p.doi) {
@@ -148,6 +156,13 @@ function resolve(item, p, ctx) {
 			return held === item.key ? null
 				: edge(item.key, held, 'ref-strings', 0.85, { ...where, arxiv: p.arxivId });
 		}
+		// Nothing fills the index's arXiv map yet, so "not held under this id"
+		// is what every arXiv id answers -- including the one on a preprint
+		// the library holds and the entry names by its title. Returning from
+		// here made that paper an outside reference to itself, a ghost beside
+		// its own node. So the title is asked before the ghost is minted.
+		const byTitle = heldByTitle(item, p, ctx);
+		if (byTitle) return byTitle;
 		if (!includeExternal) return null;
 		const key = externalKey('arxiv', p.arxivId);
 		note(describe, key, p);
@@ -156,23 +171,9 @@ function resolve(item, p, ctx) {
 
 	if (!p.title) return null;
 
-	// 4. A title the collection holds. Exact match on the normalized form --
-	//    this is a lookup, not the substring scan title-match does, so a short
-	//    title is safe here where it would collide there.
-	const held = index.lookupTitle(p.title);
-	if (held && held !== item.key) {
-		const target = index.byKey.get(held);
-		if (impossibleYear(options, citingYear, target)) return null;
-		// The author is in the same entry as the title, which is the one thing
-		// a per-entry strategy has that a per-section one cannot: title-match
-		// has to go looking in a window of surrounding characters and settle
-		// for whatever is nearby.
-		const agrees = surnameAgrees(p.surname, target);
-		const conf = agrees ? options.titleConfidence : options.titleConfidenceNoAuthor;
-		return edge(item.key, held, 'ref-strings', round(conf * factor),
-			{ ...where, matchedTitle: true, author: agrees });
-	}
-	if (held) return null;
+	// 4. A title the collection holds.
+	const byTitle = heldByTitle(item, p, ctx);
+	if (byTitle !== undefined) return byTitle;
 
 	// 5. A work named but not identified and not held.
 	if (!includeExternal) return null;
@@ -185,6 +186,49 @@ function resolve(item, p, ctx) {
 	note(describe, key, p);
 	const conf = Math.min(p.parseConfidence * factor, options.maxGhostConfidence);
 	return edge(item.key, key, 'ref-strings', round(conf), { ...where, external: true });
+}
+
+/**
+ * The entry's title against the titles the collection holds.
+ *
+ * Exact match on the normalized form -- a lookup, not the substring scan
+ * title-match does, so a short title cannot collide with the text around it.
+ * It can still collide with another work. "Introduction", "Editorial" and
+ * "Quantum sensing" are each the whole title of many papers, and an entry
+ * naming one of them is not thereby naming the one the library holds. So a
+ * title under `corroborateBelow` characters has to be backed by the entry's
+ * own author or year; a longer one is taken on its own, as before, and only
+ * scored lower when the author does not agree.
+ *
+ * @returns {undefined|null|Object} undefined when no held item has the title,
+ *   null when one has and the entry is not a citation of it, else the edge
+ */
+function heldByTitle(item, p, ctx) {
+	const { index, options, citingYear, factor, where } = ctx;
+	if (!p.title) return undefined;
+	const held = index.lookupTitle(p.title);
+	if (!held) return undefined;
+	if (held === item.key) return null;
+	const target = index.byKey.get(held);
+	if (impossibleYear(options, citingYear, target)) return null;
+	// The author is in the same entry as the title, which is the one thing
+	// a per-entry strategy has that a per-section one cannot: title-match
+	// has to go looking in a window of surrounding characters and settle
+	// for whatever is nearby.
+	const agrees = surnameAgrees(p.surname, target);
+	if (!agrees && normTitle(p.title).length < options.corroborateBelow
+			&& !yearAgrees(p.year, target)) {
+		return null;
+	}
+	const conf = agrees ? options.titleConfidence : options.titleConfidenceNoAuthor;
+	return edge(item.key, held, 'ref-strings', round(conf * factor),
+		{ ...where, matchedTitle: true, author: agrees });
+}
+
+/** The entry's year against the held item's, with the usual year of slack. */
+function yearAgrees(year, target) {
+	const y = target && yearOf(target.date);
+	return !!year && !!y && Math.abs(year - y) <= 1;
 }
 
 /** What the node IS, as opposed to why the edge exists. */

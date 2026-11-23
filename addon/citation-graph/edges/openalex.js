@@ -3,7 +3,7 @@
 const { register } = require('../core/registry');
 const { edge, externalKey } = require('../core/types');
 const { normDoi } = require('../core/normalize');
-const { toMetadata } = require('../enrich/openalex');
+const { toMetadata, fetchWorks, pageSize } = require('../enrich/openalex');
 
 /**
  * Strategy: OpenAlex `referenced_works`.
@@ -91,16 +91,17 @@ module.exports.id = register({
 				if (signal && signal.aborted) return;
 				const batch = ask.slice(i, i + options.batchSize);
 				const url = new URL(options.endpoint);
-				url.searchParams.set('per-page', String(options.batchSize));
+				// Room for a DOI OpenAlex holds twice: see pageSize. Here a DOI
+				// pushed off the page was worse than unnamed -- it was remembered
+				// below as a paper with no references.
+				url.searchParams.set('per-page', String(pageSize(batch.length)));
 				url.searchParams.set('select', 'id,doi,referenced_works,'
 					+ 'display_name,publication_year,authorships,cited_by_count,type');
 				url.searchParams.set('filter', 'doi:' + batch.join('|'));
 
-				let json;
+				let results;
 				try {
-					const res = await fetch_(url.toString(), { headers });
-					if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
-					json = await res.json();
+					results = await fetchWorks(fetch_, url, { headers });
 				}
 				catch (err) {
 					failure = failure || err;
@@ -109,12 +110,16 @@ module.exports.id = register({
 				}
 				failedInARow = 0;
 				const answered = new Set();
-				for (const w of (json && json.results) || []) {
-					const d = normDoi(w.doi);
+				for (const w of results) {
+					const d = normDoi(w && w.doi);
 					if (!d || !keyByDoi.has(d)) continue;
+					const entry = { id: w.id || null, refs: w.referenced_works || [] };
+					// Of two records for one DOI, the one that lists references
+					// is the paper; the other is a stub that was never merged
+					// into it, and must not replace it by coming second.
+					if (answered.has(d) && works.get(d).refs.length >= entry.refs.length) continue;
 					answered.add(d);
 					const key = externalKey('doi', d);
-					const entry = { id: w.id || null, refs: w.referenced_works || [] };
 					works.set(d, entry);
 					if (options.cache) options.cache.set(key, entry);
 					if (options.metadataCache) {

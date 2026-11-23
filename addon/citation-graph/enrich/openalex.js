@@ -95,17 +95,15 @@ module.exports.id = register({
 
 			for (const [ns, ids] of byNs) {
 				const url = new URL(options.endpoint);
-				url.searchParams.set('per-page', String(Math.max(ids.length, 1)));
+				url.searchParams.set('per-page', String(pageSize(ids.length)));
 				url.searchParams.set('select',
 					'id,doi,display_name,publication_year,authorships,cited_by_count,type');
 				url.searchParams.set('filter',
 					(ns === 'doi' ? 'doi:' : 'ids.openalex:') + ids.join('|'));
 
-				let json;
+				let results;
 				try {
-					const res = await fetch_(url.toString(), { headers, signal });
-					if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
-					json = await res.json();
+					results = await fetchWorks(fetch_, url, { headers, signal });
 				}
 				catch (err) {
 					failure = failure || err;
@@ -114,13 +112,12 @@ module.exports.id = register({
 				}
 				failedInARow = 0;
 				// By the ID each work came back under, not by the key it was
-				// matched to: a work asked for by ID is matched to its DOI's key
-				// when that was asked for too.
+				// matched to: a work asked for by ID is also filed under its
+				// DOI's key when that was asked for too.
 				const answered = new Set();
-				for (const w of (json && json.results) || []) {
+				for (const w of results) {
 					if (w && w.id) answered.add(shortOpenAlexId(w.id));
-					const m = toMetadata(w, byFilterValue);
-					if (m) out.push(m);
+					for (const m of allMetadata(w, byFilterValue)) out.push(m);
 				}
 				// An OpenAlex ID that OpenAlex itself, asked by that ID, did not
 				// return is a work it no longer has a record of -- deleted, or
@@ -147,20 +144,80 @@ module.exports.id = register({
 	},
 });
 
+// The most OpenAlex returns in one page.
+const MAX_PER_PAGE = 200;
+// Pages read for one batch before the rest is left: a guard against a
+// response whose count never comes down, not a number anything should reach.
+const MAX_PAGES = 5;
+
+/**
+ * How many results to ask for when asking about `n` identifiers.
+ *
+ * Not `n`. OpenAlex holds some works twice -- two records under one DOI -- so
+ * fifty DOIs can come back as fifty-one works, and with a page of exactly
+ * fifty the last of them was left behind: a DOI that OpenAlex knows, never
+ * named. Twice over is room for every one of them to be doubled, and
+ * fetchWorks follows the count for whatever is still left.
+ */
+function pageSize(n) {
+	return Math.min(MAX_PER_PAGE, Math.max(2 * n, 1));
+}
+
+/**
+ * Every work a filter matches, following the pages until the count the first
+ * one reported is met. Throws on a response that is not ok.
+ *
+ * @param {URL} url  the request, to which a `page` is added past the first
+ * @returns {Promise<Object[]>}
+ */
+async function fetchWorks(fetch_, url, init) {
+	const results = [];
+	for (let page = 1; page <= MAX_PAGES; page++) {
+		if (page > 1) url.searchParams.set('page', String(page));
+		const res = await fetch_(url.toString(), init);
+		if (!res.ok) throw new Error(`OpenAlex ${res.status} ${res.statusText}`);
+		const json = await res.json();
+		const got = (json && json.results) || [];
+		for (const w of got) results.push(w);
+		const total = Number(json && json.meta && json.meta.count);
+		if (!got.length || !(total > results.length)) break;
+	}
+	return results;
+}
+
 /**
  * An OpenAlex work back into the shape core/enrich.js merges. Only the fields
  * we actually know are set: a null lets a later enricher in the chain fill it.
+ *
+ * Filed under one key: the DOI's when that was asked for, else the OpenAlex
+ * ID's. See allMetadata for a work that was asked for both ways.
  */
 function toMetadata(w, byFilterValue) {
-	if (!w) return null;
-	const doi = normDoi(w.doi);
-	// Match on whichever identifier we asked by. The response carries both, so a
-	// work requested by OpenAlex ID still resolves if only its DOI was keyed.
-	const key = (doi && byFilterValue.get('doi:' + doi))
-		|| (w.id && byFilterValue.get('openalex:' + shortOpenAlexId(w.id)))
-		|| null;
-	if (!key) return null;
+	return allMetadata(w, byFilterValue)[0] || null;
+}
 
+/**
+ * The same, once for every key the work was asked by.
+ *
+ * One work can be two nodes at the time it is asked about: `doi:` from a PDF
+ * that links it and `openalex:` from a reference list that names it by ID.
+ * Both are in one request, and the answer was filed under the DOI alone. The
+ * other node stayed nameless -- and since the name, and the DOI it brings, are
+ * what fold the two into one, they stayed two, and the ID was asked about
+ * again on every build.
+ */
+function allMetadata(w, byFilterValue) {
+	if (!w) return [];
+	const doi = normDoi(w.doi);
+	const keys = [];
+	const byDoi = doi && byFilterValue.get('doi:' + doi);
+	if (byDoi) keys.push(byDoi);
+	const byId = w.id && byFilterValue.get('openalex:' + shortOpenAlexId(w.id));
+	if (byId && byId !== byDoi) keys.push(byId);
+	return keys.map(key => metadataFor(w, key, doi));
+}
+
+function metadataFor(w, key, doi) {
 	return {
 		key,
 		title: w.display_name || null,
@@ -196,4 +253,6 @@ function surname(displayName) {
 }
 
 module.exports.toMetadata = toMetadata;
+module.exports.fetchWorks = fetchWorks;
+module.exports.pageSize = pageSize;
 module.exports.surname = surname;

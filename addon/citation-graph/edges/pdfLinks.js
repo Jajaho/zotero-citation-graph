@@ -44,9 +44,9 @@ module.exports.id = register({
 				// pattern is a second thing to fix, and only one of them got fixed.
 				const dois = new Set();
 				for (const u of uris) for (const d of findDois(u)) dois.add(d);
-				if (options.ignoreSelfOnly && dois.size === 1
-						&& index.lookupDoi([...dois][0]) === item.key) {
-					continue;
+				if (options.ignoreSelfOnly && dois.size === 1) {
+					const own = index.lookupDoi([...dois][0]);
+					if (own && index.sameWork(own, item.key)) continue;
 				}
 				for (const d of dois) {
 					const target = index.lookupDoi(d);

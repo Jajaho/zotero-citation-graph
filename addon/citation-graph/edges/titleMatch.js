@@ -2,8 +2,8 @@
 
 const { register } = require('../core/registry');
 const { edge } = require('../core/types');
-const { normTitle, firstYear } = require('../core/normalize');
-const { readSection } = require('./refSection');
+const { firstYear } = require('../core/normalize');
+const { readSection, normalizedFlat } = require('./refSection');
 
 /**
  * Characters in the fragment each title is screened by.
@@ -159,18 +159,32 @@ module.exports.id = register({
 			for (const att of await adapter.getAttachments(item.key)) {
 				const seg = await readSection(adapter, att.key, refSection);
 				if (!seg || seg.quality === 'none') continue;
-				const flat = normTitle(seg.flat);
+				const flat = normalizedFlat(seg);
 				const conf = options.confidenceBySegment[seg.quality] ?? 0.4;
 
 				// In the targets' own order, so the edges come out in the order the
 				// unscreened loop produced them.
 				const mark = candidates(sc, flat);
+				// Where the titles found so far sit in the text. The targets come
+				// longest first, so by the time a title is looked for, every held
+				// title that contains it has been: "Quantum sensing with NV
+				// centers" is found inside each citation of "Quantum sensing with
+				// NV centers in diamond under pressure", and that drew an edge to
+				// a paper the section never names. An occurrence inside a longer
+				// title's is that longer title, so it is passed over, and the
+				// shorter one needs a place of its own.
+				const taken = [];
 				for (let i = 0; i < targets.length; i++) {
 					if (!mark[i]) continue;
 					const t = targets[i];
-					if (t.key === item.key) continue;
-					const at = flat.indexOf(t.nt);
+					const at = ownOccurrence(flat, t.nt, taken);
 					if (at < 0) continue;
+					// Before anything is decided about the edge: the text is the
+					// longer title's whether or not that citation is kept.
+					for (let p = at; p >= 0; p = flat.indexOf(t.nt, p + 1)) {
+						taken.push(p, p + t.nt.length);
+					}
+					if (t.key === item.key) continue;
 
 					// A paper cannot cite something published after it. Allow one
 					// year of slack for preprint/issue-date mismatches.
@@ -189,6 +203,27 @@ module.exports.id = register({
 		}
 	},
 });
+
+/**
+ * The first place `nt` occurs in `flat` outside every span in `taken` (pairs
+ * of start, end) that is longer than it, or -1. An empty `taken` is the plain
+ * indexOf this was. Longer, not as long: two held items with one title are
+ * both named by a citation of it, as they always were.
+ */
+function ownOccurrence(flat, nt, taken) {
+	for (let at = flat.indexOf(nt); at >= 0; at = flat.indexOf(nt, at + 1)) {
+		let inside = false;
+		for (let k = 0; k < taken.length; k += 2) {
+			if (at >= taken[k] && at + nt.length <= taken[k + 1]
+					&& taken[k + 1] - taken[k] > nt.length) {
+				inside = true;
+				break;
+			}
+		}
+		if (!inside) return at;
+	}
+	return -1;
+}
 
 // For the tests, which hold the screen to the loop it replaced.
 module.exports.screen = screen;

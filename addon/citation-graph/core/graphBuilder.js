@@ -80,15 +80,20 @@ async function build(adapter, config = {}) {
 				s = Promise.resolve(fromCarried(carried.get(attKey)));
 			}
 			else {
-				s = adapter.getAttachmentText(attKey).then((text) => {
+				const read = adapter.getAttachmentText(attKey).then((text) => {
 					if (!text) return null;
 					const seg = segment(text);
 					return { text: seg.text, flat: seg.flat, quality: seg.quality };
 				});
 				if (carried) {
-					s.then((sec) => { carried.set(attKey, sec && { text: sec.text, quality: sec.quality }); },
+					read.then((sec) => { carried.set(attKey, sec && { text: sec.text, quality: sec.quality }); },
 						() => {});
 				}
+				// A file that cannot be read has no section, in this build. It
+				// used to reject here, into the middle of whichever strategy
+				// asked, and that strategy's catch below ended it: one unreadable
+				// attachment took every edge the strategy had still to find.
+				s = read.catch((err) => readFailed('getAttachmentText', attKey, err));
 			}
 			sections.set(attKey, s);
 		}
@@ -110,14 +115,45 @@ async function build(adapter, config = {}) {
 		if (key && meta && !described[key]) described[key] = { key, ...meta };
 	};
 
+	// The same for what the strategies ask the adapter directly: an item whose
+	// attachments cannot be listed has none, a PDF whose links cannot be read
+	// has none, and the strategy goes on to the next paper. Each failure is
+	// reported once, under the strategy that met it first.
+	let running = null;
+	const reported = new Set();
+	const readFailed = (what, key, err) => {
+		const id = what + ' ' + key;
+		if (!reported.has(id)) {
+			reported.add(id);
+			errors.push({ provider: running, message: what + '(' + key + '): ' + (err && err.message) });
+		}
+		return null;
+	};
+	const tolerant = Object.create(adapter);
+	tolerant.getAttachments = async (itemKey) => {
+		try { return (await adapter.getAttachments(itemKey)) || []; }
+		catch (err) { readFailed('getAttachments', itemKey, err); return []; }
+	};
+	tolerant.getAttachmentText = async (attKey) => {
+		try { return await adapter.getAttachmentText(attKey); }
+		catch (err) { return readFailed('getAttachmentText', attKey, err); }
+	};
+	if (typeof adapter.getPdfLinkUris === 'function') {
+		tolerant.getPdfLinkUris = async (attKey) => {
+			try { return (await adapter.getPdfLinkUris(attKey)) || []; }
+			catch (err) { readFailed('getPdfLinkUris', attKey, err); return []; }
+		};
+	}
+
 	for (const p of providers) {
 		if (config.signal && config.signal.aborted) break;
+		running = p.id;
 		const started = Date.now();
 		let produced = 0;
 		let unique = 0;
 		try {
 			const ctx = {
-				adapter,
+				adapter: tolerant,
 				items,
 				index,
 				options: p.options,
@@ -138,14 +174,24 @@ async function build(adapter, config = {}) {
 				// The citing side must always be a real collection item -- an edge
 				// between two works we do not hold says nothing about this library.
 				if (!index.byKey.has(e.from)) continue;
+				// Nor does a work cite itself by being held twice: two items
+				// with one DOI are one paper, and an edge between them is its
+				// own footer read as a reference.
+				if (index.sameWork(e.from, e.to)) continue;
 				if (!index.byKey.has(e.to)
 						&& !(config.includeExternal && isExternalKey(e.to))) {
 					continue;
 				}
-				produced++;
-				const k = edgeKey(e.from, e.to);
-				const conf = e.confidence != null ? e.confidence : p.defaultConfidence;
+				// And a citation of it is a citation of one node, whichever copy
+				// a strategy happened to name: a title search finds both, a DOI
+				// lookup the first.
+				const to = index.canonical(e.to);
+				const k = edgeKey(e.from, to);
 				const prev = merged.get(k);
+				// The other copy, found by the strategy that found this one.
+				if (prev && to !== e.to && prev.via.includes(e.via || p.id)) continue;
+				produced++;
+				const conf = e.confidence != null ? e.confidence : p.defaultConfidence;
 				if (prev) {
 					prev.confidence = Math.max(prev.confidence, conf);
 					if (!prev.via.includes(e.via || p.id)) prev.via.push(e.via || p.id);
@@ -155,7 +201,7 @@ async function build(adapter, config = {}) {
 					unique++;
 					merged.set(k, {
 						from: e.from,
-						to: e.to,
+						to,
 						confidence: conf,
 						via: [e.via || p.id],
 						evidence: e.evidence ? [{ via: e.via || p.id, ...e.evidence }] : [],

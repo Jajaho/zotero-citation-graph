@@ -17,6 +17,11 @@ const DOI_RE_G = new RegExp(DOI_RE.source, 'g');
 // .../10.3389/fncom.2013.00137/abstract and Wiley's .../00445.x/epdf, so a DOI
 // harvested out of a link annotation arrives with the page kind glued on.
 const URL_TAIL_RE = /\/(abstract|epdf|full|pdf|meta|html|summary)$/;
+// Two more, glued on without a slash. A link to the file itself ends in `.pdf`
+// (journals.aps.org/prb/pdf/10.1103/PhysRevB.80.115202.pdf), and a servlet
+// session rides behind a semicolon (...2020.01.001;jsessionid=AB12). `.` and
+// `;` are both legal in a DOI, so the pattern runs straight through them.
+const FILE_TAIL_RE = /(;jsessionid\b.*|\.pdf)$/;
 
 /**
  * Strip resolver prefixes and URL tails, lowercase, drop trailing sentence
@@ -31,7 +36,8 @@ function normDoi(raw) {
 		.replace(/^https?:\/\/(dx\.)?doi\.org\//, '')
 		.replace(/^doi:\s*/, '')
 		.replace(/[.,;:\]]+$/, '')
-		.replace(URL_TAIL_RE, '');
+		.replace(URL_TAIL_RE, '')
+		.replace(FILE_TAIL_RE, '');
 	d = stripUnmatchedCloser(d);
 	return /^10\.\d{4,9}\//.test(d) ? d : null;
 }
@@ -232,9 +238,20 @@ function normTitle(s) {
 		.trim();
 }
 
-/** Undo PDF line wrapping so titles and DOIs are not split across lines. */
+/**
+ * Undo PDF line wrapping so titles and DOIs are not split across lines.
+ *
+ * A hyphen at the end of a line is the typesetter's, put there to break a
+ * word, and goes with the break. Inside a DOI it is not: nobody hyphenates an
+ * identifier, so a DOI that wraps at a hyphen wrapped at one of its own, and
+ * `10.1038/s41586-\n020-2649-2` joined without it is `10.1038/s41586020-2649-2`
+ * -- a DOI of the right shape that no work has, which makes a ghost of a paper
+ * the library may well hold. So that hyphen is kept, when the line up to it is
+ * a DOI and a letter or digit carries on from it.
+ */
 function flattenPdfText(s) {
 	return String(s || '')
+		.replace(/(\b10\.\d{4,9}\/[-._;()\/:<>a-zA-Z0-9]*)-\r?\n\s*(?=[a-zA-Z0-9])/g, '$1-')
 		.replace(/-\r?\n\s*/g, '')
 		.replace(/\r?\n/g, ' ')
 		.replace(/\s+/g, ' ');

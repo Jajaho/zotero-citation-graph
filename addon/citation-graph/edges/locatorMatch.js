@@ -3,7 +3,7 @@
 const { register } = require('../core/registry');
 const { edge } = require('../core/types');
 const { normTitle, firstYear } = require('../core/normalize');
-const { readSection } = require('./refSection');
+const { readSection, normalizedFlat } = require('./refSection');
 
 /**
  * Strategy: the cited work's JOURNAL, VOLUME and FIRST PAGE appear together in
@@ -82,6 +82,8 @@ function namesJournal(windowWords, tokens) {
 	// and the walk comes back to try the next. A state that failed once fails
 	// again, which is what keeps a window of look-alike words from costing more
 	// than its length times the name's.
+	// No words to find is not "all of them found".
+	if (!tokens.length) return false;
 	const failed = new Set();
 	const walk = (k, at, pinned, initials, word) => {
 		if (k === tokens.length) return !initials || word;
@@ -160,7 +162,7 @@ module.exports.id = register({
 				const seg = await readSection(adapter, att.key, refSection);
 				if (!seg || seg.quality === 'none') continue;
 				const conf = options.confidenceBySegment[seg.quality] ?? 0.5;
-				for (const hit of scanLocators(normTitle(seg.flat), byLocator, options, item.key)) {
+				for (const hit of scanLocators(normalizedFlat(seg), byLocator, options, item.key)) {
 					yield edge(item.key, hit.key, 'locator-match', conf, {
 						attachment: att.key, segment: seg.quality,
 						locator: hit.journal + ' ' + hit.vol + ', ' + hit.page,
@@ -186,11 +188,18 @@ function locatorIndex(items) {
 		const page = firstPage(it.pages);
 		const journal = it.journalAbbreviation || it.publication;
 		if (!/^\d{1,4}$/.test(vol) || !page || !journal) continue;
+		// A journal whose name leaves no word to match -- one written in a
+		// script normTitle folds away, 物理学报, or made of stop words alone --
+		// cannot be named by any window, and must not be named by every one:
+		// with nothing to demand, namesJournal had nothing to refuse, and any
+		// "81, 2590 (1997)" in any bibliography was a citation of this work.
+		const tokens = journalTokens(journal);
+		if (!tokens.length) continue;
 		const k = vol + ' ' + page;
 		if (!byLocator.has(k)) byLocator.set(k, []);
 		byLocator.get(k).push({
 			key: it.key, vol, page,
-			tokens: journalTokens(journal),
+			tokens,
 			year: firstYear(it.date),
 		});
 	}

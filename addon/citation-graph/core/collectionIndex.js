@@ -18,6 +18,8 @@ class CollectionIndex {
 		this.minTitleLength = minTitleLength;
 		this.byKey = new Map();
 		this.byDoi = new Map();
+		/** Item key -> its normalized DOI, for sameWork(). */
+		this.doiOf = new Map();
 		/**
 		 * Exact normalized title -> item key.
 		 *
@@ -36,7 +38,14 @@ class CollectionIndex {
 		for (const it of items) {
 			this.byKey.set(it.key, it);
 			const d = normDoi(it.doi);
-			if (d) this.byDoi.set(d, it.key);
+			// First holder wins, as for byTitle below. A library can hold one
+			// work twice -- the same DOI on two items -- and with the last one
+			// winning here and the first one winning there, a reference that
+			// printed both its DOI and its title drew an edge to each copy.
+			if (d) {
+				if (!this.byDoi.has(d)) this.byDoi.set(d, it.key);
+				this.doiOf.set(it.key, d);
+			}
 			const nt = normTitle(it.title);
 			// Indexed at any length, unlike titleTargets: minTitleLength guards a
 			// SUBSTRING search, where a short title collides with the text around
@@ -61,6 +70,32 @@ class CollectionIndex {
 	lookupDoi(raw) {
 		const d = normDoi(raw);
 		return d ? this.byDoi.get(d) || null : null;
+	}
+
+	/**
+	 * Are these two held items one work?
+	 *
+	 * Two items carrying the same DOI are two copies of one paper. lookupDoi
+	 * can only answer with one of them, so every "is this DOI my own" test that
+	 * compared its answer to the citing item's key failed for the other copy:
+	 * its own DOI, printed in its own page footer, read as a citation of its
+	 * twin. Nothing but the DOI is taken as proof -- two items that merely
+	 * share a title are two items.
+	 */
+	sameWork(a, b) {
+		if (a === b) return true;
+		const d = this.doiOf.get(a);
+		return !!d && d === this.doiOf.get(b);
+	}
+
+	/**
+	 * The item a citation of `key` is drawn to: itself, unless an earlier item
+	 * holds the same DOI, and then that one. Anything else -- an outside key,
+	 * an item with no DOI -- is its own.
+	 */
+	canonical(key) {
+		const d = this.doiOf.get(key);
+		return d ? this.byDoi.get(d) : key;
 	}
 
 	/** @param {string} raw a title as printed @returns {?string} item key */

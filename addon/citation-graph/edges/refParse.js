@@ -268,22 +268,45 @@ function scan(s, re) {
 
 /** The longest ascending run among `marks`, or null if none reaches `minRun`. */
 function longestRun(marks, minRun) {
-	let best = null;
-	for (let start = 0; start < marks.length; start++) {
+	// A run takes, after each marker, the NEXT marker numbered one to three
+	// above it -- so where a run goes from a marker does not depend on how it
+	// got there, and every run through that marker shares its tail. Walking
+	// each start's run out separately paid for those tails again and again:
+	// the cost grew with the square of the markers, and a section scope that
+	// had swept in a table of numbers took a second where it now takes a
+	// millisecond. So the tails are counted once, from the end backwards.
+	//
+	// nearest[v] is the closest marker numbered v to the right of the one being
+	// looked at; next[i] is the marker a run goes to after i, len[i] how long a
+	// run starting at i is.
+	const count = marks.length;
+	const next = new Int32Array(count).fill(-1);
+	const len = new Int32Array(count);
+	const nearest = new Map();
+	for (let i = count - 1; i >= 0; i--) {
+		const n = marks[i].n;
+		let to = -1;
+		for (let v = n + 1; v <= n + 3; v++) {
+			const k = nearest.get(v);
+			if (k !== undefined && (to < 0 || k < to)) to = k;
+		}
+		next[i] = to;
+		len[i] = 1 + (to < 0 ? 0 : len[to]);
+		nearest.set(n, i);
+	}
+	let start = -1;
+	for (let i = 0; i < count; i++) {
 		// Never 0 -- that is an equation label or a footnote, and allowing it
 		// let a run anchor itself in the body text of a paper whose reference
 		// section could not be found.
-		if (marks[start].n < 1) continue;
-		const run = [marks[start]];
-		let expected = marks[start].n + 1;
-		for (let k = start + 1; k < marks.length; k++) {
-			if (marks[k].n < expected || marks[k].n > expected + 2) continue;
-			run.push(marks[k]);
-			expected = marks[k].n + 1;
-		}
-		if (!best || run.length > best.length) best = run;
+		if (marks[i].n < 1) continue;
+		// The earliest of the longest, as the walk from each start had it.
+		if (start < 0 || len[i] > len[start]) start = i;
 	}
-	return best && best.length >= minRun ? best : null;
+	if (start < 0 || len[start] < minRun) return null;
+	const run = [];
+	for (let i = start; i >= 0; i = next[i]) run.push(marks[i]);
+	return run;
 }
 
 /**
@@ -701,7 +724,7 @@ function parseEntry(entry, style) {
 	// sits in front of the author list, so leaving it on defeats every
 	// anchored pattern in firstSurname and costs the first author.
 	const s = raw
-		.replace(/^\s*[[(]?\d{1,3}[\]).]\s+/, '')
+		.replace(LEADING_MARKER, '')
 		.replace(/\bdoi:\s*\S+/gi, ' ')
 		.replace(/https?:\/\/\S+/gi, ' ')
 		.replace(/\barxiv:\s*\S+/gi, ' ')
@@ -923,16 +946,28 @@ function parseGeneric(s) {
 	return o;
 }
 
+/**
+ * The list marker at the head of an entry: "[12] ", "12. ", "(12) ".
+ *
+ * The space after it is optional when a capital follows, because that is how
+ * MARKER_G finds it: a bracketed marker often abuts its author, "[1]Alexios
+ * Beveratos", and the splitter cuts there. This demanded the space, so such an
+ * entry kept its marker into the author block. Every anchored author pattern
+ * then failed on the bracket -- no first author for "[1]Smith, J.", and a
+ * Nature list set that way read as APA and gave no titles at all.
+ */
+const LEADING_MARKER = /^\s*[[(]?\d{1,3}[\]).](?:\s+|(?=["'“‘]?[A-Z]))/;
+
 /** The entry without its list marker, which sits in front of the authors. */
 function stripMarker(s) {
-	return String(s).replace(/^\s*[[(]?\d{1,3}[\]).]\s+/, '').trim();
+	return String(s).replace(LEADING_MARKER, '').trim();
 }
 
 /** Strip the leading marker, quotes and trailing separators a title carries. */
 function tidyTitle(t) {
 	if (!t) return null;
 	const s = String(t)
-		.replace(/^\s*[[(]?\d{1,3}[\]).]\s+/, '')
+		.replace(LEADING_MARKER, '')
 		.replace(/^["“‘']+|["”’']+$/g, '')
 		.replace(/[,;:\s]+$/, '')
 		.trim();
@@ -1020,6 +1055,7 @@ module.exports = {
 	parseEntry,
 	refSignature,
 	nextSentenceBreak,
+	longestRun,
 	MIN_ENTRY_CHARS,
 	MAX_ENTRY_CHARS,
 	MIN_TITLE_CHARS,

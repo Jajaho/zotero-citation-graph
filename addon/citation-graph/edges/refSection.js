@@ -1,6 +1,6 @@
 'use strict';
 
-const { flattenPdfText } = require('../core/normalize');
+const { flattenPdfText, normTitle } = require('../core/normalize');
 const { markerRun, splitEntries } = require('./refParse');
 
 /**
@@ -17,7 +17,13 @@ const { markerRun, splitEntries } = require('./refParse');
  * @returns {{text: string, flat: string, quality: 'heading'|'numbered'|'tail'|'none'}}
  */
 
-const HEADING = /^\s*(\d+\.?\s*)?(references|bibliography|literature cited|works cited|references and notes|reference list)\s*:?\s*$/i;
+// The section number may be roman -- "VII. REFERENCES" is how Physical Review
+// and IEEE head it -- and then has to be a numeral, up to XXXIX, with its period
+// or a space behind it: "Civil references" is not section CIVIL. "Notes and references"
+// is the Royal Society of Chemistry's heading, and "Literatur" a German one.
+// Each of these read as no heading at all, which sent the paper to the guessed
+// scopes below and their lower confidence.
+const HEADING = /^\s*(\d+\.?\s*|(?=[ivx])x{0,3}(?:ix|iv|v?i{0,3})(?:\.\s*|\s+))?(references|bibliography|literature cited|works cited|references and notes|notes and references|references cited|reference list|literatur|literaturverzeichnis)\s*:?\s*$/i;
 // A numbered entry: [1] / 1. / (1) at the head of a line. The marker's NUMBER
 // is captured, because what chains one entry to the next is that the numbers
 // climb rather than that the lines are adjacent -- see step 2.
@@ -173,4 +179,18 @@ async function readSection(adapter, attKey, memo) {
 	return text ? segment(text) : null;
 }
 
-module.exports = { segment, readSection };
+/**
+ * The section's flattened text, normTitle'd -- what title-match and
+ * locator-match both scan.
+ *
+ * Kept on the section, which the build's memo hands to every strategy, so the
+ * second one to ask does not fold the same bibliography again. It lives
+ * exactly as long as the section does, and is not what a later build is
+ * handed: graphBuilder carries `text` and `quality` over and nothing else.
+ */
+function normalizedFlat(seg) {
+	if (typeof seg.norm !== 'string') seg.norm = normTitle(seg.flat);
+	return seg.norm;
+}
+
+module.exports = { segment, readSection, normalizedFlat };
