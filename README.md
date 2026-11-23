@@ -52,14 +52,15 @@ Then fear no longer: *Citation Graph for Zotero* is for you.
 
 ## Requirements
 
-| | |
-|---|---|
-| [Zotero Desktop](https://www.zotero.org/download/#) (Windows, macOS or Linux) | Version 10.0 or later |
-| Network | Not necessary for connecting locally held papers, required for some additional features; see [Privacy and network use](#privacy-and-network-use) |
+[![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/download/)
 
-Offline edge building reads the PDF attachments you already have. Items with no
-attachment still appear as nodes, they just cannot contribute edges from the
-offline strategies.
+- **Zotero Desktop 10.0 or later** on Windows, macOS or Linux.
+- **PDF attachments** for the offline strategies. They read the PDFs already in
+  your library: items without an attachment still appear as nodes, they just
+  cannot contribute edges.
+- **No network needed** to connect the papers you hold locally. Some additional
+  features, such as the OpenAlex strategies, go online and are off by default;
+  see [Privacy and network use](#privacy-and-network-use).
 
 ## Installation for Users
 
