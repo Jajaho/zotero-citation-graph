@@ -1926,14 +1926,17 @@ tools/
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
 - **A build has somebody to watch beside its bar.** Seven small scenes take turns at the left of
-  the card, each with a line of its own under the phase, and each is a character: a sheet of
-  paper in reading glasses going over its own lines (*Reading papers…*), somebody whose thought
-  keeps swapping its question mark for an initial (*Guessing author names…*), a washing machine
-  whose eyes go round with its drum (*DOIng laundry…*), a magnifying glass that is one narrowed
-  eye over a scribble, a judge holding up a verdict on *Aa* in three typefaces, a flask with
-  hearts for eyes, and the world, waving. They were objects until 0.77.1 — an atom, a globe with
-  meridians — and a thing that turns is a spinner; a thing that blinks at you while it works is
-  company. Every `.eye` blinks on one clock.
+  the card, each with a line of its own under the phase, and in six of them a small figure does
+  what the line says: holds a paper up and goes down its lines (*Reading papers…*), stands with a
+  hand at the chin under a thought that keeps swapping its question mark for an initial
+  (*Guessing author names…*), bends over a scrawl with a magnifying glass, holds up a verdict on
+  *Aa* in three typefaces, holds a heart out to a flask, and polishes the world with a cloth. The
+  washing machine (*DOIng laundry…*) works alone: a figure goes in where it has something to do
+  that 51px can show, and beside a drum it has not. The figure is the same one throughout
+  (`.person`: a round head, a dot for an eye, a line each for the body and the limbs), and every
+  `.eye` blinks on one clock. In 0.77.1 and 0.77.2 the things themselves had the faces — a sheet
+  of paper in glasses, a flask with hearts for eyes — which was a misreading of what was asked
+  for: people in the picture, not pictures that are people.
   They are jokes and say nothing about the build. The phase, the count and the
   bar are as they were, and the stage and the lines are both `aria-hidden`: a line that changes
   every five seconds and reports nothing is not for a live region. The scenes and the lines are
@@ -1945,23 +1948,28 @@ tools/
   next so two short builds do not open on the same line. `showProgress()` calls it on every
   report, and the timer is what says a build is already being played.
   A scene off show is `display: none`, not hidden: its animations do not run, so the page pays
-  for one scene and not seven, and each starts from its first frame — the sheet and the typefaces
+  for one scene and not seven, and each starts from its first frame — the reader and the judge
   tell a small story in order. The six lines off show are only `visibility: hidden` in one shared
   grid cell, so the card is as wide as the longest and does not change width as they turn.
   The drawings are in two of core's greys (`--fill-secondary`, `--fill-tertiary`) over
   `--color-background`, so a dark window gets the same drawing in white on grey. All the motion
   is `transform` and `opacity`. A part that is put in place by a `transform` attribute and also
   moved by CSS is two elements, a `<g>` around the one that moves, because a CSS transform
-  replaces the attribute on its own element (the flask's hearts). The world's land is what says
-  it is the world: with a grid of meridians and a sprout on top it read as a turnip. It is drawn
-  twice, a turn apart, slides one turn and starts again, and is clipped to the outline by the
-  one `<clipPath>` in the page (`#zg-scene-globe`). Under `prefers-reduced-motion` every
+  replaces the attribute on its own element (the hearts, and the arm with the magnifying glass,
+  which is drawn hanging and put at the middle of its swing). That arm hangs straight down from
+  the shoulder of somebody bent over, because an arm swung from the shoulder moves its hand
+  across its own length: hung down, it takes the glass along the line of writing, and held out
+  it would take it up and down through it. The world's land is what says it is the world and
+  not a ball, and nothing grows on top of it: with a grid of meridians and a sprout it read as a
+  turnip, and with land and a sprout as an apple. The land is drawn twice, a turn apart, slides
+  one turn and starts again, and is clipped to the outline by the one `<clipPath>` in the page
+  (`#zg-scene-globe`). Under `prefers-reduced-motion` every
   animation is off and each scene is the drawing it is at rest; the lines still take their turns.
   **The card is 1.6 times the page's size**, by one number: `--zg-card` on `#progress`. The type
   is scaled by it and every length on the card is written as a multiple of it — the stage is
   `calc(32px * var(--zg-card))`, 51px — so the drawing, its line and the bar grow together, and
   `npm test` holds that no length on the card is left in bare pixels. At the page's own size a
-  32px face was too small to read, and the card is the only thing on screen for the minutes a
+  32px drawing was too small to read, and the card is the only thing on screen for the minutes a
   build runs. The drawings are in their own 32-unit space with a 1.2-unit stroke, so they need
   nothing changed to be drawn at another size.
   With the scenes the card is centred between two insets (`left`/`right` with `width:

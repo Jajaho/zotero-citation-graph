@@ -7653,9 +7653,10 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
  * the markup and in every locale, that neither is read out, and that a reader
  * who asked for no motion gets none.
  *
- * And, since 0.77.1, that each scene is somebody -- it has eyes -- and that
- * the card is 1.6 times the page's size by one number, which the drawing and
- * the type are both scaled by.
+ * And, since 0.77.1, that the card is 1.6 times the page's size by one number,
+ * which the drawing and the type are both scaled by; and, since 0.77.3, that a
+ * scene has one small figure in it doing what its line says -- all but the
+ * washing machine, which was asked to be left to itself.
  */
 check('a build is watched by one scene at a time, each with a line of its own', () => {
 	const stage = () => {
@@ -7757,14 +7758,22 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	if (scenes.length < 2 || new Set(scenes).size !== scenes.length) throw new Error('the scenes are ' + scenes.join());
 	if (lines.length !== scenes.length) throw new Error(scenes.length + ' scenes and ' + lines.length + ' lines');
 	if (new Set(lines.map(m => m[1])).size !== lines.length) throw new Error('two scenes say the same line');
-	// Each is a character: something in it looks back. An eye that blinks, or
-	// the three that are drawn another way -- the washing machine's pupils go
-	// round, the magnifying glass is one eye, the flask's are hearts.
+	// Somebody is in the picture, doing what the line says: one figure a
+	// scene, with a head and an eye in it. The things themselves have no
+	// faces -- an eye outside a figure is the 0.77.1 drawing come back -- and
+	// the washing machine has nobody.
 	const stageHtml = between('<div id="progress-stage" aria-hidden="true">');
 	const drawn = stageHtml.split(/(?=<svg class="scene )/).slice(1);
 	if (drawn.length !== scenes.length) throw new Error('the stage holds ' + drawn.length + ' drawings for ' + scenes.length + ' scenes');
+	if (!scenes.includes('wash')) throw new Error('the washing machine is gone');
 	drawn.forEach((svg, i) => {
-		if (!/class="[^"]*\b(eye|pupil|look|heart)\b/.test(svg)) throw new Error('scene-' + scenes[i] + ' has no eyes');
+		const people = svg.split('<g class="person">');
+		const want = scenes[i] === 'wash' ? 0 : 1;
+		if (people.length - 1 !== want) throw new Error('scene-' + scenes[i] + ' has ' + (people.length - 1) + ' figures in it, not ' + want);
+		if (/class="[^"]*\beye\b/.test(people[0])) throw new Error('scene-' + scenes[i] + ' has an eye that is nobody\'s');
+		if (want && !/<g class="head">\s*<circle class="paper"[^>]*\/>\s*<circle class="solid eye"/.test(people[1])) {
+			throw new Error('the figure in scene-' + scenes[i] + ' has no head, or no eye in it');
+		}
 	});
 	// One globe, and one clip for it: an id is the page's, not the scene's.
 	if ((stageHtml.match(/<clipPath id="/g) || []).length !== (stageHtml.match(/clip-path="url\(#/g) || []).length) {
