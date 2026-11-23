@@ -229,8 +229,8 @@ as [`addon/THIRD-PARTY-NOTICES.md`](addon/THIRD-PARTY-NOTICES.md).
 
 | What | Where | Licence |
 |---|---|---|
-| force-graph 1.51.4 + its bundled d3 modules | `addon/content/lib/force-graph.min.js` | MIT / ISC |
-| Sixteen Zotero menu icons | `addon/content/icons.js` | AGPL-3.0, © Corporation for Digital Scholarship |
+| [force-graph](https://github.com/vasturiano/force-graph) 1.51.4 + its bundled [d3](https://github.com/d3/d3) modules | `addon/content/lib/force-graph.min.js` | MIT / ISC |
+| Sixteen [Zotero](https://github.com/zotero/zotero) menu icons | `addon/content/icons.js` | AGPL-3.0, © Corporation for Digital Scholarship |
 | Everything else | | AGPL-3.0-or-later, © 2026 Jakob Holz |
 
 Zotero is a registered trademark of the Corporation for Digital Scholarship.
