@@ -42,11 +42,14 @@ Steps 4–7 are statically verified (`npm test`) but **not yet confirmed against
 in a running Zotero**. The number to check them against is the CLI's: run `tools/cli.js` over the
 same items and the edge count should match.
 
-Not yet done: a preferences pane (strategies are toggled in the graph's own control panel, which filters
-an already-built graph rather than changing what gets derived), the year-keyed `d3.forceY()` that
-would make citations point backwards in time, FlateDecode for the ~13% of PDF DOI links that live
-in compressed streams, and any use of the `openalex` *edge* strategy — it is registered but no
-build selects it.
+Not yet done: the year-keyed `d3.forceY()` that would make citations point backwards in time
+([#7](https://github.com/Jajaho/zotero-citation-graph/issues/7)). Three things this paragraph
+used to list are done. The `openalex` *edge* strategy runs when **OpenAlex references** is
+ticked in the panel. PDF DOI links in compressed object streams are read
+(`scanUriAnnotations()` in `lib/zoteroAdapter.js`). And there is a Settings pane
+(`content/preferences.xhtml`), which clears the caches and takes the OpenAlex API key. The
+strategies are still toggled in the graph's own panel, which filters a graph that is already
+built rather than changing what gets derived.
 
 **The plugin can now reach the network, in exactly one place**: the "query node metadata" panel
 toggle, off by default, which resolves outside references through OpenAlex. Nothing else makes a
@@ -235,6 +238,9 @@ gap.
   row in the list. The page owns that — it holds the pick, a row is marked when its key is in it,
   and a filter that takes a ghost off screen drops it with no click made at all — so the page
   pushes `gaps-lit` and chrome only paints it, scrolling to a mark that has just appeared.
+- **Core asking to see an item does close it.** `itemPane.show()` with `expand` is core's own
+  "select this item" (a note just made, a related item followed), and it lifts the pin: the item
+  comes up and the page is told the list has gone. A selection made on the graph is the case below.
 - **Nothing a selection does closes the list.** The list is a *pinned* page of the pane's deck
   (`pane.pinned`, honoured in `itemPane.face()`): every gesture made while reading it moves the
   selection — a row picks its ghost, the same ghost clicked on the canvas picks it from the other
@@ -1228,10 +1234,12 @@ node moves its pin rather than releasing it. What tells the two apart is
 `fx`/`fy` still mean what they say. Dragging a pinned node
 moves its pin; `Unpin node` in the same menu releases it. Both populations can
 be pinned: where a node sits is a fact about the layout, and an outside
-reference has one as much as a held item does. Unpinning does not reheat the
-simulation — taking one pin out is no reason to reshuffle a graph you have spent
-time arranging, so the node rejoins the flow the next time something else stirs
-it. Pins live on the node objects the renderer reuses, so they survive a filter
+reference has one as much as a held item does. Unpinning lets the node go the way
+a drag lets go of one (`unpinAll()` ends in `settle()`): the layout is given a
+drop's energy, which is what the **Drag energy** slider sets, so the node rejoins
+the flow at once. It used to stand where it had been pinned until something else
+stirred the graph, which looked like the entry had done nothing. Pins live on the
+node objects the renderer reuses, so they survive a filter
 change and a late build phase landing, and are forgotten when the tab closes.
 
 **Right-clicking a node you are still carrying** is the gesture the pin was
@@ -1332,7 +1340,7 @@ these entries:
 
 | entry | what it does |
 |---|---|
-| `Zoom to fit` | the same reframe as the ⤢ button, bottom left |
+| `Zoom to fit` | the same reframe as the ⤢ button in the top bar |
 | `What is missing` | opens the gap list beside the graph |
 | `Group here` | plants an anchor at the pointer and asks what belongs at it |
 | `Export as SVG…` | saves the graph as drawn, with its legend, as a figure |
@@ -1852,9 +1860,18 @@ tools/
   never claimed. Both paths share a `WeakSet` keyed on the session entry object (the same objects
   `restoreState` is handed), claimed *before* the first `await` so two passes cannot both get past
   the check, and passes are serialised behind one chain. Either order, or both, ends with one tab.
+  **Only on Zotero's own start.** `Zotero.Session.state` is rewritten by a save and by nothing else
+  (five minutes after a tab last changed, or at quit), so a plugin enabled, installed or upgraded
+  mid-session reads the tabs of the *previous* session there. `bootstrap.js` passes the startup
+  reason on and `restoreLate()` in `lib/main.js` runs the late pass for `APP_STARTUP` alone.
   **What it cannot repair:** with no hook registered, `tabs.js:611` destructures the default hook's
   `undefined` and throws, and `zoteroPane.js` catches that around the *whole* loop — so any tab
   positioned after a graph tab in the session is lost with it, and those are not ours to restore.
+- **Three more hooks, none of them mandatory.** `undoClose.graph` re-adds a closed tab unloaded,
+  from the data core kept of it (`graphTab.reopen()`); `duplicate.graph` opens a second tab of the
+  same scope beside the first, with the options and view the tab has now; `refocus.graph` gives the
+  keyboard to the graph's browser. A type with no hook gets core's no-op, so each of these was
+  simply missing: Undo Close Tab skipped a graph tab, and its menu had no Duplicate Tab.
 - **Graph tabs restore lazily, through core's own unloaded-tab mechanism.** `restoreState` re-adds
   the tab as `graph-unloaded`; `select()` then promotes it through `graph-loading` to `graph` by
   calling `tabHooks.load.graph`, which is where the page is actually mounted. So a window restored

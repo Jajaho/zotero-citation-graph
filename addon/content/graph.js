@@ -208,6 +208,12 @@
 	// zgSetView().
 	let viewKnown = false;
 	let viewTimer = null;
+	// Last-used values waiting to be written, and the timer that writes them:
+	// as long a wait as the view's own save, for the same reason. See
+	// remember().
+	const REMEMBER_MS = 300;
+	let remembered = new Map();
+	let rememberTimer = null;
 	// The sidebar's width in px, or null while it is the stylesheet's own.
 	let sideWidth = null;
 	// The citation count that maps to the largest node: the 95th percentile of
@@ -911,8 +917,17 @@
 		let n = { id: adopted.now, x: at.x, y: at.y, vx: 0, vy: 0 };
 		// A pinned ghost becomes a pinned item: the pin was a statement about
 		// where that work belongs, not about the key it wore.
-		if (was && was.fx != null) n.fx = was.fx;
-		if (was && was.fy != null) n.fy = was.fy;
+		//
+		// Pinned, which is not the same as fixed. A ghost held under its open
+		// menu, or frozen for the two frames a settle sheds its energy in, has
+		// fx and fy as well -- and those are taken back off THAT node when the
+		// menu closes or the shed ends. Copied here they were nobody's to take
+		// off: the new paper stood nailed to the canvas with a pin's ring on
+		// it, and was saved with the tab as a pin nobody had made.
+		if (was && isPinned(was)) {
+			if (was.fx != null) n.fx = was.fx;
+			if (was.fy != null) n.fy = was.fy;
+		}
 		nodeCache.set(adopted.now, n);
 		// The tab's saved pins name the ghost's key, which no longer exists.
 		if (isPinned(n)) viewChanged();
@@ -962,6 +977,7 @@
 		}
 		let adopted = next.meta && next.meta.adopted;
 		anchorNext = adopted && placeAdopted(adopted, next.edges) ? adopted.now : null;
+		if (adopted) rekeyFocus(adopted.was, adopted.now);
 		raw = next;
 		raw.external = raw.external || [];
 		// The names are a payload's: see names().
@@ -988,12 +1004,13 @@
 		// an add it is a real item, and after a rebuild it may be filtered out.
 		hideAction();
 		hideMenu();
-		hideSuggest();
 		renderStrategyToggles();
 		syncEnabled();
 		// The build that just landed may be the one the panel was waiting for.
 		syncPending();
 		render();
+		// After render(), which is what the list's candidates are read from.
+		keepSuggest();
 		// After render(), which is what decides whether the node is still drawn.
 		keepHover();
 		// A finished graph on a layout that is at rest and staying there: the
@@ -1001,6 +1018,50 @@
 		if (!engineLive && !engineDue) firstFit();
 		offerHint();
 	};
+
+	/**
+	 * A node changed key -- a ghost became a paper -- and what was said about
+	 * the ghost is said about the paper.
+	 *
+	 * The pick and the isolation are sets of ids, and render() drops from both
+	 * any id that is no longer drawn. To it the adopted ghost was simply gone:
+	 * a work added from under its own ring lost the ring, the item pane went
+	 * back to "27 items in this view" at the moment it had a paper to show,
+	 * and an isolation built around the ghost let the whole graph back in.
+	 * Renamed in place, so that click order -- which is the pick's order --
+	 * is kept, and silently: render() runs straight after and tells the pane
+	 * what the pick now holds.
+	 */
+	function rekeyFocus(was, now) {
+		for (let ids of [picked, isolated]) {
+			if (!ids.has(was)) continue;
+			let kept = [...ids].map(id => (id === was ? now : id));
+			ids.clear();
+			for (let id of kept) ids.add(id);
+		}
+	}
+
+	/**
+	 * The completion list, carried across a payload.
+	 *
+	 * A payload used to close it, as it closes the menus -- but those are about
+	 * a node that may be gone, and this is about what the reader is typing. A
+	 * build lands a payload per phase and a lookup one more, so on a large
+	 * library the list shut under the cursor every few seconds for minutes.
+	 * Rebuilt instead, since the values on offer are the payload's, with the
+	 * highlighted row kept where it is still on the list.
+	 */
+	function keepSuggest() {
+		if (elSuggest.hidden || !suggestBox) return;
+		let on = suggestIndex >= 0 ? suggestions[suggestIndex] : null;
+		refreshSuggest(suggestBox);
+		if (!on) return;
+		let at = suggestions.findIndex(s => s.kind === on.kind && s.field === on.field
+			&& s.term === on.term && s.insert === on.insert && s.label === on.label);
+		if (at < 0) return;
+		suggestIndex = at;
+		if (elSuggest.children[at]) elSuggest.children[at].classList.add('active');
+	}
 
 	/**
 	 * What the pointer is over, carried across a payload.
@@ -1333,8 +1394,17 @@
 
 	// --- item helpers -----------------------------------------------------
 
+	/**
+	 * The year of a held item, out of the date Zotero has for it.
+	 *
+	 * Any four-digit year from 1000 on. It read 1800 to 2099, which is the
+	 * right guard for a number found in the running text of a bibliography and
+	 * the wrong one for a date field: the Principia is from 1687, and a library
+	 * of early modern sources had no years at all -- one colour under "colour
+	 * by year", no decade in a name, and nothing for `year:` to match.
+	 */
 	function year(item) {
-		let m = String(item.date || '').match(/\b(1[89]\d\d|20\d\d)\b/);
+		let m = String(item.date || '').match(/\b([12]\d{3})\b/);
 		return m ? Number(m[1]) : null;
 	}
 
@@ -1978,11 +2048,16 @@
 	let gapRows = [];
 
 	window.zgGapsShowing = function (json) {
+		let was = gapsOpen;
 		try {
 			gapsOpen = !!JSON.parse(json).showing;
 		}
 		catch (e) { /* leave it as it was */ }
 		syncGapsButton();
+		// Back on screen by a way that is not openGaps() -- the panel it is in
+		// was put away and has been brought back. No rows were drawn while it
+		// was, so these are the first it has had since.
+		if (gapsOpen && !was) renderGaps();
 	};
 
 	/**
@@ -2118,7 +2193,15 @@
 			total: ranked.total,
 			// A build still running has not read most of the PDFs yet, and
 			// "nothing is missing" would be a lie until it has.
-			building: !raw || !!(raw.meta && raw.meta.phase && raw.meta.phase !== 'done'),
+			//
+			// So would it be of a graph built without its outside references,
+			// which is what the list is made of. Opening the list over one asks
+			// for the build that has them -- see openGaps() -- and until that
+			// build's first payload landed, this one was still a finished graph
+			// with no gaps in it: the list opened on "nothing is missing" and
+			// only then went away to find out.
+			building: !raw || !!(raw.meta && raw.meta.phase && raw.meta.phase !== 'done')
+				|| !builtWith('includeExternal', elIncludeExternal),
 			// Without the counts every gap is ranked at face value, which is
 			// the plain "most cited here" order. Worth saying, since the
 			// ranking is the reason to read this list rather than the graph.
@@ -2267,9 +2350,24 @@
 	// Each strategy's count on its row, by id -- see renderStrategyCounts().
 	let viaCounts = new Map();
 
-	function renderStrategyToggles() {
-		let seen = new Set();
-		for (let e of raw.edges) for (let v of e.via) seen.add(v);
+	/**
+	 * The strategies to list a row for, in order.
+	 *
+	 * The ones the payload's edges name -- and, while a build is still
+	 * running, the ones already listed. A rebuild opens with a payload that
+	 * has no edges at all and goes on with one that has the text strategies'
+	 * and not yet the PDF scan's, so a list drawn from each payload alone was
+	 * emptied and refilled a row at a time through every rebuild: the boxes
+	 * went away from under the pointer for as long as the text phase took. A
+	 * row is only taken off by a build that has finished without it.
+	 *
+	 * @param {Object[]} edges   the payload's
+	 * @param {string[]} listed  the strategies with a row now
+	 * @param {boolean} running  whether the payload is a build's that is not done
+	 */
+	function listedVias(edges, listed, running) {
+		let seen = new Set(running ? listed : []);
+		for (let e of edges) for (let v of e.via) seen.add(v);
 		// OpenAlex has its own switch above this list, and that one decides
 		// whether it runs at all. A second box that only hid its edges would be
 		// two answers to one question.
@@ -2280,7 +2378,12 @@
 		// by name it is no order at all. A strategy the ranking has not heard
 		// of goes after the ones it has, by id.
 		let rank = v => (VIA_RANK.indexOf(v) + 1) || VIA_RANK.length + 1;
-		let vias = [...seen].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+		return [...seen].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+	}
+
+	function renderStrategyToggles() {
+		let running = !!(raw.meta && raw.meta.phase && raw.meta.phase !== 'done');
+		let vias = listedVias(raw.edges, renderedVias ? renderedVias.split(',') : [], running);
 		let sig = vias.join(',');
 		if (sig === renderedVias) return;
 		renderedVias = sig;
@@ -2956,11 +3059,23 @@
 		return n;
 	}
 
+	/**
+	 * The threshold the "Cited by ≥" box is asking for: a whole number from 1
+	 * to the most the box offers. Whatever else is in it -- nothing yet, a
+	 * zero, a minus sign on its way to being a number -- is 1.
+	 */
+	function minCitesAsked() {
+		let n = Math.round(Number(elMinCites.value));
+		if (!Number.isFinite(n) || n < 1) return 1;
+		let max = Number(elMinCites.max);
+		return max >= 1 && n > max ? max : n;
+	}
+
 	function render() {
 		if (!raw) return;
 		let minConf = Number(elMinConf.value);
 		elConfValue.textContent = minConf.toFixed(2);
-		let minCites = Math.max(1, Number(elMinCites.value) || 1);
+		let minCites = minCitesAsked();
 		// What this graph was built with, not what the box says -- see builtWith().
 		let showGhosts = builtWith('includeExternal', elIncludeExternal) && raw.external.length > 0;
 
@@ -3132,18 +3247,7 @@
 			// them together. Both modifiers are read: Ctrl is the paradigm
 			// everywhere, and a Mac raises a context menu from Ctrl-click, so
 			// Cmd is the one that can actually be pressed there.
-			fg.onNodeClick((n, event) => {
-				if (spentPress()) return;
-				// The second click of a double click, whose own gesture has
-				// already been answered below. See spentDouble().
-				if (spentDouble()) return;
-				// Whoever has clicked a paper has found the first of the
-				// gestures the hint is there to name.
-				endHint();
-				paneEngaged = true;
-				if (event && (event.ctrlKey || event.metaKey)) togglePick(n.id);
-				else pickOnly(n.id);
-			});
+			fg.onNodeClick(nodeClicked);
 			// Held for as long as the menu is up, exactly as the drag path
 			// below holds a node it dropped: the menu offers to pin this node
 			// HERE, and a node still being carried by the layout while the
@@ -3921,7 +4025,15 @@
 				l2 = dx * dx + dy * dy;
 			}
 			let l = Math.sqrt(l2);
-			if (r - l > COLLIDE_SLOP) collideBusy = true;
+			// Not when neither can give way. Two pins set inside each other's
+			// pad overlap for as long as they are pinned -- the simulation puts
+			// a fixed node back where it is fixed every tick -- so this pair
+			// reported work to do on every one of them, and the layout it holds
+			// awake for collisions never came to rest: a fan that would not
+			// stop over a graph in which nothing moved.
+			if (r - l > COLLIDE_SLOP && !(a.fx != null && a.fy != null && b.fx != null && b.fy != null)) {
+				collideBusy = true;
+			}
 			let push = (r - l) / l;
 			dx *= push;
 			dy *= push;
@@ -5191,7 +5303,23 @@
 	 *  palettes produce, or an hsl() string. */
 	function fade(color, a) {
 		if (color.charAt(0) === '#') return withAlpha(color, a);
-		return color.replace('hsl(', 'hsla(').replace(')', ', ' + a + ')');
+		// rgb() and hsl(), with or without an alpha of their own, in either
+		// spelling: "0, 0, 0, 0.8" and "0 0 0 / 80%". It knew hsl() alone, and
+		// what it made of anything else was the same string with one more
+		// number in the brackets -- "rgba(0, 0, 0, 0.8, 0.3)", which a canvas
+		// ignores, leaving whatever colour was set before it. The window's own
+		// text colour is an rgba() in more than one theme. The alpha a colour
+		// arrives with is kept: fading multiplies it.
+		let m = /^\s*(rgb|hsl)a?\(([^)]*)\)\s*$/i.exec(color);
+		if (!m) return color;
+		let parts = m[2].split(/[\s,/]+/).filter(Boolean);
+		if (parts.length < 3) return color;
+		let own = 1;
+		if (parts.length > 3) {
+			own = parts[3].endsWith('%') ? parseFloat(parts[3]) / 100 : parseFloat(parts[3]);
+			if (!Number.isFinite(own)) own = 1;
+		}
+		return m[1].toLowerCase() + 'a(' + parts.slice(0, 3).join(', ') + ', ' + (own === 1 ? a : own * a) + ')';
 	}
 
 	// force-graph renders labels as HTML in its tooltip.
@@ -7416,6 +7544,25 @@
 		actionNode = null;
 	}
 
+	/** A click on a node: see where render() hands this to force-graph. */
+	function nodeClicked(n, event) {
+		if (spentPress()) return;
+		// The second click of a double click, whose own gesture has already
+		// been answered. See spentDouble().
+		if (spentDouble()) return;
+		// Whoever has clicked a paper has found the first of the gestures the
+		// hint is there to name.
+		endHint();
+		// The card that describes an outside reference is about that one. A
+		// click on the canvas closed it and a click on another node did not, so
+		// it went on describing a work -- and offering to add it -- beside a
+		// ring that had moved to something else.
+		if (actionNode && actionNode !== n) hideAction();
+		paneEngaged = true;
+		if (event && (event.ctrlKey || event.metaKey)) togglePick(n.id);
+		else pickOnly(n.id);
+	}
+
 	el('action-close').addEventListener('click', hideAction);
 	el('action-add').addEventListener('click', () => {
 		if (!actionNode) return;
@@ -7818,6 +7965,13 @@
 	elMinCites.addEventListener('input', () => {
 		renderSoon();
 		viewChanged();
+	});
+	// When the typing is over, the box says the number that is in force. A 0
+	// or a -3 typed into it drew the graph for 1 -- render() never took less --
+	// and stayed in the box, and in the tab's saved view, saying otherwise.
+	elMinCites.addEventListener('change', () => {
+		let asked = String(minCitesAsked());
+		if (elMinCites.value !== asked) elMinCites.value = asked;
 	});
 	// Paint, not data: the graph only has to be recoloured and its legend
 	// rebuilt. Going through render() would hand force-graph the same nodes and
@@ -8298,11 +8452,13 @@
 		clearTimeout(searchTimer);
 		searchSeq++;
 		searchFound = null;
+		// An Enter pressed ahead of the answer is an Enter on THAT text. It was
+		// only let go of when the box was emptied, so typing on after it left
+		// it armed: the next answer to arrive, to whatever was typed since,
+		// moved the camera and changed the pick with no key pressed at all.
+		searchEnter = false;
 		let text = elSearch.value.trim();
-		if (!text) {
-			searchEnter = false;
-			return;
-		}
+		if (!text) return;
 		let seq = searchSeq;
 		searchTimer = setTimeout(() => emit({ type: 'quick-search', text, seq }), SEARCH_DEBOUNCE_MS);
 	}
@@ -8356,6 +8512,18 @@
 		placeSearch();
 	}
 
+	/**
+	 * What a row says the node is. A paper's title; and an outside
+	 * reference's, where it has one -- its `name` is its identifier, which is
+	 * what the row used to show for every ghost: a search for a word of a
+	 * title answered with a list of DOIs, each of them the right one and none
+	 * of them recognisable.
+	 */
+	function searchTitle(n) {
+		let title = n.ghost && n.meta && n.meta.title;
+		return title || n.name || n.id || '';
+	}
+
 	function searchRow(n, i) {
 		let row = document.createElement('div');
 		row.className = 'search-row';
@@ -8367,8 +8535,8 @@
 
 		let title = document.createElement('span');
 		title.className = 'search-title';
-		title.textContent = n.name || n.id || '';
-		row.title = n.name || n.id || '';
+		title.textContent = searchTitle(n);
+		row.title = searchTitle(n);
 
 		row.appendChild(key);
 		row.appendChild(title);
@@ -8745,7 +8913,11 @@
 		for (let name of SECTIONS) sections[name] = isCollapsed(name);
 		let pins = [];
 		for (let n of nodeCache.values()) {
-			if (!isPinned(n)) continue;
+			// As the user means it: a node with the button down on it is fixed
+			// and not pinned, and a save that fell in that moment -- they are
+			// 300ms behind every change -- wrote it into the tab as a pin. See
+			// pinnedByUser().
+			if (!pinnedByUser(n)) continue;
 			pins.push({ id: n.id, x: n.fx != null ? n.fx : n.x, y: n.fy != null ? n.fy : n.y });
 		}
 		// Pins the tab came back with whose nodes have not been drawn yet. Left
@@ -8775,7 +8947,7 @@
 			edgeTips,
 			sizeBy: elSizeBy.value,
 			colorBy: elColorBy.value,
-			minCites: Number(elMinCites.value) || null,
+			minCites: minCitesAsked(),
 			minConf: Number(elMinConf.value),
 			disabledVia: [...disabledVia],
 			filters: panelBox.filters().slice(),
@@ -8957,7 +9129,20 @@
 		catch (e) {
 			view = null;
 		}
-		if (view && typeof view === 'object' && !Array.isArray(view)) applyView(view);
+		// A view this build cannot put back must not be what stops the tab
+		// keeping one. applyView() reads saved data field by field and declines
+		// what it does not recognise, but it also runs the page -- a render, the
+		// groups, the pins -- and anything thrown from in there left viewKnown
+		// unset: nothing was ever saved from this tab again, and it came back
+		// from every restart with the view that had broken it.
+		if (view && typeof view === 'object' && !Array.isArray(view)) {
+			try {
+				applyView(view);
+			}
+			catch (e) {
+				if (window.console) window.console.error(e);
+			}
+		}
 		viewKnown = true;
 		// Reported straight back, saved view or not. A tab with none -- a new
 		// one, or one saved by a build from before tabs kept their settings --
@@ -8985,14 +9170,32 @@
 	 * run the same setters, and neither is the user choosing anything.
 	 */
 	function remember(key, value) {
-		// Storage is a nicety, not a requirement: a resource:// page can be
-		// denied it, and the panel still works when the write throws.
-		try {
-			window.localStorage.setItem(key, value);
-		}
-		catch (e) { /* no persistence, no problem */ }
+		// Kept, and written once the gesture is over. A slider calls this on
+		// every step of a drag, and each call was a write to localStorage --
+		// synchronous, on the thread the drag is being drawn on, sixty times a
+		// second -- of a value the next step replaced. The last one is the
+		// only one a new tab will ever read.
+		remembered.set(key, value);
+		if (rememberTimer == null) rememberTimer = window.setTimeout(flushRemembered, REMEMBER_MS);
 		viewChanged();
 	}
+
+	function flushRemembered() {
+		if (rememberTimer != null) window.clearTimeout(rememberTimer);
+		rememberTimer = null;
+		for (let [key, value] of remembered) {
+			// Storage is a nicety, not a requirement: a resource:// page can be
+			// denied it, and the panel still works when the write throws.
+			try {
+				window.localStorage.setItem(key, value);
+			}
+			catch (e) { /* no persistence, no problem */ }
+		}
+		remembered.clear();
+	}
+
+	// A tab closed inside the wait still leaves what it was last set to.
+	window.addEventListener('pagehide', flushRemembered);
 
 	/**
 	 * Repaint whatever was drawn before the strings landed.

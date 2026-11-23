@@ -6071,7 +6071,9 @@ check('the release that ends a right-clicked drag is not a click', () => {
 		const i = js.indexOf(needle);
 		return i < 0 ? '' : js.slice(i, i + n);
 	};
-	for (const handler of ['fg.onNodeClick(', 'fg.onBackgroundClick(']) {
+	// The node's click is a function of its own, handed to force-graph by name.
+	if (!js.includes('fg.onNodeClick(nodeClicked);')) throw new Error('force-graph is not handed nodeClicked()');
+	for (const handler of ['function nodeClicked(', 'fg.onBackgroundClick(']) {
 		if (!after(handler, 120).includes('if (spentPress()) return;')) {
 			throw new Error(handler + ') acts on the click that ends a right-clicked drag');
 		}
@@ -6107,7 +6109,7 @@ check('a double click rings the node once, not on and off again', () => {
 		const i = js.indexOf(needle);
 		return i < 0 ? '' : js.slice(i, i + n);
 	};
-	if (!after('fg.onNodeClick(', 220).includes('if (spentDouble()) return;')) {
+	if (!after('function nodeClicked(', 220).includes('if (spentDouble()) return;')) {
 		throw new Error('the second click of a double click still picks, undoing the first');
 	}
 	// Armed before the isolate, which is what the ordering above buys.
@@ -7054,7 +7056,7 @@ check('a strategy\'s row says what it is called and what it found', () => {
 	const elStrategies = fakeElement('div');
 	const elOpenAlexCount = fakeElement('span');
 	const page = liftPage({
-		functions: ['renderStrategyToggles', 'renderStrategyCounts', 'strategyCounts', 'viaName', 'viaHint', 'viaColor'],
+		functions: ['listedVias', 'renderStrategyToggles', 'renderStrategyCounts', 'strategyCounts', 'viaName', 'viaHint', 'viaColor'],
 		consts: ['VIA_RANK'],
 		globals: {
 			raw: { edges: [
@@ -7938,7 +7940,7 @@ check('the bar offers what the canvas menu offers, and says when the graph is is
 	for (const fn of ['openGaps', 'closeGaps']) {
 		if (!body(fn).includes('syncGapsButton();')) throw new Error(fn + '() leaves the bar\'s button saying the opposite');
 	}
-	if (!/window\.zgGapsShowing = function \(json\) \{[^]*?syncGapsButton\(\);\s*\};/.test(js)) {
+	if (!/window\.zgGapsShowing = function \(json\) \{[^]*?syncGapsButton\(\);[^]*?\n\t\};/.test(js)) {
 		throw new Error('the list closed from chrome leaves the button saying it is open');
 	}
 	for (const fn of ['setIsolated', 'applyIsolateDepth']) {
@@ -11865,6 +11867,372 @@ checkAlone('a plugin enabled in the middle of a session does not replay the sess
 		await main.startup(CFG);
 	}
 	if (await graphTabsAfterLoad() !== 1) throw new Error('a start with no reason is not taken for Zotero\'s own');
+});
+
+// --- the audit backlog (#24): the page --------------------------------------
+
+/** A statement of the page that is an assignment rather than a declaration --
+ *  `window.zgSetView = function (json) { ... };` -- run in a context of its own. */
+function liftAssigned(name, globals) {
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const m = js.match(new RegExp('\\n\\twindow\\.' + name + ' = function \\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\};\\n'));
+	if (!m) throw new Error('window.' + name + ' is no longer in graph.js under that name');
+	const ctx = Object.assign({ window: {} }, globals);
+	vm.createContext(ctx);
+	vm.runInContext(m[0], ctx, { filename: 'graph.js (lifted)' });
+	return ctx;
+}
+
+check('a ghost that becomes a paper keeps its ring and its isolation', () => {
+	const page = liftPage({ functions: ['rekeyFocus'], globals: {
+		picked: new Set(['HELD0001', 'doi:10.1/x', 'HELD0002']),
+		isolated: new Set(['doi:10.1/x']),
+	} });
+	page.rekeyFocus('doi:10.1/x', 'NEWITEM1');
+	// In click order, which is the order the pane reads the pick in.
+	if ([...page.picked].join(' ') !== 'HELD0001 NEWITEM1 HELD0002') throw new Error('pick: ' + [...page.picked].join(' '));
+	if ([...page.isolated].join(' ') !== 'NEWITEM1') throw new Error('isolation: ' + [...page.isolated].join(' '));
+	// A ghost nobody had picked changes nothing.
+	page.rekeyFocus('doi:10.1/y', 'NEWITEM2');
+	if (page.picked.size !== 3 || page.isolated.size !== 1) throw new Error('a ghost that was not in focus joined it');
+	// And it happens before render(), which drops every id it does not draw.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const body = js.slice(js.indexOf('window.zgSetData = function'), js.indexOf('function rekeyFocus('));
+	const at = body.indexOf('rekeyFocus(adopted.was, adopted.now)');
+	if (at < 0 || at > body.indexOf('render();')) throw new Error('zgSetData does not rename the focus before it renders');
+});
+
+check('only a pin is carried from a ghost to the paper it becomes', () => {
+	const lift = () => {
+		let saves = 0;
+		const page = liftPage({ functions: ['placeAdopted', 'citedFrom', 'isPinned'], globals: {
+			nodeCache: new Map(), heldNode: null, frozen: new Set(), viewChanged: () => { saves++; },
+		} });
+		return { page, saves: () => saves };
+	};
+	const ghost = () => ({ id: 'doi:10.1/x', x: 40, y: 50, fx: 40, fy: 50 });
+	const adopt = page => page.placeAdopted({ was: 'doi:10.1/x', now: 'NEWITEM1' }, []) && page.nodeCache.get('NEWITEM1');
+
+	// Held under its open menu: fixed for as long as the menu is up, no longer.
+	let { page, saves } = lift();
+	let was = ghost();
+	page.nodeCache.set(was.id, was);
+	page.heldNode = was;
+	let n = adopt(page);
+	if (!n || n.x !== 40 || n.y !== 50) throw new Error('not placed where the ghost stood');
+	if (n.fx != null || n.fy != null) throw new Error('a held ghost left its paper fixed: ' + JSON.stringify(n));
+	if (saves()) throw new Error('saved as a pin');
+
+	// Frozen for the frames of a settle.
+	({ page, saves } = lift());
+	was = ghost();
+	page.nodeCache.set(was.id, was);
+	page.frozen.add(was);
+	n = adopt(page);
+	if (n.fx != null || n.fy != null) throw new Error('a frozen ghost left its paper fixed');
+
+	// Pinned by the user: the pin is about the work, and goes with it.
+	({ page, saves } = lift());
+	was = ghost();
+	page.nodeCache.set(was.id, was);
+	n = adopt(page);
+	if (n.fx !== 40 || n.fy !== 50) throw new Error('a pinned ghost lost its pin: ' + JSON.stringify(n));
+	if (saves() !== 1) throw new Error('the moved pin was not saved');
+});
+
+check('the gap list waits for the build that has the outside references', () => {
+	const sent = [];
+	const page = liftPage({ functions: ['renderGaps', 'builtWith'], globals: {
+		gapsOpen: true, gapRows: null, raw: null,
+		Gaps: { rank: () => ({ rows: [], total: 0 }) },
+		believedEdges: () => [], clusters: () => ({ of: new Map() }),
+		emit: msg => sent.push(msg), markGaps() {},
+		elEnrich: { checked: false }, elIncludeExternal: { checked: true },
+	} });
+	const building = (raw) => {
+		page.raw = raw;
+		sent.length = 0;
+		page.renderGaps();
+		return sent[0].building;
+	};
+	// A finished graph built without them: opening the list has just asked for
+	// the build that has, and this one knows nothing about what is missing.
+	if (building({ external: [], options: { includeExternal: false }, meta: { phase: 'done' } }) !== true) {
+		throw new Error('"nothing is missing" over a graph built without outside references');
+	}
+	if (building({ external: [], options: { includeExternal: true }, meta: { phase: 'done' } }) !== false) throw new Error('a finished build is still "building"');
+	if (building({ external: [], options: { includeExternal: true }, meta: { phase: 'edges' } }) !== true) throw new Error('a build in flight is "done"');
+	if (building(null) !== true) throw new Error('no payload yet is "done"');
+});
+
+check('a held item from before 1800 has a year', () => {
+	const page = liftPage({ functions: ['year'] });
+	const cases = { '1687-07-05': 1687, 1735: 1735, 'July 1905': 1905, '2013-07-31': 2013, '2101': 2101,
+		'n.d.': null, '': null, '12345': null, '0999': null, 'vol. 12': null };
+	for (const [date, want] of Object.entries(cases)) {
+		const got = page.year({ date });
+		if (got !== want) throw new Error(JSON.stringify(date) + ' -> ' + got);
+	}
+	if (page.year({}) !== null) throw new Error('no date');
+});
+
+check('a strategy keeps its row through the rebuild it is being rebuilt in', () => {
+	const page = liftPage({ functions: ['listedVias'], consts: ['VIA_RANK'] });
+	const edges = (...vias) => vias.map(v => ({ via: [v] }));
+	const listed = ['pdf-links', 'text-doi', 'title-match'];
+	// The first payload of a rebuild has no edges, and the second has only the
+	// text strategies'. The rows used to be drawn from each alone.
+	if (page.listedVias([], listed, true).join() !== listed.join()) throw new Error('emptied: ' + page.listedVias([], listed, true));
+	if (page.listedVias(edges('title-match', 'text-doi'), listed, true).join() !== listed.join()) throw new Error('lost the PDF scan\'s row mid-build');
+	// A strategy that turns up during the build joins in its place.
+	if (page.listedVias(edges('locator-match'), listed, true).join() !== 'pdf-links,text-doi,locator-match,title-match') {
+		throw new Error(page.listedVias(edges('locator-match'), listed, true).join());
+	}
+	// A build that finished without one takes its row off, and OpenAlex never has one.
+	if (page.listedVias(edges('title-match', 'openalex'), listed, false).join() !== 'title-match') throw new Error('a finished build kept a row');
+	if (page.listedVias([], [], true).length) throw new Error('rows out of nothing');
+});
+
+check('a payload leaves the completion list open, on the row it was on', () => {
+	const row = () => ({ on: false, classList: { add() { row.last = this; } } });
+	const mk = labels => labels.map(label => ({ kind: 'value', field: 'author', term: '"' + label + '"', label }));
+	const rows = [row(), row(), row()];
+	const marked = [];
+	for (const r of rows) r.classList = { add: c => marked.push(rows.indexOf(r) + ':' + c) };
+	let refreshed = 0;
+	const page = liftPage({ functions: ['keepSuggest'], globals: {
+		elSuggest: { hidden: false, children: rows },
+		suggestBox: { input: {} },
+		suggestions: mk(['Kucsko', 'Maurer']),
+		suggestIndex: 1,
+		refreshSuggest: null,
+	} });
+	// What a payload does to the list: new values, nothing highlighted.
+	page.refreshSuggest = () => {
+		refreshed++;
+		page.suggestions = mk(['Acosta', 'Kucsko', 'Maurer']);
+		page.suggestIndex = -1;
+	};
+	page.keepSuggest();
+	if (refreshed !== 1) throw new Error('the list was not rebuilt from the new payload');
+	// Maurer was highlighted, and is now the third row.
+	if (page.suggestIndex !== 2 || marked.join() !== '2:active') throw new Error('highlight: ' + page.suggestIndex + ' ' + marked);
+	// A row that is gone is not highlighted somewhere else.
+	page.suggestions = mk(['Zu']);
+	page.suggestIndex = 0;
+	page.keepSuggest();
+	if (page.suggestIndex !== -1) throw new Error('a row that left the list is still highlighted');
+	// A list that is shut stays shut.
+	page.elSuggest.hidden = true;
+	page.keepSuggest();
+	if (refreshed !== 2) throw new Error('a closed list was opened by a payload');
+	// And zgSetData no longer closes it.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	const body = js.slice(js.indexOf('window.zgSetData = function'), js.indexOf('function rekeyFocus('));
+	if (/hideSuggest\(\)/.test(body) || !/render\(\);[^]*keepSuggest\(\);/.test(body)) throw new Error('zgSetData still closes the list');
+});
+
+check('typing on after Enter takes the Enter back', () => {
+	const sent = [];
+	const timers = [];
+	const page = liftPage({ functions: ['askSearch'], consts: ['SEARCH_DEBOUNCE_MS'], globals: {
+		searchTimer: null, searchSeq: 0, searchFound: new Set([1]), searchEnter: true,
+		elSearch: { value: 'diam' },
+		clearTimeout() {}, setTimeout: (fn) => { timers.push(fn); return timers.length; },
+		emit: msg => sent.push(msg),
+	} });
+	// Enter was pressed on "dia" before its answer came; this is the next key.
+	page.askSearch();
+	if (page.searchEnter !== false) throw new Error('the Enter is still armed for an answer to different text');
+	if (page.searchFound !== null) throw new Error('the old answer was kept');
+	timers[0]();
+	if (sent.length !== 1 || sent[0].text !== 'diam' || sent[0].seq !== page.searchSeq) throw new Error(JSON.stringify(sent));
+});
+
+check('a search row for an outside reference shows its title', () => {
+	const page = liftPage({ functions: ['searchTitle'] });
+	const ghost = { ghost: true, id: 'doi:10.1038/nature12373', name: '10.1038/nature12373', meta: { title: 'Nanometre-scale thermometry in a living cell' } };
+	if (page.searchTitle(ghost) !== 'Nanometre-scale thermometry in a living cell') throw new Error(page.searchTitle(ghost));
+	// Unnamed, it is still its identifier; a paper is its title, as it was.
+	if (page.searchTitle({ ghost: true, id: 'doi:10.1/x', name: '10.1/x', meta: {} }) !== '10.1/x') throw new Error('an unnamed ghost');
+	if (page.searchTitle({ ghost: false, id: 'ABCD1234', name: 'A held paper', meta: { title: 'not this' } }) !== 'A held paper') throw new Error('a held paper');
+	if (page.searchTitle({ id: 'X' }) !== 'X') throw new Error('a node with nothing else');
+});
+
+check('a saved view that cannot be put back does not stop the tab saving', () => {
+	let saves = 0;
+	const errors = [];
+	const page = liftAssigned('zgSetView', {
+		viewKnown: false,
+		applyView: () => {
+			throw new Error('a group nobody can draw');
+		},
+		viewChanged: () => {
+			saves++;
+		},
+	});
+	page.window.console = { error: e => errors.push(e.message) };
+	page.window.zgSetView(JSON.stringify({ v: 1, groups: [{}] }));
+	// viewKnown is what viewChanged() waits for; left unset, nothing was ever
+	// saved from the tab again.
+	if (page.viewKnown !== true) throw new Error('the page never learned its view');
+	if (saves !== 1) throw new Error('the view was not reported back');
+	if (errors.join() !== 'a group nobody can draw') throw new Error('the failure was not logged: ' + errors);
+});
+
+check('"Cited by ≥" is a whole number from 1 up, in the box and in the saved view', () => {
+	const box = { value: '2', max: '20' };
+	const page = liftPage({ functions: ['minCitesAsked'], globals: { elMinCites: box } });
+	const cases = { 0: 1, '-3': 1, '': 1, '-': 1, 1: 1, 2: 2, '2.6': 3, 20: 20, 999: 20, abc: 1 };
+	for (const [typed, want] of Object.entries(cases)) {
+		box.value = typed;
+		if (page.minCitesAsked() !== want) throw new Error(JSON.stringify(typed) + ' -> ' + page.minCitesAsked());
+	}
+	// The graph, the saved view and the box on blur all read the one number.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes('let minCites = minCitesAsked();') || !js.includes('minCites: minCitesAsked(),')) throw new Error('render() or the saved view reads the box raw');
+	if (!/elMinCites\.addEventListener\('change'[^]*?elMinCites\.value = asked;/.test(js)) throw new Error('the box keeps what was typed');
+});
+
+check('a slider dragged across its range writes its last value once', () => {
+	const writes = [];
+	const timers = [];
+	let saves = 0;
+	const page = liftPage({ functions: ['remember', 'flushRemembered'], consts: ['REMEMBER_MS'], globals: {
+		remembered: new Map(), rememberTimer: null,
+		viewChanged: () => { saves++; },
+		window: {
+			setTimeout: (fn) => { timers.push(fn); return timers.length; },
+			clearTimeout() {},
+			localStorage: { setItem: (k, v) => writes.push(k + '=' + v) },
+		},
+	} });
+	for (let step = 0; step <= 60; step++) page.remember('zg.linkPull', String(step / 60));
+	page.remember('zg.hold', '0.2');
+	// Sixty-one writes to storage, on the thread the drag is drawn on.
+	if (writes.length) throw new Error(writes.length + ' writes during the drag');
+	if (timers.length !== 1) throw new Error(timers.length + ' timers for one gesture');
+	if (saves !== 62) throw new Error('the tab\'s own view was not told of every step: ' + saves);
+	timers[0]();
+	if (writes.join(' ') !== 'zg.linkPull=1 zg.hold=0.2') throw new Error('wrote: ' + writes.join(' '));
+	// Nothing is left to write twice, and the next gesture starts a new wait.
+	page.flushRemembered();
+	if (writes.length !== 2) throw new Error('flushed twice');
+	page.remember('zg.hold', '0.3');
+	if (timers.length !== 2) throw new Error('a later gesture was not scheduled');
+	// A tab closed inside the wait still writes.
+	const js = fs.readFileSync(path.join(addonDir, 'content/graph.js'), 'utf8');
+	if (!js.includes("window.addEventListener('pagehide', flushRemembered);")) throw new Error('a closing tab loses its last setting');
+	// A store that refuses is not an error.
+	page.window.localStorage.setItem = () => {
+		throw new Error('denied');
+	};
+	page.flushRemembered();
+});
+
+check('a node with the button down on it is not saved as a pin', () => {
+	const input = () => ({ value: '1', checked: false });
+	const pressed = { id: 'PRESSED1', x: 10, y: 20, fx: 10, fy: 20 };
+	const pinned = { id: 'PINNED02', x: 30, y: 40, fx: 30, fy: 40 };
+	const free = { id: 'FREE0003', x: 5, y: 6 };
+	const globals = {
+		nodeCache: new Map([pressed, pinned, free].map(n => [n.id, n])),
+		pendingPins: new Map([['LATER004', { x: 7, y: 8 }]]),
+		heldNode: null, frozen: new Set(), dragNode: null, pressNode: pressed, pressPinned: null,
+		isCollapsed: () => false, elFrame: { classList: { contains: () => false } }, sideWidth: 300,
+		isolateDepth: 1, colorEdges: true, edgeTips: true, disabledVia: new Set(), groups: [],
+		panelBox: { filters: () => [] }, minCitesAsked: () => 2,
+	};
+	for (const name of ['elLinkPull', 'elCenterPull', 'elGroupPull', 'elPinPull', 'elDragAlpha', 'elSettle', 'elHold', 'elPerf',
+		'elAutobuild', 'elHideIsolated', 'elHideGhostNames', 'elSizeBy', 'elColorBy', 'elMinConf']) globals[name] = input();
+	const page = liftPage({ functions: ['snapshotView', 'pinnedByUser', 'isPinned'], consts: ['VIEW_VERSION', 'SECTIONS'], globals });
+	const ids = () => page.snapshotView().pins.map(p => p.id).join(' ');
+	// force-graph fixes a node the moment the button goes down on it, and a
+	// save that falls in that moment used to write it into the tab.
+	if (ids() !== 'PINNED02 LATER004') throw new Error('pins: ' + ids());
+	// Pressing a node that IS pinned moves the pin; it is still one.
+	page.pressNode = pinned;
+	page.pressPinned = pinned;
+	if (ids() !== 'PRESSED1 PINNED02 LATER004') throw new Error('with the press on a pinned node: ' + ids());
+});
+
+check('a colour that already has an alpha can be faded', () => {
+	const page = liftPage({ functions: ['fade', 'withAlpha'] });
+	const cases = [
+		['#336699', 0.5, 'rgba(51,102,153,0.5)'],
+		['hsl(210, 50%, 40%)', 0.3, 'hsla(210, 50%, 40%, 0.3)'],
+		// The window's own text colour, in more than one theme.
+		['rgba(0, 0, 0, 0.8)', 0.5, 'rgba(0, 0, 0, 0.4)'],
+		['rgb(255, 255, 255)', 0.25, 'rgba(255, 255, 255, 0.25)'],
+		['rgb(10 20 30 / 50%)', 0.5, 'rgba(10, 20, 30, 0.25)'],
+		['hsla(210, 50%, 40%, 0.5)', 0.5, 'hsla(210, 50%, 40%, 0.25)'],
+	];
+	for (const [color, a, want] of cases) {
+		const got = page.fade(color, a);
+		if (got !== want) throw new Error(color + ' at ' + a + ' -> ' + got);
+		// What it used to make of an rgba(): one number too many, which a
+		// canvas ignores, leaving whatever colour was set before.
+		if ((got.match(/,/g) || []).length !== 3) throw new Error('not a colour: ' + got);
+	}
+	// What it cannot read comes back as it was, rather than as something else.
+	if (page.fade('CanvasText', 0.5) !== 'CanvasText') throw new Error(page.fade('CanvasText', 0.5));
+});
+
+check('two pins inside each other\'s pad do not keep the layout awake', () => {
+	const run = (nodes) => {
+		const page = liftPage(Object.assign({ globals: { collideBusy: false, nodeRadius: n => n.r } }, COLLIDE_LIFT));
+		const force = page.collide();
+		force.initialize(nodes);
+		force(1);
+		return page.collideBusy;
+	};
+	const at = (x, fixed) => Object.assign({ r: 10, x, y: 0, vx: 0, vy: 0 }, fixed ? { fx: x, fy: 0 } : null);
+	// Both fixed, overlapping: nothing the force does will ever part them, and
+	// reporting work to do on every tick is what kept the engine running.
+	if (run([at(0, true), at(5, true)]) !== false) throw new Error('two pins that cannot move are "busy"');
+	// One of them free: there is work, and it is done.
+	if (run([at(0, true), at(5, false)]) !== true) throw new Error('a free node on a pin is not being moved');
+	if (run([at(0, false), at(5, false)]) !== true) throw new Error('two free nodes overlapping are not busy');
+	// Apart, nothing is busy either way.
+	if (run([at(0, true), at(100, true)]) !== false) throw new Error('two nodes apart are busy');
+});
+
+check('a click on another node closes the card of the outside reference before it', () => {
+	const ghost = { id: 'doi:10.1/x' };
+	const other = { id: 'HELD0001' };
+	const picks = [];
+	const page = liftPage({ functions: ['nodeClicked', 'hideAction'], globals: {
+		spentPress: () => false, spentDouble: () => false, endHint() {},
+		paneEngaged: false, actionNode: ghost, elAction: { hidden: false },
+		togglePick: id => picks.push('toggle ' + id), pickOnly: id => picks.push('only ' + id),
+	} });
+	// A click on the ghost the card is about leaves the card alone.
+	page.nodeClicked(ghost, {});
+	if (page.elAction.hidden || page.actionNode !== ghost) throw new Error('its own node closed the card');
+	// A click on anything else: the ring moves, and the card went on describing
+	// the ghost -- and offering to add it -- beside it.
+	page.nodeClicked(other, { ctrlKey: true });
+	if (!page.elAction.hidden || page.actionNode !== null) throw new Error('the card is still up');
+	if (picks.join(', ') !== 'only doi:10.1/x, toggle HELD0001') throw new Error('picks: ' + picks.join(', '));
+});
+
+check('the page asks for the gap list\'s rows again when the list comes back into view', () => {
+	let rendered = 0;
+	let synced = 0;
+	const page = liftAssigned('zgGapsShowing', {
+		gapsOpen: true,
+		syncGapsButton: () => { synced++; },
+		renderGaps: () => { rendered++; },
+	});
+	// The panel is put away: chrome says the list is no longer showing.
+	page.window.zgGapsShowing(JSON.stringify({ showing: false }));
+	if (page.gapsOpen !== false || rendered) throw new Error('hidden: ' + page.gapsOpen + ' ' + rendered);
+	// And brought back, by a way that is not the page's own openGaps().
+	page.window.zgGapsShowing(JSON.stringify({ showing: true }));
+	if (page.gapsOpen !== true || rendered !== 1) throw new Error('rows were not asked for on the way back: ' + rendered);
+	// Told again what it already knows, it does not draw again.
+	page.window.zgGapsShowing(JSON.stringify({ showing: true }));
+	if (rendered !== 1 || synced !== 3) throw new Error(rendered + ' renders, ' + synced + ' syncs');
 });
 
 Promise.all(pending).then(() => {
