@@ -92,13 +92,21 @@ class ZoteroAdapter {
 				// Returns false when the file is missing on disk -- the equivalent
 				// of the SQLite adapter's fs.existsSync() filter.
 				let file = await att.getFilePathAsync();
-				if (!file) continue;
+				// Missing is not the same as unread. A library that downloads
+				// files as needed has most of its PDFs somewhere else, and
+				// Zotero syncs their indexed text all the same: it writes it
+				// to the attachment's storage folder whether or not the file
+				// is there (fulltext.js setItemContent). Skipping the
+				// attachment for want of the file threw that text away, and
+				// with it every text strategy's edges for the paper. Kept,
+				// then, with no file -- which is what the PDF scan reads.
+				if (!file && !(await hasIndexedText(att))) continue;
 				let rec = {
 					key: att.key,
 					parentKey: itemKey,
 					contentType: att.attachmentContentType || '',
 					hash: null,
-					file,
+					file: file || null,
 				};
 				out.push(rec);
 				this._attByKey.set(att.key, { rec, item: att });
@@ -146,6 +154,8 @@ class ZoteroAdapter {
 		let entry = this._attByKey.get(attKey);
 		if (!entry || entry.rec.contentType !== 'application/pdf') return [];
 		let file = entry.rec.file;
+		// Indexed, and not on this disk: there are no links to read.
+		if (!file) return [];
 
 		let stat;
 		try {
@@ -181,7 +191,7 @@ class ZoteroAdapter {
 	pdfCount() {
 		let n = 0;
 		for (let atts of this._attsByItem.values()) {
-			for (let a of atts) if (a.contentType === 'application/pdf') n++;
+			for (let a of atts) if (a.contentType === 'application/pdf' && a.file) n++;
 		}
 		return n;
 	}
@@ -349,6 +359,18 @@ function typeName(itemTypeID) {
 	}
 	catch (e) {
 		return null;
+	}
+}
+
+/** Whether Zotero has this attachment's text on disk, file or no file. */
+async function hasIndexedText(att) {
+	let path = ftCachePath(att);
+	if (!path) return false;
+	try {
+		return !!(await IOUtils.exists(path));
+	}
+	catch (e) {
+		return false;
 	}
 }
 

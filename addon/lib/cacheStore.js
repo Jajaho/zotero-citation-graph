@@ -70,11 +70,22 @@ async function clear() {
 	// already one that will not write them back.
 	_generation++;
 	let freed = 0;
-	for (let name of Object.values(FILES)) {
-		let path = PathUtils.join(dir(), name);
-		freed += await fileSize(path);
-		await IOUtils.remove(path, { ignoreAbsent: true });
-		await IOUtils.remove(path + '.tmp', { ignoreAbsent: true });
+	try {
+		for (let name of Object.values(FILES)) {
+			let path = PathUtils.join(dir(), name);
+			freed += await fileSize(path);
+			await IOUtils.remove(path, { ignoreAbsent: true });
+			await IOUtils.remove(path + '.tmp', { ignoreAbsent: true });
+		}
+	}
+	finally {
+		// And again, last. The files go one at a time, and a build that starts
+		// while the first is being removed loads the third before its turn
+		// comes -- in the generation the line above had just opened, so its
+		// flush was taken for a new cache's and put the whole file back. A
+		// cache loaded at any point during the clear is now one loaded before
+		// it finished, and drops its write like the rest.
+		_generation++;
 	}
 	return freed;
 }

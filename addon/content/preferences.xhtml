@@ -22,4 +22,19 @@
 			<label id="zotero-citation-graph-cache-status"/>
 		</hbox>
 	</groupbox>
+	<!-- The one pref of this plugin's that is the user's to set and had no
+	     field anywhere: it could be typed into the Config Editor or not at all.
+	     Bound by core (preferences.js reads the preference attribute as a
+	     full pref name), so there is no handler for it in lib/prefsPane.js. -->
+	<groupbox>
+		<label><html:h2 data-l10n-id="zotero-citation-graph-prefs-openalex-heading"/></label>
+		<description data-l10n-id="zotero-citation-graph-prefs-openalex-description"/>
+		<hbox align="center">
+			<html:label for="zotero-citation-graph-openalex-key"
+				data-l10n-id="zotero-citation-graph-prefs-openalex-key"/>
+			<html:input id="zotero-citation-graph-openalex-key" type="text"
+				autocomplete="off" spellcheck="false" style="flex: 1"
+				preference="extensions.zotero.zoteroCitationGraph.openalex.apiKey"/>
+		</hbox>
+	</groupbox>
 </vbox>

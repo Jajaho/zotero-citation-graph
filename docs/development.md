@@ -409,7 +409,8 @@ visible when stdout is redirected. In-app, **Tools → Developer → Run JavaScr
 iteration surface (`Zotero.ZoteroCitationGraph` is live there).
 
 Iterating: edit files under `addon/`, restart Zotero. No rebuild, no version bump, no re-copy —
-`bootstrap.js` and every module loaded through `lib/cjs.js` use `ignoreCache: true`.
+`bootstrap.js` and every module loaded through `lib/cjs.js` pass `ignoreCache` whenever the plugin
+is loaded from a directory, which a pointer file is. A packed XPI goes through the startup cache.
 
 Remove with `tools\uninstall-dev.ps1`.
 

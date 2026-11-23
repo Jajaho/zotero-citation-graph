@@ -294,10 +294,18 @@ function close_(entry) {
 	itemPane.face(pane, pane.behind || pane.details);
 }
 
-/** Whether the list is the page currently showing. */
+/**
+ * Whether the list is on screen: the page the deck is turned to, in a panel
+ * that is not put away.
+ *
+ * The second half was missing. A panel collapsed to its strip of icons with
+ * the list behind it still answered yes, so the bar's button read "hide the
+ * list" over a list nobody could see -- the first press closed it, unseen, and
+ * it took a second to get it back -- and every render drew rows into it.
+ */
 function showing(entry) {
 	let pane = entry && entry.itemPane;
-	return !!(pane && pane.gaps && pane.facing === pane.gaps.box);
+	return !!(pane && pane.gaps && pane.facing === pane.gaps.box) && !splitPane.collapsed(entry);
 }
 
 /**

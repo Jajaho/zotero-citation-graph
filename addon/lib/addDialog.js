@@ -109,6 +109,8 @@ const PANEL_CSS = `
  *                                       there is rather than add a second, and
  *                                       leaves the tag out -- nothing is new
  * @param {Object}  [opts.anchor]        element to centre the panel over
+ * @param {String}  [opts.tabID]         the tab that is asking: selecting another
+ *                                       one cancels the question
  * @returns {Promise<?Object>} { libraryID, collectionID, tag, tagOn }, or null if cancelled
  */
 function open(win, opts) {
@@ -322,9 +324,44 @@ function open(win, opts) {
 
 		// --- closing ----------------------------------------------------
 
+		// The panel is the window's, and the question is one tab's. It stays up
+		// over a click outside it on purpose, so it also stayed up over a
+		// switch to another tab: the library, or a second graph, with a sheet
+		// across it asking where to file a work that tab knows nothing about.
+		// So leaving the tab it was asked in is an answer, and the answer is no.
+		let tabWatch = null;
+		// Taken out of the notifier it was put into.
+		let notifier = null;
+		function unwatchTabs() {
+			if (tabWatch == null) return;
+			try {
+				notifier.unregisterObserver(tabWatch);
+			}
+			catch (e) {
+				Zotero.logError(e);
+			}
+			tabWatch = null;
+		}
+		if (opts.tabID != null) {
+			try {
+				notifier = Zotero.Notifier;
+				tabWatch = notifier.registerObserver({
+					notify(event, type, ids) {
+						if (type !== 'tab' || event !== 'select') return;
+						if (ids && ids.length && ids[0] !== opts.tabID) finish(null);
+					},
+				}, ['tab'], 'zotero-citation-graph-add');
+			}
+			catch (e) {
+				// A dialog that cannot watch the tabs is the dialog it was.
+				Zotero.logError(e);
+			}
+		}
+
 		function finish(value) {
 			if (settled) return;
 			settled = true;
+			unwatchTabs();
 			resolve(value);
 			try {
 				panel.hidePopup();
@@ -386,8 +423,12 @@ function open(win, opts) {
 			if (!ownPopup(event)) return;
 			try {
 				// With no tag to type there is one thing left to do here, and the
-				// focus goes to the button that does it.
-				if (held) okBtn.focus();
+				// focus goes to the button that does it. That is a dialog over a
+				// work the library holds, and it is one whose tag box was left
+				// unticked last time: the field is disabled then, focus() on a
+				// disabled field goes nowhere, and a panel with the focus nowhere
+				// hears neither Enter nor Escape.
+				if (held || tagInput.disabled) okBtn.focus();
 				else {
 					tagInput.focus();
 					tagInput.select();

@@ -107,6 +107,9 @@ const LIBRARY_BOUND = [
 // report, and reporting it anyway would be heard as being about the menu that
 // replaced it.
 let open_ = new WeakMap();
+// The newest ask per window, from the moment it is made -- before there is a
+// record in open_ for it, which only exists once core has built the menu.
+let asking_ = new WeakMap();
 
 // How long a popup asked to close is given to say that it has. Only reached if
 // the hide raises no popuphidden at all, which is not a reason to withhold the
@@ -147,13 +150,31 @@ async function open(entry, msg, reply) {
 	close(win);
 	sweep(popup);
 
+	// This ask, so that what happens to it after an await can tell whether it
+	// is still the one the page is waiting on.
+	let ask = {};
+	asking_.set(win, ask);
+
 	// And down before the next one goes up. A menupopup opens from the closed
 	// state and from no other, so a menu opened over one still hiding is a menu
 	// that never appears -- leaving the page holding a node for a popup that is
 	// not there, with no popuphidden ever coming to say so.
 	if (prev) await hidden(popup);
 
-	await pane.buildItemContextMenu();
+	// Core's to build, and core's to fail: it reads the selection, the
+	// collection row and a dozen things a graph tab stands in for. When it
+	// rejected, this function left by the same door -- no menu, and nothing
+	// said to a page still holding the node for one. Same answer as above.
+	try {
+		await pane.buildItemContextMenu();
+	}
+	catch (e) {
+		if (asking_.get(win) === ask) reply('zgMenuClosed');
+		throw e;
+	}
+	// Replaced while core was building. The newer ask swept the popup and is
+	// filling it; adding this one's rows would put two menus in it.
+	if (asking_.get(win) !== ask) return;
 
 	for (let name of LIBRARY_BOUND) {
 		let el = popup.querySelector('.' + name);
@@ -260,7 +281,19 @@ async function open(entry, msg, reply) {
 	// reader hands its popups for the same reason: the popup is placed by a
 	// window that knows nothing of where this page sits inside it.
 	trace.log('menu open  entries=' + (msg.entries || []).length + '  rows=' + popup.querySelectorAll('.' + CLASS).length);
-	popup.openPopupAtScreen(msg.x, msg.y, true);
+	try {
+		popup.openPopupAtScreen(msg.x, msg.y, true);
+	}
+	catch (e) {
+		// No popup, so no popuphidden: this is the only word the page will get.
+		popup.removeEventListener('popuphidden', onHidden);
+		if (open_.get(win) === record) {
+			open_.delete(win);
+			sweep(popup);
+		}
+		settle(null);
+		throw e;
+	}
 }
 
 /**

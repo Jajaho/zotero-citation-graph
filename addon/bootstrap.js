@@ -57,7 +57,10 @@ async function startup({ id, version, rootURI: uri }, reason) {
 	// Bootstrap the CommonJS loader, then load the plugin proper through it.
 	let shim = {};
 	Services.scriptloader.loadSubScriptWithOptions(rootURI + 'lib/cjs.js', {
-		target: shim, charset: 'utf-8', ignoreCache: true
+		// As lib/cjs.js does for everything it loads: afresh from a directory,
+		// which is a development install, and through the startup cache from
+		// an XPI.
+		target: shim, charset: 'utf-8', ignoreCache: !/^jar:/i.test(rootURI)
 	});
 	let require = shim.makeRequire(rootURI, {
 		Zotero, Services, Components, Cc, Ci, Cu,
@@ -81,7 +84,9 @@ async function startup({ id, version, rootURI: uri }, reason) {
 	CG = require('./lib/main.js');
 	Zotero.ZoteroCitationGraph = CG;
 	trace.log('modules loaded');
-	await CG.startup({ id, version, rootURI, pluginID: PLUGIN_ID, resRoot: RES_ROOT });
+	// The reason goes with it: only Zotero's own start has a session to finish
+	// restoring. See restoreLate() in lib/main.js.
+	await CG.startup({ id, version, rootURI, pluginID: PLUGIN_ID, resRoot: RES_ROOT, reason });
 	trace.log('startup returned');
 
 	// Windows already open when the plugin is enabled at runtime don't get

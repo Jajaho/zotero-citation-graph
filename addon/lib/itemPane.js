@@ -111,7 +111,13 @@ const PANE_CSS = `
 async function show(entry, itemIDs, { inView = null, status = () => {}, expand = false } = {}) {
 	if (!entry || !entry.split) return;
 
+	// The newest ask is the one that is drawn. Resolving is an await, and a
+	// pick of three hundred papers takes longer to come back than the single
+	// click made after it -- so the click was recorded first and the old pick
+	// over it, and the pane settled on a selection the user had already left.
+	let ask = entry.itemPaneAsk = (entry.itemPaneAsk || 0) + 1;
 	let items = await resolve(itemIDs);
+	if (entry.itemPaneAsk !== ask) return;
 
 	// Everything below the first line of this is core's element, on core's
 	// terms. If a Zotero this plugin has not seen builds it differently, say so
@@ -131,6 +137,20 @@ async function show(entry, itemIDs, { inView = null, status = () => {}, expand =
 	// than about the view. The last count the page gave stands in that case.
 	if (inView != null) pane.inView = inView;
 	want(pane, items);
+
+	// A page pinned over the pane holds against the selection moving under it,
+	// which is what a reader of the gap list does all the time. This is not
+	// that: `expand` is core saying "show this" -- a note just made, a related
+	// item followed -- and the pin swallowed it, so the note was opened behind
+	// the list and nothing on screen changed. The pin is lifted for it.
+	// What was drawn under it comes up at once: the draw below turns the deck
+	// only when it has something new to draw, and the thing asked for may be
+	// the very page the list was covering.
+	if (expand && pane.pinned) {
+		let under = pane.behind;
+		pane.pinned = null;
+		if (under) face(pane, under);
+	}
 
 	// An explicit request to look at one thing opens the pane: a note just
 	// written, a related item clicked in the pane, a citation followed out of a
@@ -318,6 +338,9 @@ function showNote(entry, pane, item) {
 	note.viewMode = 'library';
 	note.item = item;
 	face(pane, note);
+	// Behind a pinned page it is drawn and not shown, and an editor nobody can
+	// see must not take the caret out of whatever they are typing in.
+	if (pane.facing !== note) return;
 	// A note is opened in order to be written in, and core agrees: newNote()
 	// focuses its own editor the moment the note is selected. That call lands on
 	// the LIBRARY's editor, which is not on screen, so the caret has to be put

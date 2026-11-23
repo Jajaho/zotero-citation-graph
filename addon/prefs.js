@@ -1,9 +1,11 @@
 // Default prefs, loaded onto the default branch by Zotero with FULL pref names.
 // Read them as Zotero.Prefs.get('zoteroCitationGraph.<name>') -- Zotero.Prefs auto-prefixes
 // 'extensions.zotero.'.
-pref("extensions.zotero.zoteroCitationGraph.strategies", "pdf-links,text-doi,title-match");
-pref("extensions.zotero.zoteroCitationGraph.minConfidence", 0);
-pref("extensions.zotero.zoteroCitationGraph.usePdfLinks", true);
+//
+// Three that used to open this file -- strategies, minConfidence, usePdfLinks --
+// were declared here and read by nothing: which strategies run and how sure an
+// edge must be are a tab's own settings, kept with the tab. A default with no
+// reader is a promise in about:config that changing it does something.
 
 // Metadata enrichment for outside references (docs/external-references.md).
 // Ordered: core/enrich.js merges fill-first, so this list is the ranking.
@@ -12,6 +14,7 @@ pref("extensions.zotero.zoteroCitationGraph.enrichers", "openalex");
 // still works at about a tenth of the free daily allowance -- enough for a
 // collection at a time, which is all this plugin ever asks for.
 // Free key: https://openalex.org/settings/api
+// Set in Settings -> Citation Graph (content/preferences.xhtml).
 pref("extensions.zotero.zoteroCitationGraph.openalex.apiKey", "");
 
 // The "Add to Zotero" dialog opens with these, and writes back whatever it was

@@ -210,7 +210,45 @@ function restoreView(data) {
  * options, or different ones -- fills in instead of leaving a scope undefined.
  */
 function restoreOptions(data) {
-	return { ...DEFAULT_OPTIONS, ...((data && data.options) || null) };
+	return { ...DEFAULT_OPTIONS, ...knownOptions(data && data.options) };
+}
+
+/**
+ * The options in `given` that are options: a name DEFAULT_OPTIONS has, with a
+ * value of the type it has there.
+ *
+ * Both sources are text someone else wrote -- a message from the page, an
+ * entry in session.json -- and both were spread over the tab's options as they
+ * came. A key nothing reads was then saved with the tab for good, and a value
+ * of the wrong type was read as whatever its truthiness made of it:
+ * `"recursive": "false"` built the subcollections in.
+ */
+function knownOptions(given) {
+	let out = {};
+	if (!given || typeof given !== 'object') return out;
+	for (let name of Object.keys(DEFAULT_OPTIONS)) {
+		if (typeof given[name] === typeof DEFAULT_OPTIONS[name]) out[name] = given[name];
+	}
+	return out;
+}
+
+/**
+ * Item ids out of a message from the page: whole positive numbers, each once.
+ *
+ * They become the tab's selection, which is what core's menus act on when one
+ * is opened over the graph -- Move to Trash included. The page only ever sends
+ * the ids it was given, but what arrives is parsed JSON, and "whatever was in
+ * the array" is not a thing to hand Zotero.Items.
+ */
+function itemIDsOf(msg) {
+	let out = [];
+	let seen = new Set();
+	for (let id of (msg && Array.isArray(msg.itemIDs)) ? msg.itemIDs : []) {
+		if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+		seen.add(id);
+		out.push(id);
+	}
+	return out;
 }
 
 /**
@@ -368,6 +406,13 @@ function holdsItems(tabID, itemIDs) {
 function dropEntry(tabID) {
 	let entry = open_.get(tabID);
 	try {
+		// Still waiting for its page: see mount().
+		if (entry && entry.unmount) entry.unmount();
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	try {
 		if (entry) searchPane.drop(entry);
 	}
 	catch (e) {
@@ -423,19 +468,22 @@ async function openSelection(win, libraryID, itemKeys, collection, config) {
 }
 
 /** The tab both entry points end in, so the two cannot come to differ. */
-function openScope(win, scope, options, config) {
+function openScope(win, scope, options, config, { index = null, view = null } = {}) {
 	let { id, container } = win.Zotero_Tabs.add({
 		// No hyphen: tabs.js parseTabType() splits the type on '-' to separate
 		// the content type from the '-unloaded' state suffix.
 		type: 'graph',
 		title: tabTitle(scope),
-		data: tabData(scope, options),
+		data: tabData(scope, options, view),
 		select: true,
+		// At the end of the strip unless told where: a duplicate goes beside
+		// the tab it is of.
+		...(index != null ? { index } : null),
 		onClose: () => dropEntry(id),
 	});
 
 	trace.log(`opened a graph tab for ${scopeSummary(scope)}  strip=[${stripSummary(win)}]`);
-	mount(win, id, container, scope, config, options, null)
+	mount(win, id, container, scope, config, options, view)
 		.catch(e => Zotero.logError(e));
 }
 
@@ -488,26 +536,145 @@ async function restore(win, tab, tabIndex) {
 			+ `  -> ${scope ? 'restoring' : 'dropped (nothing left to graph)'}`);
 		if (!scope) return { itemID: null };
 
-		let id;
-		({ id } = win.Zotero_Tabs.add({
-			type: 'graph-unloaded',
-			title: tabTitle(scope),
-			// add() rejects an index below 1; index 0 is the library tab's, and
-			// no hook of ours is called for it.
-			index: tabIndex > 0 ? tabIndex : 1,
-			data: tab.data,
-			select: !!tab.selected,
-			onClose: () => dropEntry(id),
-		}));
-		// add() runs select() inline when select is set, so by the time this
-		// line is reached load() may already have mounted the tab and taken it
-		// back out of pending_.
-		if (!open_.has(id)) pending_.set(id, { win, tabID: id });
+		addUnloaded(win, scope, tab.data, tabIndex, !!tab.selected);
 	}
 	catch (e) {
 		Zotero.logError(e);
 	}
 	return { itemID: null };
+}
+
+/** A tab in the strip with no page behind it yet; load() mounts it on select. */
+function addUnloaded(win, scope, data, tabIndex, select) {
+	let id;
+	({ id } = win.Zotero_Tabs.add({
+		type: 'graph-unloaded',
+		title: tabTitle(scope),
+		// add() rejects an index below 1; index 0 is the library tab's, and
+		// no hook of ours is called for it.
+		index: tabIndex > 0 ? tabIndex : 1,
+		data,
+		select,
+		onClose: () => dropEntry(id),
+	}));
+	// add() runs select() inline when select is set, so by the time this
+	// line is reached load() may already have mounted the tab and taken it
+	// back out of pending_.
+	if (!open_.has(id)) pending_.set(id, { win, tabID: id, scope });
+	return id;
+}
+
+/**
+ * Bring back a graph tab that was just closed -- tabHooks.undoClose.graph.
+ *
+ * Core keeps what a closed tab was (its data, and where it stood) and asks the
+ * tab's type to reopen it; a type with no hook is asked nothing, so Undo Close
+ * Tab did nothing for a graph and the entry in the tab's menu was not offered
+ * at all. What is kept is exactly what a session keeps, so it comes back the
+ * way a restored tab does: unloaded, with the collection, the options and the
+ * view it was closed with, and built when core selects it.
+ *
+ * @returns {Promise<boolean>} whether a tab was opened, which is what core
+ *   reads to decide which of the reopened tabs to select
+ */
+async function reopen(win, tab, tabIndex) {
+	try {
+		let data = tab && tab.data;
+		let scope = tabScopeSync(data) || await tabScope(data);
+		if (!scope) return false;
+		addUnloaded(win, scope, data, tabIndex, false);
+		return true;
+	}
+	catch (e) {
+		Zotero.logError(e);
+		return false;
+	}
+}
+
+/**
+ * A second tab of the same graph, beside the first -- tabHooks.duplicate.graph,
+ * which is also what puts Duplicate Tab in the tab's menu. As it is now rather
+ * than as it was opened: the options the tab has been switched to and the view
+ * the page last reported.
+ */
+async function duplicate(win, tab, tabIndex, config) {
+	try {
+		let entry = open_.get(tab.id);
+		let data = entry ? tabData(entry.scope, entry.options) : tab.data;
+		let scope = entry ? entry.scope : (tabScopeSync(data) || await tabScope(data));
+		if (!scope) return;
+		openScope(win, scope, entry ? { ...entry.options } : restoreOptions(data), config, {
+			index: tabIndex + 1,
+			view: entry ? entry.view : restoreView(data),
+		});
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/**
+ * The keyboard, back in the graph -- tabHooks.refocus.graph. Core calls it when
+ * a tab that is already selected is clicked or cycled to, and for a type with
+ * no hook the focus stayed on the tab strip.
+ */
+function refocus(tabID) {
+	let entry = open_.get(tabID);
+	if (!entry || !entry.browser) return;
+	try {
+		entry.browser.focus();
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+}
+
+/**
+ * Keep a tab's title the collection's name.
+ *
+ * tabTitle() reads the live collection, so a tab opened or restored after a
+ * rename has the new name. One already in the strip kept the old one until it
+ * was closed: nothing told it. Zotero.Notifier does, and this renames every
+ * tab -- built, or restored and not yet looked at -- whose graph is of a
+ * collection that changed, or of a selection anchored in one.
+ *
+ * @returns {Function} takes the observer back out
+ */
+function watchCollections() {
+	let id = null;
+	let notifier = null;
+	try {
+		notifier = Zotero.Notifier;
+		id = notifier.registerObserver({
+			notify(event, type, ids) {
+				if (type !== 'collection' || event !== 'modify') return;
+				let changed = new Set(ids || []);
+				for (let entry of [...open_.values(), ...pending_.values()]) {
+					let c = entry.scope && entry.scope.collection;
+					if (!c || !changed.has(c.id)) continue;
+					let count = entry.built ? entry.built.state.items.length : null;
+					try {
+						Promise.resolve(entry.win.Zotero_Tabs.rename(entry.tabID, tabTitle(entry.scope, count)))
+							.catch(e => Zotero.logError(e));
+					}
+					catch (e) {
+						Zotero.logError(e);
+					}
+				}
+			},
+		}, ['collection'], 'zotero-citation-graph');
+	}
+	catch (e) {
+		Zotero.logError(e);
+	}
+	return () => {
+		if (id == null) return;
+		try {
+			notifier.unregisterObserver(id);
+		}
+		catch (e) { /* going away anyway */ }
+		id = null;
+	};
 }
 
 /**
@@ -752,6 +919,8 @@ function mount(win, tabID, container, scope, config, options, view) {
 		let onDOMContentLoaded = (event) => {
 			if (browser.contentWindow && browser.contentWindow.document === event.target) {
 				win.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
+				let mounted = open_.get(tabID);
+				if (mounted) mounted.unmount = null;
 				ready(win, tabID, browser.contentWindow, scope)
 					.then(() => {
 						resolve();
@@ -764,6 +933,18 @@ function mount(win, tabID, container, scope, config, options, view) {
 			}
 		};
 		win.addEventListener('DOMContentLoaded', onDOMContentLoaded);
+		// On the WINDOW, so it does not go with the tab. A tab closed before
+		// its page had loaded left this listening for the life of the window,
+		// holding the browser, the scope and this promise with it -- and
+		// load() races this against a timeout for exactly the page that never
+		// loads. dropEntry() takes it back off, and lets the promise go.
+		let entry = open_.get(tabID);
+		if (entry) {
+			entry.unmount = () => {
+				win.removeEventListener('DOMContentLoaded', onDOMContentLoaded);
+				resolve();
+			};
+		}
 	});
 }
 
@@ -836,7 +1017,7 @@ async function handleMessage(win, tabID, scope, msg) {
 	switch (msg.type) {
 		case 'rebuild': {
 			let entry = open_.get(tabID);
-			if (entry && msg.options) Object.assign(entry.options, msg.options);
+			if (entry) Object.assign(entry.options, knownOptions(msg.options));
 			if (entry) saveTabData(entry);
 			await runBuild(tabID);
 			break;
@@ -851,9 +1032,14 @@ async function handleMessage(win, tabID, scope, msg) {
 			if (!entry) break;
 			entry.options.enrich = !!msg.on;
 			saveTabData(entry);
-			// Nothing settled to add to: no build has finished, or one is still
-			// running and will pick the option up itself.
-			if (!entry.built || entry.building) await runBuild(tabID);
+			// Nothing settled to add to: no build has got as far as its graph.
+			// `building` is not the test, though it was: a lookup is itself a
+			// pass that owns the tab, so unticking the box while one ran -- or
+			// ticking it again -- threw the graph away and derived it afresh,
+			// which is the one thing this case exists to avoid. With a graph
+			// built, a second ask simply replaces the pass in flight; its
+			// generation is what tells the first to stop.
+			if (!entry.built) await runBuild(tabID);
 			else await runLookup(tabID);
 			break;
 		}
@@ -925,7 +1111,9 @@ async function handleMessage(win, tabID, scope, msg) {
 			let entry = open_.get(tabID);
 			if (!entry || typeof msg.text !== 'string') break;
 			let itemIDs = await searchPane.quickSearch(entry, msg.text);
-			send(entry, 'zgQuickSearch', { seq: msg.seq, itemIDs });
+			// Null is a text that a newer one replaced before it was searched
+			// for; the newer one's answer is on its way.
+			if (itemIDs) send(entry, 'zgQuickSearch', { seq: msg.seq, itemIDs });
 			break;
 		}
 		case 'search-mode': {
@@ -995,7 +1183,7 @@ async function handleMessage(win, tabID, scope, msg) {
 		case 'node-menu': {
 			let entry = open_.get(tabID);
 			if (!entry) break;
-			entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
+			entry.selection = itemIDsOf(msg);
 			await nodeMenu.open(entry, msg, (fn, value) => send(entry, fn, value));
 			break;
 		}
@@ -1029,7 +1217,7 @@ async function handleMessage(win, tabID, scope, msg) {
 				itemPane.collapse(entry, !splitPane.collapsed(entry));
 				break;
 			}
-			entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
+			entry.selection = itemIDsOf(msg);
 			await itemPane.show(entry, entry.selection, {
 				inView: Number(msg.inView) || 0,
 				expand: true,
@@ -1060,7 +1248,7 @@ async function handleMessage(win, tabID, scope, msg) {
 				// draws nothing while the pane is collapsed, and the click
 				// selected the paper either way. What Locate acts on must not
 				// depend on whether the pane was on screen.
-				entry.selection = Array.isArray(msg.itemIDs) ? msg.itemIDs.slice() : [];
+				entry.selection = itemIDsOf(msg);
 				await itemPane.show(entry, entry.selection, {
 					inView: Number(msg.inView) || 0,
 					status: t => send(entry, 'zgSetStatus', t),
@@ -1512,7 +1700,7 @@ async function buildPhases(entry, alive) {
 	// failure here must cost names and nothing else -- the graph is already
 	// on screen and correct by this point.
 	if (!toLookUp.length) {
-		status('');
+		status(failureLine(baseMeta.errors));
 		return;
 	}
 	await lookUpNames(entry, alive, entry.built, progress);
@@ -1764,7 +1952,27 @@ async function lookUpNames(entry, alive, built, progress) {
 	for (let err of enriched.meta.errors) {
 		Zotero.logError(new Error(`[zotero-citation-graph] enrich ${err.provider}: ${err.message}`));
 	}
-	status('');
+	status(failureLine([...(baseMeta.errors || []), ...enriched.meta.errors]));
+}
+
+/**
+ * What a pass that lost a step says when it ends, or '' when none did.
+ *
+ * A strategy that threw and a lookup that was refused were written to the
+ * error console and nowhere else. The graph that came back was whole to look
+ * at -- fewer edges, or no names -- and the status line went blank as it does
+ * after a clean build, so a 429 from OpenAlex read as "this library cites
+ * nothing". The first failure is named and the rest are counted; the console
+ * still has all of them.
+ */
+function failureLine(errors) {
+	let list = (errors || []).filter(e => e && e.message);
+	if (!list.length) return '';
+	let first = list[0];
+	return l10n.t('build-errors', {
+		count: list.length,
+		what: (first.provider ? first.provider + ': ' : '') + first.message,
+	});
 }
 
 /**
@@ -1812,8 +2020,17 @@ function pushData(entry, state, meta, options = entry.options) {
 	});
 	// What a search is cut down to -- and a search that is running is asked
 	// again, since this push may carry items its last answer never saw.
-	entry.heldIDs = new Set(state.items.map(it => it.itemID));
-	searchPane.refresh(entry);
+	//
+	// Only when it does. A build pushes four or five times and a lookup once
+	// more, each with the same papers and more edges, and every one of them
+	// ran the whole Advanced Search again over the library to be cut down to
+	// the same answer. The search is about items, so it is asked again when
+	// the items are not the ones it was last asked about.
+	let heldIDs = new Set(state.items.map(it => it.itemID));
+	let same = !!entry.heldIDs && entry.heldIDs.size === heldIDs.size
+		&& [...heldIDs].every(id => entry.heldIDs.has(id));
+	entry.heldIDs = heldIDs;
+	if (!same) searchPane.refresh(entry);
 }
 
 /**
@@ -1860,10 +2077,15 @@ async function addByDoi(win, tabID, scope, doi, title) {
 	// it is the collection the ghost was derived from in the first place. A
 	// selection made outside any collection has no such place, and a null
 	// collectionID is already what addDialog reads as the library root.
-	let target = (entry && entry.addTarget) || {
-		libraryID: scope.libraryID,
-		collectionID: scope.collection ? scope.collection.id : null,
-	};
+	let target = addTargetFor(entry, scope);
+	if (!target) {
+		// A group the user may read and not write. The dialog's menu is of this
+		// library and no other, so there is nowhere it could file the work --
+		// and the translator would have gone out for it and failed at the save.
+		status(l10n.t('add-read-only'));
+		settle();
+		return;
+	}
 	let held = await heldByDoi(target.libraryID, d);
 	let choice = await addDialog.open(win, {
 		doi: d,
@@ -1876,6 +2098,7 @@ async function addByDoi(win, tabID, scope, doi, title) {
 		// library has is an offer to file that item, and nothing is fetched.
 		held: !!held,
 		anchor: entry ? entry.browser : null,
+		tabID,
 	});
 	// The tab can have been closed while the dialog was up; the add still
 	// happens, it just has nowhere to report to and nothing to rebuild.
@@ -1889,6 +2112,11 @@ async function addByDoi(win, tabID, scope, doi, title) {
 	// must not be what forgets the tag someone typed.
 	setPref('addTag', choice.tag);
 	setPref('addTagEnabled', !!choice.tagOn);
+	// The collection can have gone while the dialog was up, the same as before
+	// it opened. What it was in is still the library.
+	if (choice.collectionID && !liveCollection(choice.libraryID, choice.collectionID)) {
+		choice = { ...choice, collectionID: null };
+	}
 	if (entry) {
 		entry.addTarget = {
 			libraryID: choice.libraryID,
@@ -1985,6 +2213,62 @@ async function addByDoi(win, tabID, scope, doi, title) {
 	// several works, or a tab with no finished build behind it yet.
 	status(l10n.t('add-rebuilding', { title: added }));
 	await runBuild(tabID);
+}
+
+/**
+ * Where an add files to, before the dialog is asked: the place the last add
+ * from this tab went, else the collection the graph is of -- each only while
+ * it is still there -- else the library's root. Null when the library cannot
+ * be written to at all.
+ *
+ * Neither was checked. The remembered target is kept for as long as the tab is
+ * open, and a collection deleted in that time was still what the dialog opened
+ * on: nothing ticked in its menu, and an add that filed the paper into a
+ * collection that no longer exists.
+ */
+function addTargetFor(entry, scope) {
+	let libraryID = (entry && entry.addTarget && entry.addTarget.libraryID) || scope.libraryID;
+	let library = null;
+	try {
+		library = Zotero.Libraries.get(libraryID);
+	}
+	catch (e) {
+		library = null;
+	}
+	if (!library && libraryID !== scope.libraryID) {
+		libraryID = scope.libraryID;
+		try {
+			library = Zotero.Libraries.get(libraryID);
+		}
+		catch (e) {
+			library = null;
+		}
+	}
+	// A library that cannot be asked is taken to be writable, as it was.
+	if (library && library.editable === false) return null;
+
+	let wanted = [];
+	if (entry && entry.addTarget && entry.addTarget.libraryID === libraryID) wanted.push(entry.addTarget.collectionID);
+	if (scope.collection && scope.libraryID === libraryID) wanted.push(scope.collection.id);
+	for (let id of wanted) {
+		// The library root, chosen on purpose last time.
+		if (id == null) return { libraryID, collectionID: null };
+		if (liveCollection(libraryID, id)) return { libraryID, collectionID: id };
+	}
+	return { libraryID, collectionID: null };
+}
+
+/** Whether a collection is still in this library, and not in its trash. */
+function liveCollection(libraryID, collectionID) {
+	try {
+		let c = Zotero.Collections.get(collectionID);
+		// Another library's only when it says so: a collection that cannot say
+		// which library it is in is not thereby in the wrong one.
+		return !!c && !c.deleted && (c.libraryID == null || c.libraryID === libraryID);
+	}
+	catch (e) {
+		return false;
+	}
 }
 
 /**
@@ -2365,6 +2649,13 @@ function chromeProps(win) {
 splitPane.watch((entry) => {
 	if (!entry || !open_.has(entry.tabID)) return;
 	send(entry, 'zgSetPane', { open: splitPane.showing(entry) });
+	// The gap list goes out of sight and comes back with the panel it is in,
+	// and the page's button says which. Only a tab that has built the list has
+	// anything to say; coming back, the page answers with the rows as they are
+	// now, since none were drawn while it was away.
+	if (entry.itemPane && entry.itemPane.gaps) {
+		send(entry, 'zgGapsShowing', { showing: gapsPane.showing(entry) });
+	}
 });
 
 /** Tell every open tab in this window what its chrome looks like now. */
@@ -2503,6 +2794,9 @@ function forgetAll() {
 
 module.exports = {
 	open, openSelection, restore, restoreMissing, restoreSettled, load, closeAll, closeAllInWindow,
+	reopen, duplicate, refocus, watchCollections,
+	// Exported for the checks on what is taken from a message and from a build.
+	addTargetFor, knownOptions, itemIDsOf, failureLine,
 	watchChrome,
 	forgetWindow, forgetAll, stripSummary, selectedItemIDs, selectedCollection,
 	selectedLibraryID, selectItems, holdsItems,

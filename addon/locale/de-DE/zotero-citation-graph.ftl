@@ -343,6 +343,7 @@ zotero-citation-graph-build-openalex-progress = Referenzen werden bei OpenAlex a
 zotero-citation-graph-lookup-works = { $count -> [one] { $count } Arbeit wird *[other] { $count } Arbeiten werden } nachgeschlagen…
 zotero-citation-graph-lookup-phase = Arbeiten werden nachgeschlagen…
 zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $done }/{ $total } ({ $provider })
+zotero-citation-graph-build-errors = { $count -> [one] Ein Schritt ist fehlgeschlagen *[other] { $count } Schritte sind fehlgeschlagen }: { $what }
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
 zotero-citation-graph-build-failed = Der Graph konnte nicht aufgebaut werden: { $message }
 
@@ -357,6 +358,7 @@ zotero-citation-graph-add-confirm = Hinzufügen
 zotero-citation-graph-add-confirm-held = Zur Sammlung hinzufügen
 zotero-citation-graph-add-held-note = Bereits in deiner Bibliothek. Der vorhandene Eintrag wird hier einsortiert; nichts wird doppelt angelegt.
 zotero-citation-graph-add-bad-doi = Keine brauchbare DOI: { $doi }
+zotero-citation-graph-add-read-only = Diese Bibliothek ist schreibgeschützt, es kann nichts hinzugefügt werden.
 zotero-citation-graph-add-adding = { $doi } wird hinzugefügt…
 zotero-citation-graph-add-failed = { $doi } konnte nicht hinzugefügt werden: { $message }
 zotero-citation-graph-add-no-metadata = Keine Metadaten gefunden für { $doi }
@@ -416,3 +418,7 @@ zotero-citation-graph-prefs-cache-size = Der Cache belegt { $size }.
 zotero-citation-graph-prefs-cache-empty = Der Cache ist leer.
 zotero-citation-graph-prefs-cache-cleared = { $size } freigegeben.
 zotero-citation-graph-prefs-cache-failed = Der Cache konnte nicht geleert werden: { $message }
+
+zotero-citation-graph-prefs-openalex-heading = OpenAlex
+zotero-citation-graph-prefs-openalex-description = „Knotenmetadaten abfragen“ und „OpenAlex-Referenzen“ fragen OpenAlex nach den Arbeiten eines Graphen. Das geht ohne Schlüssel, mit etwa einem Zehntel des kostenlosen Tageskontingents. Ein kostenloser Schlüssel von openalex.org/settings/api hebt es auf das volle Kontingent.
+zotero-citation-graph-prefs-openalex-key = API-Schlüssel

@@ -46,7 +46,7 @@ if (typeof shim.makeRequire !== 'function') {
 // the same loader, so a typo cannot wait until Zotero is running to show up.
 const Zotero = {
 	debug: () => {},
-	logError: () => {},
+	logError: (e) => { if (process.env.ZG_LOG) console.log('LOGERROR', e && e.stack || e); },
 	Promise: { delay: ms => new Promise(r => setTimeout(r, ms)) },
 	DataDirectory: { dir: addonDir },
 	// lib/l10n.js reads its .ftl through these two, so the chrome side of
@@ -107,10 +107,14 @@ const traceWrites = [];
 const removed = [];
 const jsonWrites = [];
 
+// The IOUtils every module is handed, by name: a check that needs a file to be
+// there, or a read to take its time, swaps one method and puts it back.
+let harnessIO = null;
+
 const require_ = shim.makeRequire(rootURI, {
 	Services, URL, console,
 	Zotero, ChromeUtils,
-	IOUtils: {
+	IOUtils: harnessIO = {
 		exists: async () => false,
 		read: async () => new Uint8Array(),
 		stat: async () => ({ size: 0, lastModified: 0 }),
@@ -2310,6 +2314,11 @@ check('a pointer crossing three nodes draws the last, not all three', async () =
 
 	Zotero.Items = items;
 	const first = itemPane.show(entry, [1]);
+	// Into its render before the pointer moves on: asked for in one breath,
+	// only the last of the three is looked up to the end -- see the check on
+	// a slow pick below -- and nothing would be drawing for 2 to be passed over.
+	await new Promise(r => setTimeout(r, 0));
+	if (drawn.join(',') !== '1') throw new Error('the first pick is not drawing: ' + drawn.join(','));
 	Zotero.Items = items;
 	const second = itemPane.show(entry, [2]);
 	Zotero.Items = items;
@@ -10939,10 +10948,6 @@ check('the section two strategies scan is folded once', async () => {
 	}
 });
 
-Promise.all(pending).then(() => {
-	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
-	process.exit(failures ? 1 : 0);
-});
 // --- the audit backlog (#24): pure modules and locales ----------------------
 
 check('a filter finds Müller for "muller", and the other way round', () => {
@@ -11098,3 +11103,738 @@ check('the strings call one thing by one name', () => {
 	if (/Sammlung/.test(de('strategy-title-match-hint'))) throw new Error(de('strategy-title-match-hint'));
 });
 
+// --- the audit backlog (#24): chrome ----------------------------------------
+
+/** Zotero.Notifier as far as this plugin asks it: observers in, by an id, and
+ *  a way for a check to raise an event at them. */
+function fakeNotifier() {
+	const observers = new Map();
+	let n = 0;
+	return {
+		observers,
+		registerObserver(obs, types, name) {
+			const id = 'obs-' + (++n);
+			observers.set(id, { obs, types, name });
+			return id;
+		},
+		unregisterObserver(id) {
+			observers.delete(id);
+		},
+		raise(event, type, ids) {
+			for (const { obs, types } of [...observers.values()]) {
+				if (!types || types.includes(type)) obs.notify(event, type, ids, {});
+			}
+		},
+	};
+}
+
+check('the add dialog puts the focus on Add when there is no tag to type', async () => {
+	await l10nReady;
+	const focusOf = (opts) => {
+		// popupshown is raised inside open(), so the focus has to be watched
+		// from before the dialog exists.
+		const focused = [];
+		const real = FakeElement.prototype.focus;
+		FakeElement.prototype.focus = function () {
+			focused.push(this);
+		};
+		try {
+			return { dialog: openAddDialog(opts), focused };
+		}
+		finally {
+			FakeElement.prototype.focus = real;
+		}
+	};
+	// The box left unticked last time: the field is disabled, and focus() on a
+	// disabled field puts the focus nowhere -- no Enter, no Escape.
+	const off = focusOf({ tagOn: false });
+	if (off.focused.length !== 1 || off.focused[0].textContent !== 'Add') {
+		throw new Error('focused: ' + off.focused.map(el => el.localName + ' ' + el.textContent).join(', '));
+	}
+	off.dialog.press('Cancel');
+	await off.dialog.asked;
+	// Ticked, it is the field, as it was.
+	const on = focusOf({ tagOn: true });
+	if (on.focused.length !== 1 || on.focused[0].type !== 'text') throw new Error('with a tag: ' + on.focused.map(el => el.localName).join(', '));
+	on.dialog.press('Cancel');
+	await on.dialog.asked;
+});
+
+check('the add dialog belongs to its tab: selecting another one cancels it', async () => {
+	await l10nReady;
+	const notifier = fakeNotifier();
+	Zotero.Notifier = notifier;
+	// Its own, by name: the plugin's startup may have put its collection
+	// observer in here too, if it happened to start while this was the notifier.
+	const watching = () => [...notifier.observers.values()].filter(o => o.name === 'zotero-citation-graph-add').length;
+	const { asked, panel } = openAddDialog({ tabID: 'tab-graph' });
+	if (watching() !== 1) throw new Error('the dialog is not watching the tabs');
+	// The tab it was asked in being selected again is not leaving it.
+	notifier.raise('select', 'tab', ['tab-graph']);
+	let answer;
+	asked.then((v) => {
+		answer = v;
+	});
+	await Promise.resolve();
+	if (answer !== undefined) throw new Error('cancelled by its own tab');
+	// Another tab is. The panel is the window's and would have stayed up over it.
+	notifier.raise('select', 'tab', ['zotero-pane']);
+	if (await asked !== null) throw new Error('answered ' + JSON.stringify(await asked));
+	if (!panel.removed && panel.state !== 'closed') throw new Error('the panel is still up');
+	if (watching() !== 0) throw new Error('the observer outlived the dialog');
+
+	// Answered the ordinary way, the observer goes as well.
+	Zotero.Notifier = notifier;
+	const second = openAddDialog({ tabID: 'tab-graph' });
+	second.press('Add');
+	await second.asked;
+	if (watching() !== 0) throw new Error('an answered dialog left its observer');
+});
+
+check('an add is offered a place that exists, in a library that can be written to', () => {
+	const { addTargetFor } = require_('./lib/graphTab.js');
+	const collections = {
+		7: { id: 7, libraryID: 1, deleted: false },
+		8: { id: 8, libraryID: 1, deleted: true },
+		9: { id: 9, libraryID: 2, deleted: false },
+	};
+	const libraries = { 1: { editable: true }, 2: { editable: false } };
+	Zotero.Collections = { get: id => collections[id] || null };
+	Zotero.Libraries = { get: id => libraries[id] };
+	const scope = { libraryID: 1, collection: { id: 7 } };
+	const at = (entry, s = scope) => JSON.stringify(addTargetFor(entry, s));
+
+	if (at(null) !== '{"libraryID":1,"collectionID":7}') throw new Error('first add: ' + at(null));
+	// Where the last add went, while it is still there...
+	if (at({ addTarget: { libraryID: 1, collectionID: null } }) !== '{"libraryID":1,"collectionID":null}') throw new Error('the root, chosen');
+	// ...and the graph's own collection once it is in the trash, or gone.
+	if (at({ addTarget: { libraryID: 1, collectionID: 8 } }) !== '{"libraryID":1,"collectionID":7}') throw new Error('trashed: ' + at({ addTarget: { libraryID: 1, collectionID: 8 } }));
+	if (at({ addTarget: { libraryID: 1, collectionID: 99 } }) !== '{"libraryID":1,"collectionID":7}') throw new Error('deleted');
+	// Both gone: the library is still there.
+	if (at({ addTarget: { libraryID: 1, collectionID: 99 } }, { libraryID: 1, collection: { id: 8 } }) !== '{"libraryID":1,"collectionID":null}') {
+		throw new Error('nothing left');
+	}
+	// A collection of another library is not a place in this one.
+	if (at({ addTarget: { libraryID: 1, collectionID: 9 } }) !== '{"libraryID":1,"collectionID":7}') throw new Error('another library\'s');
+	// A group that can be read and not written: nowhere to file it at all.
+	if (addTargetFor(null, { libraryID: 2, collection: { id: 9 } }) !== null) throw new Error('a read-only library was offered');
+});
+
+checkAlone('the item pane draws the newest pick, however slowly an older one resolves', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const drawn = [];
+	const { win, element } = fakeWindow(async (el) => {
+		drawn.push([el.item.id].concat((el.extraItems || []).map(i => i.id)).join('+'));
+	});
+	const entry = fakeEntry(win, element, 'tab-24a');
+	const paper = id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false, isRegularItem: () => true });
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+
+	// A pick of three, whose items take a while to come back...
+	let release;
+	Zotero.Items = { getAsync: ids => new Promise((r) => {
+		release = () => r(ids.map(paper));
+	}) };
+	const slow = itemPane.show(entry, [1, 2, 3]);
+	// ...and a single click made after it, which comes back at once.
+	Zotero.Items = itemsByID(paper);
+	await itemPane.show(entry, [4]);
+	release();
+	await slow;
+	// The old pick used to land last and be drawn over the click.
+	if (drawn.join(' ') !== '4') throw new Error('drew ' + drawn.join(' '));
+	if (entry.itemPane.wantedIDs !== '4') throw new Error('wants ' + entry.itemPane.wantedIDs);
+});
+
+checkAlone('core asking to see an item lifts the gap list that was pinned over the pane', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const gapsPane = require_('./lib/gapsPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-24b');
+	const paper = id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false, isRegularItem: () => true });
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	Zotero.Items = itemsByID(paper);
+	await itemPane.show(entry, [1]);
+
+	const told = [];
+	gapsPane.open(entry, on => told.push(on));
+	const deck = made.find(el => el.localName === 'deck');
+	const list = entry.itemPane.gaps.box;
+
+	// A click on a node while the list is up: drawn underneath, list stays.
+	Zotero.Items = itemsByID(paper);
+	await itemPane.show(entry, [2]);
+	if (deck.selectedPanel !== list) throw new Error('a click took the list down');
+
+	// Core's own "select this item" -- a related item followed, a note made.
+	Zotero.Items = itemsByID(paper);
+	await itemPane.show(entry, [3], { expand: true });
+	if (deck.selectedPanel === list) throw new Error('the list swallowed an explicit request');
+	if (deck.selectedPanel !== entry.itemPane.details) throw new Error('not showing the item');
+	if (entry.itemPane.pinned) throw new Error('still pinned');
+	if (told[told.length - 1] !== false) throw new Error('the page was not told the list went: ' + told);
+
+	// The very item that was already drawn underneath, asked for again: there
+	// is nothing new to draw, and it still has to come up.
+	gapsPane.open(entry, on => told.push(on));
+	Zotero.Items = itemsByID(paper);
+	await itemPane.show(entry, [3], { expand: true });
+	if (deck.selectedPanel !== entry.itemPane.details) throw new Error('the same item stayed behind the list');
+});
+
+checkAlone('a note drawn behind a pinned page does not take the caret', async () => {
+	const itemPane = require_('./lib/itemPane.js');
+	const gapsPane = require_('./lib/gapsPane.js');
+	const { made, win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-24c');
+	const note = { id: 5, libraryID: 1, parentItem: false, deleted: false, isNote: () => true, isRegularItem: () => false };
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	Zotero.Items = itemsByID(() => note);
+	await itemPane.show(entry, [5]);
+	const editor = made.find(el => el.localName === 'note-editor');
+	if (!editor) throw new Error('no note editor was built');
+	let focused = 0;
+	editor.focus = () => {
+		focused++;
+	};
+
+	gapsPane.open(entry, () => {});
+	// The pick moves to another note while the list is up: drawn, not shown.
+	const other = { ...note, id: 6 };
+	Zotero.Items = itemsByID(() => other);
+	await itemPane.show(entry, [6]);
+	if (focused) throw new Error('a hidden editor took the focus');
+	// On screen, it is focused as it always was.
+	gapsPane.close(entry);
+	Zotero.Items = itemsByID(() => note);
+	await itemPane.show(entry, [5]);
+	if (focused !== 1) throw new Error('a visible editor was focused ' + focused + ' times');
+});
+
+check('a menu core could not build still tells the page it is not coming', async () => {
+	const nodeMenu = require_('./lib/nodeMenu.js');
+	const { win, element } = fakeWindow();
+	const popup = fakeItemMenu(element);
+	let fail = true;
+	win.ZoteroPane = {
+		itemsView: {},
+		async buildItemContextMenu() {
+			if (fail) throw new Error('core changed its mind');
+		},
+	};
+	const said = [];
+	const reply = (fn, value) => said.push(fn + (value === undefined ? '' : ':' + value));
+	const entry = { win, collection: { id: 3, key: 'ABCD1234' } };
+	const rows = [{ id: 'e0', icon: 'pin', label: 'Pin node here' }];
+
+	let threw = null;
+	try {
+		await nodeMenu.open(entry, { itemID: 7, x: 1, y: 2, entries: rows }, reply);
+	}
+	catch (e) {
+		threw = e;
+	}
+	// The failure is still the caller's to log; the page is told regardless,
+	// or it holds the node under a menu that never appears.
+	if (!threw) throw new Error('the failure was swallowed');
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('the page heard: ' + said.join(' '));
+	if (popup.openedAt) throw new Error('a menu opened anyway');
+
+	// And the next one opens as usual.
+	fail = false;
+	said.length = 0;
+	await nodeMenu.open(entry, { itemID: 7, x: 1, y: 2, entries: rows }, reply);
+	if (!popup.openedAt) throw new Error('the menu after a failed one did not open');
+	popup.hidePopup();
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('after: ' + said.join(' '));
+
+	// A popup that will not open says so too.
+	said.length = 0;
+	popup.openPopupAtScreen = () => {
+		throw new Error('refusing to show duplicate popup');
+	};
+	try {
+		await nodeMenu.open(entry, { itemID: 7, x: 1, y: 2, entries: rows }, reply);
+	}
+	catch (e) { /* the caller's */ }
+	if (said.join(' ') !== 'zgMenuClosed') throw new Error('a popup that would not open said: ' + said.join(' '));
+	if (popup.querySelectorAll('.zg-node-menuitem').length) throw new Error('its rows were left on core\'s menu');
+});
+
+checkAlone('a cache loaded while the caches are being cleared does not put its file back', async () => {
+	const cacheStore = require_('./lib/cacheStore.js');
+	const { MetadataCache } = require_('./lib/metadataCache.js');
+	const ours = p => Object.values(cacheStore.FILES).some(f => p.endsWith('/' + f));
+	// The harness's IOUtils is the one every module was handed; its remove is
+	// made slow enough for a build to start in the middle of the clear.
+	const realRemove = harnessIO.remove;
+	const realRead = harnessIO.readJSON;
+	let during = null;
+	let firstRemove = true;
+	harnessIO.readJSON = async () => ({ version: 1, entries: { 'doi:10.1000/old': { at: Date.now(), m: { title: 'Old' } } } });
+	harnessIO.remove = async (p, opts) => {
+		if (firstRemove) {
+			firstRemove = false;
+			// A build starting now loads the metadata cache, which is the
+			// second file and still on disk.
+			during = await MetadataCache.forProfile().load();
+		}
+		return realRemove(p, opts);
+	};
+	try {
+		await cacheStore.clear();
+		if (!during || during.size !== 1) throw new Error('the cache was not loaded mid-clear');
+		during.set('doi:10.1000/new', { title: 'New' });
+		const before = jsonWrites.filter(ours).length;
+		await during.flush();
+		if (jsonWrites.filter(ours).length !== before) throw new Error('the file the clear removed was written back');
+	}
+	finally {
+		harnessIO.remove = realRemove;
+		harnessIO.readJSON = realRead;
+	}
+	// One loaded after the clear writes as usual.
+	const next = await MetadataCache.forProfile().load();
+	next.set('doi:10.1000/b', { title: 'U' });
+	const before = jsonWrites.filter(ours).length;
+	await next.flush();
+	if (jsonWrites.filter(ours).length !== before + 1) throw new Error('the next build could not write');
+});
+
+checkAlone('entries past their age are dropped when the cache is loaded, and off the disk at the next flush', async () => {
+	const { MetadataCache } = require_('./lib/metadataCache.js');
+	const realRead = harnessIO.readJSON;
+	const DAY = 24 * 60 * 60 * 1000;
+	const now = Date.now();
+	harnessIO.readJSON = async () => ({ version: 1, entries: {
+		'doi:10.1000/fresh': { at: now - DAY, m: { title: 'Fresh' } },
+		'doi:10.1000/stale': { at: now - 31 * DAY, m: { title: 'Stale' } },
+		'doi:10.1000/undated': { m: { title: 'No date' } },
+	} });
+	try {
+		const cache = await MetadataCache.forProfile().load();
+		if (cache.size !== 1 || !cache.get('doi:10.1000/fresh')) throw new Error('kept ' + Object.keys(cache.data.entries).join(' '));
+		// Nothing was looked up, and it is still written: that write is what
+		// takes them out of the file.
+		if (!cache.dirty) throw new Error('pruned in memory only');
+		// A cache with nothing to drop is not written for the sake of it.
+		harnessIO.readJSON = async () => ({ version: 1, entries: { 'doi:10.1000/fresh': { at: now, m: { title: 'Fresh' } } } });
+		const clean = await MetadataCache.forProfile().load();
+		if (clean.dirty) throw new Error('a cache with nothing stale was marked for writing');
+		// The reference lists are the same class with their own file.
+		if (clean.prune(now + 31 * DAY) !== 1 || clean.size !== 0) throw new Error('prune by a later clock');
+	}
+	finally {
+		harnessIO.readJSON = realRead;
+	}
+});
+
+check('the gap list is not "showing" in a panel that is put away', () => {
+	const gapsPane = require_('./lib/gapsPane.js');
+	const splitPane = require_('./lib/splitPane.js');
+	const { win, element } = fakeWindow();
+	const entry = fakeEntry(win, element, 'tab-24d');
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	gapsPane.open(entry, () => {});
+	if (!gapsPane.showing(entry)) throw new Error('not showing when open');
+
+	const payload = { rows: [{ key: 'doi:a', ns: 'doi', id: '10.1/a', citedBy: 3, citers: ['H1', 'H2', 'H3'] }], total: 1 };
+	splitPane.setCollapsed(entry, true);
+	// Behind a strip of icons: the bar's button must offer to show it, not to
+	// hide it, and nothing is drawn into it.
+	if (gapsPane.showing(entry)) throw new Error('showing while collapsed');
+	gapsPane.rows(entry, payload, () => {});
+	const box = entry.itemPane.gaps.box;
+	if (box.querySelectorAll('.zg-gap-row').length) throw new Error('rows were drawn into a collapsed panel');
+
+	splitPane.setCollapsed(entry, false);
+	if (!gapsPane.showing(entry)) throw new Error('not showing once expanded');
+	gapsPane.rows(entry, payload, () => {});
+	if (box.querySelectorAll('.zg-gap-row').length !== 1) throw new Error('rows not drawn on the way back');
+});
+
+checkAlone('an attachment whose file is elsewhere keeps the text Zotero indexed for it', async () => {
+	const { ZoteroAdapter } = require_('./lib/zoteroAdapter.js');
+	const realExists = harnessIO.exists;
+	// Three attachments: on disk and indexed, indexed with the file not
+	// downloaded, and neither.
+	const att = (id, key, file) => ({
+		id, key, attachmentLinkMode: 1, attachmentContentType: 'application/pdf',
+		getFilePathAsync: async () => file,
+	});
+	const atts = [att(11, 'ONDISK01', 'C:/storage/ONDISK01/a.pdf'), att(12, 'SYNCED02', false), att(13, 'ABSENT03', false)];
+	const paper = fakeZoteroItem({ key: 'PAPER001', id: 1, getAttachments: () => atts.map(a => a.id) });
+	const collection = liveCollection([paper]);
+	stubLibrary(Object.fromEntries([[1, paper], ...atts.map(a => [a.id, a])]));
+	Zotero.Attachments = { LINK_MODE_LINKED_URL: 3, getStorageDirectory: a => ({ path: 'C:/storage/' + a.key }) };
+	Zotero.FullText = { getItemCacheFile: a => ({ path: 'C:/storage/' + a.key + '/.zotero-ft-cache' }) };
+	Zotero.File = Object.assign({}, Zotero.File, { getContentsAsync: async p => 'indexed text of ' + p });
+	harnessIO.exists = async p => /ONDISK01|SYNCED02/.test(p);
+	try {
+		const adapter = new ZoteroAdapter({ kind: 'collection', libraryID: 1, collection, itemKeys: null });
+		await adapter.listItems();
+		const listed = await adapter.getAttachments('PAPER001');
+		// SYNCED02 used to be skipped for want of its file, and its text with it.
+		if (listed.map(a => a.key).join(' ') !== 'ONDISK01 SYNCED02') throw new Error('listed: ' + listed.map(a => a.key).join(' '));
+		const text = await adapter.getAttachmentText('SYNCED02');
+		if (!/indexed text of .*SYNCED02/.test(text || '')) throw new Error('text: ' + text);
+		// No file, so no links to scan -- and it is not counted as a PDF to scan.
+		if ((await adapter.getPdfLinkUris('SYNCED02')).length) throw new Error('scanned a file that is not there');
+		if (adapter.pdfCount() !== 1) throw new Error('pdfCount: ' + adapter.pdfCount());
+	}
+	finally {
+		harnessIO.exists = realExists;
+	}
+});
+
+checkAlone('Quick Search runs one search at a time, and always the last text typed', async () => {
+	const searchPane = require_('./lib/searchPane.js');
+	const started = [];
+	const finish = [];
+	Zotero.Prefs = { get: () => 'fields', set: () => {} };
+	Zotero.Items = { get: id => ({ id, parentItemID: null }) };
+	Zotero.Search = class {
+		addCondition(name, op, text) {
+			this.text = text;
+		}
+
+		search() {
+			started.push(this.text);
+			return new Promise(r => finish.push(() => r([this.text.length])));
+		}
+	};
+	const entry = { scope: { libraryID: 1 }, heldIDs: null };
+	// Four keystrokes, each asking before the last has answered.
+	const asks = ['d', 'di', 'dia', 'diam'].map(text => searchPane.quickSearch(entry, text));
+	await Promise.resolve();
+	if (started.join(' ') !== 'd') throw new Error('searches running at once: ' + started.join(' '));
+	// The two in the middle are never searched for at all.
+	if (await asks[1] !== null || await asks[2] !== null) throw new Error('a replaced text was answered');
+	finish.shift()();
+	if ((await asks[0]).join() !== '1') throw new Error('the first answer: ' + await asks[0]);
+	await until('the last text being searched for', () => started.length === 2);
+	if (started[1] !== 'diam') throw new Error('searched for ' + started[1]);
+	finish.shift()();
+	if ((await asks[3]).join() !== '4') throw new Error('the last answer: ' + await asks[3]);
+	if (started.length !== 2) throw new Error(started.length + ' searches for four keystrokes');
+	// With nothing running, the next ask runs at once.
+	const later = searchPane.quickSearch(entry, 'diamond');
+	await Promise.resolve();
+	if (started[2] !== 'diamond') throw new Error('a search after the queue emptied did not start');
+	finish.shift()();
+	await later;
+});
+
+check('options and item ids out of a message are taken for what they are, not as they come', () => {
+	const { knownOptions, itemIDsOf } = require_('./lib/graphTab.js');
+	const got = knownOptions({ recursive: 'false', includeExternal: true, enrich: 1, refStrings: false,
+		constructor: 'x', surprise: true, openalexRefs: null });
+	if (JSON.stringify(got) !== '{"includeExternal":true,"refStrings":false}') throw new Error(JSON.stringify(got));
+	if (JSON.stringify(knownOptions(null)) !== '{}' || JSON.stringify(knownOptions('recursive')) !== '{}') throw new Error('not an object');
+	const ids = itemIDsOf({ itemIDs: [7, '8', 7, 0, -3, 2.5, null, { id: 9 }, 12] });
+	if (ids.join() !== '7,12') throw new Error('ids: ' + JSON.stringify(ids));
+	if (itemIDsOf({ itemIDs: 'all' }).length || itemIDsOf({}).length || itemIDsOf(null).length) throw new Error('not a list');
+});
+
+check('a build that lost a step says so on the status line', async () => {
+	await l10nReady;
+	const { failureLine } = require_('./lib/graphTab.js');
+	if (failureLine([]) !== '' || failureLine(null) !== '') throw new Error('a clean build said something');
+	const one = failureLine([{ provider: 'openalex', message: 'OpenAlex 429 Too Many Requests' }]);
+	if (one !== 'One step failed: openalex: OpenAlex 429 Too Many Requests') throw new Error(one);
+	const two = failureLine([{ provider: 'text-doi', message: 'getAttachmentText(X1): disk says no' }, { provider: 'openalex', message: '429' }]);
+	if (!/^2 steps failed: text-doi: getAttachmentText/.test(two)) throw new Error(two);
+});
+
+check('a highlight\'s row opens a graph of its paper', () => {
+	const main = fs.readFileSync(path.join(addonDir, 'lib/main.js'), 'utf8');
+	const m = main.match(/\nfunction graphableKeys\(ctx\) \{[\s\S]*?\n\}\n/);
+	if (!m) throw new Error('graphableKeys() is no longer in main.js under that name');
+	const ctx = { Zotero: { logError() {} } };
+	vm.createContext(ctx);
+	vm.runInContext(m[0], ctx);
+	const paper = { key: 'PAPER001', libraryID: 1, parentItem: null, deleted: false, isRegularItem: () => true };
+	const pdf = { key: 'ATTACH02', libraryID: 1, parentItem: paper, deleted: false, isRegularItem: () => false };
+	const highlight = { key: 'ANNOT003', libraryID: 1, parentItem: pdf, deleted: false, isRegularItem: () => false };
+	const note = { key: 'NOTE0004', libraryID: 1, parentItem: null, deleted: false, isRegularItem: () => false };
+	const keys = items => ctx.graphableKeys({ items }).map(k => k.key).join(' ');
+	// One step up stopped at the PDF, which is not a regular item.
+	if (keys([highlight]) !== 'PAPER001') throw new Error('an annotation row: ' + keys([highlight]));
+	if (keys([highlight, pdf, paper]) !== 'PAPER001') throw new Error('three rows of one paper: ' + keys([highlight, pdf, paper]));
+	if (keys([note]) !== '') throw new Error('a standalone note: ' + keys([note]));
+});
+
+check('a module is read past the startup cache only out of a directory', () => {
+	const seen = [];
+	const loader = {
+		Services: { scriptloader: { loadSubScriptWithOptions(url, opts) {
+			seen.push({ url, ignoreCache: opts.ignoreCache });
+			// As cjs.js itself is loaded, the first time; a module after that.
+			if (url.endsWith('lib/cjs.js')) Services.scriptloader.loadSubScriptWithOptions(rootURI + 'lib/cjs.js', opts);
+			else opts.target.module.exports = { loaded: url };
+		} } },
+		// Gecko resolves against a jar: address and Node's URL will not, so
+		// this one does the only thing the loader asks of it.
+		URL: class {
+			constructor(spec, base) {
+				this.href = base.replace(/[^/]*$/, '') + spec.replace(/^\.\//, '');
+			}
+		},
+	};
+	loader.Services.scriptloader.loadSubScriptWithOptions(rootURI + 'lib/cjs.js', { target: loader });
+	seen.length = 0;
+	// A development install is a pointer to addon/: every start reads the files.
+	loader.makeRequire('file:///C:/dev/addon/', {})('./lib/main.js');
+	// An XPI is a jar, and there is nothing in it to have been edited.
+	loader.makeRequire('jar:file:///C:/profile/extensions/zotero-citation-graph@jajaho.dev.xpi!/', {})('./lib/main.js');
+	if (seen.length !== 2 || seen[0].ignoreCache !== true || seen[1].ignoreCache !== false) throw new Error(JSON.stringify(seen));
+	// bootstrap.js loads the loader itself by the same rule.
+	const bootstrap = fs.readFileSync(path.join(addonDir, 'bootstrap.js'), 'utf8');
+	if (/ignoreCache:\s*true/.test(bootstrap)) throw new Error('bootstrap.js still skips the cache for every install');
+});
+
+check('every default pref is read by something, and the OpenAlex key has a field', () => {
+	const prefs = fs.readFileSync(path.join(addonDir, 'prefs.js'), 'utf8');
+	const names = [...prefs.matchAll(/^pref\("extensions\.zotero\.zoteroCitationGraph\.([\w.]+)"/gm)].map(m => m[1]);
+	if (!names.includes('openalex.apiKey')) throw new Error('prefs: ' + names.join(' '));
+	const lib = fs.readdirSync(path.join(addonDir, 'lib')).map(f => fs.readFileSync(path.join(addonDir, 'lib', f), 'utf8')).join('\n');
+	const pane = fs.readFileSync(path.join(addonDir, 'content/preferences.xhtml'), 'utf8');
+	// Read by name in lib/, or bound to a field in the Settings pane.
+	const unread = names.filter(n => !lib.includes('\'' + n + '\'') && !lib.includes('zoteroCitationGraph.' + n)
+		&& !pane.includes('extensions.zotero.zoteroCitationGraph.' + n));
+	if (unread.length) throw new Error('declared and never read: ' + unread.join(', '));
+	// The key is the user's to set, and core binds the field by the full name.
+	if (!/<html:input[^>]*preference="extensions\.zotero\.zoteroCitationGraph\.openalex\.apiKey"/.test(pane)) {
+		throw new Error('no field for the OpenAlex key');
+	}
+});
+
+/** Two papers, the second with a DOI, in the collection every live tab is of. */
+function backlogPapers() {
+	return [
+		fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] }),
+		fakeZoteroItem({
+			key: 'BBBBBBBB', id: 2, getAttachments: () => [], getCollections: () => [7],
+			getField: name => ({ title: 'Another paper entirely', DOI: '10.5555/another' }[name] || ''),
+		}),
+	];
+}
+
+checkAlone('unticking the lookup while it runs takes the names off without deriving the graph again', async () => {
+	await l10nReady;
+	const papers = backlogPapers();
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection(papers) });
+	await tab.built();
+	await until('the first build letting go', () => tab.sent('zgSetProgress').pop() === null);
+	const after = from => fn => tab.calls.slice(from).filter(c => c.fn === fn).map(c => c.value);
+
+	// The lookup, in a harness with no network: it fails, the graph is whole,
+	// and the status line used to go blank as it does after a clean pass.
+	let from = tab.calls.length;
+	tab.emit({ type: 'lookup', on: true });
+	await tab.built(from);
+	await until('the lookup letting go', () => after(from)('zgSetProgress').pop() === null);
+	const said = after(from)('zgSetStatus').pop();
+	if (said !== 'One step failed: openalex: network disabled in this harness') throw new Error('status: ' + JSON.stringify(said));
+
+	// A lookup held open at its first await, which is reading its cache...
+	const realRead = harnessIO.readJSON;
+	let release = null;
+	harnessIO.readJSON = () => new Promise((resolve, reject) => {
+		release = () => reject(new Error('no cache'));
+	});
+	try {
+		from = tab.calls.length;
+		tab.emit({ type: 'lookup', on: true });
+		await until('the lookup starting', () => release);
+		// ...and the box unticked while it runs. That is a pass that owns the
+		// tab, and "a pass owns the tab" used to mean: build it all again.
+		tab.emit({ type: 'lookup', on: false });
+		const done = await tab.built(from);
+		const lines = after(from)('zgSetStatus');
+		if (lines.some(l => /Loading collection|Reading indexed text|Scanning PDFs/.test(l))) {
+			throw new Error('the graph was derived again: ' + JSON.stringify(lines));
+		}
+		if (done.items.length !== 2) throw new Error('the payload lost its papers');
+		if (done.items.some(i => i.citedByGlobal != null)) throw new Error('the counts were left on');
+	}
+	finally {
+		harnessIO.readJSON = realRead;
+		if (release) release();
+	}
+});
+
+checkAlone('a search that is running is asked again when the papers change, not on every push', async () => {
+	await l10nReady;
+	const searchPane = require_('./lib/searchPane.js');
+	const papers = backlogPapers();
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const realRefresh = searchPane.refresh;
+	let refreshed = 0;
+	searchPane.refresh = () => {
+		refreshed++;
+	};
+	try {
+		const tab = await fakeLiveTab({ collection: liveCollection(papers) });
+		await tab.built();
+		await until('the build letting go', () => tab.sent('zgSetProgress').pop() === null);
+		const pushes = tab.sent('zgSetData').length;
+		// Several payloads, all of the same two papers: one ask, at the first.
+		if (pushes < 2) throw new Error('the build pushed ' + pushes + ' times; this check needs several');
+		if (refreshed !== 1) throw new Error(refreshed + ' searches for ' + pushes + ' pushes of the same papers');
+		// A lookup changes names and counts and no paper.
+		const from = tab.calls.length;
+		tab.emit({ type: 'lookup', on: true });
+		await tab.built(from);
+		if (refreshed !== 1) throw new Error('the lookup asked again: ' + refreshed);
+	}
+	finally {
+		searchPane.refresh = realRefresh;
+	}
+});
+
+checkAlone('a renamed collection renames its tab, and a closed tab can be reopened, duplicated and refocused', async () => {
+	await l10nReady;
+	const main = require_('./lib/main.js');
+	const graphTab = require_('./lib/graphTab.js');
+	const papers = backlogPapers();
+	stubLibrary({ 1: papers[0], 2: papers[1] });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const notifier = fakeNotifier();
+	Zotero.Notifier = notifier;
+	const unwatch = graphTab.watchCollections();
+	try {
+		if (notifier.observers.size !== 1) throw new Error('no observer was registered');
+		const collection = liveCollection(papers);
+		const tab = await fakeLiveTab({ collection });
+		await tab.built();
+		const tabs = tab.win.Zotero_Tabs;
+		const renamed = [];
+		tabs.rename = (id, title) => {
+			renamed.push(id + '=' + title);
+		};
+
+		// --- the title follows the collection's name ---
+		notifier.raise('modify', 'collection', [99]);
+		if (renamed.length) throw new Error('renamed for another collection: ' + renamed);
+		collection.name = 'Renamed shelf';
+		notifier.raise('modify', 'collection', [7]);
+		if (renamed.join() !== tab.tabID + '=Renamed shelf — Citation Graph') throw new Error('renamed: ' + renamed);
+		collection.name = 'Reading list';
+
+		// --- the three hooks core asks a tab's type for ---
+		Zotero.Session = { state: { windows: [] } };
+		main.onMainWindowLoad(tab.win);
+		const hooks = tabs.tabHooks;
+		for (const action of ['undoClose', 'duplicate', 'refocus']) {
+			if (!hooks[action] || typeof hooks[action].graph !== 'function') throw new Error('no ' + action + ' hook for a graph tab');
+		}
+
+		// Duplicate: a second tab of the same graph, beside the first, with the
+		// options this one has been switched to rather than the defaults.
+		tab.emit({ type: 'lookup', on: true });
+		const at = tabs._tabs.findIndex(t => t.id === tab.tabID);
+		const removedListeners = [];
+		tab.win.removeEventListener = (type) => {
+			removedListeners.push(type);
+		};
+		await hooks.duplicate.graph({ id: tab.tabID, data: tabs._tabs[at].data }, at);
+		const twin = tabs._tabs[at + 1];
+		if (!twin || twin.id === tab.tabID || twin.type !== 'graph') throw new Error('no duplicate beside the tab: ' + tabs._tabs.map(t => t.type));
+		if (twin.data.collectionKey !== 'ABCD1234' || twin.data.options.enrich !== true) throw new Error('the duplicate is not of this graph: ' + JSON.stringify(twin.data));
+
+		// Refocus: the keyboard goes to the graph's own browser.
+		const browser = tab.made.filter(el => el.localName === 'browser').pop();
+		let focused = 0;
+		browser.focus = () => {
+			focused++;
+		};
+		await hooks.refocus.graph({ id: twin.id });
+		if (focused !== 1) throw new Error('the graph was focused ' + focused + ' times');
+
+		// The duplicate's page never loaded, and it is closed. The listener it
+		// was waiting on is the window's, and used to stay there for good.
+		tabs.close(twin.id);
+		if (!removedListeners.includes('DOMContentLoaded')) throw new Error('a tab closed before its page loaded left its listener on the window');
+
+		// Undo close: what core kept of the tab is what a session keeps of one.
+		const kept = { data: tabs._tabs[at].data };
+		tabs.close(tab.tabID);
+		if (tabs._tabs.some(t => /^graph/.test(t.type))) throw new Error('the tab did not close');
+		if (await hooks.undoClose.graph(kept, at) !== true) throw new Error('reopening was refused');
+		const back = tabs._tabs[at];
+		if (!back || back.type !== 'graph-unloaded' || back.data !== kept.data) throw new Error('not reopened in place: ' + tabs._tabs.map(t => t.type));
+		// A tab of a collection that has since gone is not reopened, and says so.
+		stubCollections(null);
+		if (await hooks.undoClose.graph({ data: { collectionKey: 'GONE0000', libraryID: 1 } }, 1) !== false) throw new Error('reopened a graph of nothing');
+		stubCollections();
+		// And the title of one restored but not yet looked at follows a rename too.
+		renamed.length = 0;
+		COLLECTION.name = 'Renamed again';
+		try {
+			notifier.raise('modify', 'collection', [7]);
+		}
+		finally {
+			COLLECTION.name = 'Reading list';
+		}
+		if (renamed.join() !== back.id + '=Renamed again — Citation Graph') throw new Error('an unloaded tab kept its title: ' + renamed);
+		tabs.close(back.id);
+	}
+	finally {
+		unwatch();
+	}
+	if (notifier.observers.size !== 0) throw new Error('the observer outlived its watch');
+});
+
+checkAlone('a plugin enabled in the middle of a session does not replay the session Zotero started with', async () => {
+	await l10nReady;
+	const main = require_('./lib/main.js');
+	const graphTab = require_('./lib/graphTab.js');
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+	Zotero.getMainWindows = () => [];
+	// session.json as Zotero read it at launch. Nothing rewrites it until a
+	// save, so an hour in, this still lists the tabs of the session before.
+	const session = () => ({ state: { windows: [{ type: 'pane', tabs: [
+		{ type: 'library', title: 'My Library', data: {} },
+		{ type: 'graph', title: 'Reading list — Citation Graph',
+			data: { collectionKey: 'ABCD1234', libraryID: 1, icon: 'zotero-citation-graph' } },
+	] }] } });
+	const graphTabsAfterLoad = async () => {
+		Zotero.Session = session();
+		const { win } = fakeMainWindow();
+		main.onMainWindowLoad(win);
+		await graphTab.restoreSettled();
+		return win.Zotero_Tabs._tabs.filter(t => /^graph/.test(t.type)).length;
+	};
+	try {
+		// plugins.js REASONS: 3 enable, 5 install, 7 upgrade.
+		for (const reason of [3, 5, 7]) {
+			await main.startup({ ...CFG, reason });
+			const n = await graphTabsAfterLoad();
+			if (n !== 0) throw new Error('reason ' + reason + ' reopened ' + n + ' tab(s) out of a stale session');
+		}
+		// Zotero's own start is the one with a restore to finish.
+		await main.startup({ ...CFG, reason: 1 });
+		if (await graphTabsAfterLoad() !== 1) throw new Error('an app start did not finish the restore');
+	}
+	finally {
+		// As every other check found it: started with no reason given.
+		await main.startup(CFG);
+	}
+	if (await graphTabsAfterLoad() !== 1) throw new Error('a start with no reason is not taken for Zotero\'s own');
+});
+
+Promise.all(pending).then(() => {
+	console.log('\n' + (failures ? failures + ' FAILURE(S)' : 'all checks passed'));
+	process.exit(failures ? 1 : 0);
+});

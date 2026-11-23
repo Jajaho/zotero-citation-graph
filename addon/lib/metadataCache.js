@@ -46,7 +46,10 @@ class MetadataCache {
 		this.generation = cacheStore.generation();
 		try {
 			let d = await IOUtils.readJSON(this.path);
-			if (d && d.version === VERSION && d.entries) this.data = d;
+			if (d && d.version === VERSION && d.entries) {
+				this.data = d;
+				this.prune();
+			}
 		}
 		catch (e) {
 			// Missing or corrupt -- start empty rather than fail the build.
@@ -66,6 +69,31 @@ class MetadataCache {
 		}
 		this.hits++;
 		return e.m;
+	}
+
+	/**
+	 * Drop what has aged out.
+	 *
+	 * get() has always refused an entry past its TTL, and that was all that
+	 * ever happened to one: it stayed in the file, was read and written back
+	 * whole by every build, and a work looked up once and never cited again
+	 * was carried for good. Run on load, and marked dirty so the next flush is
+	 * the one that takes them off the disk.
+	 *
+	 * @returns {number} how many went
+	 */
+	prune(now = Date.now()) {
+		let entries = this.data.entries;
+		let gone = 0;
+		for (let key of Object.keys(entries)) {
+			let e = entries[key];
+			if (!e || !e.at || now - e.at > this.ttl) {
+				delete entries[key];
+				gone++;
+			}
+		}
+		if (gone) this.dirty = true;
+		return gone;
 	}
 
 	set(key, metadata) {

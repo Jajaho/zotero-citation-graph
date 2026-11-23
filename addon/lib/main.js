@@ -25,6 +25,9 @@ const ITEM_MENU_ID = 'zotero-citation-graph-item';
 // rather than when the plugin alone is going away. The two want opposite
 // teardowns, and the difference is the whole of whether a graph tab comes back.
 const REASON_APP_SHUTDOWN = 2;
+// ...and the one it passes when it is starting. Every other way a plugin comes
+// up -- enabled, installed, upgraded -- happens in a session already running.
+const REASON_APP_STARTUP = 1;
 const TAB_ICON_STYLE_ID = 'zotero-citation-graph-tab-icon-style';
 
 /**
@@ -51,6 +54,13 @@ const TAB_ICON_CSS = resRoot => `
 
 let _config = null;
 
+// Whether this start is Zotero's own, which is the only one that has a session
+// to finish restoring. See restoreLate().
+let _appStartup = true;
+
+// Takes graphTab's collection observer back out. See startup().
+let _unwatchCollections = null;
+
 module.exports = {
 	// Reached from the Settings pane's inline handlers, which run in the
 	// Settings window and see this module only as Zotero.ZoteroCitationGraph.
@@ -58,6 +68,9 @@ module.exports = {
 
 	async startup(config) {
 		_config = config;
+		// A start with no reason given is taken for Zotero's own, as every
+		// start was before the reason was asked for.
+		_appStartup = config.reason == null || config.reason === REASON_APP_STARTUP;
 		// Tab hooks before the await, not after it. Zotero restores its tabs on
 		// a schedule of its own -- _loadPane() gets there once the item and
 		// collection trees have loaded -- and a graph tab whose restoreState
@@ -85,8 +98,10 @@ module.exports = {
 			unhideContextMenus(win);
 			addTabIconStyle(win);
 			addTabContext(win);
-			graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
+			restoreLate(win);
 		}
+
+		if (!_unwatchCollections) _unwatchCollections = graphTab.watchCollections();
 
 		this.registerMenu();
 		this.registerItemMenu();
@@ -114,6 +129,10 @@ module.exports = {
 			}
 		}
 		prefsPane.unregister();
+		if (_unwatchCollections) {
+			_unwatchCollections();
+			_unwatchCollections = null;
+		}
 
 		// The hooks first: nothing below should be able to call a load hook
 		// belonging to the version being torn down.
@@ -166,7 +185,7 @@ module.exports = {
 		// Restore usually finishes before this plugin is loaded, so the hook
 		// above is the fast path and this is the one that actually runs. See
 		// graphTab.restoreMissing().
-		graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
+		restoreLate(win);
 	},
 
 	onMainWindowUnload(win) {
@@ -341,7 +360,10 @@ function graphableKeys(ctx) {
 	for (let item of (ctx && ctx.items) || []) {
 		try {
 			let it = item;
-			if (it.parentItem) it = it.parentItem;
+			// All the way up: an annotation's parent is its attachment, and the
+			// attachment's is the paper. One step stopped at the PDF, which is
+			// not a regular item, so a row that was a highlight opened nothing.
+			while (it.parentItem) it = it.parentItem;
 			if (it.deleted) continue;
 			if (!it.isRegularItem()) continue;
 			if (seen.has(it.key)) continue;
@@ -420,6 +442,34 @@ function addTabHooks(win) {
 	if (!hooks.load) hooks.load = {};
 	hooks.restoreState.graph = (tab, tabIndex) => graphTab.restore(win, tab, tabIndex);
 	hooks.load.graph = tab => graphTab.load(win, tab, _config);
+	// The three core asks a tab's type for and does without when there is no
+	// answer: Undo Close Tab, Duplicate Tab, and the focus when a tab already
+	// selected is chosen again. None is needed for a graph tab to exist, and
+	// each was a thing every other tab in the strip did and this one did not.
+	for (let action of OPTIONAL_HOOKS) if (!hooks[action]) hooks[action] = {};
+	hooks.undoClose.graph = (tab, tabIndex) => graphTab.reopen(win, tab, tabIndex);
+	hooks.duplicate.graph = (tab, tabIndex) => graphTab.duplicate(win, tab, tabIndex, _config);
+	hooks.refocus.graph = async tab => graphTab.refocus(tab.id);
+}
+
+const OPTIONAL_HOOKS = ['undoClose', 'duplicate', 'refocus'];
+
+/**
+ * Finish a session restore that ran before this plugin was loaded -- on
+ * Zotero's own start, and on no other.
+ *
+ * graphTab.restoreMissing() reads Zotero.Session.state, which is session.json
+ * as Zotero found it at launch, rewritten only by a save: five minutes after a
+ * tab last changed, or at quit. A plugin enabled, installed or upgraded in the
+ * middle of a session read the same thing, and what it describes by then is
+ * the tabs of the LAST session -- graph tabs the user has since closed
+ * included, which were opened again, while the ones open a moment before the
+ * upgrade were not in it at all. There is nothing to finish in that case:
+ * core's restore is long over, and it was never going to restore those.
+ */
+function restoreLate(win) {
+	if (!_appStartup) return;
+	graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
 }
 
 /**
@@ -482,4 +532,5 @@ function removeWindowIntegration(win) {
 	if (!hooks) return;
 	if (hooks.restoreState) delete hooks.restoreState.graph;
 	if (hooks.load) delete hooks.load.graph;
+	for (let action of OPTIONAL_HOOKS) if (hooks[action]) delete hooks[action].graph;
 }

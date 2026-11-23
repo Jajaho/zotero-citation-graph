@@ -442,6 +442,10 @@ zotero-citation-graph-build-reading-references-progress = Reading reference list
 zotero-citation-graph-lookup-works = Looking up { $count -> [one] { $count } work *[other] { $count } works }…
 zotero-citation-graph-lookup-phase = Looking up works…
 zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total } ({ $provider })
+# What a build or a lookup says when it ends having lost a strategy or a request:
+# how many failed, and the first of them, as "strategy: message". The rest are in
+# the error console.
+zotero-citation-graph-build-errors = { $count -> [one] One step failed *[other] { $count } steps failed }: { $what }
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 zotero-citation-graph-build-failed = Could not build the graph: { $message }
 
@@ -456,6 +460,8 @@ zotero-citation-graph-add-confirm = Add
 zotero-citation-graph-add-confirm-held = Add to Collection
 zotero-citation-graph-add-held-note = Already in your library. The item you have is filed here; nothing is added twice.
 zotero-citation-graph-add-bad-doi = Not a usable DOI: { $doi }
+# A group library the user may read and not write: there is nowhere in it to file a work.
+zotero-citation-graph-add-read-only = This library is read-only, so nothing can be added to it.
 zotero-citation-graph-add-adding = Adding { $doi }…
 zotero-citation-graph-add-failed = Could not add { $doi }: { $message }
 zotero-citation-graph-add-no-metadata = No metadata found for { $doi }
@@ -528,3 +534,7 @@ zotero-citation-graph-prefs-cache-size = The cache holds { $size }.
 zotero-citation-graph-prefs-cache-empty = The cache is empty.
 zotero-citation-graph-prefs-cache-cleared = Cleared { $size }.
 zotero-citation-graph-prefs-cache-failed = Could not clear the cache: { $message }
+
+zotero-citation-graph-prefs-openalex-heading = OpenAlex
+zotero-citation-graph-prefs-openalex-description = "Query node metadata" and "OpenAlex references" ask OpenAlex about the works in a graph. That works without a key, at about a tenth of the free daily allowance. A free key from openalex.org/settings/api lifts it to the full allowance.
+zotero-citation-graph-prefs-openalex-key = API key

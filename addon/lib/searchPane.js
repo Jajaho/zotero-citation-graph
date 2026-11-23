@@ -90,11 +90,49 @@ function onGraph(entry, ids) {
 	return [...out];
 }
 
-async function quickSearch(entry, text) {
-	let s = new Zotero.Search();
-	s.libraryID = entry.scope.libraryID;
-	s.addCondition('quicksearch-' + mode(), 'contains', text);
-	return onGraph(entry, await s.search());
+/**
+ * One Quick Search for this tab, and never two at once.
+ *
+ * The page asks on every keystroke, and each ask was a search of its own over
+ * the whole library, started at once and run to the end -- Zotero.Search has
+ * no way to be called off -- so a word typed into "Everything" on a large
+ * library was eight full-text searches side by side, seven of them answering
+ * a question nobody was asking any more. Now one runs at a time and the
+ * newest text waits its turn; a text that was waiting when a newer one came
+ * is never searched for at all, and is answered with null, which the caller
+ * does not pass on. The text the user stopped on is always searched.
+ *
+ * @returns {Promise<?Number[]>} the matches on the graph, or null when a
+ *   newer search took this one's place
+ */
+function quickSearch(entry, text) {
+	let q = entry.quick || (entry.quick = { busy: false, next: null });
+	if (!q.busy) return runQuick(entry, q, text);
+	if (q.next) q.next.resolve(null);
+	return new Promise((resolve) => {
+		q.next = { text, resolve };
+	});
+}
+
+async function runQuick(entry, q, text) {
+	q.busy = true;
+	try {
+		let s = new Zotero.Search();
+		s.libraryID = entry.scope.libraryID;
+		s.addCondition('quicksearch-' + mode(), 'contains', text);
+		return onGraph(entry, await s.search());
+	}
+	finally {
+		q.busy = false;
+		let next = q.next;
+		q.next = null;
+		if (next) {
+			runQuick(entry, q, next.text).then(next.resolve, (e) => {
+				Zotero.logError(e);
+				next.resolve(null);
+			});
+		}
+	}
 }
 
 // --- the mode menu ---------------------------------------------------------

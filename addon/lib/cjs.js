@@ -23,6 +23,12 @@
 
 this.makeRequire = function (rootURI, globals) {
 	let cache = new Map();
+	// Out of a directory, which is a development install (a pointer file to
+	// addon/), a file is read afresh on every start so that an edit takes a
+	// restart and nothing else. Out of an XPI there is nothing to edit, and
+	// the same switch made every user's Zotero compile all of this plugin from
+	// source on every launch, past the startup cache that exists to spare it.
+	let ignoreCache = !/^jar:/i.test(rootURI);
 
 	function resolve(fromURL, spec) {
 		let s = spec;
@@ -54,8 +60,8 @@ this.makeRequire = function (rootURI, globals) {
 			target: scope,
 			charset: 'utf-8',
 			// Defeats the startup cache so edits are picked up on the next
-			// Zotero restart without -purgecaches.
-			ignoreCache: true,
+			// Zotero restart without -purgecaches -- in a development install.
+			ignoreCache,
 		});
 
 		// A module may reassign module.exports wholesale.
