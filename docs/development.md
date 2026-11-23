@@ -1907,6 +1907,36 @@ tools/
   report or the `null` gives it back. A graph that was stopped says *stopped early* on the stats
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
+- **A build has something to watch beside its bar.** Seven small scenes take turns at the left of
+  the card, each with a line of its own under the phase: a sheet being read (*Reading papers…*), a
+  head trying on initials (*Guessing author names…*), a washing machine (*DOIng laundry…*), a
+  glass over a scribble, *Aa* in three typefaces with a verdict on each, an atom with a heart for
+  a nucleus, a globe. They are jokes and say nothing about the build. The phase, the count and the
+  bar are as they were, and the stage and the lines are both `aria-hidden`: a line that changes
+  every five seconds and reports nothing is not for a live region. The scenes and the lines are
+  markup (`#progress-stage`, `#progress-lines`), the n-th of one with the n-th of the other, and
+  the lines are ordinary messages (`scene-*`), so a locale can make its own joke as long as it
+  still fits its picture. Everything that moves inside a scene is `graph.css`'s. `playScenes()`
+  only decides whose turn it is: one scene every `SCENE_MS`, every scene once before any comes
+  round again, shuffled per round (`sceneOrder()`), and the turn carries from one build to the
+  next so two short builds do not open on the same line. `showProgress()` calls it on every
+  report, and the timer is what says a build is already being played.
+  A scene off show is `display: none`, not hidden: its animations do not run, so the page pays
+  for one scene and not seven, and each starts from its first frame — the sheet and the typefaces
+  tell a small story in order. The six lines off show are only `visibility: hidden` in one shared
+  grid cell, so the card is as wide as the longest and does not change width as they turn.
+  The drawings are in two of core's greys (`--fill-secondary`, `--fill-tertiary`) over
+  `--color-background`, so a dark window gets the same drawing in white on grey. Almost all the
+  motion is `transform` and `opacity`. An electron is two nested elements, one going along the
+  orbit and one across it a quarter turn behind, both on a sine's curve: that is an ellipse with a
+  dot that stays round, where a rotation squashed into an ellipse would squash the dot. A meridian
+  is its circle narrowed to a line and out again (`scaleX(1)` to `scaleX(-1)`,
+  `vector-effect: non-scaling-stroke`), clipped at the outline's inner edge because both greys are
+  see-through and a meridian under the outline darkened it. Under `prefers-reduced-motion` every
+  animation is off and each scene is the drawing it is at rest; the lines still take their turns.
+  With the scenes the card is centred between two insets (`left`/`right` with `width:
+  fit-content`), not hung from `left: 50%`, which offered it only the half of the canvas to its
+  right and cut a card short in a pane it would have fitted.
 - **An item's type crosses by name and by label.** `itemRecord()` sends `itemType`, core's own
   name, which is what the type filter and a saved view are keyed on and must not change with the
   display language — and `itemTypeName` beside it, `Zotero.ItemTypes.getLocalizedString()`, which

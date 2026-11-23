@@ -870,6 +870,10 @@
 	let elProgressStop = el('progress-stop');
 	let elProgressBar = el('progress-bar');
 	let elProgressFill = el('progress-fill');
+	// The scenes a build is watched by, and the line that goes with each --
+	// see playScenes().
+	let elScenes = Array.from(elProgress.querySelectorAll('#progress-stage > .scene'));
+	let elSceneLines = Array.from(elProgress.querySelectorAll('#progress-lines > span'));
 	let elFilterChips = el('filter-chips');
 	let elFilterInput = el('filter-input');
 	let elSuggest = el('filter-suggest');
@@ -1096,6 +1100,7 @@
 		let on = !!p && typeof p === 'object';
 		elProgress.hidden = !on;
 		elStatus.hidden = on;
+		playScenes(on);
 		// A press on Stop has been answered by now, one way or the other: with
 		// the `null` that ends the bar, or by a build that is still reporting --
 		// which is one that did not stop, and has to be stoppable again.
@@ -1146,6 +1151,72 @@
 		elProgressStop.disabled = true;
 		emit({ type: 'stop-build' });
 	});
+
+	/**
+	 * Something to watch while a build runs: a small scene beside the phase,
+	 * and a line under it -- "DOIng laundry…" beside a washing machine.
+	 *
+	 * The bar says where a build is and was the only thing on it that moved,
+	 * for minutes on a large library. This says nothing about the build, and
+	 * is kept apart from what does: the phase, the count and the bar are
+	 * exactly as they were, and the scene and its line are both hidden from
+	 * the accessibility tree.
+	 *
+	 * The scenes and the lines are markup (#progress-stage, #progress-lines in
+	 * graph.html, the n-th of one with the n-th of the other) and everything
+	 * that moves inside a scene is graph.css's. What is decided here is only
+	 * whose turn it is: one scene every SCENE_MS for as long as the bar is up,
+	 * every scene once before any comes round again, in an order shuffled for
+	 * each round. The turn carries over from one build to the next, so two
+	 * short builds in a row do not both open on the same joke.
+	 */
+	const SCENE_MS = 5000;
+	let sceneTimer = null;
+	let sceneQueue = [];
+	let sceneOn = -1;
+
+	/** A round: every scene once, shuffled, and not opening on `last`, which
+	 *  is the one already on show. */
+	function sceneOrder(count, last, random) {
+		let order = [];
+		for (let i = 0; i < count; i++) order.push(i);
+		for (let i = count - 1; i > 0; i--) {
+			let j = Math.floor(random() * (i + 1));
+			let held = order[i];
+			order[i] = order[j];
+			order[j] = held;
+		}
+		if (count > 1 && order[0] === last) order.push(order.shift());
+		return order;
+	}
+
+	function nextScene() {
+		if (!sceneQueue.length) sceneQueue = sceneOrder(elScenes.length, sceneOn, Math.random);
+		if (!sceneQueue.length) return;
+		sceneOn = sceneQueue.shift();
+		for (let i = 0; i < elScenes.length; i++) {
+			elScenes[i].classList.toggle('on', i === sceneOn);
+			if (elSceneLines[i]) elSceneLines[i].classList.toggle('on', i === sceneOn);
+		}
+	}
+
+	/**
+	 * Start the turns, or stop them. Called on every report -- five a second
+	 * -- so a build already being played is left alone: the timer is what says
+	 * whether one is. Stopping leaves the last scene marked, behind a hidden
+	 * bar, which is what nextScene() reads to open the next build on another.
+	 */
+	function playScenes(on) {
+		if (on === (sceneTimer != null)) return;
+		if (on) {
+			nextScene();
+			sceneTimer = window.setInterval(nextScene, SCENE_MS);
+		}
+		else {
+			window.clearInterval(sceneTimer);
+			sceneTimer = null;
+		}
+	}
 
 	/**
 	 * What a click, a double click and a right click do on a paper, said once.

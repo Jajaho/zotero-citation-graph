@@ -7517,6 +7517,7 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 	const bar = (code) => {
 		const attrs = {};
 		const classes = new Set();
+		const played = [];
 		let label = '';
 		const page = liftPage({
 			functions: ['showProgress'],
@@ -7537,6 +7538,10 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 					removeAttribute(k) { delete attrs[k]; },
 				},
 				elProgressFill: { style: { width: '' } },
+				// The scenes beside the bar are the next check's; here it is
+				// enough that every report says whether the bar is up.
+				played,
+				playScenes(on) { played.push(on); },
 				t: pageStrings(code || 'en-US'),
 			},
 		});
@@ -7586,6 +7591,8 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 	page.showProgress(null);
 	if (!page.elProgress.hidden || page.elStatus.hidden) throw new Error('the bar outlived its build');
 	if (page.elProgressStop.disabled) throw new Error('Stop stayed dead for the next build');
+	// The scenes are told with the bar: on for every report, off with the null.
+	if (page.played.join() !== 'true,true,true,true,true,true,false') throw new Error('the scenes were told ' + page.played.join());
 
 	// Every locale can say the phase.
 	for (const code of fs.readdirSync(localeDir)) {
@@ -7622,6 +7629,153 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 		['a bar that is a progressbar named by the label', 'id="progress-bar" role="progressbar" aria-labelledby="progress-text"'],
 	]) {
 		if (!pill.includes(needle)) throw new Error('#progress has lost ' + what);
+	}
+});
+
+/**
+ * A build that runs for minutes had a bar and nothing else that moved. Beside
+ * the phase there is now a small scene, and under it a line of its own --
+ * "DOIng laundry…" beside a washing machine -- one of seven at a time.
+ *
+ * What is held: the turns (every scene once a round, none twice running, one
+ * timer however many reports arrive), that a scene and its line are a pair in
+ * the markup and in every locale, that neither is read out, and that a reader
+ * who asked for no motion gets none.
+ */
+check('a build is watched by one scene at a time, each with a line of its own', () => {
+	const stage = () => {
+		const make = () => {
+			const classes = new Set();
+			return { classes, classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } } };
+		};
+		const timers = [];
+		const page = liftPage({
+			functions: ['sceneOrder', 'nextScene', 'playScenes'],
+			consts: ['SCENE_MS'],
+			globals: {
+				elScenes: [0, 1, 2, 3, 4, 5, 6].map(make),
+				elSceneLines: [0, 1, 2, 3, 4, 5, 6].map(make),
+				sceneTimer: null, sceneQueue: [], sceneOn: -1,
+				Math,
+				window: {
+					setInterval(fn, ms) { timers.push({ fn, ms }); return timers.length; },
+					clearInterval(id) { timers[id - 1] = null; },
+				},
+			},
+		});
+		page.timers = timers;
+		page.shown = () => page.elScenes.map((s, i) => (s.classes.has('on') ? i : -1)).filter(i => i >= 0);
+		page.said = () => page.elSceneLines.map((s, i) => (s.classes.has('on') ? i : -1)).filter(i => i >= 0);
+		return page;
+	};
+
+	// A round is every scene once, and never opens on the scene already up.
+	let seed = 11;
+	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+	let page = stage();
+	for (let last = -1; last < 7; last++) {
+		for (let n = 0; n < 50; n++) {
+			const order = page.sceneOrder(7, last, rnd);
+			if (order.slice().sort().join() !== '0,1,2,3,4,5,6') throw new Error('a round of ' + order.join());
+			if (order[0] === last) throw new Error('a round opened on the scene it followed: ' + order.join());
+		}
+	}
+	// Shuffled, not dealt in the markup's order every time.
+	const firsts = new Set();
+	for (let n = 0; n < 50; n++) firsts.add(page.sceneOrder(7, -1, rnd)[0]);
+	if (firsts.size < 4) throw new Error('fifty rounds opened on only ' + firsts.size + ' scenes');
+	if (page.sceneOrder(1, 0, rnd).join() !== '0' || page.sceneOrder(0, -1, rnd).length) throw new Error('one scene, or none, is not a round');
+
+	// The bar goes up: one scene and its own line, and one timer -- however
+	// many reports follow, which is five a second.
+	page.playScenes(true);
+	const first = page.shown();
+	if (first.length !== 1 || page.said().join() !== first.join()) throw new Error('on show: ' + first.join() + ', said: ' + page.said().join());
+	for (let n = 0; n < 20; n++) page.playScenes(true);
+	if (page.timers.length !== 1 || page.shown().join() !== first.join()) throw new Error('a report restarted the scenes');
+	if (page.timers[0].ms !== 5000) throw new Error('a scene is given ' + page.timers[0].ms + 'ms');
+
+	// Two rounds of turns: one on show at a time, each once a round, and the
+	// second round does not open on the scene the first closed with.
+	const seen = [first[0]];
+	for (let n = 0; n < 13; n++) {
+		page.timers[0].fn();
+		const now = page.shown();
+		if (now.length !== 1 || page.said().join() !== now.join()) throw new Error('turn ' + n + ' shows ' + now.join() + ' and says ' + page.said().join());
+		seen.push(now[0]);
+	}
+	for (const round of [seen.slice(0, 7), seen.slice(7)]) {
+		if (round.slice().sort().join() !== '0,1,2,3,4,5,6') throw new Error('a round on screen: ' + round.join());
+	}
+	if (seen[6] === seen[7]) throw new Error('the same scene twice running');
+
+	// The bar comes down: the timer goes, and going twice is nothing. The next
+	// build opens on another scene than the one this one closed with.
+	page.playScenes(false);
+	page.playScenes(false);
+	if (page.timers[0] !== null || page.sceneTimer !== null) throw new Error('the scenes go on turning behind a hidden bar');
+	const closed = page.shown()[0];
+	page.playScenes(true);
+	if (page.timers.length !== 2 || page.shown().length !== 1 || page.shown()[0] === closed) {
+		throw new Error('the next build opened on ' + page.shown().join() + ' after ' + closed);
+	}
+
+	// A page with no scenes in it -- the markup of another version -- still
+	// draws its bar.
+	page = stage();
+	page.elScenes = [];
+	page.elSceneLines = [];
+	page.playScenes(true);
+	page.timers[0].fn();
+	page.playScenes(false);
+
+	// The markup: as many lines as scenes, each line a message of its own, and
+	// none of it read out.
+	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+	const between = (open) => {
+		const at = html.indexOf(open);
+		if (at < 0) throw new Error(open + ' is gone, or is read out');
+		return html.slice(at, html.indexOf('\n\t\t\t\t</div>', at));
+	};
+	const scenes = [...between('<div id="progress-stage" aria-hidden="true">').matchAll(/<svg class="scene scene-([a-z]+)" viewBox="0 0 32 32">/g)].map(m => m[1]);
+	const lines = [...between('<div id="progress-lines" aria-hidden="true">').matchAll(/<span data-zg-str="(scene-[a-z]+)">([^<]+)<\/span>/g)];
+	if (scenes.length < 2 || new Set(scenes).size !== scenes.length) throw new Error('the scenes are ' + scenes.join());
+	if (lines.length !== scenes.length) throw new Error(scenes.length + ' scenes and ' + lines.length + ' lines');
+	if (new Set(lines.map(m => m[1])).size !== lines.length) throw new Error('two scenes say the same line');
+	// The English in the markup is the fallback, and is en-US's own; every
+	// locale has a line for each, and no two of them the same.
+	for (const code of fs.readdirSync(localeDir)) {
+		const t = pageStrings(code);
+		const said = lines.map(m => t(m[1]));
+		if (said.some(s => /^scene-/.test(s) || !s.trim())) throw new Error(code + ' has no line for a scene: ' + said.join(' | '));
+		if (new Set(said).size !== said.length) throw new Error(code + ' says one line for two scenes');
+		if (code === 'en-US' && said.join('|') !== lines.map(m => m[2]).join('|')) throw new Error('the markup\'s English is not en-US\'s: ' + said.join(' | '));
+	}
+
+	// The stylesheet: a scene off show is not laid out at all, so its
+	// animations do not run; every scene class in the markup is animated; and
+	// none of them moves for a reader who asked for stillness.
+	const css = fs.readFileSync(path.join(addonDir, 'content/graph.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+	const rule = (sel) => {
+		const m = css.match(new RegExp('\\n' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{([^}]*)\\}'));
+		if (!m) throw new Error('content/graph.css has no "' + sel + '" rule');
+		return m[1];
+	};
+	if (!/display: none;/.test(rule('#progress-stage > .scene'))) throw new Error('a scene off show is still laid out, and still animating');
+	if (!/display: block;/.test(rule('#progress-stage > .scene.on'))) throw new Error('the scene on show is not shown');
+	if (!/visibility: hidden;/.test(rule('#progress-lines > span')) || !/visibility: visible;/.test(rule('#progress-lines > span.on'))) {
+		throw new Error('the lines are not shown one at a time');
+	}
+	for (const name of scenes) {
+		if (!new RegExp('\\n\\.scene-' + name + ' [^{]*\\{[^}]*animation').test(css)) throw new Error('scene-' + name + ' does not move');
+	}
+	const still = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+	if (!/#progress-stage > \.scene,\s*#progress-stage > \.scene \*,\s*#progress-lines > span \{\s*animation: none !important;/.test(still)) {
+		throw new Error('the scenes move for a reader who asked for no motion');
+	}
+	// Every animation the scenes name is defined, or the scene stands still.
+	for (const m of css.matchAll(/animation(?:-name)?: (zg-[a-z0-9-]+)/g)) {
+		if (!css.includes('@keyframes ' + m[1] + ' {')) throw new Error('no @keyframes ' + m[1]);
 	}
 });
 

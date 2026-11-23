@@ -604,11 +604,120 @@
 			     label is live: it changes once a phase, and the count beside it
 			     five times a second. -->
 			<div id="progress" hidden="hidden">
+				<!-- Something to watch meanwhile: seven small scenes, one on show
+				     at a time, each with a line of its own in #progress-lines
+				     below -- the n-th scene goes with the n-th line, and graph.js
+				     (playScenes) moves both on together. They say nothing about
+				     the build, which the label beside them does, so both are
+				     hidden from the accessibility tree: a joke that changes every
+				     few seconds is not news. Drawn in the two greys of core's own
+				     icons, and moved by graph.css alone. -->
+				<div id="progress-stage" aria-hidden="true">
+					<!-- A sheet read line by line, then the next one off the pile. -->
+					<svg class="scene scene-read" viewBox="0 0 32 32">
+						<path class="soft" d="M11.5 4.5H23a2 2 0 0 1 2 2v17"/>
+						<g class="sheet">
+							<rect class="paper" x="7" y="7.5" width="15" height="20" rx="2"/>
+							<path class="soft" d="M10.5 12.5h8M10.5 16h8M10.5 19.5h8M10.5 23h4.5"/>
+							<path class="ln" d="M10.5 12.5h8"/>
+							<path class="ln" d="M10.5 16h8"/>
+							<path class="ln" d="M10.5 19.5h8"/>
+							<path class="ln" d="M10.5 23h4.5"/>
+						</g>
+					</svg>
+					<!-- Somebody, and one initial after another tried on them. -->
+					<svg class="scene scene-guess" viewBox="0 0 32 32">
+						<path d="M5.5 28c0-5 4.4-8 10.5-8s10.5 3 10.5 8"/>
+						<g class="head">
+							<circle class="paper" cx="16" cy="11.5" r="7"/>
+							<text class="solid glyph" x="16" y="14.8">?</text>
+							<text class="solid glyph" x="16" y="14.8">A</text>
+							<text class="solid glyph" x="16" y="14.8">M</text>
+							<text class="solid glyph" x="16" y="14.8">Z</text>
+						</g>
+					</svg>
+					<!-- A washing machine with a paper in the drum. -->
+					<svg class="scene scene-wash" viewBox="0 0 32 32">
+						<circle class="soft bubble" cx="20.5" cy="5" r="1.3"/>
+						<circle class="soft bubble" cx="24" cy="5.5" r="0.8"/>
+						<g class="machine">
+							<rect class="paper" x="6.5" y="8" width="19" height="21" rx="2.5"/>
+							<path class="soft" d="M6.5 12.5h19M9.5 10.3h3"/>
+							<circle class="solid" cx="22" cy="10.3" r="0.8"/>
+							<circle cx="16" cy="20.5" r="5.5"/>
+							<g class="drum">
+								<rect class="soft" x="16.4" y="17" width="2.8" height="3.6" rx="0.5"/>
+								<path class="soft" d="M12.7 21.6c1.1.9 2.2.9 3.3 0"/>
+							</g>
+						</g>
+					</svg>
+					<!-- Two lines nobody can read, and a glass going over them. -->
+					<svg class="scene scene-decipher" viewBox="0 0 32 32">
+						<path class="soft" d="M3 10.5q1-4.5 2.4-.4t2.2.2q1.2 3.2 2.2-.8t2.4 1q.6-5 2-.2t2.2-.4q1.4 2.4 2.4 0t2.2.2q1-3.6 2.2 0t3 .2"/>
+						<path class="soft" d="M3 21.5q1.2-4 2.4-.2t2.4.4q.8-4.6 2-.6t2.4.4q1.2 2.6 2.4-.2t2.4.4q1-3 2-.2"/>
+						<g class="lens">
+							<circle class="glass" cx="13" cy="15" r="6"/>
+							<path d="M17.4 19.4l5.1 5.1"/>
+						</g>
+					</svg>
+					<!-- The same two letters in three typefaces, and a verdict on each. -->
+					<svg class="scene scene-font" viewBox="0 0 32 32">
+						<text class="solid face" x="13" y="26">Aa</text>
+						<text class="solid face" x="13" y="26">Aa</text>
+						<text class="solid face" x="13" y="26">Aa</text>
+						<path class="mark" d="M22.5 6.5l2.2 2.2 4.3-4.9"/>
+						<path class="mark" d="M23.2 4l5 5m0-5l-5 5"/>
+						<path class="mark" d="M23.2 4l5 5m0-5l-5 5"/>
+					</svg>
+					<!-- An atom with a heart for a nucleus. -->
+					<svg class="scene scene-love" viewBox="0 0 32 32">
+						<ellipse class="soft" cx="16" cy="16" rx="13.5" ry="5"/>
+						<ellipse class="soft" cx="16" cy="16" rx="13.5" ry="5" transform="rotate(60 16 16)"/>
+						<ellipse class="soft" cx="16" cy="16" rx="13.5" ry="5" transform="rotate(120 16 16)"/>
+						<!-- Three elements to an electron: the outer one turns the
+						     orbit and must keep its attribute, which a CSS transform
+						     on the same element would replace. -->
+						<g class="orbit"><g class="ex"><circle class="solid ey" cx="16" cy="16" r="1.4"/></g></g>
+						<g class="orbit" transform="rotate(60 16 16)"><g class="ex"><circle class="solid ey" cx="16" cy="16" r="1.4"/></g></g>
+						<g class="orbit" transform="rotate(120 16 16)"><g class="ex"><circle class="solid ey" cx="16" cy="16" r="1.4"/></g></g>
+						<path class="solid heart" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/>
+					</svg>
+					<!-- A globe turning, and coming up shiny. -->
+					<svg class="scene scene-world" viewBox="0 0 32 32">
+						<!-- The grid is cut off at the outline's inner edge. Both greys
+						     are see-through, so a meridian passing under the outline
+						     darkened it, and the globe was drawn heavier than the six
+						     other scenes. -->
+						<clipPath id="zg-scene-globe"><circle cx="15" cy="17.5" r="9.8"/></clipPath>
+						<circle class="paper" stroke="none" cx="15" cy="17.5" r="10.5"/>
+						<g clip-path="url(#zg-scene-globe)">
+							<circle class="soft mer" cx="15" cy="17.5" r="10.5" vector-effect="non-scaling-stroke"/>
+							<circle class="soft mer" cx="15" cy="17.5" r="10.5" vector-effect="non-scaling-stroke"/>
+							<circle class="soft mer" cx="15" cy="17.5" r="10.5" vector-effect="non-scaling-stroke"/>
+							<path class="soft" d="M4.5 17.5h21M6.2 12h17.6M6.2 23h17.6"/>
+						</g>
+						<circle cx="15" cy="17.5" r="10.5"/>
+						<path class="solid star" d="M26.5 1.5c.4 2.6 1.4 3.6 4 4-2.6.4-3.6 1.4-4 4-.4-2.6-1.4-3.6-4-4 2.6-.4 3.6-1.4 4-4z"/>
+						<path class="solid star" d="M4.5 2.5c.25 1.6.9 2.25 2.5 2.5-1.6.25-2.25.9-2.5 2.5-.25-1.6-.9-2.25-2.5-2.5 1.6-.25 2.25-.9 2.5-2.5z"/>
+					</svg>
+				</div>
 				<span id="progress-text" aria-live="polite"></span>
 				<span id="progress-count"></span>
 				<button id="progress-stop" type="button" data-zg-str="progress-stop"
 					data-zg-title="progress-stop-hint"
 					title="Stop this build and keep what it has found so far">Stop</button>
+				<!-- One line a scene, in the scenes' order. All seven are laid
+				     out in the one cell and six of them hidden, so the card is as
+				     wide as the longest and does not change width as they turn. -->
+				<div id="progress-lines" aria-hidden="true">
+					<span data-zg-str="scene-reading">Reading papers…</span>
+					<span data-zg-str="scene-authors">Guessing author names…</span>
+					<span data-zg-str="scene-laundry">DOIng laundry…</span>
+					<span data-zg-str="scene-handwriting">Deciphering unreadable handwriting…</span>
+					<span data-zg-str="scene-fonts">Judging font choices…</span>
+					<span data-zg-str="scene-science">Falling in love with science…</span>
+					<span data-zg-str="scene-world">Making the world a better place…</span>
+				</div>
 				<div id="progress-bar" role="progressbar" aria-labelledby="progress-text"
 					aria-valuemin="0" aria-valuemax="100"><i id="progress-fill"></i></div>
 			</div>
