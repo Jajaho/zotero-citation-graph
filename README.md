@@ -48,16 +48,12 @@ Then fear no longer: *Citation Graph for Zotero* is for you.
 - Localization
   - en-US
   - de-DE
-  - ([help needed](CONTRIBUTING.md#translations) to translate to more languages)
+  - Your [help is needed to translate](CONTRIBUTING.md#translations) to more languages
 
 ## Requirements
 
-[![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/download/)
 
-- **Zotero Desktop 10.0 or later** on Windows, macOS or Linux.
-- **PDF attachments** for the offline strategies. They read the PDFs already in
-  your library: items without an attachment still appear as nodes, they just
-  cannot contribute edges.
+- **[![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/download/) or later** on Windows, macOS or Linux.
 - **No network needed** to connect the papers you hold locally. Some additional
   features, such as the OpenAlex strategies, go online and are off by default;
   see [Privacy and network use](#privacy-and-network-use).
@@ -250,8 +246,7 @@ This plugin is independent and is not affiliated with, endorsed by, or sponsored
   reuses.
 - **[pdf.js](https://mozilla.github.io/pdf.js/)** (Mozilla) — PDF text and link
   extraction in the offline benchmarking tools.
-- Everyone who has reported a bug, sat through a usability session or sent in a
-  translation. My special thanks go to:
-    - Victor Joss for suggesting the "Group Pins" feature.
-    - Sofia Navas Gohlke for providing valuable feedback on usability and suggesting the builtin PDF viewer.
-    - Alina Niggli for providing extensive feedback on usability.
+- My special thanks go to my friends and fellow contributors to this project:
+    - Victor Joss, Sofia Navas Gohlke and Alina Niggli for participating in a usability study.
+    - Felix Schlegel for contributing valuable feedback.
+    - Christian Holme for contributing to the offline strategies.
