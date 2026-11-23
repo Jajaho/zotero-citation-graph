@@ -1844,19 +1844,22 @@ body {
  * moves the `on` class along the stage and along the lines together -- and
  * everything that moves inside one is moved from here.
  *
- * In six of them a small figure does what the line says: holds a paper up and
- * reads it, bends over a scrawl with a magnifying glass, polishes the world
- * with a cloth. The figure is the same one throughout -- a round head with
- * a dot for an eye (two when it faces us), and a line each for the body and
- * the limbs -- and an eye blinks on one clock in all of them (.eye). The
- * washing machine works alone: a figure beside a drum has nothing to do that
- * this size can show.
+ * Six of them are seen over somebody's shoulder: the back of a head and a pair
+ * of shoulders at the lower left, the same in each, and beyond them the thing
+ * the line is about, with one arm reaching up to it -- holding the paper, the
+ * magnifying glass, the judge's paddle, a heart, a cloth. The washing machine
+ * is watched by nobody: there is nothing for an arm to do at a drum.
  *
- * Line drawings in two greys, the weight of core's own icons: --fill-secondary
- * for the outline, --fill-tertiary (.soft) for what is behind or inside it,
- * and the page's own background (.paper) for a sheet or a head, which on the
- * card's grey is the white. All three are tokens, so a dark window gets the
- * same drawing in white on grey.
+ * The figure is shapes and not lines: the page's own background (.paper)
+ * inside the outline's grey, which on the card is white in grey. An arm is
+ * one path drawn twice, wide in the outline's colour (.limb) and narrower in
+ * the background's on top (.limb-in), which is a tube with an outline and a
+ * round hand on the end of it.
+ *
+ * Two greys, and a line the weight of core's own icons: --fill-secondary for
+ * the outline, --fill-tertiary (.soft) for what is behind or inside it. All
+ * of them are tokens, so a dark window gets the same drawing in white on
+ * grey.
  *
  * A scene that is not on show is display: none and not merely invisible. Its
  * animations do not run, so the page pays for one scene and not for seven --
@@ -1879,7 +1882,7 @@ body {
 	display: none;
 	width: 100%;
 	height: 100%;
-	/* The bubbles and the judge's paddle leave the box by a pixel or two. */
+	/* The bubbles and the small hearts leave the box by a pixel or two. */
 	overflow: visible;
 	fill: none;
 	stroke: currentColor;
@@ -1913,17 +1916,15 @@ body {
 	fill: var(--color-background);
 }
 
-/* Every eye in every scene, on one clock: open, and shut for a moment every
-   three seconds or so. */
-.scene .eye {
-	transform-box: fill-box;
-	transform-origin: center;
-	animation: zg-scene-blink 3.2s ease-in-out infinite;
+/* An arm: the same path twice, and the difference of the two widths is the
+   outline, at the drawing's own weight on either side. */
+.scene .limb {
+	stroke-width: 3.6;
 }
 
-@keyframes zg-scene-blink {
-	0%, 91%, 100% { transform: none; }
-	95% { transform: scaleY(0.1); }
+.scene .limb-in {
+	stroke: var(--color-background);
+	stroke-width: 2;
 }
 
 /* Under the phase, in the status line's grey. The lines share one cell: see
@@ -1951,12 +1952,11 @@ body {
 	animation: zg-scene-in 300ms ease-out;
 }
 
-/* -- Reading papers: somebody holds a paper up and goes down it. Each of its
-      three lines darkens in turn while the head comes down with them; then
-      all three are let go and it starts again. */
+/* -- Reading papers: a paper held up. Each of its three lines darkens in turn
+      while the head goes along it and drops to the next; then all three are
+      let go and it starts again. */
 .scene-read .head {
-	transform-origin: 11px 10.9px;
-	animation: zg-read-nod 3.6s ease-in-out infinite;
+	animation: zg-read-scan 3.6s ease-in-out infinite;
 }
 
 .scene-read .ln {
@@ -1968,9 +1968,13 @@ body {
 .scene-read .ln2 { animation-name: zg-read-2; }
 .scene-read .ln3 { animation-name: zg-read-3; }
 
-@keyframes zg-read-nod {
-	0%, 100% { transform: rotate(-7deg); }
-	84%, 92% { transform: rotate(9deg); }
+@keyframes zg-read-scan {
+	0%, 100% { transform: translate(-0.5px, -0.3px); }
+	26% { transform: translate(0.6px, -0.3px); }
+	31% { transform: translate(-0.5px, 0); }
+	57% { transform: translate(0.6px, 0); }
+	62% { transform: translate(-0.5px, 0.3px); }
+	82%, 92% { transform: translate(0.2px, 0.3px); }
 }
 
 @keyframes zg-read-1 {
@@ -1991,13 +1995,18 @@ body {
 	100% { transform: none; opacity: 0; }
 }
 
-/* -- Guessing author names: somebody with a hand at the chin and the head
-      tilted one way and the other, and over them a thought whose question
-      mark keeps being swapped for an initial. Six turns of 0.6s; the three
-      letters are one animation started a third apart. */
+/* -- Guessing author names: a hand scratching the back of a head that tilts
+      one way and the other, and over it a thought whose question mark keeps
+      being swapped for an initial. Six turns of 0.6s; the three letters are
+      one animation started a third apart. */
 .scene-guess .head {
-	transform-origin: 10.5px 13.8px;
+	transform-origin: 9.5px 24px;
 	animation: zg-guess-tilt 1.8s ease-in-out infinite alternate;
+}
+
+.scene-guess .scratch {
+	transform-origin: 20.2px 23.5px;
+	animation: zg-guess-scratch 0.3s ease-in-out infinite alternate;
 }
 
 .scene-guess .thought {
@@ -2005,7 +2014,7 @@ body {
 }
 
 .scene-guess .glyph {
-	font: 600 7px system-ui, -apple-system, sans-serif;
+	font: 600 8px system-ui, -apple-system, sans-serif;
 	text-anchor: middle;
 	animation: zg-guess-letter 3.6s step-end infinite;
 }
@@ -2015,8 +2024,13 @@ body {
 .scene-guess .g-z { animation-delay: -1.2s; }
 
 @keyframes zg-guess-tilt {
-	from { transform: rotate(-6deg); }
-	to { transform: rotate(8deg); }
+	from { transform: rotate(-3deg); }
+	to { transform: rotate(4deg); }
+}
+
+@keyframes zg-guess-scratch {
+	from { transform: rotate(-3deg); }
+	to { transform: rotate(4deg); }
 }
 
 @keyframes zg-guess-float {
@@ -2069,11 +2083,12 @@ body {
 	100% { opacity: 0; transform: translateY(-4px); }
 }
 
-/* -- Deciphering unreadable handwriting: somebody bent over a scrawl, swinging
-      a magnifying glass along it and back from the shoulder, the head going a
-      little way with it. */
-.scene-decipher .arm {
-	transform-origin: 12.6px 11px;
+/* -- Deciphering unreadable handwriting: a magnifying glass held up to a
+      scrawl and swung along it and back, the arm turning at the shoulder.
+      The arm goes mostly upward from there, so the glass at the end of it
+      goes mostly sideways. */
+.scene-decipher .swing {
+	transform-origin: 15px 29.5px;
 	animation: zg-decipher-pass 2.6s ease-in-out infinite alternate;
 }
 
@@ -2091,19 +2106,19 @@ body {
 }
 
 @keyframes zg-decipher-pass {
-	from { transform: rotate(10deg); }
-	to { transform: rotate(-13deg); }
+	from { transform: rotate(-9deg); }
+	to { transform: rotate(9deg); }
 }
 
 @keyframes zg-decipher-peer {
-	from { transform: translate(-0.5px, 0.2px); }
-	to { transform: translate(0.6px, 0.5px); }
+	from { transform: translateX(-0.4px); }
+	to { transform: translateX(0.5px); }
 }
 
-/* -- Judging font choices: three typefaces, 1.4s each. The judge looks, then
-      lifts a paddle with the verdict on it. One animation for the typefaces
-      and one for the verdicts, each started a third apart, and the arm goes
-      up once for each.
+/* -- Judging font choices: three typefaces, 1.4s each, and after a look at
+      each a paddle is lifted with the verdict on it. One animation for the
+      typefaces and one for the verdicts, each started a third apart, and the
+      arm goes up once for each.
       The second typeface is named because the generic it falls back to is
       not, on most systems, the one the joke is about. */
 .scene-font .type {
@@ -2117,7 +2132,7 @@ body {
 .scene-font .t3 { font-family: Impact, "Arial Black", fantasy; animation-delay: -1.4s; }
 
 .scene-font .verdict {
-	transform-origin: 22.3px 19.8px;
+	transform-origin: 15px 29.5px;
 	animation: zg-font-lift 1.4s ease-in-out infinite;
 }
 
@@ -2136,7 +2151,7 @@ body {
 }
 
 @keyframes zg-font-lift {
-	0%, 26%, 100% { transform: rotate(8deg); }
+	0%, 26%, 100% { transform: rotate(9deg); }
 	42% { transform: rotate(-2deg); }
 	50%, 90% { transform: none; }
 }
@@ -2148,11 +2163,10 @@ body {
 	33.33%, 100% { opacity: 0; transform: none; }
 }
 
-/* -- Falling in love with science: somebody swaying on their feet, holding
-      out a heart that beats, to a flask that sends up small ones of its
-      own. */
+/* -- Falling in love with science: a heart that beats, held up to a flask
+      that sends up small ones of its own, by somebody swaying a little. */
 .scene-love .person {
-	transform-origin: 8.5px 29.8px;
+	transform-origin: 9.5px 32px;
 	animation: zg-love-sway 1.6s ease-in-out infinite alternate;
 }
 
@@ -2172,7 +2186,7 @@ body {
 
 @keyframes zg-love-sway {
 	from { transform: rotate(-2deg); }
-	to { transform: rotate(4deg); }
+	to { transform: rotate(3deg); }
 }
 
 @keyframes zg-love-beat {
@@ -2186,11 +2200,11 @@ body {
 @keyframes zg-love-float {
 	0% { opacity: 0; transform: translateY(9px); }
 	30% { opacity: 1; }
-	100% { opacity: 0; transform: translateY(-9px); }
+	100% { opacity: 0; transform: translateY(-7px); }
 }
 
-/* -- Making the world a better place: somebody polishes the globe, which
-      turns under the cloth, and it has begun to shine.
+/* -- Making the world a better place: a cloth going over the globe, which
+      turns under it and has begun to shine.
       The land is what says it is the world and not a ball. It slides one
       turn, 24 of its own units, and starts again -- see the markup for the
       second copy. */
@@ -2201,7 +2215,7 @@ body {
 }
 
 .scene-world .rub {
-	transform-origin: 6.2px 14.8px;
+	transform-origin: 15px 29.5px;
 	animation: zg-world-rub 0.4s ease-in-out infinite alternate;
 }
 
@@ -2220,8 +2234,8 @@ body {
 }
 
 @keyframes zg-world-rub {
-	from { transform: rotate(-14deg); }
-	to { transform: rotate(13deg); }
+	from { transform: rotate(-9deg); }
+	to { transform: rotate(8deg); }
 }
 
 @keyframes zg-world-twinkle {

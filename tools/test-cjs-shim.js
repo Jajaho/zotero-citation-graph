@@ -7653,9 +7653,10 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
  * the markup and in every locale, that neither is read out, and that a reader
  * who asked for no motion gets none.
  *
- * And, since 0.77.3, that a scene has one small figure in it doing what its
- * line says -- all but the washing machine, which was asked to be left to
- * itself.
+ * And, since 0.77.3, that a scene has one figure in it doing what its line
+ * says -- all but the washing machine, which was asked to be left to itself
+ * -- and, since 0.77.5, that the figure is seen from behind and its arm is a
+ * tube and not a line.
  *
  * The card's size is not held. 0.77.1 held that its type was 1.6 times the
  * page's, and that was the mistake.
@@ -7760,21 +7761,29 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	if (scenes.length < 2 || new Set(scenes).size !== scenes.length) throw new Error('the scenes are ' + scenes.join());
 	if (lines.length !== scenes.length) throw new Error(scenes.length + ' scenes and ' + lines.length + ' lines');
 	if (new Set(lines.map(m => m[1])).size !== lines.length) throw new Error('two scenes say the same line');
-	// Somebody is in the picture, doing what the line says: one figure a
-	// scene, with a head and an eye in it. The things themselves have no
-	// faces -- an eye outside a figure is the 0.77.1 drawing come back -- and
-	// the washing machine has nobody.
+	// Somebody is in the picture, seen from behind: one figure a scene, a head
+	// and an arm, and the arm a tube -- the same path twice, the wide stroke
+	// and the narrow one over it. Seen from behind, so nothing has an eye;
+	// and the washing machine has nobody.
 	const stageHtml = between('<div id="progress-stage" aria-hidden="true">');
 	const drawn = stageHtml.split(/(?=<svg class="scene )/).slice(1);
 	if (drawn.length !== scenes.length) throw new Error('the stage holds ' + drawn.length + ' drawings for ' + scenes.length + ' scenes');
 	if (!scenes.includes('wash')) throw new Error('the washing machine is gone');
+	if (/class="[^"]*\beye\b/.test(stageHtml)) throw new Error('something in the stage has an eye, and nobody there is facing us');
 	drawn.forEach((svg, i) => {
 		const people = svg.split('<g class="person">');
 		const want = scenes[i] === 'wash' ? 0 : 1;
 		if (people.length - 1 !== want) throw new Error('scene-' + scenes[i] + ' has ' + (people.length - 1) + ' figures in it, not ' + want);
-		if (/class="[^"]*\beye\b/.test(people[0])) throw new Error('scene-' + scenes[i] + ' has an eye that is nobody\'s');
-		if (want && !/<g class="head">\s*<circle class="paper"[^>]*\/>\s*<circle class="solid eye"/.test(people[1])) {
-			throw new Error('the figure in scene-' + scenes[i] + ' has no head, or no eye in it');
+		const outer = [...svg.matchAll(/<path class="limb" d="([^"]+)"\/>/g)].map(m => m[1]);
+		const inner = [...svg.matchAll(/<path class="limb-in" d="([^"]+)"\/>/g)].map(m => m[1]);
+		if (outer.join('|') !== inner.join('|')) throw new Error('an arm in scene-' + scenes[i] + ' is not the same path twice');
+		if (!want) {
+			if (outer.length) throw new Error('scene-' + scenes[i] + ' has an arm and nobody');
+			return;
+		}
+		if (!/<circle class="paper head"/.test(people[1])) throw new Error('the figure in scene-' + scenes[i] + ' has no head');
+		if (outer.length !== 1 || !people[1].includes('<path class="limb-in" d="' + outer[0] + '"/>')) {
+			throw new Error('the figure in scene-' + scenes[i] + ' has ' + outer.length + ' arms of its own, not one');
 		}
 	});
 	// One globe, and one clip for it: an id is the page's, not the scene's.

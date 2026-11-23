@@ -610,54 +610,60 @@
 				     (playScenes) moves both on together. They say nothing about
 				     the build, which the label beside them does, so both are
 				     hidden from the accessibility tree: a joke that changes every
-				     few seconds is not news. In six of them a small figure does
-				     what the line says; the washing machine does its own. Drawn
-				     in the two greys of core's own icons and moved by graph.css
-				     alone. -->
+				     few seconds is not news.
+				     Six of them are seen over somebody's shoulder: the back of a
+				     head and a pair of shoulders at the lower left, the same in
+				     each, and beyond them what the line is about, with an arm
+				     reaching up to it. The washing machine is watched by nobody.
+				     Within a scene the order is the depth: the thing, then the
+				     arm that reaches it, then the shoulders, then the head.
+				     An arm is one path drawn twice (.limb, and .limb-in over it),
+				     which makes a tube with an outline out of two strokes.
+				     Drawn in the two greys of core's own icons and moved by
+				     graph.css alone. -->
 				<div id="progress-stage" aria-hidden="true">
-					<!-- Somebody standing with a paper held up, going down its
-					     three lines. -->
+					<!-- A paper held up, and its three lines gone down one after
+					     another. -->
 					<svg class="scene scene-read" viewBox="0 0 32 32">
-						<g class="person">
-							<path d="M11 21.6l-1.7 8.2h1.9M11 21.6l2.3 8.2h1.9"/>
-							<path d="M11 10.9v10.7"/>
-							<path d="M11 13.8l3.6.4 3.3-2.8M11 13.8l3.2 3.8 3.6-1"/>
-							<g class="head">
-								<circle class="paper" cx="11.2" cy="7.6" r="3.2"/>
-								<circle class="solid eye" cx="12.9" cy="7.5" r="0.6"/>
-							</g>
+						<g transform="rotate(4 22 11)">
+							<path class="paper" d="M15.5 2h9.5l3.5 3.5V20h-13z"/>
+							<path class="soft" d="M25 2v3.5h3.5"/>
+							<path class="soft" d="M18 8.5h8M18 12h8M18 15.5h5"/>
+							<path class="ln ln1" d="M18 8.5h8"/>
+							<path class="ln ln2" d="M18 12h8"/>
+							<path class="ln ln3" d="M18 15.5h5"/>
 						</g>
-						<g transform="rotate(-5 22.5 13)">
-							<path class="paper" d="M18 6h6l3 3v10.5h-9z"/>
-							<path class="soft" d="M24 6v3h3"/>
-							<path class="soft" d="M20.2 11.8h4.6M20.2 14.3h4.6M20.2 16.8h2.8"/>
-							<path class="ln ln1" d="M20.2 11.8h4.6"/>
-							<path class="ln ln2" d="M20.2 14.3h4.6"/>
-							<path class="ln ln3" d="M20.2 16.8h2.8"/>
+						<g class="person">
+							<path class="limb" d="M14.5 29.5l2.6-9.4"/>
+							<path class="limb-in" d="M14.5 29.5l2.6-9.4"/>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
 						</g>
 					</svg>
-					<!-- Somebody with a hand at the chin, and a thought that keeps
-					     swapping its question mark for an initial. -->
+					<!-- A hand scratching the back of a head, and a thought that
+					     keeps swapping its question mark for an initial.
+					     The hand is the arm's own end drawn again over the head,
+					     which the rest of the arm is behind. -->
 					<svg class="scene scene-guess" viewBox="0 0 32 32">
-						<g class="person">
-							<path d="M10.5 22.4l-2 7.4M10.5 22.4l2 7.4"/>
-							<path d="M10.5 13.8v8.6"/>
-							<path d="M10.5 16.2l-3.2 5.2"/>
-							<path d="M10.5 16.2l4.2 3-1.9-4.8"/>
-							<g class="head">
-								<circle class="paper" cx="10.5" cy="10.6" r="3.2"/>
-								<circle class="solid eye" cx="9.9" cy="9.9" r="0.6"/>
-								<circle class="solid eye" cx="12.3" cy="9.7" r="0.6"/>
-							</g>
-						</g>
-						<circle class="soft" cx="16.2" cy="8.4" r="0.7"/>
-						<circle class="soft" cx="18.9" cy="7.4" r="1"/>
+						<circle class="soft" cx="15.4" cy="11.6" r="0.8"/>
+						<circle class="soft" cx="18.6" cy="9.8" r="1.1"/>
 						<g class="thought">
-							<circle class="paper" cx="25.5" cy="5.6" r="4.7"/>
-							<text class="solid glyph g-q" x="25.5" y="8.1">?</text>
-							<text class="solid glyph g-a" x="25.5" y="8.1">A</text>
-							<text class="solid glyph g-m" x="25.5" y="8.1">M</text>
-							<text class="solid glyph g-z" x="25.5" y="8.1">Z</text>
+							<circle class="paper" cx="25.3" cy="6.6" r="5.3"/>
+							<text class="solid glyph g-q" x="25.3" y="9.5">?</text>
+							<text class="solid glyph g-a" x="25.3" y="9.5">A</text>
+							<text class="solid glyph g-m" x="25.3" y="9.5">M</text>
+							<text class="solid glyph g-z" x="25.3" y="9.5">Z</text>
+						</g>
+						<g class="person">
+							<g class="scratch">
+								<path class="limb" d="M15 29.5l5.2-6-5.4-6.2"/>
+								<path class="limb-in" d="M15 29.5l5.2-6-5.4-6.2"/>
+							</g>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
+							<g class="scratch">
+								<circle class="paper" cx="14.8" cy="17.3" r="1.4"/>
+							</g>
 						</g>
 					</svg>
 					<!-- A washing machine with a paper going round in it. Nobody
@@ -677,112 +683,93 @@
 							</g>
 						</g>
 					</svg>
-					<!-- Somebody bent over two lines nobody can read, going along
-					     the first with a magnifying glass.
-					     The arm hangs straight down from the shoulder so that it
-					     swings the glass along the line and not across it; it is
-					     drawn hanging and put at the middle of its swing by the
-					     <g> around it, which the CSS transform would replace. -->
+					<!-- Three lines nobody can read, and a magnifying glass held
+					     up to them and swung along the middle one. -->
 					<svg class="scene scene-decipher" viewBox="0 0 32 32">
-						<path class="soft" d="M9.5 23.2q1-4.5 2.4-.4t2.2.2q1.2 3.2 2.2-.8t2.4 1q.6-5 2-.2t2.2-.4q1.4 2.4 2.4 0t2.2.2q1-3.6 2.2 0"/>
-						<path class="soft" d="M12 28.6q1.2-4 2.4-.2t2.4.4q.8-4.6 2-.6t2.4.4q1.2 2.6 2.4-.2t2.4.4"/>
+						<path class="soft" d="M12.5 6.4q1-4.5 2.4-.4t2.2.2q1.2 3.2 2.2-.8t2.4 1q.6-5 2-.2t2.2-.4q1.4 2.4 2.4 0t2.2.2"/>
+						<path class="soft" d="M12.5 12.6q1.2-4 2.4-.2t2.4.4q.8-4.6 2-.6t2.4.4q1.2 2.6 2.4-.2t2.4.4q1-3.6 2.2 0t2.2-.2"/>
+						<path class="soft" d="M17 18.6q1-4.5 2.4-.4t2.2.2q1.2 3.2 2.2-.8t2.4 1q.6-5 2-.2"/>
 						<g class="person">
-							<path d="M5.5 17.8l-1.7 12h1.8M5.5 17.8l2.3 12h1.8"/>
-							<path d="M5.5 17.8l7.1-7"/>
-							<g class="head">
-								<circle class="paper" cx="15.2" cy="8.5" r="3"/>
-								<circle class="solid eye" cx="16.4" cy="9.8" r="0.6"/>
+							<g class="swing">
+								<circle class="glass" cx="22" cy="11" r="5"/>
+								<path class="handle" d="M20.3 16.1l-.8 2.4"/>
+								<path class="limb" d="M15 29.5l4.2-10"/>
+								<path class="limb-in" d="M15 29.5l4.2-10"/>
 							</g>
-							<g transform="rotate(-18 12.6 11)">
-								<g class="arm">
-									<path d="M12.6 11v6.6"/>
-									<path class="handle" d="M12.6 17.9v1.6"/>
-									<circle class="glass" cx="12.6" cy="23.6" r="4"/>
-								</g>
-							</g>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
 						</g>
 					</svg>
-					<!-- The same two letters in three typefaces, and a judge who
-					     holds up a verdict on each. -->
+					<!-- The same two letters in three typefaces, and a paddle
+					     lifted with a verdict on each. -->
 					<svg class="scene scene-font" viewBox="0 0 32 32">
-						<text class="solid type t1" x="8.6" y="25.5">Aa</text>
-						<text class="solid type t2" x="8.6" y="25.5">Aa</text>
-						<text class="solid type t3" x="8.6" y="25.5">Aa</text>
+						<text class="solid type t1" x="21" y="12.5">Aa</text>
+						<text class="solid type t2" x="21" y="12.5">Aa</text>
+						<text class="solid type t3" x="21" y="12.5">Aa</text>
 						<g class="person">
-							<path d="M22.3 24.2l-1.8 5.6M22.3 24.2l1.8 5.6"/>
-							<path d="M22.3 18.1v6.1"/>
-							<path d="M22.3 19.8l-3 3.2"/>
 							<g class="verdict">
-								<path d="M22.3 19.8l4.1-4.2v-5"/>
-								<rect class="paper" x="22.2" y="2.2" width="8.4" height="8.4" rx="2"/>
-								<path class="mark m1" d="M24.1 6.7l1.8 1.8 3.2-3.8"/>
-								<path class="mark m2" d="M24.4 4.4l4 4m0-4l-4 4"/>
-								<path class="mark m3" d="M24.4 4.4l4 4m0-4l-4 4"/>
+								<path d="M23.6 22.5v2.6"/>
+								<rect class="paper" x="19.6" y="14.5" width="8" height="8" rx="1.8"/>
+								<path class="mark m1" d="M21.4 18.7l1.7 1.7 3-3.6"/>
+								<path class="mark m2" d="M21.7 16.6l3.8 3.8m0-3.8l-3.8 3.8"/>
+								<path class="mark m3" d="M21.7 16.6l3.8 3.8m0-3.8l-3.8 3.8"/>
+								<path class="limb" d="M15 29.5l8.4-3.9"/>
+								<path class="limb-in" d="M15 29.5l8.4-3.9"/>
 							</g>
-							<g class="head">
-								<circle class="paper" cx="22.3" cy="15.2" r="2.9"/>
-								<circle class="solid eye" cx="21" cy="14.9" r="0.6"/>
-								<circle class="solid eye" cx="23.2" cy="14.9" r="0.6"/>
-							</g>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
 						</g>
 					</svg>
-					<!-- Somebody holding their heart out to a flask, which answers
-					     in kind.
+					<!-- A heart held up to a flask, which sends up small ones of
+					     its own.
 					     A heart is drawn once, at 16,16 and 7 across, and each use
 					     is put in place by the <g> around it: the CSS transform
 					     that moves a heart would replace an attribute on the same
 					     element. -->
 					<svg class="scene scene-love" viewBox="0 0 32 32">
-						<g transform="translate(18.5 0.9) scale(0.36)"><path class="solid float" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
-						<g transform="translate(20.6 -0.2) scale(0.36)"><path class="solid float f2" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
-						<path class="paper" d="M23.6 11.5v5.6l-3.9 9.9a1.7 1.7 0 0 0 1.6 2.3h7.9a1.7 1.7 0 0 0 1.6-2.3l-3.9-9.9v-5.6"/>
-						<path d="M22.6 11.5h5.3"/>
-						<path class="soft" d="M22.2 23.2q1.1-.8 2.1 0t2 0 2 0"/>
+						<g transform="translate(18.84 -2.5) scale(0.36)"><path class="solid float" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
+						<g transform="translate(20.9 -3.4) scale(0.36)"><path class="solid float f2" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
+						<path class="paper" d="M24 6.5v6l-4.4 9.4a1.7 1.7 0 0 0 1.6 2.4h8.6a1.7 1.7 0 0 0 1.6-2.4L27 12.5v-6"/>
+						<path d="M23 6.5h5"/>
+						<path class="soft" d="M22.2 18.6q1.1-.8 2.2 0t2.2 0 2.2 0"/>
 						<g class="person">
-							<path d="M8.5 22.4l-1.9 7.4h1.8M8.5 22.4l2 7.4h1.8"/>
-							<path d="M8.5 13.6v8.8"/>
-							<path d="M8.5 16l5-.9M8.5 16.4l5.2 1.8"/>
-							<g transform="translate(3.2 3.4) scale(0.8)"><path class="solid heart" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
-							<g class="head">
-								<circle class="paper" cx="8.5" cy="10.5" r="3.1"/>
-								<circle class="solid eye" cx="10.1" cy="10.4" r="0.6"/>
-							</g>
+							<g transform="translate(3.4 0.2) scale(0.85)"><path class="solid heart" d="M16 19.8l-3.7-3.6a2.35 2.35 0 0 1 3.3-3.3l.4.4.4-.4a2.35 2.35 0 0 1 3.3 3.3z"/></g>
+							<path class="limb" d="M15 29.5l2-10.6"/>
+							<path class="limb-in" d="M15 29.5l2-10.6"/>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
 						</g>
 					</svg>
-					<!-- Somebody polishing the world, which turns under the cloth
-					     and has begun to shine. -->
+					<!-- The world, turning, and a cloth going over it. It has
+					     begun to shine. -->
 					<svg class="scene scene-world" viewBox="0 0 32 32">
 						<!-- The land is cut off at the outline's inner edge, and drawn
 						     twice, a turn apart: it slides one turn to the left and
 						     starts again, and the second copy is what comes round the
 						     edge meanwhile. It is drawn for a globe of ten and put on
-						     this one, of nine, by the <g> around it. -->
-						<clipPath id="zg-scene-globe"><circle cx="21" cy="20.5" r="8.4"/></clipPath>
-						<circle class="paper" stroke="none" cx="21" cy="20.5" r="9"/>
+						     this one, of nine and a half, by the <g> around it. -->
+						<clipPath id="zg-scene-globe"><circle cx="21.5" cy="12.5" r="9.1"/></clipPath>
+						<circle class="paper" stroke="none" cx="21.5" cy="12.5" r="9.5"/>
 						<g clip-path="url(#zg-scene-globe)">
-							<g transform="translate(6.6 2.95) scale(0.9)">
+							<g transform="translate(6.3 -6.03) scale(0.95)">
 								<g class="land">
 									<path d="M9 13c2-1.5 4.5-1 5 1s-1 2.5-1.5 4.5 1.5 3 .5 5-3 1.5-3.5-.5.5-3-.5-5-1.5-3.5 0-5zM19 12.5c2.5-1 6-.5 7 1.5s-1.5 2-2 4 1 4-1 5.5-3.5-.5-3.5-3-2-2.5-2.5-4.5.5-3 2-3.5zM15.5 26c1-.8 2.6-.6 2.8.4s-1.2 1.4-2.2 1.2-1.2-1-.6-1.6z"/>
 									<path transform="translate(24 0)" d="M9 13c2-1.5 4.5-1 5 1s-1 2.5-1.5 4.5 1.5 3 .5 5-3 1.5-3.5-.5.5-3-.5-5-1.5-3.5 0-5zM19 12.5c2.5-1 6-.5 7 1.5s-1.5 2-2 4 1 4-1 5.5-3.5-.5-3.5-3-2-2.5-2.5-4.5.5-3 2-3.5zM15.5 26c1-.8 2.6-.6 2.8.4s-1.2 1.4-2.2 1.2-1.2-1-.6-1.6z"/>
 								</g>
 							</g>
 						</g>
-						<circle cx="21" cy="20.5" r="9"/>
+						<circle cx="21.5" cy="12.5" r="9.5"/>
+						<path class="solid star" d="M9.5 2c.35 2.3 1.2 3.15 3.5 3.5-2.3.35-3.15 1.2-3.5 3.5-.35-2.3-1.2-3.15-3.5-3.5 2.3-.35 3.15-1.2 3.5-3.5z"/>
+						<path class="solid star s2" d="M28.5 22c.25 1.6.9 2.25 2.5 2.5-1.6.25-2.25.9-2.5 2.5-.25-1.6-.9-2.25-2.5-2.5 1.6-.25 2.25-.9 2.5-2.5z"/>
 						<g class="person">
-							<path d="M6.2 21.6l-1.8 8.2h1.8M6.2 21.6l2 8.2h1.8"/>
-							<path d="M6.2 12.4v9.2"/>
-							<path d="M6.2 14.8l-2.4 4.8"/>
 							<g class="rub">
-								<path d="M6.2 14.8l6.2 2.4"/>
-								<g transform="translate(12.6 17.3) rotate(21)"><rect class="paper" x="-1.4" y="-2" width="2.8" height="4" rx="0.9"/></g>
+								<path class="limb" d="M15 29.5l3.2-7.6"/>
+								<path class="limb-in" d="M15 29.5l3.2-7.6"/>
+								<g transform="translate(18.6 20.4) rotate(-20)"><rect class="paper" x="-2" y="-1.6" width="4" height="3.2" rx="0.9"/></g>
 							</g>
-							<g class="head">
-								<circle class="paper" cx="6" cy="9.5" r="2.9"/>
-								<circle class="solid eye" cx="7.5" cy="9.6" r="0.6"/>
-							</g>
+							<path class="paper" d="M1.2 32v-1.2c0-4.7 3.3-7.6 8.3-7.6s8.3 2.9 8.3 7.6V32"/>
+							<circle class="paper head" cx="9.5" cy="18.8" r="4.9"/>
 						</g>
-						<path class="solid star" d="M28 1.5c.35 2.3 1.2 3.15 3.5 3.5-2.3.35-3.15 1.2-3.5 3.5-.35-2.3-1.2-3.15-3.5-3.5 2.3-.35 3.15-1.2 3.5-3.5z"/>
-						<path class="solid star s2" d="M14.5 5c.25 1.6.9 2.25 2.5 2.5-1.6.25-2.25.9-2.5 2.5-.25-1.6-.9-2.25-2.5-2.5 1.6-.25 2.25-.9 2.5-2.5z"/>
 					</svg>
 				</div>
 				<span id="progress-text" aria-live="polite"></span>

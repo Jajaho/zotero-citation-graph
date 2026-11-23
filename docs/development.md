@@ -1926,17 +1926,25 @@ tools/
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
 - **A build has somebody to watch beside its bar.** Seven small scenes take turns at the left of
-  the card, each with a line of its own under the phase, and in six of them a small figure does
-  what the line says: holds a paper up and goes down its lines (*Reading papers…*), stands with a
-  hand at the chin under a thought that keeps swapping its question mark for an initial
-  (*Guessing author names…*), bends over a scrawl with a magnifying glass, holds up a verdict on
-  *Aa* in three typefaces, holds a heart out to a flask, and polishes the world with a cloth. The
-  washing machine (*DOIng laundry…*) works alone: a figure goes in where it has something to do
-  that 48px can show, and beside a drum it has not. The figure is the same one throughout
-  (`.person`: a round head, a dot for an eye, a line each for the body and the limbs), and every
-  `.eye` blinks on one clock. In 0.77.1 and 0.77.2 the things themselves had the faces — a sheet
-  of paper in glasses, a flask with hearts for eyes — which was a misreading of what was asked
-  for: people in the picture, not pictures that are people.
+  the card, each with a line of its own under the phase, and six of them are seen over somebody's
+  shoulder: the back of a head and a pair of shoulders at the lower left (`.person`, the same in
+  each), and beyond them what the line is about, with one arm reaching up to it. The arm holds a
+  paper whose lines are gone down one by one (*Reading papers…*), scratches the head under a
+  thought that keeps swapping its question mark for an initial (*Guessing author names…*), swings
+  a magnifying glass along a scrawl, lifts a verdict on *Aa* in three typefaces, holds a heart up
+  to a flask, and goes over the world with a cloth. The washing machine (*DOIng laundry…*) is
+  watched by nobody: a figure goes in where it has something to do that 48px can show, and at a
+  drum it has not.
+  The figure is shapes, the page's background inside the outline's grey, and only its upper
+  half. An arm is one path drawn twice, wide in the outline's colour (`.limb`) and narrower in
+  the background's over it (`.limb-in`): a tube with an outline, and its round end is the hand.
+  `npm test` holds that the two are the same path. Within a scene the order of the markup is the
+  depth — the thing, the arm that reaches it, the shoulders, the head — and the one hand that is
+  nearer than the head (the scratching one) is the arm's end drawn again on top.
+  It took three goes. 0.77.1 put faces on the things (a sheet of paper in glasses, a flask with
+  hearts for eyes), which misread "anthropomorphic"; 0.77.3 put whole stick figures beside them,
+  which at this size are a few thin lines; a head and shoulders with the thing beyond them is
+  both a bigger figure and a bigger thing in the same 48px.
   They are jokes and say nothing about the build. The phase, the count and the
   bar are as they were, and the stage and the lines are both `aria-hidden`: a line that changes
   every five seconds and reports nothing is not for a live region. The scenes and the lines are
@@ -1955,11 +1963,10 @@ tools/
   `--color-background`, so a dark window gets the same drawing in white on grey. All the motion
   is `transform` and `opacity`. A part that is put in place by a `transform` attribute and also
   moved by CSS is two elements, a `<g>` around the one that moves, because a CSS transform
-  replaces the attribute on its own element (the hearts, and the arm with the magnifying glass,
-  which is drawn hanging and put at the middle of its swing). That arm hangs straight down from
-  the shoulder of somebody bent over, because an arm swung from the shoulder moves its hand
-  across its own length: hung down, it takes the glass along the line of writing, and held out
-  it would take it up and down through it. The world's land is what says it is the world and
+  replaces the attribute on its own element (the hearts, the cloth). An arm is moved by turning
+  it at the shoulder, and what it holds goes across the arm's own length: the arms go mostly
+  upward, so the magnifying glass goes mostly along the line of writing and not up and down
+  through it. The world's land is what says it is the world and
   not a ball, and nothing grows on top of it: with a grid of meridians and a sprout it read as a
   turnip, and with land and a sprout as an apple. The land is drawn twice, a turn apart, slides
   one turn and starts again, and is clipped to the outline by the one `<clipPath>` in the page
