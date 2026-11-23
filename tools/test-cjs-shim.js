@@ -7650,6 +7650,10 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
  * timer however many reports arrive), that a scene and its line are a pair in
  * the markup and in every locale, that neither is read out, and that a reader
  * who asked for no motion gets none.
+ *
+ * And, since 0.77.1, that each scene is somebody -- it has eyes -- and that
+ * the card is 1.6 times the page's size by one number, which the drawing and
+ * the type are both scaled by.
  */
 check('a build is watched by one scene at a time, each with a line of its own', () => {
 	const stage = () => {
@@ -7751,6 +7755,19 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	if (scenes.length < 2 || new Set(scenes).size !== scenes.length) throw new Error('the scenes are ' + scenes.join());
 	if (lines.length !== scenes.length) throw new Error(scenes.length + ' scenes and ' + lines.length + ' lines');
 	if (new Set(lines.map(m => m[1])).size !== lines.length) throw new Error('two scenes say the same line');
+	// Each is a character: something in it looks back. An eye that blinks, or
+	// the three that are drawn another way -- the washing machine's pupils go
+	// round, the magnifying glass is one eye, the flask's are hearts.
+	const stageHtml = between('<div id="progress-stage" aria-hidden="true">');
+	const drawn = stageHtml.split(/(?=<svg class="scene )/).slice(1);
+	if (drawn.length !== scenes.length) throw new Error('the stage holds ' + drawn.length + ' drawings for ' + scenes.length + ' scenes');
+	drawn.forEach((svg, i) => {
+		if (!/class="[^"]*\b(eye|pupil|look|heart)\b/.test(svg)) throw new Error('scene-' + scenes[i] + ' has no eyes');
+	});
+	// One globe, and one clip for it: an id is the page's, not the scene's.
+	if ((stageHtml.match(/<clipPath id="/g) || []).length !== (stageHtml.match(/clip-path="url\(#/g) || []).length) {
+		throw new Error('a clip in the stage is defined and not used, or used and not defined');
+	}
 	// The English in the markup is the fallback, and is en-US's own; every
 	// locale has a line for each, and no two of them the same.
 	for (const code of fs.readdirSync(localeDir)) {
@@ -7781,6 +7798,22 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	const still = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
 	if (!/#progress-stage > \.scene,\s*#progress-stage > \.scene \*,\s*#progress-lines > span \{\s*animation: none !important;/.test(still)) {
 		throw new Error('the scenes move for a reader who asked for no motion');
+	}
+	// The card's size is one number. The type is scaled by it, and so is the
+	// stage, so the drawing and its line grow together; a length left in bare
+	// pixels on the card would stay behind.
+	const cardRule = rule('#progress');
+	if (!/--zg-card: 1\.6;/.test(cardRule)) throw new Error('the card is no longer 1.6 times the page\'s size');
+	if (!/font-size: calc\(var\(--zotero-font-size, 13px\) \* var\(--zg-card\)\);/.test(cardRule)) throw new Error('the card\'s type is not scaled with it');
+	const stageRule = rule('#progress-stage');
+	if (!/width: calc\(32px \* var\(--zg-card\)\);/.test(stageRule) || !/height: calc\(32px \* var\(--zg-card\)\);/.test(stageRule)) {
+		throw new Error('the stage is not scaled with the card');
+	}
+	if (!/\* var\(--zg-card\)\)/.test(rule('#progress-lines'))) throw new Error('the scene\'s line is not scaled with the card');
+	for (const sel of ['#progress', '#progress-count', '#progress-stop', '#progress-bar', '#progress-stage']) {
+		const bare = rule(sel).split(';').map(d => d.trim())
+			.filter(d => /^(padding|margin[\w-]*|height|width|border-radius): /.test(d) && /\dpx/.test(d) && !d.includes('var(--zg-card)'));
+		if (bare.length) throw new Error(sel + ' has a length the card\'s size does not reach: ' + bare.join('; '));
 	}
 	// Every animation the scenes name is defined, or the scene stands still.
 	for (const m of css.matchAll(/animation(?:-name)?: (zg-[a-z0-9-]+)/g)) {

@@ -1908,11 +1908,16 @@ tools/
   report or the `null` gives it back. A graph that was stopped says *stopped early* on the stats
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
-- **A build has something to watch beside its bar.** Seven small scenes take turns at the left of
-  the card, each with a line of its own under the phase: a sheet being read (*Reading papers…*), a
-  head trying on initials (*Guessing author names…*), a washing machine (*DOIng laundry…*), a
-  glass over a scribble, *Aa* in three typefaces with a verdict on each, an atom with a heart for
-  a nucleus, a globe. They are jokes and say nothing about the build. The phase, the count and the
+- **A build has somebody to watch beside its bar.** Seven small scenes take turns at the left of
+  the card, each with a line of its own under the phase, and each is a character: a sheet of
+  paper in reading glasses going over its own lines (*Reading papers…*), somebody whose thought
+  keeps swapping its question mark for an initial (*Guessing author names…*), a washing machine
+  whose eyes go round with its drum (*DOIng laundry…*), a magnifying glass that is one narrowed
+  eye over a scribble, a judge holding up a verdict on *Aa* in three typefaces, a flask with
+  hearts for eyes, and the world, waving. They were objects until 0.77.1 — an atom, a globe with
+  meridians — and a thing that turns is a spinner; a thing that blinks at you while it works is
+  company. Every `.eye` blinks on one clock.
+  They are jokes and say nothing about the build. The phase, the count and the
   bar are as they were, and the stage and the lines are both `aria-hidden`: a line that changes
   every five seconds and reports nothing is not for a live region. The scenes and the lines are
   markup (`#progress-stage`, `#progress-lines`), the n-th of one with the n-th of the other, and
@@ -1927,14 +1932,21 @@ tools/
   tell a small story in order. The six lines off show are only `visibility: hidden` in one shared
   grid cell, so the card is as wide as the longest and does not change width as they turn.
   The drawings are in two of core's greys (`--fill-secondary`, `--fill-tertiary`) over
-  `--color-background`, so a dark window gets the same drawing in white on grey. Almost all the
-  motion is `transform` and `opacity`. An electron is two nested elements, one going along the
-  orbit and one across it a quarter turn behind, both on a sine's curve: that is an ellipse with a
-  dot that stays round, where a rotation squashed into an ellipse would squash the dot. A meridian
-  is its circle narrowed to a line and out again (`scaleX(1)` to `scaleX(-1)`,
-  `vector-effect: non-scaling-stroke`), clipped at the outline's inner edge because both greys are
-  see-through and a meridian under the outline darkened it. Under `prefers-reduced-motion` every
+  `--color-background`, so a dark window gets the same drawing in white on grey. All the motion
+  is `transform` and `opacity`. A part that is put in place by a `transform` attribute and also
+  moved by CSS is two elements, a `<g>` around the one that moves, because a CSS transform
+  replaces the attribute on its own element (the flask's hearts). The world's land is what says
+  it is the world: with a grid of meridians and a sprout on top it read as a turnip. It is drawn
+  twice, a turn apart, slides one turn and starts again, and is clipped to the outline by the
+  one `<clipPath>` in the page (`#zg-scene-globe`). Under `prefers-reduced-motion` every
   animation is off and each scene is the drawing it is at rest; the lines still take their turns.
+  **The card is 1.6 times the page's size**, by one number: `--zg-card` on `#progress`. The type
+  is scaled by it and every length on the card is written as a multiple of it — the stage is
+  `calc(32px * var(--zg-card))`, 51px — so the drawing, its line and the bar grow together, and
+  `npm test` holds that no length on the card is left in bare pixels. At the page's own size a
+  32px face was too small to read, and the card is the only thing on screen for the minutes a
+  build runs. The drawings are in their own 32-unit space with a 1.2-unit stroke, so they need
+  nothing changed to be drawn at another size.
   With the scenes the card is centred between two insets (`left`/`right` with `width:
   fit-content`), not hung from `left: 50%`, which offered it only the half of the canvas to its
   right and cut a card short in a pane it would have fitted.

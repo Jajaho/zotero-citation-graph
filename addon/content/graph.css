@@ -1701,8 +1701,17 @@ body {
  * how the status line does it: a box hung from the middle is offered the half
  * of the canvas to its right and no more, and the card -- now at least as wide
  * as its longest line -- was cut short in a pane it would have fitted twice.
+ *
+ * And 1.6 times the size the rest of the page would make it. The status
+ * line it stands in for is a note in the margin; this is the only thing on
+ * screen for the minutes a build runs, with a drawing on it that has a face,
+ * and at the page's own size both were too small to read across a desk.
+ * --zg-card is that one number: the type is scaled by it, and every length
+ * of the card and of what is on it is written as a multiple of it, so the
+ * card is the same card at any value. Nothing outside #progress reads it.
  */
 #progress {
+	--zg-card: 1.6;
 	position: absolute;
 	top: 8px;
 	left: 10px;
@@ -1714,12 +1723,13 @@ body {
 	grid-template-columns: auto minmax(0, 1fr) auto auto;
 	align-items: center;
 	box-sizing: border-box;
-	padding: 5px 6px 6px 8px;
+	padding: calc(5px * var(--zg-card)) calc(6px * var(--zg-card)) calc(6px * var(--zg-card)) calc(8px * var(--zg-card));
 	border: 1px solid var(--border);
-	border-radius: 6px;
+	border-radius: calc(6px * var(--zg-card));
 	background: var(--surface);
 	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 	color: var(--fill-primary);
+	font-size: calc(var(--zotero-font-size, 13px) * var(--zg-card));
 }
 
 /* display: grid above is an author rule, which the UA's [hidden] does not beat. */
@@ -1738,7 +1748,7 @@ body {
 /* Digits of one width, so the label beside it does not shiver as they turn. */
 #progress-count {
 	grid-area: 1 / 3;
-	margin-inline-start: 10px;
+	margin-inline-start: calc(10px * var(--zg-card));
 	color: var(--fill-secondary);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
@@ -1763,8 +1773,9 @@ body {
 
 #progress-stop {
 	grid-area: 1 / 4 / span 2;
-	margin-inline-start: 10px;
-	padding: 1px 8px;
+	margin-inline-start: calc(10px * var(--zg-card));
+	padding: calc(1px * var(--zg-card)) calc(8px * var(--zg-card));
+	border-radius: calc(4px * var(--zg-card));
 }
 
 #progress-stop:hover:not([disabled]),
@@ -1785,9 +1796,9 @@ body {
 
 #progress-bar {
 	grid-area: 3 / 1 / auto / -1;
-	margin-top: 5px;
-	height: 3px;
-	border-radius: 2px;
+	margin-top: calc(5px * var(--zg-card));
+	height: calc(3px * var(--zg-card));
+	border-radius: calc(2px * var(--zg-card));
 	background: var(--fill-quarternary);
 	overflow: hidden;
 }
@@ -1796,7 +1807,7 @@ body {
 	display: block;
 	width: 0;
 	height: 100%;
-	border-radius: 2px;
+	border-radius: inherit;
 	background: var(--accent-blue);
 	transition: width 150ms linear;
 }
@@ -1835,16 +1846,22 @@ body {
  * moves the `on` class along the stage and along the lines together -- and
  * everything that moves inside one is moved from here.
  *
- * Line drawings in two greys, the weight of core's own icons at twice their
- * size: --fill-secondary for the outline, --fill-tertiary (.soft) for what is
- * behind or inside it, and the page's own background (.paper) for a sheet or a
- * face, which on the card's grey is the white. All three are tokens, so a dark
- * window gets the same drawing in white on grey.
+ * Each is somebody, not something: the sheet of paper reads through glasses,
+ * the washing machine's eyes go round with its drum, the globe waves. A thing
+ * that turns is a spinner; a thing with eyes that blinks at you while it works
+ * is company, and that is what a wait of minutes wants. So every scene has
+ * eyes (.eye, which blink on one clock), and most have a mouth and limbs.
+ *
+ * Line drawings in two greys, the weight of core's own icons: --fill-secondary
+ * for the outline, --fill-tertiary (.soft) for what is behind or inside it,
+ * and the page's own background (.paper) for a sheet or a face, which on the
+ * card's grey is the white. All three are tokens, so a dark window gets the
+ * same drawing in white on grey.
  *
  * A scene that is not on show is display: none and not merely invisible. Its
  * animations do not run, so the page pays for one scene and not for seven --
  * and each starts from its first frame when its turn comes, which the ones
- * that tell a small story in order (the sheet, the typefaces) depend on.
+ * that tell a small story in order (the reader, the judge) depend on.
  *
  * Whatever is shown and hidden in turn is hidden by its keyframes and never by
  * its own rule: with the animations taken away (prefers-reduced-motion, at the
@@ -1852,9 +1869,9 @@ body {
  */
 #progress-stage {
 	grid-area: 1 / 1 / span 2;
-	width: 32px;
-	height: 32px;
-	margin-inline-end: 8px;
+	width: calc(32px * var(--zg-card));
+	height: calc(32px * var(--zg-card));
+	margin-inline-end: calc(8px * var(--zg-card));
 	color: var(--fill-secondary);
 }
 
@@ -1866,7 +1883,10 @@ body {
 	overflow: visible;
 	fill: none;
 	stroke: currentColor;
-	stroke-width: 1.4;
+	/* In the drawing's own units, of which the stage is 32 across: a little
+	   under 2px on the card as it is sized, which is what a face this small
+	   can be drawn with. */
+	stroke-width: 1.2;
 	stroke-linecap: round;
 	stroke-linejoin: round;
 }
@@ -1893,6 +1913,19 @@ body {
 	fill: var(--color-background);
 }
 
+/* Every eye in every scene, on one clock: open, and shut for a moment every
+   three seconds or so. */
+.scene .eye {
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: zg-scene-blink 3.2s ease-in-out infinite;
+}
+
+@keyframes zg-scene-blink {
+	0%, 91%, 100% { transform: none; }
+	95% { transform: scaleY(0.1); }
+}
+
 /* Under the phase, in the status line's grey. The lines share one cell: see
    the markup for why the six not on show still take their width. */
 #progress-lines {
@@ -1900,7 +1933,7 @@ body {
 	display: grid;
 	min-width: 0;
 	color: var(--fill-secondary);
-	font-size: calc(var(--zotero-font-size, 13px) * 0.9231);
+	font-size: calc(var(--zotero-font-size, 13px) * 0.9231 * var(--zg-card));
 }
 
 #progress-lines > span {
@@ -1917,57 +1950,73 @@ body {
 	animation: zg-scene-in 300ms ease-out;
 }
 
-/* -- Reading papers: each line is gone over in turn, then the sheet is put
-      aside and the next comes up from the pile behind it. The lines start
-      over while the sheet is away. */
-.scene-read .sheet {
-	transform-box: fill-box;
-	transform-origin: 50% 100%;
-	animation: zg-read-sheet 3.6s ease-in-out infinite;
+/* -- Reading papers: a sheet in glasses. Its eyes go along a line and jump
+      back for the next, and each of its own two lines darkens as they pass
+      over it; then both are let go and it starts again. */
+.scene-read .gaze {
+	animation: zg-read-gaze 2.6s ease-in-out infinite;
 }
 
 .scene-read .ln {
 	transform-box: fill-box;
 	transform-origin: 0 50%;
+	animation: zg-read-1 2.6s linear infinite;
 }
 
-.scene-read .ln:nth-of-type(2) { animation: zg-read-1 3.6s linear infinite; }
-.scene-read .ln:nth-of-type(3) { animation: zg-read-2 3.6s linear infinite; }
-.scene-read .ln:nth-of-type(4) { animation: zg-read-3 3.6s linear infinite; }
-.scene-read .ln:nth-of-type(5) { animation: zg-read-4 3.6s linear infinite; }
-
-@keyframes zg-read-sheet {
-	0% { opacity: 0; transform: translate(3px, -3px); }
-	8%, 80% { opacity: 1; transform: none; }
-	92%, 100% { opacity: 0; transform: translate(-6px, 1px) rotate(-8deg); }
+.scene-read .ln2 {
+	animation-name: zg-read-2;
 }
 
-@keyframes zg-read-1 { 0%, 10% { transform: scaleX(0); } 24%, 100% { transform: none; } }
-@keyframes zg-read-2 { 0%, 24% { transform: scaleX(0); } 38%, 100% { transform: none; } }
-@keyframes zg-read-3 { 0%, 38% { transform: scaleX(0); } 52%, 100% { transform: none; } }
-@keyframes zg-read-4 { 0%, 52% { transform: scaleX(0); } 61%, 100% { transform: none; } }
+@keyframes zg-read-gaze {
+	0%, 100% { transform: translateX(-1.1px); }
+	38% { transform: translateX(1.1px); }
+	48% { transform: translate(-1.1px, 0.5px); }
+	86% { transform: translate(1.1px, 0.5px); }
+}
 
-/* -- Guessing author names: a head tilted one way and the other, and a
-      question mark that keeps being swapped for an initial. Six turns of
-      0.6s; the three letters are one animation started a third apart. */
+@keyframes zg-read-1 {
+	0% { transform: scaleX(0); opacity: 1; }
+	38%, 92% { transform: none; opacity: 1; }
+	100% { transform: none; opacity: 0; }
+}
+
+@keyframes zg-read-2 {
+	0%, 48% { transform: scaleX(0); opacity: 1; }
+	86%, 92% { transform: none; opacity: 1; }
+	100% { transform: none; opacity: 0; }
+}
+
+/* -- Guessing author names: a head tilted one way and the other, and over it
+      a thought whose question mark keeps being swapped for an initial. Six
+      turns of 0.6s; the three letters are one animation started a third
+      apart. */
 .scene-guess .head {
-	transform-origin: 16px 20px;
+	transform-origin: 11.5px 24px;
 	animation: zg-guess-tilt 1.8s ease-in-out infinite alternate;
 }
 
+.scene-guess .thought {
+	animation: zg-guess-float 1.4s ease-in-out infinite alternate;
+}
+
 .scene-guess .glyph {
-	font: 600 9px system-ui, -apple-system, sans-serif;
+	font: 600 7px system-ui, -apple-system, sans-serif;
 	text-anchor: middle;
 	animation: zg-guess-letter 3.6s step-end infinite;
 }
 
-.scene-guess .glyph:nth-of-type(1) { animation-name: zg-guess-mark; }
-.scene-guess .glyph:nth-of-type(3) { animation-delay: -2.4s; }
-.scene-guess .glyph:nth-of-type(4) { animation-delay: -1.2s; }
+.scene-guess .g-q { animation-name: zg-guess-mark; }
+.scene-guess .g-m { animation-delay: -2.4s; }
+.scene-guess .g-z { animation-delay: -1.2s; }
 
 @keyframes zg-guess-tilt {
 	from { transform: rotate(-5deg); }
 	to { transform: rotate(5deg); }
+}
+
+@keyframes zg-guess-float {
+	from { transform: translateY(0.5px); }
+	to { transform: translateY(-0.5px); }
 }
 
 @keyframes zg-guess-mark {
@@ -1981,22 +2030,30 @@ body {
 }
 
 /* -- DOIng laundry: the drum turns with a paper in it, the machine rocks on
-      its feet, and two bubbles get out at the top. */
+      its feet with its arms up, its eyes go round with the drum, and two
+      bubbles get out at the top. */
 .scene-wash .machine {
-	transform-origin: 16px 29px;
+	transform-origin: 16px 30px;
 	animation: zg-wash-rock 0.22s ease-in-out infinite alternate;
 }
 
 .scene-wash .drum {
-	transform-origin: 16px 20.5px;
+	transform-origin: 16px 21px;
 	animation: zg-wash-spin 1.5s linear infinite;
 }
+
+.scene-wash .pupil {
+	animation: zg-wash-spin 1.5s linear infinite;
+}
+
+.scene-wash .p1 { transform-origin: 12.2px 11.8px; }
+.scene-wash .p2 { transform-origin: 19.8px 11.8px; }
 
 .scene-wash .bubble {
 	animation: zg-wash-bubble 1.8s ease-out infinite;
 }
 
-.scene-wash .bubble:nth-of-type(2) {
+.scene-wash .b2 {
 	animation-delay: -0.8s;
 }
 
@@ -2015,36 +2072,55 @@ body {
 	100% { opacity: 0; transform: translateY(-4px); }
 }
 
-/* -- Deciphering unreadable handwriting: the glass goes along the lines and
-      back. */
+/* -- Deciphering unreadable handwriting: the glass is an eye under a lowered
+      lid. It goes along the lines and back, the pupil going over them faster
+      than the glass does, and the brow comes down now and then. */
 .scene-decipher .lens {
-	animation: zg-decipher-pass 2.4s ease-in-out infinite alternate;
+	animation: zg-decipher-pass 2.6s ease-in-out infinite alternate;
 }
 
 .scene-decipher .glass {
 	fill: var(--color-background);
-	fill-opacity: 0.55;
+}
+
+.scene-decipher .look {
+	animation: zg-decipher-look 0.9s ease-in-out infinite alternate;
+}
+
+.scene-decipher .brow {
+	animation: zg-decipher-brow 2.6s ease-in-out infinite;
 }
 
 @keyframes zg-decipher-pass {
-	from { transform: translate(-4px, -2px); }
-	to { transform: translate(8px, 3px); }
+	from { transform: translate(-3px, -0.5px); }
+	to { transform: translate(6.5px, 1px); }
 }
 
-/* -- Judging font choices: three typefaces, 1.4s each, and a verdict on each
-      once it has been looked at. One animation for the faces and one for the
-      verdicts, each started a third apart.
-      The second is named because the generic it falls back to is not, on most
-      systems, the face the joke is about. */
-.scene-font .face {
-	font-size: 18px;
+@keyframes zg-decipher-look {
+	from { transform: translateX(-2px); }
+	to { transform: translateX(2px); }
+}
+
+@keyframes zg-decipher-brow {
+	0%, 55%, 100% { transform: none; }
+	70%, 85% { transform: translateY(1px) rotate(5deg); }
+}
+
+/* -- Judging font choices: three typefaces, 1.4s each. The judge looks, then
+      holds up a verdict and makes the face that goes with it. One animation
+      for the typefaces and one for the verdicts, each started a third apart,
+      and one for each of the three mouths.
+      The second typeface is named because the generic it falls back to is
+      not, on most systems, the one the joke is about. */
+.scene-font .type {
+	font-size: 13px;
 	text-anchor: middle;
-	animation: zg-font-face 4.2s step-end infinite;
+	animation: zg-font-type 4.2s step-end infinite;
 }
 
-.scene-font .face:nth-of-type(1) { font-family: Georgia, "Times New Roman", serif; }
-.scene-font .face:nth-of-type(2) { font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive; animation-delay: -2.8s; }
-.scene-font .face:nth-of-type(3) { font-family: Impact, "Arial Black", fantasy; animation-delay: -1.4s; }
+.scene-font .t1 { font-family: Georgia, "Times New Roman", serif; }
+.scene-font .t2 { font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive; animation-delay: -2.8s; }
+.scene-font .t3 { font-family: Impact, "Arial Black", fantasy; animation-delay: -1.4s; }
 
 .scene-font .mark {
 	transform-box: fill-box;
@@ -2052,10 +2128,17 @@ body {
 	animation: zg-font-mark 4.2s ease-out infinite;
 }
 
-.scene-font .mark:nth-of-type(2) { animation-delay: -2.8s; }
-.scene-font .mark:nth-of-type(3) { animation-delay: -1.4s; }
+.scene-font .m2 { animation-delay: -2.8s; }
+.scene-font .m3 { animation-delay: -1.4s; }
 
-@keyframes zg-font-face {
+.scene-font .mouth {
+	animation: zg-font-flat 4.2s step-end infinite;
+}
+
+.scene-font .mo-smile { animation-name: zg-font-smile; }
+.scene-font .mo-frown { animation-name: zg-font-frown; }
+
+@keyframes zg-font-type {
 	0% { opacity: 1; }
 	33.33%, 100% { opacity: 0; }
 }
@@ -2067,25 +2150,27 @@ body {
 	33.33%, 100% { opacity: 0; transform: none; }
 }
 
-/* -- Falling in love with science: three electrons, and a nucleus with a
-      pulse.
-      An electron is two elements moving at right angles: .ex goes from one end
-      of the orbit to the other and back, .ey across it and back a quarter of
-      a turn behind, both on a sine's curve -- which is an ellipse, with a dot
-      on it that stays round. Squashing a circle's turn into an ellipse would
-      squash the dot with it. Each .ey is 0.7s behind its own .ex. */
-.scene-love .ex {
-	animation: zg-love-x 1.4s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+@keyframes zg-font-flat {
+	0%, 33.33%, 66.66% { opacity: 1; }
+	12%, 45.33%, 78.66% { opacity: 0; }
 }
 
-.scene-love .ey {
-	animation: zg-love-y 1.4s cubic-bezier(0.37, 0, 0.63, 1) -0.7s infinite alternate;
+@keyframes zg-font-smile {
+	0%, 33.33%, 100% { opacity: 0; }
+	12% { opacity: 1; }
 }
 
-.scene-love .orbit:nth-of-type(2) .ex { animation-delay: -0.9s; }
-.scene-love .orbit:nth-of-type(2) .ey { animation-delay: -1.6s; }
-.scene-love .orbit:nth-of-type(3) .ex { animation-delay: -1.9s; }
-.scene-love .orbit:nth-of-type(3) .ey { animation-delay: -2.6s; }
+@keyframes zg-font-frown {
+	0%, 66.66% { opacity: 0; }
+	45.33%, 78.66% { opacity: 1; }
+}
+
+/* -- Falling in love with science: a flask that sways, with hearts for eyes
+      that beat, and hearts coming out of its neck. */
+.scene-love .flask {
+	transform-origin: 16px 28px;
+	animation: zg-love-sway 1.6s ease-in-out infinite alternate;
+}
 
 .scene-love .heart {
 	transform-box: fill-box;
@@ -2093,14 +2178,17 @@ body {
 	animation: zg-love-beat 1.2s ease-in-out infinite;
 }
 
-@keyframes zg-love-x {
-	from { transform: translateX(-13.5px); }
-	to { transform: translateX(13.5px); }
+.scene-love .float {
+	animation: zg-love-float 2s ease-out infinite;
 }
 
-@keyframes zg-love-y {
-	from { transform: translateY(-5px); }
-	to { transform: translateY(5px); }
+.scene-love .f2 {
+	animation-delay: -1s;
+}
+
+@keyframes zg-love-sway {
+	from { transform: rotate(-3.5deg); }
+	to { transform: rotate(3.5deg); }
 }
 
 @keyframes zg-love-beat {
@@ -2110,18 +2198,33 @@ body {
 	32% { transform: scale(1.14); }
 }
 
-/* -- Making the world a better place: the globe turns, and twinkles.
-      A meridian seen from the side is its circle narrowed, to a line and out
-      again the other way round; three of them a third of a turn apart, on a
-      sine's curve, are a sphere turning at one speed. */
-.scene-world .mer {
-	transform-box: fill-box;
-	transform-origin: center;
-	animation: zg-world-turn 3s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+/* In the heart's own units, which its <g> draws at about a third. */
+@keyframes zg-love-float {
+	0% { opacity: 0; transform: translateY(9px); }
+	30% { opacity: 1; }
+	100% { opacity: 0; transform: translateY(-9px); }
 }
 
-.scene-world .mer:nth-of-type(2) { animation-delay: -1s; }
-.scene-world .mer:nth-of-type(3) { animation-delay: -2s; }
+/* -- Making the world a better place: the globe turns behind its own face,
+      waves, twinkles, and grows a sprout.
+      The land is what says it is the world and not a ball: with a grid of
+      meridians and a sprout on top it was a turnip. It slides one turn, 24
+      units, and starts again -- see the markup for the second copy. */
+.scene-world .land {
+	fill: var(--fill-tertiary);
+	stroke: none;
+	animation: zg-world-turn 7s linear infinite;
+}
+
+.scene-world .wave {
+	transform-origin: 25.8px 19px;
+	animation: zg-world-wave 0.5s ease-in-out infinite alternate;
+}
+
+.scene-world .sprout {
+	transform-origin: 16px 9.5px;
+	animation: zg-world-sway 1.7s ease-in-out infinite alternate;
+}
 
 .scene-world .star {
 	transform-box: fill-box;
@@ -2129,13 +2232,22 @@ body {
 	animation: zg-world-twinkle 1.8s ease-in-out infinite;
 }
 
-.scene-world .star:nth-of-type(2) {
+.scene-world .s2 {
 	animation-delay: -0.9s;
 }
 
 @keyframes zg-world-turn {
-	from { transform: scaleX(1); }
-	to { transform: scaleX(-1); }
+	to { transform: translateX(-24px); }
+}
+
+@keyframes zg-world-wave {
+	from { transform: rotate(-16deg); }
+	to { transform: rotate(10deg); }
+}
+
+@keyframes zg-world-sway {
+	from { transform: rotate(-7deg); }
+	to { transform: rotate(7deg); }
 }
 
 @keyframes zg-world-twinkle {
@@ -2144,8 +2256,7 @@ body {
 }
 
 /* Asked not to move things: each scene as the drawing it is at rest, and the
-   lines still take their turns, which is words changing and not motion. The
-   three meridians would otherwise all lie under the globe's own outline. */
+   lines still take their turns, which is words changing and not motion. */
 @media (prefers-reduced-motion: reduce) {
 	#progress-stage > .scene,
 	#progress-stage > .scene *,
@@ -2153,20 +2264,19 @@ body {
 		animation: none !important;
 	}
 
-	.scene-guess .glyph:nth-of-type(n + 2),
-	.scene-font .face:nth-of-type(n + 2),
-	.scene-font .mark:nth-of-type(n + 2) {
+	/* One of each set that takes turns: the question mark, the first
+	   typeface with its verdict, and the mouth that goes with that. */
+	.scene-guess .g-a,
+	.scene-guess .g-m,
+	.scene-guess .g-z,
+	.scene-font .t2,
+	.scene-font .t3,
+	.scene-font .m2,
+	.scene-font .m3,
+	.scene-font .mo-flat,
+	.scene-font .mo-frown {
 		opacity: 0;
 	}
-
-	/* And the electrons, which are drawn at the nucleus and only ever seen
-	   where their animation has carried them. */
-	.scene-love .ex { transform: translateX(13.5px); }
-	.scene-love .orbit:nth-of-type(2) .ex { transform: translateX(-13.5px); }
-
-	.scene-world .mer:nth-of-type(1) { transform: scaleX(0.8); }
-	.scene-world .mer:nth-of-type(2) { transform: scaleX(0.4); }
-	.scene-world .mer:nth-of-type(3) { transform: scaleX(0.02); }
 }
 
 .via-toggle {
