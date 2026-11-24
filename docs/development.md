@@ -1943,16 +1943,22 @@ tools/
   report or the `null` gives it back. A graph that was stopped says *stopped early* on the stats
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
-- **A build has somebody to watch beside its bar.** Seven small scenes take turns at the left of
-  the card, each with a line of its own under the phase, and six of them are seen over somebody's
+- **A build has somebody to watch beside its bar.** Ten small scenes take turns at the left of
+  the card, each with a line of its own under the phase, and nine of them are seen over somebody's
   shoulder: the back of a head and a pair of shoulders at the lower left (`.person`, the same in
   each), and beyond them what the line is about, with one arm reaching up to it. The arm holds a
   paper whose lines are gone down one by one (*Reading papers…*), scratches the head under a
   thought that keeps swapping its question mark for an initial (*Guessing author names…*), swings
-  a magnifying glass along a scrawl, lifts a verdict on *Aa* in three typefaces, holds a heart up
-  to a flask, and goes over the world with a cloth. The washing machine (*DOIng laundry…*) is
-  watched by nobody: a figure goes in where it has something to do that 48px can show, and at a
-  drum it has not.
+  a magnifying glass along a scrawl, lifts a verdict on *Aa* in three typefaces, pokes a flask
+  with a stick (*Poking at experiment…*), goes over the world with a cloth, sews three nodes
+  together (*Connecting nodes…*), holds up a node with no edges while others turn up around it
+  (*Finding friends for isolated nodes…*), and lobs an apple at a man under a tree (*Throwing
+  apples at Newton…*). The washing machine (*DOIng laundry…*) is watched by nobody: a figure goes
+  in where it has something to do that 48px can show, and at a drum it has not.
+  The last four are 0.78.1's. The flask took the place of *Falling in love with science…*, a
+  heart held up to a flask that sent up small ones of its own; it is the "C'mon, do something"
+  meme, so the flask is poked twice, rocks on its far corner, and does nothing, and three dots
+  count out the wait over its mouth.
   The figure is shapes, the page's background inside the outline's grey, and only its upper
   half. An arm is one path drawn twice, wide in the outline's colour (`.limb`) and narrower in
   the background's over it (`.limb-in`): a tube with an outline, and its round end is the hand.
@@ -1974,22 +1980,41 @@ tools/
   next so two short builds do not open on the same line. `showProgress()` calls it on every
   report, and the timer is what says a build is already being played.
   A scene off show is `display: none`, not hidden: its animations do not run, so the page pays
-  for one scene and not seven, and each starts from its first frame — the reader and the judge
-  tell a small story in order. The six lines off show are only `visibility: hidden` in one shared
-  grid cell, so the card is as wide as the longest and does not change width as they turn.
+  for one scene and not ten, and each starts from its first frame — the reader, the judge, the
+  seam and the friends tell a small story in order. The seam and the friends take six seconds a
+  round where a scene has five (`SCENE_MS`), so what is seen is the triangle closing, or the
+  third friend arriving, and the finished picture staying until the scene goes; they loop all the
+  same, for a build that has one scene or a `SCENE_MS` that has grown. The nine lines off show
+  are only `visibility: hidden` in one shared grid cell, so the card is as wide as the longest
+  and does not change width as they turn.
   The drawings are in two of core's greys (`--fill-secondary`, `--fill-tertiary`) over
   `--color-background`, so a dark window gets the same drawing in white on grey. All the motion
   is `transform` and `opacity`. A part that is put in place by a `transform` attribute and also
   moved by CSS is two elements, a `<g>` around the one that moves, because a CSS transform
-  replaces the attribute on its own element (the hearts, the cloth). An arm is moved by turning
+  replaces the attribute on its own element (the cloth). An arm is moved by turning
   it at the shoulder, and what it holds goes across the arm's own length: the arms go mostly
   upward, so the magnifying glass goes mostly along the line of writing and not up and down
-  through it. The world's land is what says it is the world and
+  through it. Two arms are slid and not turned, because what they hold has to go along its own
+  length: the stick into the flask and the needle in and out. Turned at the shoulder, the far end
+  of a stick comes down on the flask like a drumstick. A slid arm shows no gap, since its near
+  end is behind the shoulders.
+  A stitch of the seam is a path of its own with keyframes of its own, nine of each: one set of
+  keyframes started nine times apart would show the stitches in turn and also take each away at
+  a time of its own, and the seam has to go all at once (`.seam`). A friend and its edge are one
+  group grown from the friend's own place, so the edge reaches out from the friend to the node
+  that had none. Newton is a thing in his picture and not a second `.person`, which `npm test`
+  counts. His apple is two: the one in the hand, which turns with the arm, and the one in the
+  air, which starts where the arm let go and is itself two groups, one going across at an even
+  speed (`.toss`) and one up and down on the two quadratic curves (`.lob`), which together are
+  the arc of a thing thrown. Only one apple is on show at a time, by the keyframes, so with the
+  keyframes off the one in the air has a rule to hide it.
+  The world's land is what says it is the world and
   not a ball, and nothing grows on top of it: with a grid of meridians and a sprout it read as a
   turnip, and with land and a sprout as an apple. The land is drawn twice, a turn apart, slides
   one turn and starts again, and is clipped to the outline by the one `<clipPath>` in the page
   (`#zg-scene-globe`). Under `prefers-reduced-motion` every
-  animation is off and each scene is the drawing it is at rest; the lines still take their turns.
+  animation is off and each scene is the drawing it is at rest — the seam sewn, the friends
+  found, the apple still in the hand; the lines still take their turns.
   **The card's type is the page's own size, and only the drawing is larger.** 0.77.1 to 0.77.3
   scaled the whole card by 1.6 through one number (`--zg-card`): type of 21px, a button to match
   and a line of nearly 2px beside a page set in 13px, which looked like a card from another

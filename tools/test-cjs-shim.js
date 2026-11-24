@@ -7649,7 +7649,8 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 /**
  * A build that runs for minutes had a bar and nothing else that moved. Beside
  * the phase there is now a small scene, and under it a line of its own --
- * "DOIng laundry…" beside a washing machine -- one of seven at a time.
+ * "DOIng laundry…" beside a washing machine -- one of ten at a time (seven
+ * until 0.78.1).
  *
  * What is held: the turns (every scene once a round, none twice running, one
  * timer however many reports arrive), that a scene and its line are a pair in
@@ -7823,6 +7824,23 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	const still = css.slice(css.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
 	if (!/#progress-stage > \.scene,\s*#progress-stage > \.scene \*,\s*#progress-lines > span \{\s*animation: none !important;/.test(still)) {
 		throw new Error('the scenes move for a reader who asked for no motion');
+	}
+	// The apple thrown at Newton is drawn twice, in the hand and in the air,
+	// and it is the keyframes that show one at a time. With them off the one
+	// in the air needs a rule, or that reader gets two apples and the mark of
+	// one landing.
+	if (!scenes.includes('newton') || !/<g class="toss">/.test(stageHtml) || !/class="bonk"/.test(stageHtml)) {
+		throw new Error('nothing is thrown at Newton');
+	}
+	if (!/\.scene-newton \.toss,\s*\.scene-newton \.bonk \{\s*opacity: 0;/.test(still)) {
+		throw new Error('with no motion there are two apples in the picture');
+	}
+	// A stitch of the seam is shown by its own keyframes: nine stitches, and
+	// no two on the same ones, or two would go in at once.
+	const stitches = [...stageHtml.matchAll(/<path class="st (st\d+)"/g)].map(m => m[1]);
+	const sewn = new Set(stitches.map(st => (css.match(new RegExp('\\.scene-stitch \\.' + st + ' \\{ animation-name: (zg-stitch-\\d+); \\}')) || [])[1] || 'zg-stitch-1'));
+	if (stitches.length !== 9 || new Set(stitches).size !== 9 || sewn.size !== 9) {
+		throw new Error('the seam has ' + stitches.length + ' stitches on ' + sewn.size + ' sets of keyframes');
 	}
 	// Every animation the scenes name is defined, or the scene stands still.
 	for (const m of css.matchAll(/animation(?:-name)?: (zg-[a-z0-9-]+)/g)) {
