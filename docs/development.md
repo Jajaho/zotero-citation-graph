@@ -1943,7 +1943,7 @@ tools/
   report or the `null` gives it back. A graph that was stopped says *stopped early* on the stats
   line (`meta.stopped`), where *Building…* stood a moment before: nothing else on screen tells it
   from a complete one.
-- **A build has somebody to watch beside its bar.** Ten small scenes take turns at the left of
+- **A build has somebody to watch beside its bar.** Eleven small scenes take turns at the left of
   the card, each with a line of its own under the phase, and nine of them are seen over somebody's
   shoulder: the back of a head and a pair of shoulders at the lower left (`.person`, the same in
   each), and beyond them what the line is about, with one arm reaching up to it. The arm holds a
@@ -1952,13 +1952,22 @@ tools/
   a magnifying glass along a scrawl, lifts a verdict on *Aa* in three typefaces, pokes a flask
   with a stick (*Poking at experiment…*), goes over the world with a cloth, sews three nodes
   together (*Connecting nodes…*), holds up a node with no edges while others turn up around it
-  (*Finding friends for isolated nodes…*), and lobs an apple at a man under a tree (*Throwing
-  apples at Newton…*). The washing machine (*DOIng laundry…*) is watched by nobody: a figure goes
-  in where it has something to do that 48px can show, and at a drum it has not.
-  The last four are 0.78.1's. The flask took the place of *Falling in love with science…*, a
-  heart held up to a flask that sent up small ones of its own; it is the "C'mon, do something"
-  meme, so the flask is poked twice, rocks on its far corner, and does nothing, and three dots
-  count out the wait over its mouth.
+  (*Finding friends for isolated nodes…*), and goes out for a sheet of paper that the wind has
+  taken (*Catching papers from the wind…*). The washing machine (*DOIng laundry…*) is watched by
+  nobody: a figure goes in where it has something to do that 48px can show, and at a drum it has
+  not. And in *Throwing apples at Newton…* the one in the picture is Newton, in the middle of it
+  and in a wig, with an apple coming over from off to the right to land on his head.
+  The flask, the seam, the friends and Newton are 0.78.1's. The flask took the place of *Falling
+  in love with science…*, a heart held up to a flask that sent up small ones of its own; it is
+  the "C'mon, do something" meme, so the flask is poked twice, rocks on its far corner, and does
+  nothing, and three dots count out the wait over its mouth.
+  The papers in the wind are 0.78.2's, and so is Newton as he is now. In 0.78.1 he was a small
+  figure under a tree, a way off, and the somebody at the lower left threw the apple: at 48px a
+  man of six pixels under a tree is nobody in particular. What says Newton at that size is the
+  wig, so he is the whole picture and the thrower is out of it. The wig is one piece drawn over
+  the head — parted in the middle, down either side in curls to the shoulders, open where the
+  face is — and the first try, curls all the way round a head seen from behind, was a sheep.
+  Nobody else in these has a front, and he has no face on his.
   The figure is shapes, the page's background inside the outline's grey, and only its upper
   half. An arm is one path drawn twice, wide in the outline's colour (`.limb`) and narrower in
   the background's over it (`.limb-in`): a tube with an outline, and its round end is the hand.
@@ -1980,11 +1989,11 @@ tools/
   next so two short builds do not open on the same line. `showProgress()` calls it on every
   report, and the timer is what says a build is already being played.
   A scene off show is `display: none`, not hidden: its animations do not run, so the page pays
-  for one scene and not ten, and each starts from its first frame — the reader, the judge, the
+  for one scene and not eleven, and each starts from its first frame — the reader, the judge, the
   seam and the friends tell a small story in order. The seam and the friends take six seconds a
   round where a scene has five (`SCENE_MS`), so what is seen is the triangle closing, or the
   third friend arriving, and the finished picture staying until the scene goes; they loop all the
-  same, for a build that has one scene or a `SCENE_MS` that has grown. The nine lines off show
+  same, for a build that has one scene or a `SCENE_MS` that has grown. The ten lines off show
   are only `visibility: hidden` in one shared grid cell, so the card is as wide as the longest
   and does not change width as they turn.
   The drawings are in two of core's greys (`--fill-secondary`, `--fill-tertiary`) over
@@ -2002,19 +2011,23 @@ tools/
   keyframes started nine times apart would show the stitches in turn and also take each away at
   a time of its own, and the seam has to go all at once (`.seam`). A friend and its edge are one
   group grown from the friend's own place, so the edge reaches out from the friend to the node
-  that had none. Newton is a thing in his picture and not a second `.person`, which `npm test`
-  counts. His apple is two: the one in the hand, which turns with the arm, and the one in the
-  air, which starts where the arm let go and is itself two groups, one going across at an even
-  speed (`.toss`) and one up and down on the two quadratic curves (`.lob`), which together are
-  the arc of a thing thrown. Only one apple is on show at a time, by the keyframes, so with the
-  keyframes off the one in the air has a rule to hide it.
+  that had none. Newton's apple is two groups, one going across at an even speed (`.toss`) and
+  one up and down on the two quadratic curves (`.lob`), which together are the arc of a thing
+  thrown. It is drawn where it lands and thrown from there backwards, so with the keyframes off
+  it is on his head, with the mark of its landing round it, and no rule has to hide anything.
+  His head and his wig go down under it as one group (`.nod`).
+  Running, from behind, is the shoulders rocking and the head going up and down at twice their
+  pace, and that is all the running there is: the figure has no legs to show it with. A sheet of
+  paper is three groups, one that takes it away (`.flee`), one that puts it in its place, and
+  one that tumbles it about its own middle (`.flap`). The hand goes out along the arm, slid as
+  the needle is, and the nearest sheet is off as it gets there.
   The world's land is what says it is the world and
   not a ball, and nothing grows on top of it: with a grid of meridians and a sprout it read as a
   turnip, and with land and a sprout as an apple. The land is drawn twice, a turn apart, slides
   one turn and starts again, and is clipped to the outline by the one `<clipPath>` in the page
   (`#zg-scene-globe`). Under `prefers-reduced-motion` every
   animation is off and each scene is the drawing it is at rest — the seam sewn, the friends
-  found, the apple still in the hand; the lines still take their turns.
+  found, the apple on Newton's head; the lines still take their turns.
   **The card's type is the page's own size, and only the drawing is larger.** 0.77.1 to 0.77.3
   scaled the whole card by 1.6 through one number (`--zg-card`): type of 21px, a button to match
   and a line of nearly 2px beside a page set in 13px, which looked like a card from another
@@ -2026,6 +2039,27 @@ tools/
   With the scenes the card is centred between two insets (`left`/`right` with `width:
   fit-content`), not hung from `left: 50%`, which offered it only the half of the canvas to its
   right and cut a card short in a pane it would have fitted.
+- **The card is one size for the whole of a build.** It was as wide as what it said, and what it
+  says changes: a phase with a longer name, a count where there was none, a count gone from two
+  digits to four. So it grew and shrank about its middle as a build went on, and Stop, on its far
+  end, moved under the pointer. Since 0.78.2 it is sized when it comes up and held there.
+  The first report is the wrong thing to measure, being the shortest thing a build says, so
+  chrome names every phase before the first begins: `progressFor()` takes the list of labels,
+  not a count of them, `begin()` takes the next one from it, and every report carries the list
+  as `labels`. The page puts them, one to a line and each as "Step n of N · …", into
+  `#progress-room`, and the longest count there is room for (`COUNT_ROOM`, five digits either
+  side) into `#progress-count-room`. Those two lie in the label's cell and the count's, with no
+  height and not seen, and are `aria-hidden`; the card laid out round them is as wide as its
+  widest step will need, which is the trick the scenes' lines already play. `holdProgressSize()`
+  then reads that width and sets it in pixels, and that is what holds: a count of six digits, or
+  a label nobody announced, has the label give way and not the card. `max-width` keeps a held
+  card inside a pane narrower than it, where the label gives way as it always did.
+  It is sized once a build — when the card comes up, and again if the phases change under a card
+  still up, which is a second build begun before the first let go. A card that is not laid out,
+  in a tab behind another, has no width to read, and is tried again at each report until it has.
+  The count is at the far end of its column, beside Stop, so its digits grow toward the label.
+  Measured in Firefox with the page's own `showProgress()`: 494px through all six phases in
+  English, 585px in German, and 280px in a pane of 300.
 - **An item's type crosses by name and by label.** `itemRecord()` sends `itemType`, core's own
   name, which is what the type filter and a saved view are keyed on and must not change with the
   display language — and `itemTypeName` beside it, `Zotero.ItemTypes.getLocalizedString()`, which

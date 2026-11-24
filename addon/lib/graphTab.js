@@ -1347,22 +1347,28 @@ async function runBuild(tabID) {
  * zgSetProgress hears nothing new, since send() skips a function the page does
  * not have. This is the same news in a shape a bar can be drawn from:
  *
- *   { text, done, total, step, steps }
+ *   { text, done, total, step, steps, labels }
  *
  *   text         the phase's label, without the counts
  *   done, total  how far through the phase; both null while nothing has been
  *                counted, which is every phase's first report and the whole of
  *                a phase that cannot count
  *   step, steps  which phase this is, from 1, out of how many this build has
+ *   labels       the label of every phase this build has, in order, the same
+ *                in every report: `text` is labels[step - 1]. The page sizes
+ *                its card round the longest of them when it first comes up,
+ *                and so has no need to grow it when that phase arrives --
+ *                see holdProgressSize() in content/graph.js
  *
  * and a bare `null` when the build is over, however it ended. See runBuild(),
  * runLookup() and stopBuild().
  *
- * `steps` is what the options promise, which can be one more than what
- * happens: a build with the lookup switched on and nothing to look up ends a
+ * `labels`, and `steps`, which is how many of them there are, are what the
+ * options promise, which can be one more than what happens: a build with the lookup switched on and nothing to look up ends a
  * phase early. A bar that finishes early is the right way round to be wrong.
  */
-function progressFor(entry, alive, steps) {
+function progressFor(entry, alive, labels) {
+	let steps = labels.length;
 	let step = 0;
 	let text = '';
 	let say = (done, total) => {
@@ -1374,13 +1380,14 @@ function progressFor(entry, alive, steps) {
 			total: counted ? total : null,
 			step,
 			steps,
+			labels,
 		});
 	};
 	return {
-		/** The next phase, by its label, with nothing counted yet. */
-		begin(label) {
+		/** The next phase, with nothing counted yet. */
+		begin() {
 			step = Math.min(step + 1, steps);
-			text = label;
+			text = labels[step - 1];
 			say(null, null);
 		},
 		/**
@@ -1519,20 +1526,25 @@ async function buildPhases(entry, alive) {
 	let status = (text) => {
 		if (alive()) send(entry, 'zgSetStatus', text);
 	};
-	// The three every build has -- listing, text, PDFs -- and one for each
-	// switch that adds a phase. See progressFor().
-	let progress = progressFor(entry, alive,
-		3 + (options.openalexRefs ? 1 : 0) + (options.refStrings ? 1 : 0) + (options.enrich ? 1 : 0));
-
-	// --- phase 1: nodes -------------------------------------------------
 	// Written as one flat conditional with no call inside it: the l10n audit
 	// in tools/test-cjs-shim.js scans a t(...) call for quoted ids and stops at
 	// the first ')', so a nested call here would hide all three from it.
 	let loading = l10n.t(scope.kind === 'selection' ? 'build-loading-selection'
 		: options.recursive ? 'build-loading-collection-recursive'
 		: 'build-loading-collection');
+	// The three every build has -- listing, text, PDFs -- and one for each
+	// switch that adds a phase, in the order they run and by the label each
+	// is begun under: all of them now, because the page sizes its card for
+	// the longest when the first is reported. See progressFor().
+	let phases = [loading, l10n.t('build-reading-text'), l10n.t('build-scanning-pdfs')];
+	if (options.openalexRefs) phases.push(l10n.t('build-openalex-references'));
+	if (options.refStrings) phases.push(l10n.t('build-reading-references'));
+	if (options.enrich) phases.push(l10n.t('lookup-phase'));
+	let progress = progressFor(entry, alive, phases);
+
+	// --- phase 1: nodes -------------------------------------------------
 	status(loading);
-	progress.begin(loading);
+	progress.begin();
 	let items = await adapter.listItems();
 	if (!alive()) return;
 	state.items = items;
@@ -1562,7 +1574,7 @@ async function buildPhases(entry, alive) {
 
 	// --- phase 2: text strategies ---------------------------------------
 	status(l10n.t('build-reading-text'));
-	progress.begin(l10n.t('build-reading-text'));
+	progress.begin();
 	let textResult = await cg.build(adapter, {
 		signal,
 		sections,
@@ -1588,7 +1600,7 @@ async function buildPhases(entry, alive) {
 	status(pdfs
 		? l10n.t('build-scanning-pdfs-count', { count: pdfs })
 		: l10n.t('build-scanning-pdfs'));
-	progress.begin(l10n.t('build-scanning-pdfs'));
+	progress.begin();
 	let pdfResult = await cg.build(adapter, {
 		signal,
 		enable: PDF_STRATEGIES,
@@ -1616,7 +1628,7 @@ async function buildPhases(entry, alive) {
 			errors: [...textResult.meta.errors, ...pdfResult.meta.errors],
 		});
 		status(l10n.t('build-openalex-references'));
-		progress.begin(l10n.t('build-openalex-references'));
+		progress.begin();
 		let [refCache, metaCache] = await Promise.all([
 			MetadataCache.forProfile({ file: REFERENCE_CACHE_FILE }).load(),
 			MetadataCache.forProfile().load(),
@@ -1660,7 +1672,7 @@ async function buildPhases(entry, alive) {
 				...(oaResult ? oaResult.meta.errors : [])],
 		});
 		status(l10n.t('build-reading-references'));
-		progress.begin(l10n.t('build-reading-references'));
+		progress.begin();
 		refResult = await cg.build(adapter, {
 			signal,
 			sections,
@@ -1806,7 +1818,7 @@ async function runLookup(tabID) {
 			return;
 		}
 		// One phase, and the whole of this pass.
-		await lookUpNames(entry, alive, built, progressFor(entry, alive, 1));
+		await lookUpNames(entry, alive, built, progressFor(entry, alive, [l10n.t('lookup-phase')]));
 	}
 	catch (e) {
 		// As runBuild(): a pass that threw must not leave "Looking up…" on the
@@ -1944,7 +1956,7 @@ async function lookUpNames(entry, alive, built, progress) {
 
 	let metaCache = await MetadataCache.forProfile().load();
 	status(l10n.t('lookup-works', { count: toLookUp.length }));
-	progress.begin(l10n.t('lookup-phase'));
+	progress.begin();
 	let chain = enricherList();
 	let enriched = await cg.enrich(toLookUp, {
 		enable: chain,

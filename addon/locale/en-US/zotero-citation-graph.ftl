@@ -217,8 +217,9 @@ zotero-citation-graph-progress-stop-hint = Stop this build and keep what it has 
 # animation of what it says: a sheet being read, a head with a question mark, a
 # washing machine, a magnifying glass over a scribble, "Aa" in three typefaces,
 # a flask poked with a stick, a globe, three nodes sewn together with a needle
-# and thread, a node held up while others turn up around it, an apple lobbed at
-# a man under a tree. Jokes, not reports -- none of them says what the build is
+# and thread, a node held up while others turn up around it, an apple landing
+# on the head of a man in a wig, sheets of paper blown ahead of somebody
+# running after them. Jokes, not reports -- none of them says what the build is
 # doing, and a translation is free to make its own joke as long as it still
 # fits its picture. "DOIng" is "doing" with DOI in it. The flask is the "C'mon,
 # do something" meme: it is poked and does nothing.
@@ -232,6 +233,7 @@ zotero-citation-graph-scene-world = Making the world a better place…
 zotero-citation-graph-scene-connecting = Connecting nodes…
 zotero-citation-graph-scene-friends = Finding friends for isolated nodes…
 zotero-citation-graph-scene-newton = Throwing apples at Newton…
+zotero-citation-graph-scene-catching = Catching papers from the wind…
 
 # The counts under the panel. Joined with " · " in the order they appear here.
 zotero-citation-graph-stats-items = { $shown } / { $total } items

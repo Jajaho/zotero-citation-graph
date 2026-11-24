@@ -1715,6 +1715,7 @@ body {
 	left: 10px;
 	right: 10px;
 	width: fit-content;
+	max-width: calc(100% - 20px);
 	margin-inline: auto;
 	z-index: 8;
 	display: grid;
@@ -1743,10 +1744,13 @@ body {
 	white-space: nowrap;
 }
 
-/* Digits of one width, so the label beside it does not shiver as they turn. */
+/* Digits of one width, so the label beside it does not shiver as they turn.
+   At the far end of its column, which is as wide as the longest count there
+   is room for: a count grows toward the label and not into the button. */
 #progress-count {
 	grid-area: 1 / 3;
 	align-self: end;
+	justify-self: end;
 	margin-inline-start: 10px;
 	color: var(--fill-secondary);
 	font-variant-numeric: tabular-nums;
@@ -1756,6 +1760,43 @@ body {
 /* A phase that has counted nothing has no count. */
 #progress-count:empty {
 	display: none;
+}
+
+/*
+ * The card is one size for the whole of a build.
+ *
+ * It was as wide as what it said, and what it says changes: a phase with a
+ * longer name, a count where there was none, a count gone from two digits to
+ * four. So it grew and shrank about its middle five times a second, with a
+ * button on its far end that was not where it had been.
+ *
+ * These two are room and nothing else. Each lies in the cell of the thing it
+ * is room for -- every label this build will show, one to a line, and the
+ * longest count there is room for -- with no height, and not seen. So the
+ * card comes up at the width its widest step will need, and graph.js
+ * (holdProgressSize) then holds it at exactly that, in pixels, for a count
+ * longer than anybody made room for. The max-width above is for the pane that
+ * is narrower than that: the label gives way, as it always did.
+ */
+#progress-room,
+#progress-count-room {
+	align-self: end;
+	min-width: 0;
+	height: 0;
+	overflow: hidden;
+	visibility: hidden;
+	white-space: pre;
+	pointer-events: none;
+}
+
+#progress-room {
+	grid-area: 1 / 2;
+}
+
+#progress-count-room {
+	grid-area: 1 / 3;
+	margin-inline-start: 10px;
+	font-variant-numeric: tabular-nums;
 }
 
 /* The Rebuild button's own look, a size down: the two are the pair -- one
@@ -1840,7 +1881,7 @@ body {
  * Something to watch: a small scene beside the phase, and its line under it.
  *
  * A build on a large library runs for minutes, and the bar is all that moved.
- * Ten scenes take turns, one on show at a time -- playScenes() in graph.js
+ * Eleven scenes take turns, one on show at a time -- playScenes() in graph.js
  * moves the `on` class along the stage and along the lines together -- and
  * everything that moves inside one is moved from here.
  *
@@ -1848,8 +1889,10 @@ body {
  * pair of shoulders at the lower left, the same in each, and beyond them the
  * thing the line is about, with one arm reaching up to it -- holding the
  * paper, the magnifying glass, the judge's paddle, a stick, a cloth, a needle,
- * a node, an apple. The washing machine is watched by nobody: there is nothing
- * for an arm to do at a drum.
+ * a node, or going out for a sheet of paper that is getting away. The washing
+ * machine is watched by nobody: there is nothing for an arm to do at a drum.
+ * And Newton is nobody's view of anything: he is in the middle of his own
+ * picture, in a wig, with a fist of his own to shake.
  *
  * The figure is shapes and not lines: the page's own background (.paper)
  * inside the outline's grey, which on the card is white in grey. An arm is
@@ -1863,7 +1906,7 @@ body {
  * grey.
  *
  * A scene that is not on show is display: none and not merely invisible. Its
- * animations do not run, so the page pays for one scene and not for ten --
+ * animations do not run, so the page pays for one scene and not for eleven --
  * and each starts from its first frame when its turn comes, which the ones
  * that tell a small story in order (the reader, the judge, the seam, the
  * friends) depend on.
@@ -1930,7 +1973,7 @@ body {
 }
 
 /* Under the phase, in the status line's grey. The lines share one cell: see
-   the markup for why the nine not on show still take their width. */
+   the markup for why the ten not on show still take their width. */
 #progress-lines {
 	grid-area: 2 / 2 / auto / span 2;
 	display: grid;
@@ -2395,79 +2438,152 @@ body {
 	95%, 100% { opacity: 0; transform: none; }
 }
 
-/* -- Throwing apples at Newton: the arm goes back behind the head and comes
-      forward, and the apple it lets go of is lobbed over to Newton, lands on
-      his head, which it knocks down a little, and bounces off.
-      The apple in the air goes across at an even speed (.toss) and up and
-      down as a thing thrown does (.lob): slowing all the way up and gathering
-      all the way down, which is the two quadratic curves. It starts where
-      the apple in the hand is when the arm has come forward. */
-.scene-newton .trunk {
-	stroke-width: 1.6;
+/* -- Throwing apples at Newton: a man in a wig, and an apple that comes over
+      from off to the right, lands on his head and bounces off it. The head
+      and the wig go down a little under it, and then he shakes a fist at
+      wherever it came from.
+      The apple goes across at an even speed (.toss) and up and down as a
+      thing thrown does (.lob): slowing all the way up and gathering all the
+      way down, which is the two quadratic curves. It is drawn where it lands
+      and thrown from there backwards, so with the keyframes off it is on his
+      head, with the mark of its landing round it and the fist up. */
+.scene-newton .fist {
+	transform-origin: 18.5px 29.5px;
+	animation: zg-newton-fist 2.6s ease-in-out infinite;
 }
 
-.scene-newton .throw {
-	transform-origin: 15px 29.5px;
-	animation: zg-newton-throw 2.5s ease-in-out infinite;
-}
-
-.scene-newton .held {
-	animation: zg-newton-held 2.5s linear infinite;
+.scene-newton .nod {
+	animation: zg-newton-ouch 2.6s ease-out infinite;
 }
 
 .scene-newton .toss {
-	animation: zg-newton-toss 2.5s linear infinite;
+	animation: zg-newton-toss 2.6s linear infinite;
 }
 
 .scene-newton .lob {
-	animation: zg-newton-lob 2.5s linear infinite;
-}
-
-.scene-newton .sage {
-	animation: zg-newton-ouch 2.5s ease-out infinite;
+	animation: zg-newton-lob 2.6s linear infinite;
 }
 
 .scene-newton .bonk {
-	animation: zg-newton-bonk 2.5s linear infinite;
+	animation: zg-newton-bonk 2.6s linear infinite;
 }
 
-@keyframes zg-newton-throw {
-	0%, 60%, 100% { transform: none; }
-	14% { transform: rotate(-14deg); animation-timing-function: ease-in; }
-	22%, 34% { transform: rotate(10deg); }
-}
-
-@keyframes zg-newton-held {
-	0%, 21.9% { opacity: 1; }
-	22%, 82% { opacity: 0; }
-	90%, 100% { opacity: 1; }
-}
-
-@keyframes zg-newton-toss {
-	0%, 21.9% { opacity: 0; transform: none; }
-	22% { opacity: 1; transform: none; }
-	58% { opacity: 1; transform: translateX(3.9px); }
-	68% { opacity: 1; transform: translateX(3.1px); }
-	76%, 100% { opacity: 0; transform: translateX(2.4px); }
-}
-
-@keyframes zg-newton-lob {
-	0%, 22% { transform: none; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-	43% { transform: translateY(-13.8px); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
-	58% { transform: translateY(-6.8px); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-	64% { transform: translateY(-8.5px); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
-	76%, 100% { transform: translateY(-1px); }
+@keyframes zg-newton-fist {
+	0%, 40%, 90%, 100% { transform: rotate(9deg); }
+	48%, 60%, 72% { transform: rotate(-6deg); }
+	54%, 66%, 78% { transform: rotate(4deg); }
 }
 
 @keyframes zg-newton-ouch {
-	0%, 58%, 72%, 100% { transform: none; }
-	61% { transform: translate(0.4px, 0.8px); }
+	0%, 32%, 46%, 100% { transform: none; }
+	35% { transform: translate(-0.3px, 1.1px); }
+}
+
+@keyframes zg-newton-toss {
+	0% { opacity: 0; transform: translateX(16px); }
+	5% { opacity: 1; transform: translateX(13.5px); }
+	32% { opacity: 1; transform: none; }
+	42% { opacity: 1; transform: translateX(-3.2px); }
+	48%, 100% { opacity: 0; transform: translateX(-5.2px); }
+}
+
+@keyframes zg-newton-lob {
+	0% { transform: translateY(4px); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+	17.9% { transform: translateY(-6.5px); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
+	32% { transform: none; animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+	39% { transform: translateY(-2.6px); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
+	48%, 100% { transform: translateY(2.5px); }
 }
 
 @keyframes zg-newton-bonk {
-	0%, 57.9% { opacity: 0; }
-	58%, 64% { opacity: 1; }
-	72%, 100% { opacity: 0; }
+	0%, 31.9% { opacity: 0; }
+	32%, 40% { opacity: 1; }
+	48%, 100% { opacity: 0; }
+}
+
+/* -- Catching papers from the wind: three sheets ahead and out of reach,
+      tumbling, and somebody after them. Seen from behind, running is the
+      shoulders rocking and the head going up and down at twice their pace.
+      The hand goes out along the arm for the nearest sheet, which is off
+      again as it gets there and drifts back for the next try; the two
+      gusts go the way the wind does, which is the way everything is going. */
+.scene-chase .person {
+	transform-origin: 9.5px 32px;
+	animation: zg-chase-run 0.34s ease-in-out infinite alternate;
+}
+
+.scene-chase .head {
+	animation: zg-chase-bob 0.17s ease-in-out infinite alternate;
+}
+
+.scene-chase .grab {
+	animation: zg-chase-grab 1.4s ease-in-out infinite;
+}
+
+.scene-chase .flee {
+	animation: zg-chase-drift 1.1s ease-in-out infinite alternate;
+}
+
+.scene-chase .f1 {
+	animation: zg-chase-dodge 1.4s ease-out infinite;
+}
+
+.scene-chase .f3 {
+	animation-duration: 0.8s;
+	animation-direction: alternate-reverse;
+}
+
+.scene-chase .flap {
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: zg-chase-flap 0.6s ease-in-out infinite alternate;
+}
+
+.scene-chase .f2 .flap { animation-duration: 0.45s; }
+.scene-chase .f3 .flap { animation-duration: 0.38s; animation-direction: alternate-reverse; }
+
+.scene-chase .gust {
+	animation: zg-chase-gust 1.6s linear infinite;
+}
+
+.scene-chase .g2 {
+	animation-delay: -0.8s;
+}
+
+@keyframes zg-chase-run {
+	from { transform: rotate(-3deg); }
+	to { transform: rotate(4deg); }
+}
+
+@keyframes zg-chase-bob {
+	from { transform: translateY(-0.5px); }
+	to { transform: translateY(0.5px); }
+}
+
+@keyframes zg-chase-grab {
+	0%, 62%, 100% { transform: none; }
+	30%, 40% { transform: translate(1px, -1.9px); }
+}
+
+@keyframes zg-chase-dodge {
+	0%, 26%, 100% { transform: none; }
+	42% { transform: translate(2.6px, -2.8px); }
+}
+
+@keyframes zg-chase-drift {
+	from { transform: translate(-0.8px, 0.7px); }
+	to { transform: translate(1.2px, -0.9px); }
+}
+
+@keyframes zg-chase-flap {
+	from { transform: rotate(-24deg) scaleY(1); }
+	to { transform: rotate(20deg) scaleY(0.72); }
+}
+
+@keyframes zg-chase-gust {
+	0% { opacity: 0; transform: translateX(-4px); }
+	30%, 60% { opacity: 1; }
+	100% { opacity: 0; transform: translateX(5px); }
 }
 
 /* Asked not to move things: each scene as the drawing it is at rest, and the
@@ -2479,18 +2595,15 @@ body {
 		animation: none !important;
 	}
 
-	/* One of each set that takes turns: the question mark, the first
-	   typeface with its verdict, and the apple that is still in the hand --
-	   so not the one in the air, nor the mark it makes where it lands. */
+	/* One of each set that takes turns: the question mark, and the first
+	   typeface with its verdict. */
 	.scene-guess .g-a,
 	.scene-guess .g-m,
 	.scene-guess .g-z,
 	.scene-font .t2,
 	.scene-font .t3,
 	.scene-font .m2,
-	.scene-font .m3,
-	.scene-newton .toss,
-	.scene-newton .bonk {
+	.scene-font .m3 {
 		opacity: 0;
 	}
 }

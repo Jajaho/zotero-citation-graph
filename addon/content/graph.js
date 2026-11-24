@@ -873,6 +873,9 @@
 	let elProgress = el('progress');
 	let elProgressText = el('progress-text');
 	let elProgressCount = el('progress-count');
+	// Room for the widest label and the widest count -- see holdProgressSize().
+	let elProgressRoom = el('progress-room');
+	let elProgressCountRoom = el('progress-count-room');
 	let elProgressStop = el('progress-stop');
 	let elProgressBar = el('progress-bar');
 	let elProgressFill = el('progress-fill');
@@ -1163,8 +1166,60 @@
 		showProgress(p);
 	};
 
+	/**
+	 * The card is one size for the whole of a build: sized at its first
+	 * report, and held there.
+	 *
+	 * It was as wide as what it said, and what it says changes -- a phase with
+	 * a longer name, a count where there was none, a count gone from two
+	 * digits to four -- so it grew and shrank about its middle as a build went
+	 * on, and Stop, on its far end, moved under the pointer.
+	 *
+	 * The first report cannot be measured for that: it is the shortest thing a
+	 * build says, a label with no count. So chrome sends the label of every
+	 * phase the build has (`labels`, see progressFor() in lib/graphTab.js), and
+	 * they go, one to a line, into a box that takes up room in the label's cell
+	 * and is not seen; the longest count there is room for goes into another,
+	 * in the count's cell. The card laid out round those is as wide as its
+	 * widest step will need. That width is then read and set, in pixels, which
+	 * is what holds it: a count of six digits, or a label nobody announced,
+	 * has the label give way and not the card.
+	 *
+	 * Once a build, which is when the card comes up -- and again if the phases
+	 * change under a card that is still up, which is a second build begun
+	 * before the first had let go. A report with no `labels` is measured for
+	 * the one label it has. And a card that is not laid out, in a tab behind
+	 * another, has no width to read: that one is tried again at each report
+	 * until it has.
+	 */
+	const COUNT_ROOM = 88888;
+	// The phases the card is held for, and null while it is not held.
+	let progressHeld = null;
+
+	function holdProgressSize(p, first) {
+		let labels = Array.isArray(p.labels) && p.labels.length ? p.labels.map(String) : null;
+		let phases = labels ? labels.join('\n') : '';
+		if (first) progressHeld = null;
+		if (progressHeld != null && (!labels || phases === progressHeld)) return;
+
+		let steps = Number(p.steps);
+		elProgressRoom.textContent = (labels || [String(p.text == null ? '' : p.text)])
+			.map((text, i) => (steps > 1 ? t('progress-step', { step: i + 1, steps, text }) : text))
+			.join('\n');
+		let room = COUNT_ROOM.toLocaleString();
+		elProgressCountRoom.textContent = t('progress-count', { done: room, total: room });
+
+		// Its own width first, or what is read is the last build's.
+		elProgress.style.width = '';
+		let width = elProgress.getBoundingClientRect().width;
+		if (!(width > 0)) return;
+		elProgress.style.width = Math.ceil(width) + 'px';
+		progressHeld = phases;
+	}
+
 	function showProgress(p) {
 		let on = !!p && typeof p === 'object';
+		let first = on && elProgress.hidden;
 		elProgress.hidden = !on;
 		elStatus.hidden = on;
 		playScenes(on);
@@ -1189,6 +1244,8 @@
 		// Only when it changes: this is the one live part of the bar, and
 		// writing the same words again would have them read out again.
 		if (elProgressText.textContent !== label) elProgressText.textContent = label;
+		// After the label, which is part of what the card is measured round.
+		holdProgressSize(p, first);
 
 		elProgressBar.classList.toggle('indeterminate', !counted);
 		if (!counted) {

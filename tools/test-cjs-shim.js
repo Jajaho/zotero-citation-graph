@@ -4064,12 +4064,15 @@ checkAlone('a build reports each phase as a place on a bar, beside the status li
 	// and the text phase counts across its three strategies as ONE run: each of
 	// them reports the same two papers from nothing, and a bar drawn from that
 	// would fill three times.
+	// Every report names all three, the first one included: the page sizes
+	// its card for the longest label before the phase that has it arrives.
+	const labels = ['Loading collection…', 'Reading indexed text…', 'Scanning PDFs…'];
 	const want = [
-		{ text: 'Loading collection…', done: null, total: null, step: 1, steps: 3 },
-		{ text: 'Reading indexed text…', done: null, total: null, step: 2, steps: 3 },
-		{ text: 'Reading indexed text…', done: 1, total: 6, step: 2, steps: 3 },
-		{ text: 'Scanning PDFs…', done: null, total: null, step: 3, steps: 3 },
-		{ text: 'Scanning PDFs…', done: 1, total: 2, step: 3, steps: 3 },
+		{ text: 'Loading collection…', done: null, total: null, step: 1, steps: 3, labels },
+		{ text: 'Reading indexed text…', done: null, total: null, step: 2, steps: 3, labels },
+		{ text: 'Reading indexed text…', done: 1, total: 6, step: 2, steps: 3, labels },
+		{ text: 'Scanning PDFs…', done: null, total: null, step: 3, steps: 3, labels },
+		{ text: 'Scanning PDFs…', done: 1, total: 2, step: 3, steps: 3, labels },
 		null,
 	];
 	const got = tab.sent('zgSetProgress');
@@ -4089,7 +4092,7 @@ checkAlone('a build reports each phase as a place on a bar, beside the status li
 		return sent.length > 1 && sent[sent.length - 1] === null && sent;
 	});
 	const lookup = tab.calls.slice(from).filter(c => c.fn === 'zgSetProgress').map(c => c.value);
-	if (JSON.stringify(lookup[0]) !== JSON.stringify({ text: 'Looking up works…', done: null, total: null, step: 1, steps: 1 })) {
+	if (JSON.stringify(lookup[0]) !== JSON.stringify({ text: 'Looking up works…', done: null, total: null, step: 1, steps: 1, labels: ['Looking up works…'] })) {
 		throw new Error('lookup progress: ' + JSON.stringify(lookup));
 	}
 
@@ -7526,6 +7529,12 @@ check('a graph the filters emptied says which filters did it, and offers the way
  * nothing drawn from them, and no way to stop it. Chrome now sends the same
  * news as { text, done, total, step, steps } (lib/graphTab.js progressFor) and
  * the page draws it: the phase out of how many, the count, a bar, and Stop.
+ *
+ * Since 0.78.2 the card is one size for the whole of a build. It was as wide
+ * as what it said, so it grew and shrank about its middle with every longer
+ * label and every count that gained a digit. Chrome now sends `labels`, every
+ * phase's label, and the page lays the card out round the longest of them and
+ * the longest count there is room for, reads that width once and holds it.
  */
 check('a build in flight is drawn as a place on a bar, with a button that stops it', () => {
 	const bar = (code) => {
@@ -7533,10 +7542,30 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 		const classes = new Set();
 		const played = [];
 		let label = '';
+		// The card as a thing with a width: as wide as its widest line of
+		// room, unless a width is set on it, and nothing at all when it is
+		// not laid out. `measured` counts the times it was asked.
+		const room = { textContent: '' };
+		const card = {
+			hidden: true,
+			laidOut: true,
+			measured: 0,
+			style: { width: '' },
+			getBoundingClientRect() {
+				this.measured++;
+				if (!this.laidOut) return { width: 0 };
+				if (this.style.width) return { width: parseFloat(this.style.width) };
+				return { width: 100.4 + 6 * Math.max(label.length, ...room.textContent.split('\n').map(s => s.length)) };
+			},
+		};
 		const page = liftPage({
-			functions: ['showProgress'],
+			functions: ['holdProgressSize', 'showProgress'],
 			globals: {
-				elProgress: { hidden: true },
+				COUNT_ROOM: 88888,
+				progressHeld: null,
+				elProgress: card,
+				elProgressRoom: room,
+				elProgressCountRoom: { textContent: '' },
 				elStatus: { hidden: false, textContent: 'Scanning PDFs for DOI links… 37/160' },
 				elProgressText: {
 					writes: 0,
@@ -7614,6 +7643,61 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 		page.showProgress({ text: 'T', done: 1, total: 2, step: 2, steps: 4 });
 		const said = page.elProgressText.textContent;
 		if (!/2.*4.*T/.test(said) || /[{}]|progress-/.test(said + page.elProgressCount.textContent)) throw new Error(code + ': ' + said);
+		// And the room for a count is a count, in that locale's own digits.
+		const wide = page.elProgressCountRoom.textContent;
+		if (!/8.?8.?8.?8.?8.*8.?8.?8.?8.?8/.test(wide) || /[{}]|progress-/.test(wide)) throw new Error(code + ' makes room for the count "' + wide + '"');
+	}
+
+	// The card is sized once, when it comes up, for every phase the build has
+	// -- not for the first, which is the shortest thing a build says.
+	const phases = ['Loading…', 'Scanning PDFs for DOI links…', 'Looking up works…'];
+	const report = (step, done, total, labels = phases) => ({ text: labels[step - 1], done, total, step, steps: labels.length, labels });
+	const wide = (text) => Math.ceil(100.4 + 6 * text.length) + 'px';
+	page = bar();
+	page.showProgress(report(1, null, null));
+	if (page.elProgressRoom.textContent !== 'Step 1 of 3 · Loading…\nStep 2 of 3 · Scanning PDFs for DOI links…\nStep 3 of 3 · Looking up works…') {
+		throw new Error('the room for the label is ' + JSON.stringify(page.elProgressRoom.textContent));
+	}
+	const held = page.elProgress.style.width;
+	if (held !== wide('Step 2 of 3 · Scanning PDFs for DOI links…')) {
+		throw new Error('the card came up ' + held + ' wide, which is not its widest step in whole pixels');
+	}
+	// Held: through a longer label, a count, and a count nobody made room for.
+	page.showProgress(report(2, null, null));
+	page.showProgress(report(2, 37, 160));
+	page.showProgress(report(3, 1234567, 7654321));
+	if (page.elProgress.style.width !== held || page.elProgress.measured !== 1) {
+		throw new Error('the card was sized again in the middle of a build: ' + page.elProgress.style.width + ' after ' + page.elProgress.measured + ' looks');
+	}
+	// The next build is another card: sized again, and from its own width --
+	// the last build's is taken off before it is read.
+	page.showProgress(null);
+	page.showProgress(report(1, null, null, ['Looking up works…']));
+	if (page.elProgressRoom.textContent !== 'Looking up works…') throw new Error('one phase is "Step 1 of 1" in the room: ' + page.elProgressRoom.textContent);
+	if (page.elProgress.style.width !== wide('Looking up works…')) {
+		throw new Error('the second build kept the first one\'s width: ' + page.elProgress.style.width);
+	}
+	// A second build begun under a card that is still up has other phases,
+	// and is sized for them.
+	page.showProgress(report(1, null, null));
+	if (page.elProgress.style.width !== held) throw new Error('other phases under the same card were not sized for: ' + page.elProgress.style.width);
+	// A card that is not laid out has no width: nothing is set, and it is
+	// tried again at the next report, and held from then.
+	page = bar();
+	page.elProgress.laidOut = false;
+	page.showProgress(report(1, null, null));
+	if (page.elProgress.style.width !== '') throw new Error('a card with no width was held at ' + page.elProgress.style.width);
+	page.elProgress.laidOut = true;
+	page.showProgress(report(1, null, null));
+	page.showProgress(report(2, 1, 2));
+	if (page.elProgress.style.width !== held || page.elProgress.measured !== 2) throw new Error('a card laid out late was not sized once it was');
+	// A report with no labels -- another version's chrome -- is sized for
+	// the one it has, once.
+	page = bar();
+	page.showProgress({ text: 'Looking up works…', done: null, total: null, step: 1, steps: 1 });
+	page.showProgress({ text: 'Looking up works, and then some…', done: 1, total: 2, step: 1, steps: 1 });
+	if (page.elProgress.measured !== 1 || page.elProgress.style.width !== wide('Looking up works…')) {
+		throw new Error('a report with no labels: ' + page.elProgress.style.width + ' after ' + page.elProgress.measured + ' looks');
 	}
 
 	// The bridge, Stop, and what a stopped graph says of itself.
@@ -7639,6 +7723,8 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 	for (const [what, needle] of [
 		['a live label', '<span id="progress-text" aria-live="polite">'],
 		['a count that is not read out five times a second', '<span id="progress-count"></span>'],
+		['room for the widest label, which is not read out', '<span id="progress-room" aria-hidden="true"></span>'],
+		['room for the widest count, which is not read out', '<span id="progress-count-room" aria-hidden="true"></span>'],
 		['a Stop button', '<button id="progress-stop" type="button" data-zg-str="progress-stop"'],
 		['a bar that is a progressbar named by the label', 'id="progress-bar" role="progressbar" aria-labelledby="progress-text"'],
 	]) {
@@ -7649,7 +7735,7 @@ check('a build in flight is drawn as a place on a bar, with a button that stops 
 /**
  * A build that runs for minutes had a bar and nothing else that moved. Beside
  * the phase there is now a small scene, and under it a line of its own --
- * "DOIng laundry…" beside a washing machine -- one of ten at a time (seven
+ * "DOIng laundry…" beside a washing machine -- one of eleven at a time (seven
  * until 0.78.1).
  *
  * What is held: the turns (every scene once a round, none twice running, one
@@ -7825,16 +7911,15 @@ check('a build is watched by one scene at a time, each with a line of its own', 
 	if (!/#progress-stage > \.scene,\s*#progress-stage > \.scene \*,\s*#progress-lines > span \{\s*animation: none !important;/.test(still)) {
 		throw new Error('the scenes move for a reader who asked for no motion');
 	}
-	// The apple thrown at Newton is drawn twice, in the hand and in the air,
-	// and it is the keyframes that show one at a time. With them off the one
-	// in the air needs a rule, or that reader gets two apples and the mark of
-	// one landing.
-	if (!scenes.includes('newton') || !/<g class="toss">/.test(stageHtml) || !/class="bonk"/.test(stageHtml)) {
-		throw new Error('nothing is thrown at Newton');
+	// Newton is the man in his picture and is known by his wig, which is over
+	// his head and nods with it; and the apple is drawn where it lands, so a
+	// reader with no motion has it on his head and not nowhere.
+	const newton = drawn[scenes.indexOf('newton')] || '';
+	if (!/<g class="nod">\s*<circle class="paper head"[^>]*\/>\s*<path class="paper wig"/.test(newton)) {
+		throw new Error('Newton has no wig over his head, or it does not nod with it');
 	}
-	if (!/\.scene-newton \.toss,\s*\.scene-newton \.bonk \{\s*opacity: 0;/.test(still)) {
-		throw new Error('with no motion there are two apples in the picture');
-	}
+	if (!/<g class="toss"><g class="lob">/.test(newton) || !/class="bonk"/.test(newton)) throw new Error('nothing is thrown at Newton');
+	if (/\.scene-newton[^{]*\{\s*opacity: 0;/.test(still)) throw new Error('with no motion the apple is not in the picture');
 	// A stitch of the seam is shown by its own keyframes: nine stitches, and
 	// no two on the same ones, or two would go in at once.
 	const stitches = [...stageHtml.matchAll(/<path class="st (st\d+)"/g)].map(m => m[1]);
