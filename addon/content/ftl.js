@@ -22,10 +22,18 @@
  *
  *     id = plain text
  *     id = a { $variable } in it
- *     id = { $count -> [one] one thing *[other] { $count } things }
+ *     id = { $count ->
+ *             [one] one thing
+ *            *[other] { $count } things
+ *         }
  *     id =
  *         .attribute = for XUL, stored as "id.attribute"
  *     id = { " leading and trailing space is quoted " }
+ *
+ * Write a select over several lines, as above, even though this reader would
+ * take it on one: Zotero loads the same files into its own Fluent bundle, whose
+ * grammar wants each variant and the closing brace on a line of their own, and
+ * logs a parser error and drops the message otherwise. `npm test` checks this.
  *
  * Not supported, and not needed by this plugin: message and term references,
  * selectors nested inside a variant, functions (NUMBER, DATETIME), and multiline

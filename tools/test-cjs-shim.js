@@ -6904,6 +6904,77 @@ check('every locale carries the same message list as en-US', () => {
 	}
 });
 
+/**
+ * Zotero loads these files into its own Fluent bundle too, and Fluent's grammar
+ * wants every variant of a select, and the brace closing it, on a line of its
+ * own. ftl.js reads a select on one line just as happily, so a one-line select
+ * looked fine everywhere this plugin formats it while Gecko logged a parser
+ * error for every one -- 41 of them per window -- and left the message out of
+ * the bundle. This is that grammar rule, checked over every shipped locale.
+ */
+check('every select in every locale is laid out the way Fluent parses it', () => {
+	const problems = [];
+	for (const code of fs.readdirSync(localeDir)) {
+		const file = path.join(localeDir, code, FTL_NAME);
+		if (!fs.existsSync(file)) continue;
+		const src = fs.readFileSync(file, 'utf8');
+		let depth = 0;
+		let line = 1;
+		let lineStart = 0;
+		const selects = []; // the brace depth each open select lives at
+		const atLineStart = i => /^[ \t]*$/.test(src.slice(lineStart, i));
+		const flag = what => problems.push(code + ':' + line + ' ' + what);
+		for (let i = 0; i < src.length; i++) {
+			const c = src[i];
+			const inSelect = selects.length && selects[selects.length - 1] === depth;
+			if (c === '\n') {
+				line++;
+				lineStart = i + 1;
+			}
+			else if (c === '#' && depth === 0 && atLineStart(i)) {
+				// A comment: skip to its end, since prose may say "->" or "[one]".
+				const nl = src.indexOf('\n', i);
+				i = (nl === -1 ? src.length : nl) - 1;
+			}
+			else if (c === '{') depth++;
+			else if (c === '}') {
+				if (inSelect) {
+					if (!atLineStart(i)) flag('a select\'s closing brace shares its line');
+					selects.pop();
+				}
+				depth--;
+			}
+			else if (c === '-' && src[i + 1] === '>' && depth > 0) {
+				const nl = src.indexOf('\n', i);
+				if (src.slice(i + 2, nl === -1 ? src.length : nl).trim() !== '') {
+					flag('a variant follows "->" on the same line');
+				}
+				selects.push(depth);
+				i++;
+			}
+			else if (inSelect && (c === '*' || (c === '[' && src[i - 1] !== '*')) && !atLineStart(i)) {
+				if (c === '[' || src[i + 1] === '[') flag('a variant does not start its own line');
+			}
+		}
+	}
+	if (problems.length) throw new Error(problems.length + ' problem(s):\n    ' + problems.join('\n    '));
+});
+
+check('ftl.js reads a select laid out over several lines', () => {
+	const src = [
+		'a = Isolated: { $count ->',
+		'        [one] { $count } paper',
+		'       *[other] { $count } papers',
+		'    } · depth { $depth }',
+		'b = after',
+	].join('\n');
+	const m = Ftl.parse(src);
+	const t = (n) => Ftl.format(m.a, { count: n, depth: 2 }, 'en-US');
+	if (t(1) !== 'Isolated: 1 paper · depth 2') throw new Error('one: ' + t(1));
+	if (t(3) !== 'Isolated: 3 papers · depth 2') throw new Error('other: ' + t(3));
+	if (m.b !== 'after') throw new Error('the next message was swallowed: ' + m.b);
+});
+
 check('every locale fills the same variables as en-US', () => {
 	const vars = (pattern) => {
 		const out = new Set();

@@ -175,7 +175,10 @@ zotero-citation-graph-scene-catching = Paper aus dem Wind fangen…
 zotero-citation-graph-stats-items = { $shown } / { $total } Einträge
 zotero-citation-graph-stats-outside = { $count } extern
 zotero-citation-graph-stats-named = ({ $count } benannt)
-zotero-citation-graph-stats-edges = { $count -> [one] { $count } Kante *[other] { $count } Kanten }
+zotero-citation-graph-stats-edges = { $count ->
+        [one] { $count } Kante
+       *[other] { $count } Kanten
+    }
 zotero-citation-graph-stats-building = Wird aufgebaut…
 zotero-citation-graph-stats-stopped = vorzeitig gestoppt
 zotero-citation-graph-canvas-label = Zitationsgraph: { $stats }
@@ -187,9 +190,18 @@ zotero-citation-graph-stats-of-picked = { $shown } von { $picked } ausgewählten
 zotero-citation-graph-legend-outside = Externe Referenzen
 zotero-citation-graph-legend-no-date = Ohne Datum
 zotero-citation-graph-legend-more = +{ $count } weitere
-zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $count } Knoten *[other] { $count } Knoten }
-zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } Teilgebiet *[other] { $count } Teilgebiete }, Modularität { $q }
-zotero-citation-graph-legend-collection-shared = { $count -> [one] { $count } Eintrag liegt in mehreren Sammlungen: er wird in Segmente geteilt und unter jeder gezählt *[other] { $count } Einträge liegen in mehreren Sammlungen: jeder wird in Segmente geteilt und unter jeder gezählt }
+zotero-citation-graph-legend-row-hint = { $label } — { $count ->
+        [one] { $count } Knoten
+       *[other] { $count } Knoten
+    }
+zotero-citation-graph-legend-cluster-quality = { $count ->
+        [one] { $count } Teilgebiet
+       *[other] { $count } Teilgebiete
+    }, Modularität { $q }
+zotero-citation-graph-legend-collection-shared = { $count ->
+        [one] { $count } Eintrag liegt in mehreren Sammlungen: er wird in Segmente geteilt und unter jeder gezählt
+       *[other] { $count } Einträge liegen in mehreren Sammlungen: jeder wird in Segmente geteilt und unter jeder gezählt
+    }
 
 zotero-citation-graph-color-no-collection = (Keine Sammlung)
 zotero-citation-graph-color-no-cluster = (Kein Teilgebiet)
@@ -206,9 +218,16 @@ zotero-citation-graph-color-unknown-type = (Unbekannte Art)
 zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen
 # Die Zahl setzt die Seite fett: { $count } in jeder Variante behalten, die
 # eine Zahl zeigt.
-zotero-citation-graph-tooltip-cited-here = { $count -> [0] Hier von keinem Eintrag zitiert [one] Hier von { $count } Eintrag zitiert *[other] Hier von { $count } Einträgen zitiert }
+zotero-citation-graph-tooltip-cited-here = { $count ->
+        [0] Hier von keinem Eintrag zitiert
+        [one] Hier von { $count } Eintrag zitiert
+       *[other] Hier von { $count } Einträgen zitiert
+    }
 zotero-citation-graph-tooltip-cited-global = { $count } weltweit
-zotero-citation-graph-tooltip-citations-total = { $count -> [one] { $count } Zitation insgesamt *[other] { $count } Zitationen insgesamt }
+zotero-citation-graph-tooltip-citations-total = { $count ->
+        [one] { $count } Zitation insgesamt
+       *[other] { $count } Zitationen insgesamt
+    }
 zotero-citation-graph-tooltip-pinned = angeheftet
 zotero-citation-graph-tooltip-et-al = { $names } u. a.
 
@@ -271,9 +290,15 @@ zotero-citation-graph-group-hint = Ein Begriff oder feld:wert. Filter stapeln si
 zotero-citation-graph-group-remove = Entfernen
 zotero-citation-graph-group-done = Fertig
 zotero-citation-graph-group-empty = sagen, was hierher gehört
-zotero-citation-graph-group-pulls = zieht { $count -> [one] { $count } Eintrag hierher *[other] { $count } Einträge hierher }
+zotero-citation-graph-group-pulls = zieht { $count ->
+        [one] { $count } Eintrag hierher
+       *[other] { $count } Einträge hierher
+    }
 # Derselbe Anker, wenn der Gruppenzug im Bedienfeld ganz heruntergedreht ist.
-zotero-citation-graph-group-names = benennt { $count -> [one] { $count } Eintrag und bewegt ihn nicht *[other] { $count } Einträge und bewegt sie nicht }
+zotero-citation-graph-group-names = benennt { $count ->
+        [one] { $count } Eintrag und bewegt ihn nicht
+       *[other] { $count } Einträge und bewegt sie nicht
+    }
 zotero-citation-graph-group-flag-empty = noch nichts
 
 
@@ -292,7 +317,10 @@ zotero-citation-graph-menu-isolate = Knoten isolieren
 zotero-citation-graph-menu-show-whole-graph = Ganzen Graphen zeigen
 zotero-citation-graph-menu-isolate-hint-undim = alles wieder aufhellen
 zotero-citation-graph-menu-isolate-hint-only = alles außer diesem Knoten abdunkeln
-zotero-citation-graph-menu-isolate-hint-depth = alles abdunkeln, was mehr als { $depth -> [one] { $depth } Kante *[other] { $depth } Kanten } entfernt ist
+zotero-citation-graph-menu-isolate-hint-depth = alles abdunkeln, was mehr als { $depth ->
+        [one] { $depth } Kante
+       *[other] { $depth } Kanten
+    } entfernt ist
 zotero-citation-graph-menu-add-to-isolation = Zur Isolation hinzufügen
 zotero-citation-graph-menu-add-to-isolation-hint = die Umgebung dieses Knotens zusätzlich aufhellen, den Rest behalten — oder { $mod }-Doppelklick
 zotero-citation-graph-menu-remove-from-isolation = Aus der Isolation nehmen
@@ -320,12 +348,24 @@ zotero-citation-graph-action-close = Schließen
 
 zotero-citation-graph-empty-title = Nichts zu zeichnen
 zotero-citation-graph-empty-body = Diese Sammlung enthält keine regulären Einträge – nur Anhänge, Notizen oder gar nichts.
-zotero-citation-graph-empty-body-selection = { $count -> [one] Die ausgewählte Zeile ist kein Aufsatz *[other] Keine der { $count } ausgewählten Zeilen ist ein Aufsatz } – nur Anhänge, Notizen oder Einträge ohne Titel.
-zotero-citation-graph-empty-sub = Nicht einbezogen: { $count -> [one] eine Untersammlung *[other] { $count } Untersammlungen }.
+zotero-citation-graph-empty-body-selection = { $count ->
+        [one] Die ausgewählte Zeile ist kein Aufsatz
+       *[other] Keine der { $count } ausgewählten Zeilen ist ein Aufsatz
+    } – nur Anhänge, Notizen oder Einträge ohne Titel.
+zotero-citation-graph-empty-sub = Nicht einbezogen: { $count ->
+        [one] eine Untersammlung
+       *[other] { $count } Untersammlungen
+    }.
 zotero-citation-graph-empty-include-sub = Untersammlungen einbeziehen
 
 zotero-citation-graph-empty-filter-title = Kein Eintrag passt zu diesen Filtern
-zotero-citation-graph-empty-filter-body = { $count -> [one] Der einzige Eintrag hier wird *[other] Alle { $count } Einträge werden } { $filters -> [one] vom Filter *[other] von den Filtern } { $names } ausgeblendet.
+zotero-citation-graph-empty-filter-body = { $count ->
+        [one] Der einzige Eintrag hier wird
+       *[other] Alle { $count } Einträge werden
+    } { $filters ->
+        [one] vom Filter
+       *[other] von den Filtern
+    } { $names } ausgeblendet.
 zotero-citation-graph-empty-filter-name = „{ $name }“
 zotero-citation-graph-empty-filter-clear = Filter aufheben
 
@@ -338,27 +378,42 @@ zotero-citation-graph-build-loading-selection = Ausgewählte Einträge werden ge
 zotero-citation-graph-build-reading-text = Indexierter Text wird gelesen…
 zotero-citation-graph-build-reading-text-progress = Indexierter Text wird gelesen… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = PDFs werden durchsucht…
-zotero-citation-graph-build-scanning-pdfs-count = { $count -> [one] { $count } PDF wird *[other] { $count } PDFs werden } nach DOI-Links durchsucht…
+zotero-citation-graph-build-scanning-pdfs-count = { $count ->
+        [one] { $count } PDF wird
+       *[other] { $count } PDFs werden
+    } nach DOI-Links durchsucht…
 zotero-citation-graph-build-scanning-pdfs-progress = PDFs werden nach DOI-Links durchsucht… { $done }/{ $total }
 zotero-citation-graph-build-openalex-references = Referenzen werden bei OpenAlex abgefragt…
 zotero-citation-graph-build-reading-references = Literaturverzeichnisse werden gelesen…
 zotero-citation-graph-build-reading-references-progress = Literaturverzeichnisse werden gelesen… { $done }/{ $total }
 zotero-citation-graph-build-openalex-progress = Referenzen werden bei OpenAlex abgefragt… { $done }/{ $total }
-zotero-citation-graph-lookup-works = { $count -> [one] { $count } Arbeit wird *[other] { $count } Arbeiten werden } nachgeschlagen…
+zotero-citation-graph-lookup-works = { $count ->
+        [one] { $count } Arbeit wird
+       *[other] { $count } Arbeiten werden
+    } nachgeschlagen…
 zotero-citation-graph-lookup-phase = Arbeiten werden nachgeschlagen…
 zotero-citation-graph-lookup-progress = Arbeiten werden nachgeschlagen… { $done }/{ $total } ({ $provider })
-zotero-citation-graph-build-errors = { $count -> [one] Ein Schritt ist fehlgeschlagen *[other] { $count } Schritte sind fehlgeschlagen }: { $what }
+zotero-citation-graph-build-errors = { $count ->
+        [one] Ein Schritt ist fehlgeschlagen
+       *[other] { $count } Schritte sind fehlgeschlagen
+    }: { $what }
 zotero-citation-graph-lookup-nothing = Nichts nachzuschlagen: keine DOIs in diesem Graphen.
 zotero-citation-graph-build-failed = Der Graph konnte nicht aufgebaut werden: { $message }
 zotero-citation-graph-quota-title = Das OpenAlex-Kontingent ohne Schlüssel ist für heute aufgebraucht
-zotero-citation-graph-quota-body = Anfragen ohne Schlüssel teilen sich ein kleines Tageskontingent mit allen in deinem Netzwerk. Ein kostenloser Schlüssel hat ein eigenes, zehnmal so groß. Ohne ihn antwortet OpenAlex in etwa { $hours -> [one] einer Stunde *[other] { $hours } Stunden } wieder.
+zotero-citation-graph-quota-body = Anfragen ohne Schlüssel teilen sich ein kleines Tageskontingent mit allen in deinem Netzwerk. Ein kostenloser Schlüssel hat ein eigenes, zehnmal so groß. Ohne ihn antwortet OpenAlex in etwa { $hours ->
+        [one] einer Stunde
+       *[other] { $hours } Stunden
+    } wieder.
 zotero-citation-graph-quota-get = Kostenlosen Schlüssel holen
 zotero-citation-graph-quota-get-hint = Öffnet openalex.org/settings/api im Browser
 zotero-citation-graph-quota-key-placeholder = Schlüssel hier einfügen
 zotero-citation-graph-quota-continue = Fortsetzen
 zotero-citation-graph-quota-continue-hint = Den Schlüssel speichern und dort weitermachen, wo OpenAlex nicht mehr geantwortet hat
 zotero-citation-graph-quota-dismiss = Nicht jetzt
-zotero-citation-graph-openalex-quota-keyed = Das Tageskontingent deines OpenAlex-Schlüssels ist aufgebraucht. OpenAlex antwortet in etwa { $hours -> [one] einer Stunde *[other] { $hours } Stunden } wieder.
+zotero-citation-graph-openalex-quota-keyed = Das Tageskontingent deines OpenAlex-Schlüssels ist aufgebraucht. OpenAlex antwortet in etwa { $hours ->
+        [one] einer Stunde
+       *[other] { $hours } Stunden
+    } wieder.
 zotero-citation-graph-openalex-key-refused = OpenAlex hat den API-Schlüssel nicht akzeptiert. Prüfe ihn in den Zotero-Einstellungen unter „Zitationsgraph“.
 
 
@@ -385,8 +440,14 @@ zotero-citation-graph-add-rebuilding = „{ $title }“ hinzugefügt — wird ne
 ## Der Tab.
 
 zotero-citation-graph-tab-title = { $collection } — Zitationsgraph
-zotero-citation-graph-tab-title-selection = { $count -> [one] { $count } Eintrag *[other] { $count } Einträge } — Zitationsgraph
-zotero-citation-graph-tab-title-selection-in = { $collection } · { $count -> [one] { $count } Eintrag *[other] { $count } Einträge } — Zitationsgraph
+zotero-citation-graph-tab-title-selection = { $count ->
+        [one] { $count } Eintrag
+       *[other] { $count } Einträge
+    } — Zitationsgraph
+zotero-citation-graph-tab-title-selection-in = { $collection } · { $count ->
+        [one] { $count } Eintrag
+       *[other] { $count } Einträge
+    } — Zitationsgraph
 
 ## Fehlende Werke: was die Sammlung zitiert und nicht besitzt.
 
@@ -398,7 +459,10 @@ zotero-citation-graph-gaps-close = Schließen
 zotero-citation-graph-gaps-caption = Die Zahl sagt, wie viele deiner Einträge das Werk zitieren.
 zotero-citation-graph-gaps-empty = Nichts wird von zwei deiner Einträge zitiert und fehlt.
 zotero-citation-graph-gaps-building = Die Einträge werden noch gelesen…
-zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } Eintrag deiner Bibliothek zitiert das *[other] { $count } Einträge deiner Bibliothek zitieren das } — klicken zum Hervorheben, doppelklicken zum Isolieren, { $mod } zum Hinzufügen
+zotero-citation-graph-gaps-row-hint = { $count ->
+        [one] { $count } Eintrag deiner Bibliothek zitiert das
+       *[other] { $count } Einträge deiner Bibliothek zitieren das
+    } — klicken zum Hervorheben, doppelklicken zum Isolieren, { $mod } zum Hinzufügen
 zotero-citation-graph-gaps-off-screen = Dieses Werk ist nicht im Graphen — ein Filter blendet es aus.
 zotero-citation-graph-gaps-add = Zu Zotero hinzufügen
 zotero-citation-graph-gaps-add-no-doi = Keine DOI, über die sich das hinzufügen ließe

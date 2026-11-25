@@ -178,7 +178,10 @@ zotero-citation-graph-export-hint = Export the graph
 # The chip the bar shows while something is isolated. $count is how many
 # papers were isolated -- not how many are lit around them -- and $depth is the
 # "Isolation depth" in force. Its ✕ is menu-show-whole-graph.
-zotero-citation-graph-isolation-chip = Isolated: { $count -> [one] { $count } paper *[other] { $count } papers } · depth { $depth }
+zotero-citation-graph-isolation-chip = Isolated: { $count ->
+        [one] { $count } paper
+       *[other] { $count } papers
+    } · depth { $depth }
 
 zotero-citation-graph-search-placeholder = Search
 # The key that adds to a pick, as the hints name it: { $mod } in a message is
@@ -239,7 +242,10 @@ zotero-citation-graph-scene-catching = Catching papers from the wind…
 zotero-citation-graph-stats-items = { $shown } / { $total } items
 zotero-citation-graph-stats-outside = { $count } outside
 zotero-citation-graph-stats-named = ({ $count } named)
-zotero-citation-graph-stats-edges = { $count -> [one] { $count } edge *[other] { $count } edges }
+zotero-citation-graph-stats-edges = { $count ->
+        [one] { $count } edge
+       *[other] { $count } edges
+    }
 zotero-citation-graph-stats-building = Building…
 # In the same place, once a build was stopped with the Stop button: the graph
 # on screen is finished but is not all of it.
@@ -261,13 +267,22 @@ zotero-citation-graph-stats-of-picked = { $shown } of { $picked } selected
 zotero-citation-graph-legend-outside = Outside refs
 zotero-citation-graph-legend-no-date = No date
 zotero-citation-graph-legend-more = +{ $count } more
-zotero-citation-graph-legend-row-hint = { $label } — { $count -> [one] { $count } node *[other] { $count } nodes }
+zotero-citation-graph-legend-row-hint = { $label } — { $count ->
+        [one] { $count } node
+       *[other] { $count } nodes
+    }
 # How trustworthy the subfield split is: modularity below about 0.3 means the
 # clusters are more the algorithm than the library.
-zotero-citation-graph-legend-cluster-quality = { $count -> [one] { $count } subfield *[other] { $count } subfields }, modularity { $q }
+zotero-citation-graph-legend-cluster-quality = { $count ->
+        [one] { $count } subfield
+       *[other] { $count } subfields
+    }, modularity { $q }
 # Colouring by collection: papers in more than one are cut into wedges and
 # counted under each, so the rows can add up to more than the nodes.
-zotero-citation-graph-legend-collection-shared = { $count -> [one] { $count } paper is in several collections: it is split into wedges and counted under each *[other] { $count } papers are in several collections: each is split into wedges and counted under each }
+zotero-citation-graph-legend-collection-shared = { $count ->
+        [one] { $count } paper is in several collections: it is split into wedges and counted under each
+       *[other] { $count } papers are in several collections: each is split into wedges and counted under each
+    }
 
 # Colour keys for held items missing the facet being coloured by.
 zotero-citation-graph-color-no-collection = (No collection)
@@ -287,11 +302,18 @@ zotero-citation-graph-color-unknown-type = (Unknown type)
 zotero-citation-graph-tooltip-not-in-collection = Not in this graph
 # The number is set in bold by the page, which finds it in the sentence: keep
 # { $count } in every variant that has a number to show.
-zotero-citation-graph-tooltip-cited-here = { $count -> [0] No paper here cites it [one] { $count } paper here cites it *[other] { $count } papers here cite it }
+zotero-citation-graph-tooltip-cited-here = { $count ->
+        [0] No paper here cites it
+        [one] { $count } paper here cites it
+       *[other] { $count } papers here cite it
+    }
 zotero-citation-graph-tooltip-cited-global = { $count } worldwide
 # The gap list's line for the same count, which has no "here" beside it to be
 # read against.
-zotero-citation-graph-tooltip-citations-total = { $count -> [one] { $count } citation total *[other] { $count } citations total }
+zotero-citation-graph-tooltip-citations-total = { $count ->
+        [one] { $count } citation total
+       *[other] { $count } citations total
+    }
 zotero-citation-graph-tooltip-pinned = pinned
 zotero-citation-graph-tooltip-et-al = { $names } et al.
 
@@ -365,9 +387,15 @@ zotero-citation-graph-group-hint = Type a term, or field:value. Filters stack: e
 zotero-citation-graph-group-remove = Remove
 zotero-citation-graph-group-done = Done
 zotero-citation-graph-group-empty = say what belongs here
-zotero-citation-graph-group-pulls = pulls { $count -> [one] { $count } paper here *[other] { $count } papers here }
+zotero-citation-graph-group-pulls = pulls { $count ->
+        [one] { $count } paper here
+       *[other] { $count } papers here
+    }
 # The same anchor, with the panel's group pull turned all the way down.
-zotero-citation-graph-group-names = names { $count -> [one] { $count } paper, and moves it nowhere *[other] { $count } papers, and moves them nowhere }
+zotero-citation-graph-group-names = names { $count ->
+        [one] { $count } paper, and moves it nowhere
+       *[other] { $count } papers, and moves them nowhere
+    }
 # What a flag says before anything has been said about it.
 zotero-citation-graph-group-flag-empty = nothing yet
 
@@ -387,7 +415,10 @@ zotero-citation-graph-menu-isolate = Isolate node
 zotero-citation-graph-menu-show-whole-graph = Show whole graph
 zotero-citation-graph-menu-isolate-hint-undim = undim everything
 zotero-citation-graph-menu-isolate-hint-only = dim everything but this node
-zotero-citation-graph-menu-isolate-hint-depth = dim everything more than { $depth -> [one] { $depth } edge *[other] { $depth } edges } away
+zotero-citation-graph-menu-isolate-hint-depth = dim everything more than { $depth ->
+        [one] { $depth } edge
+       *[other] { $depth } edges
+    } away
 zotero-citation-graph-menu-add-to-isolation = Add to isolation
 zotero-citation-graph-menu-add-to-isolation-hint = light the neighbourhood around this node too, keeping the rest — or { $mod }-double-click it
 zotero-citation-graph-menu-remove-from-isolation = Remove from isolation
@@ -418,8 +449,14 @@ zotero-citation-graph-action-close = Close
 
 zotero-citation-graph-empty-title = Nothing to graph
 zotero-citation-graph-empty-body = This collection has no regular items — only attachments, notes, or nothing at all.
-zotero-citation-graph-empty-body-selection = { $count -> [one] The selected row is not a paper *[other] None of the { $count } selected rows is a paper } — only attachments, notes, or items with no title.
-zotero-citation-graph-empty-sub = Not included: { $count -> [one] one subcollection *[other] { $count } subcollections }.
+zotero-citation-graph-empty-body-selection = { $count ->
+        [one] The selected row is not a paper
+       *[other] None of the { $count } selected rows is a paper
+    } — only attachments, notes, or items with no title.
+zotero-citation-graph-empty-sub = Not included: { $count ->
+        [one] one subcollection
+       *[other] { $count } subcollections
+    }.
 zotero-citation-graph-empty-include-sub = Include subcollections
 
 # The same card over a graph that HAS papers, when the filters leave none of
@@ -428,7 +465,13 @@ zotero-citation-graph-empty-include-sub = Include subcollections
 # empty-filter-name and joined with commas -- an Advanced Search counts as one
 # and is named by search-advanced.
 zotero-citation-graph-empty-filter-title = No papers match these filters
-zotero-citation-graph-empty-filter-body = { $count -> [one] The only paper here is *[other] All { $count } papers are } hidden by { $filters -> [one] the filter *[other] the filters } { $names }.
+zotero-citation-graph-empty-filter-body = { $count ->
+        [one] The only paper here is
+       *[other] All { $count } papers are
+    } hidden by { $filters ->
+        [one] the filter
+       *[other] the filters
+    } { $names }.
 zotero-citation-graph-empty-filter-name = “{ $name }”
 zotero-citation-graph-empty-filter-clear = Clear filters
 
@@ -441,19 +484,28 @@ zotero-citation-graph-build-loading-selection = Loading the selected items…
 zotero-citation-graph-build-reading-text = Reading indexed text…
 zotero-citation-graph-build-reading-text-progress = Reading indexed text… { $done }/{ $total } ({ $provider })
 zotero-citation-graph-build-scanning-pdfs = Scanning PDFs…
-zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count -> [one] { $count } PDF *[other] { $count } PDFs } for DOI links…
+zotero-citation-graph-build-scanning-pdfs-count = Scanning { $count ->
+        [one] { $count } PDF
+       *[other] { $count } PDFs
+    } for DOI links…
 zotero-citation-graph-build-scanning-pdfs-progress = Scanning PDFs for DOI links… { $done }/{ $total }
 zotero-citation-graph-build-openalex-references = Asking OpenAlex for references…
 zotero-citation-graph-build-openalex-progress = Asking OpenAlex for references… { $done }/{ $total }
 zotero-citation-graph-build-reading-references = Reading reference lists…
 zotero-citation-graph-build-reading-references-progress = Reading reference lists… { $done }/{ $total }
-zotero-citation-graph-lookup-works = Looking up { $count -> [one] { $count } work *[other] { $count } works }…
+zotero-citation-graph-lookup-works = Looking up { $count ->
+        [one] { $count } work
+       *[other] { $count } works
+    }…
 zotero-citation-graph-lookup-phase = Looking up works…
 zotero-citation-graph-lookup-progress = Looking up works… { $done }/{ $total } ({ $provider })
 # What a build or a lookup says when it ends having lost a strategy or a request:
 # how many failed, and the first of them, as "strategy: message". The rest are in
 # the error console.
-zotero-citation-graph-build-errors = { $count -> [one] One step failed *[other] { $count } steps failed }: { $what }
+zotero-citation-graph-build-errors = { $count ->
+        [one] One step failed
+       *[other] { $count } steps failed
+    }: { $what }
 zotero-citation-graph-lookup-nothing = Nothing to look up: no DOIs in this graph.
 zotero-citation-graph-build-failed = Could not build the graph: { $message }
 # OpenAlex has stopped answering for the day. Without a key that is a card on
@@ -462,14 +514,20 @@ zotero-citation-graph-build-failed = Could not build the graph: { $message }
 # correction, so those two are status lines. { $hours } is whole hours until
 # midnight UTC, never fewer than one.
 zotero-citation-graph-quota-title = OpenAlex's allowance without a key is used up for today
-zotero-citation-graph-quota-body = Requests without a key share one small daily allowance with everyone on your network. A free key has its own, ten times the size. Without one, OpenAlex answers again in about { $hours -> [one] an hour *[other] { $hours } hours }.
+zotero-citation-graph-quota-body = Requests without a key share one small daily allowance with everyone on your network. A free key has its own, ten times the size. Without one, OpenAlex answers again in about { $hours ->
+        [one] an hour
+       *[other] { $hours } hours
+    }.
 zotero-citation-graph-quota-get = Get a free key
 zotero-citation-graph-quota-get-hint = Opens openalex.org/settings/api in your browser
 zotero-citation-graph-quota-key-placeholder = Paste the key here
 zotero-citation-graph-quota-continue = Continue
 zotero-citation-graph-quota-continue-hint = Keep the key and go on from where OpenAlex stopped answering
 zotero-citation-graph-quota-dismiss = Not now
-zotero-citation-graph-openalex-quota-keyed = Your OpenAlex key's allowance for today is used up. OpenAlex answers again in about { $hours -> [one] an hour *[other] { $hours } hours }.
+zotero-citation-graph-openalex-quota-keyed = Your OpenAlex key's allowance for today is used up. OpenAlex answers again in about { $hours ->
+        [one] an hour
+       *[other] { $hours } hours
+    }.
 zotero-citation-graph-openalex-key-refused = OpenAlex did not accept the API key. Check it in Zotero's settings, under Citation Graph.
 
 
@@ -502,8 +560,14 @@ zotero-citation-graph-add-rebuilding = Added "{ $title }" — rebuilding…
 # because two selection tabs are otherwise told apart by nothing at all.
 
 zotero-citation-graph-tab-title = { $collection } — Citation Graph
-zotero-citation-graph-tab-title-selection = { $count -> [one] { $count } item *[other] { $count } items } — Citation Graph
-zotero-citation-graph-tab-title-selection-in = { $collection } · { $count -> [one] { $count } item *[other] { $count } items } — Citation Graph
+zotero-citation-graph-tab-title-selection = { $count ->
+        [one] { $count } item
+       *[other] { $count } items
+    } — Citation Graph
+zotero-citation-graph-tab-title-selection-in = { $collection } · { $count ->
+        [one] { $count } item
+       *[other] { $count } items
+    } — Citation Graph
 
 ## The gap list: works the graph's papers cite and the library does not hold.
 
@@ -515,7 +579,10 @@ zotero-citation-graph-gaps-close = Close
 zotero-citation-graph-gaps-caption = The number is how many of your items cite the work.
 zotero-citation-graph-gaps-empty = Nothing is cited by two of your papers and missing.
 zotero-citation-graph-gaps-building = Still reading the items…
-zotero-citation-graph-gaps-row-hint = { $count -> [one] { $count } of your papers cites this *[other] { $count } of your papers cite this } — click to light it, double-click to isolate, { $mod } to add
+zotero-citation-graph-gaps-row-hint = { $count ->
+        [one] { $count } of your papers cites this
+       *[other] { $count } of your papers cite this
+    } — click to light it, double-click to isolate, { $mod } to add
 zotero-citation-graph-gaps-off-screen = That work is not on the graph — a filter is hiding it.
 zotero-citation-graph-gaps-add = Add to Zotero
 zotero-citation-graph-gaps-add-no-doi = No DOI to add this by

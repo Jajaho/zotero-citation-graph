@@ -48,8 +48,9 @@ strings and every other plugin's.
 
 ### Rules the file has to keep
 
-- **One message per line.** A wrapped line is joined back with a space, which is
-  right for prose and wrong for anything that meant to keep a line break.
+- **One message per line**, plural selectors aside (see below). A wrapped line
+  is joined back with a space, which is right for prose and wrong for anything
+  that meant to keep a line break.
 - **Keep the ids.** Call sites look messages up by id; changing one removes the
   string from the UI.
 - **Keep the variables.** `{ $count }`, `{ $shown }`, `{ $total }` and friends
@@ -58,10 +59,16 @@ strings and every other plugin's.
 - **Plurals are Fluent selectors**, and your language's categories are not
   necessarily English's:
   ```
-  zotero-citation-graph-stats-edges = { $count -> [one] { $count } edge *[other] { $count } edges }
+  zotero-citation-graph-stats-edges = { $count ->
+          [one] { $count } edge
+         *[other] { $count } edges
+      }
   ```
   The starred variant is the default and must be present. Languages with more
-  than two categories may add `[few]`, `[many]` and so on.
+  than two categories may add `[few]`, `[many]` and so on. Each variant and the
+  closing brace go on a line of their own: Zotero also loads the file into its
+  own Fluent bundle, which rejects a selector written on one line. `npm test`
+  checks this.
 - **The graph page formats these with a Fluent subset**
   ([`addon/content/ftl.js`](addon/content/ftl.js)). Variables and plural
   selectors work; message references, nested selectors and functions do not.
