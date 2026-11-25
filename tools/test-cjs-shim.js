@@ -3461,7 +3461,10 @@ function fireMenu(target, ctx, win) {
 	const el = {
 		localName: 'menuitem',
 		hidden: undefined,
-		ownerGlobal: win || {},
+		// The window as Gecko 153 (Zotero 11) offers it. There is deliberately no
+		// ownerGlobal: that name is documentGlobal there and reads as undefined,
+		// which is how the entries came to do nothing on the Zotero 11 beta.
+		ownerDocument: { defaultView: win || {} },
 		getAttribute: name => (name in attrs ? attrs[name] : null),
 		setAttribute: (name, value) => { attrs[name] = value; },
 	};

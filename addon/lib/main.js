@@ -230,7 +230,7 @@ module.exports = {
 						let rows = (ctx && ctx.collectionTreeRows) || [];
 						if (rows.length !== 1) return;
 						let collection = rows[0].ref;
-						let win = event.target.ownerGlobal;
+						let win = windowOf(event);
 						graphTab.open(win, collection, _config).catch(e => Zotero.logError(e));
 					},
 				},
@@ -274,7 +274,7 @@ module.exports = {
 					onCommand: (event, ctx) => {
 						let keys = graphableKeys(ctx);
 						if (!keys.length) return;
-						let win = event.target.ownerGlobal;
+						let win = windowOf(event);
 						graphTab.openSelection(
 							win, keys[0].libraryID, keys.map(k => k.key), anchorCollection(ctx), _config
 						).catch(e => Zotero.logError(e));
@@ -306,6 +306,20 @@ function entryElement(ctx) {
 	let el = ctx && ctx.menuElem;
 	if (!el || el.localName !== 'menuitem') return null;
 	return el;
+}
+
+/**
+ * The window a menu command was given in.
+ *
+ * Not event.target.ownerGlobal: Gecko 153 (Zotero 11) renamed that to
+ * documentGlobal, and the old name reads as undefined there. The graph tab then
+ * failed on win.Zotero_Tabs inside a promise whose rejection only reached the
+ * error console, so on the Zotero 11 beta clicking the entry did nothing at all.
+ * ownerDocument.defaultView is the same window on Zotero 10 and 11.
+ */
+function windowOf(event) {
+	let doc = event && event.target && event.target.ownerDocument;
+	return (doc && doc.defaultView) || Zotero.getMainWindow();
 }
 
 /**
