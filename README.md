@@ -56,7 +56,7 @@ Then fear no longer: *Citation Graph for Zotero* is for you.
 - **[![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936?logo=zotero&logoColor=white)](https://www.zotero.org/download/) or later** on Windows, macOS or Linux.
 - **No network needed** to connect the papers you hold locally. Some additional
   features, such as the OpenAlex strategies, go online and are off by default;
-  see [Privacy and network use](#privacy-and-network-use).
+  see [Referencing Strategies](#referencing-strategies).
 
 ## Installation for Users
 
@@ -102,7 +102,7 @@ This is done in the *Item Selection* pane of the left settings sidebar.
 
 ### Isolating Nodes
 
-Large graphs can have a lot of edges and nodes obfuscating a node you actually want to look at.
+Large graphs can have a lot of edges and nodes obfuscating the node you actually want to look at.
 To solve this, you can isolate a node and take a closer look at its references and the items that reference it.
 
 
@@ -113,47 +113,37 @@ To solve this, you can isolate a node and take a closer look at its references a
 ### Group Pins
 
 You can physically separate groups of nodes from the rest of the graph with *Groups*.
-Which nodes are attracted to the set location is masked with filters.
+Use filters to select which nodes are attracted.
 
 ![Placing a group pin and filtering which nodes it attracts](docs/media/group-pins.gif)
 
 
 
-## Privacy and Network Use
+## Referencing Strategies
 
-The plugin has no telemetry, no analytics and no account. It phones nothing
-home, ever. The only code in it that can open a network connection is the
-OpenAlex provider, and it is **off by default**.
+**Citation graph is offline first** - No account, no API key, no network, and no waiting for a web service that may not
+know your field.
 
-| Strategy | Network | On by default | What leaves your machine |
-|---|---|---|---|
-| `pdf-links` | offline | yes | nothing |
-| `text-doi` | offline | yes | nothing |
-| `title-match` | offline | yes | nothing |
-| `locator-match` | offline | yes | nothing |
-| `ref-strings` | offline | no | nothing |
-| `openalex` (edges) | **network** | **no** | DOIs only |
-| `openalex` (metadata enricher) | **network** | **no** | DOIs and OpenAlex IDs only |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/offline-strategies-dark.gif">
+  <img src="docs/media/offline-strategies-light.gif" width="880" alt="One reference list read five ways: pdf-links, text-doi, title-match, locator-match and ref-strings each mark what they read in an entry and draw the edge they find">
+</picture>
 
-The following UI actions will result in a request to OpenAlex:
-- *OpenAlex references* - Referencing strategy
-- *Query node metadata*
-- Setting node *size* to *global citations*, will automatically enable *Query node metadata*. 
+### Five ways to read a reference list
 
-These will send bare DOIs (or OpenAlex work IDs) as a filter on
-`https://api.openalex.org/works`. They will **NEVER** expose your titles, authors, notes, tags,
-annotations, collection names, PDF text, library size or anything identifying
-you. The retired `mailto` polite-pool parameter is not sent. If you configure an
-API key it travels in an `Authorization` header rather than the query string, so
-it stays out of URLs, logs and error messages.
+A citation can have several forms, depending on the publisher and the
+field: a hidden link, a printed DOI, a title, or only a journal, volume and page.
+Each offline strategy reads one of these traces, together they cover a broad range of fields and styles. Edges are coloured according to their most certain strategy.
 
-Answers are cached, so a paper is asked about once: a warm rebuild of the same
-graph makes no request at all. Requests go through Zotero's own HTTP stack,
-which honours your proxy settings and Zotero's offline mode.
+See here how our strategies work: **[Offline Referencing Strategies](https://github.com/Jajaho/zotero-citation-graph/wiki/Offline-Referencing-Strategies)** in the wiki.
 
-Everything else — reading PDFs, extracting DOIs, matching titles, clustering,
-gap detection, layout — happens locally, on your machine, from files you already
-have.
+### Online, only if you ask
+
+For even more coverage you can add OpenAlex's reference lists, and let OpenAlex
+name and size the works you cite but don't hold. It is the only part of the
+plugin that ever goes online, and it is off until you turn it on. There is no
+telemetry, no analytics, and nothing phones home, ever. Learn more about our network and privacy policy here:
+**[Privacy and Network Use](https://github.com/Jajaho/zotero-citation-graph/wiki/Privacy-and-Network-Use)**.
 
 ## Building from Source
 
