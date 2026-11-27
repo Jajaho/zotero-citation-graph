@@ -1674,6 +1674,28 @@ body {
 	display: none;
 }
 
+/* Something the user asked for failed -- zgSetError in graph.js. The words say
+   so already; this is so it is not read past as one more phase. Wrapped rather
+   than cut off, because the end of the line is the error's own message, which
+   is the part worth reading. The red is one that holds against both surfaces.
+
+   And selectable, so it can be copied into a bug report. The line is
+   pointer-events: none otherwise so that a status hung over the top of the
+   canvas never eats a click or a drag meant for the graph under it; a failure
+   is rare and short-lived (the next action takes it down), and is worth the
+   few pixels of canvas it holds while it is up. */
+#status.failed {
+	color: var(--fg);
+	border-color: #e5484d;
+	box-shadow: inset 3px 0 0 #e5484d;
+	white-space: normal;
+	text-align: center;
+	pointer-events: auto;
+	user-select: text;
+	-moz-user-select: text;
+	cursor: text;
+}
+
 /* Put away while the bar below stands in for it -- see showProgress(). */
 #status[hidden] {
 	display: none;

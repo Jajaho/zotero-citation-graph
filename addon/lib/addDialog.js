@@ -24,6 +24,7 @@
  */
 
 let l10n = require('./l10n.js');
+let report = require('./report.js');
 
 const PANEL_ID = 'zotero-citation-graph-add';
 
@@ -385,7 +386,7 @@ function open(win, opts) {
 		okBtn.addEventListener('click', accept);
 		cancelBtn.addEventListener('click', () => finish(null));
 		newBtn.addEventListener('click', () => {
-			newCollection().catch(e => Zotero.logError(e));
+			newCollection().catch(e => report.failed(win, 'failed-new-collection', e));
 		});
 		panel.addEventListener('keydown', (event) => {
 			if (!event || event.defaultPrevented) return;

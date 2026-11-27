@@ -55,6 +55,8 @@
  *                           width the panel gets
  */
 
+let report = require('./report.js');
+
 // An item pane's own 320px minimum plus its 37px sidenav -- what core gives the
 // library's item pane, and this is the same pane.
 const MIN_WIDTH = 357;
@@ -245,7 +247,10 @@ function setCollapsed(entry, val) {
 		collapsible().setPaneCollapsed(pane.box, val);
 	}
 	catch (e) {
-		Zotero.logError(e);
+		// The toggle was pressed -- core's sidenav button or the one in the
+		// graph's bar -- and the pane did not move. Said over the window,
+		// because the sidenav's path is core's and has no line of ours.
+		report.failed(entry.win, 'failed-action', e);
 		return;
 	}
 

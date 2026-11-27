@@ -1,4 +1,4 @@
-/* global Zotero */
+/* global Zotero, setTimeout */
 
 'use strict';
 
@@ -54,6 +54,7 @@
 
 let l10n = require('./l10n.js');
 let splitPane = require('./splitPane.js');
+let report = require('./report.js');
 
 const PANE_CSS = `
 	.zg-item-row {
@@ -79,6 +80,16 @@ const PANE_CSS = `
 	/* core: item-pane #batch-edit-prompt-message */
 	.zg-batch-prompt-message {
 		padding: 3px 8px;
+	}
+	/* A draw that threw, said where the paper would have been. See
+	   showFailure(). */
+	.zg-pane-failure {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 8px;
 	}
 `;
 
@@ -162,6 +173,12 @@ async function show(entry, itemIDs, { inView = null, status = () => {}, expand =
 		// Nothing is drawn while the pane is collapsed, so what is behind the
 		// strip of icons is whatever was there when it was put away. Forgetting
 		// it is what sends the loop back over it; same reason as redraw().
+		pane.shownKey = null;
+	}
+
+	// Core asking to see a selection whose draw failed is a retry. The page
+	// restating it -- which it does on every slider tick -- is not; see draw().
+	if (expand && pane.failedKey != null && pane.failedKey === pane.wantedKey) {
 		pane.shownKey = null;
 	}
 
@@ -253,10 +270,18 @@ async function draw(entry, pane) {
 		while (entry.itemPane === pane && pane.wantedKey !== pane.shownKey) {
 			pane.shownKey = pane.wantedKey;
 			await drawOnce(entry, pane, pane.wanted);
+			pane.failedKey = null;
 		}
 	}
 	catch (e) {
-		Zotero.logError(e);
+		// Left as drawn, and remembered as failed. The page restates the
+		// selection on every slider tick, and a paper that cannot be drawn
+		// would otherwise be drawn, fail and be logged again on each one. A
+		// different selection is drawn as ever; coming back to this one after
+		// it, expanding the pane (redraw()) or core asking to see it (show()'s
+		// `expand`) is what tries it again.
+		pane.failedKey = pane.shownKey;
+		report.failed(inPane(entry, pane), 'failed-item', e);
 	}
 	finally {
 		pane.rendering = false;
@@ -429,7 +454,7 @@ function enableBatch(entry, pane) {
 	pane.batch = true;
 	setBatchCollapsible(pane, true);
 	want(pane, pane.wanted);
-	draw(entry, pane).catch(e => Zotero.logError(e));
+	draw(entry, pane).catch(e => report.failed(inPane(entry, pane), 'failed-item', e));
 }
 
 /** Done: back to the count and the offer, with the same selection still made.
@@ -438,7 +463,7 @@ function disableBatch(entry, pane) {
 	setBatchCollapsible(pane, false);
 	pane.batch = false;
 	want(pane, pane.wanted);
-	draw(entry, pane).catch(e => Zotero.logError(e));
+	draw(entry, pane).catch(e => report.failed(inPane(entry, pane), 'failed-item', e));
 }
 
 /**
@@ -585,6 +610,58 @@ function ensureMessage(entry, pane) {
 }
 
 /**
+ * The pane as somewhere lib/report.js can say a failure: one line, in the
+ * middle of the pane, where the paper would have been.
+ */
+function inPane(entry, pane) {
+	return { win: entry.win, say: text => showFailure(entry, pane, text) };
+}
+
+/**
+ * Say that the draw failed, on a page of the deck of its own -- not over the
+ * half-drawn sections, whose fields could still be typed into for a paper the
+ * pane has given up on. The next draw that works faces something else.
+ *
+ * @returns {Boolean} false when not even this could be built, which sends
+ *   report.failed() on to the notice over the window
+ */
+function showFailure(entry, pane, text) {
+	if (!pane.failure) {
+		try {
+			let doc = entry.win.document;
+			let box = doc.createXULElement('vbox');
+			box.className = 'zg-pane-failure';
+			// Read out when it changes, as the graph page's status line is.
+			box.setAttribute('role', 'status');
+			box.setAttribute('aria-live', 'polite');
+			let line = doc.createXULElement('description');
+			box.appendChild(line);
+			pane.deck.appendChild(box);
+			pane.failure = { box, line };
+		}
+		catch (e) {
+			Zotero.logError(e);
+			return false;
+		}
+	}
+	// The page up first and the words after, a moment later: a live region
+	// announces a change to what is in it, so text that arrives with the page
+	// can go unread, and the same failure twice is no change at all. Emptied
+	// now, filled on a later tick, it is read every time.
+	let { line } = pane.failure;
+	face(pane, pane.failure.box);
+	line.textContent = '';
+	let said = pane.failure.said = (pane.failure.said || 0) + 1;
+	setTimeout(() => {
+		if (pane.failure && pane.failure.said === said) line.textContent = text;
+	}, ANNOUNCE_MS);
+	return true;
+}
+
+// Long enough to land in a refresh of its own after the page is faced.
+const ANNOUNCE_MS = 100;
+
+/**
  * The batch-editing prompt, built the first time two nodes are picked.
  *
  * Core's markup (ItemPane's content template) with core's two strings, in a box
@@ -727,7 +804,7 @@ function redraw(entry) {
 	let pane = entry.itemPane;
 	if (!pane || pane.wantedKey == null) return;
 	pane.shownKey = null;
-	draw(entry, pane).catch(e => Zotero.logError(e));
+	draw(entry, pane).catch(e => report.failed(inPane(entry, pane), 'failed-item', e));
 }
 
 // --- the pane ----------------------------------------------------------
@@ -809,6 +886,8 @@ function ensurePane(entry) {
 		note: null,        // the note editor, built on the first note (ensureNote)
 		message: null,     // core's message pane, built on the first count
 		prompt: null,      // the batch-editing offer, built on the first pair
+		failure: null,     // what a draw that threw says, built on the first one
+		failedKey: null,   // key(want()) of the draw that threw, until one works
 		facing: details,   // the deck page on show
 		pinned: null,      // a page that stays up until it is taken down
 		behind: null,      // the page a render drew while one was pinned over it

@@ -799,6 +799,8 @@
 	// set with Autobuild off, and worked out from the payload rather than
 	// remembered across one -- see syncPending().
 	let pending = false;
+	// The failure the status line is showing, while it is -- see statusLine().
+	let failure = null;
 
 	let el = id => document.getElementById(id);
 	let elGraph = el('graph');
@@ -961,7 +963,15 @@
 		return seen ? { x: x / seen, y: y / seen } : null;
 	}
 
+	// What the page tells chrome on its own -- settings saved, the selection
+	// restated on a slider tick, a box resized, a log line. None of them is the
+	// user doing something next, so none of them takes a failure off the line.
+	const PASSIVE_MESSAGES = new Set(['view', 'trace', 'item-pane-show', 'advanced-search-rect', 'gaps-lit', 'node-menu-close', 'search-mode']);
+
 	function emit(msg) {
+		// The user's next action: the failure before it is not news any more,
+		// and if this one fails too it is said afresh.
+		if (failure && !PASSIVE_MESSAGES.has(msg.type)) endFailure();
 		window.dispatchEvent(new CustomEvent('zg-event', { detail: JSON.stringify(msg) }));
 	}
 
@@ -981,7 +991,7 @@
 			next = JSON.parse(json);
 		}
 		catch (e) {
-			elStatus.textContent = t('bad-payload', { message: e.message });
+			statusLine(t('bad-payload', { message: e.message }), true);
 			return;
 		}
 		let adopted = next.meta && next.meta.adopted;
@@ -1136,8 +1146,56 @@
 	window.zgSetStatus = function (text) {
 		// The hint, while there is one, is what the line says when nothing else
 		// has anything to say -- see offerHint().
+		failure = null;
+		elStatus.classList.remove('failed');
 		elStatus.textContent = text || hint || '';
 	};
+
+	/**
+	 * Something the user asked for in this tab has failed -- chrome says what,
+	 * through lib/report.js. The same line as every other status, so it is
+	 * where the reader is already looking and is read out the same way (it is
+	 * role=status); `failed` is only how it looks, since the words already say
+	 * it failed. It stays until something else is said on the line, or the
+	 * user's next action -- see emit().
+	 *
+	 * Answers whether anyone can see it. While a build's bar stands in for the
+	 * line (showProgress()) the line is hidden, and chrome puts the failure up
+	 * as a notice over the window instead. It is still written here: a build
+	 * that failed is said while its bar is still up, and the line it leaves
+	 * behind when the bar comes down is that failure.
+	 *
+	 * @returns {Boolean}
+	 */
+	window.zgSetError = function (text) {
+		return sayFailure(text);
+	};
+
+	function sayFailure(text) {
+		statusLine(text, true);
+		return !elStatus.hidden;
+	}
+
+	/** The status line, said from this page. `failed` for this page's own
+	 *  failures, which look like chrome's; anything else clears that look. */
+	function statusLine(text, failed) {
+		failure = failed && text ? text : null;
+		elStatus.classList.toggle('failed', !!failure);
+		elStatus.textContent = text || '';
+	}
+
+	/**
+	 * Take a failure off the line once the user has moved on. A red "That did
+	 * not work" left up beside an action that then worked says the wrong thing
+	 * about it. What replaces it is what an empty line shows: the hint, if one
+	 * is waiting.
+	 */
+	function endFailure() {
+		if (!failure) return;
+		if (elStatus.textContent === failure) elStatus.textContent = hint || '';
+		elStatus.classList.remove('failed');
+		failure = null;
+	}
 
 	/**
 	 * A build in flight, as a place on a bar: which phase of how many, how far
@@ -2472,7 +2530,7 @@
 		}
 		if (!msg.key) return;
 		if (!(drawnNodes || []).some(n => n.id === msg.key)) {
-			elStatus.textContent = t('gaps-off-screen');
+			statusLine(t('gaps-off-screen'));
 			return;
 		}
 		paneEngaged = true;
@@ -5501,7 +5559,7 @@
 		}
 		catch (e) {
 			trace('export failed: ' + (e && e.message));
-			elStatus.textContent = t('export-failed');
+			statusLine(t('export-failed'), true);
 			return;
 		}
 		emit({ type: 'export', format, name: exportName(), text });
@@ -7988,7 +8046,7 @@
 	/** The button's own path, which builds whatever the switch says. */
 	function rebuildNow() {
 		syncEnabled();
-		elStatus.textContent = t('status-rebuilding');
+		statusLine(t('status-rebuilding'));
 		emit({ type: 'rebuild', options: scopeOptions() });
 		// Still pending until the payload lands: the graph being read is the
 		// old one for as long as the new one takes.
@@ -8013,7 +8071,7 @@
 			syncPending();
 			return;
 		}
-		elStatus.textContent = t(elEnrich.checked ? 'status-looking-up' : 'status-dropping-names');
+		statusLine(t(elEnrich.checked ? 'status-looking-up' : 'status-dropping-names'));
 		emit({ type: 'lookup', on: elEnrich.checked });
 	}
 

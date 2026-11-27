@@ -27,6 +27,8 @@
 
 'use strict';
 
+let report = require('./report.js');
+
 const MODE_PREF = 'search.quicksearch-mode';
 
 // Core's names for the three, from zotero.properties: the menu and the
@@ -211,9 +213,9 @@ function pane(entry, reply) {
 	// controls write into the search only when asked to.
 	editor.addEventListener('input', () => editor.updateSearch());
 	editor.addEventListener('command', () => editor.updateSearch());
-	submit.addEventListener('command', () => run(entry).catch(e => Zotero.logError(e)));
+	submit.addEventListener('command', () => run(entry).catch(e => report.failed(win, 'failed-search', e)));
 	clear.addEventListener('command', () => reset(entry));
-	box.addEventListener('keydown', event => onKey(entry, event).catch(e => Zotero.logError(e)));
+	box.addEventListener('keydown', event => onKey(entry, event).catch(e => report.failed(win, 'failed-search', e)));
 
 	// The page keeps the canvas clear of the pane, so it is told its height
 	// whenever that moves -- a condition added, a group opened, the pane shut.
@@ -400,6 +402,9 @@ function placeBox(adv, rect) {
 
 /** A rebuild can bring in items the last answer never saw: ask again. */
 function refresh(entry) {
+	// Log-only: the rebuild asked, not the user, and the search they did run
+	// already answered. If it fails again they will see it when they next
+	// press Search, which goes through report.failed().
 	if (entry.adv && entry.adv.active) run(entry).catch(e => Zotero.logError(e));
 }
 

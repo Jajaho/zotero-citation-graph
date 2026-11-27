@@ -11,6 +11,7 @@ let nodeMenu = require('./nodeMenu.js');
 let prefsPane = require('./prefsPane.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
+let report = require('./report.js');
 
 // Two entry points, two registrations. MenuManager keys a menu by id and each
 // target gets its own popup, so the collection tree's entry and the item
@@ -106,6 +107,8 @@ module.exports = {
 		this.registerMenu();
 		this.registerItemMenu();
 		// Not awaited: nothing a graph tab needs waits on the Settings window.
+		// Log-only: this runs at startup, before anyone has asked for anything,
+		// and a Settings pane that did not register is noticed by its absence.
 		prefsPane.register(config).catch(e => Zotero.logError(e));
 	},
 
@@ -226,13 +229,11 @@ module.exports = {
 							el.setAttribute('label', l10n.attr('view-citation-graph', 'label'));
 						}
 					},
-					onCommand: (event, ctx) => {
+					onCommand: (event, ctx) => command(event, (win) => {
 						let rows = (ctx && ctx.collectionTreeRows) || [];
-						if (rows.length !== 1) return;
-						let collection = rows[0].ref;
-						let win = windowOf(event);
-						graphTab.open(win, collection, _config).catch(e => Zotero.logError(e));
-					},
+						if (rows.length !== 1) return null;
+						return graphTab.open(win, rows[0].ref, _config);
+					}),
 				},
 			],
 		});
@@ -271,14 +272,13 @@ module.exports = {
 							el.setAttribute('label', l10n.attr('view-citation-graph', 'label'));
 						}
 					},
-					onCommand: (event, ctx) => {
+					onCommand: (event, ctx) => command(event, (win) => {
 						let keys = graphableKeys(ctx);
-						if (!keys.length) return;
-						let win = windowOf(event);
-						graphTab.openSelection(
+						if (!keys.length) return null;
+						return graphTab.openSelection(
 							win, keys[0].libraryID, keys.map(k => k.key), anchorCollection(ctx), _config
-						).catch(e => Zotero.logError(e));
-					},
+						);
+					}),
 				},
 			],
 		});
@@ -320,6 +320,30 @@ function entryElement(ctx) {
 function windowOf(event) {
 	let doc = event && event.target && event.target.ownerDocument;
 	return (doc && doc.defaultView) || Zotero.getMainWindow();
+}
+
+/**
+ * Run a menu entry's command, and say so if it fails -- whether it throws on
+ * the spot (reading the selection, finding the window) or rejects later
+ * (opening the tab). Either is a click that did nothing, which is #26; the
+ * window it is said over is the one the menu was opened in, as far as that
+ * can be found at all.
+ *
+ * @param {Event} event
+ * @param {Function} run  (win) -> ?Promise
+ */
+function command(event, run) {
+	let win;
+	try {
+		win = windowOf(event);
+		let done = run(win);
+		if (done && typeof done.catch === 'function') {
+			done.catch(e => report.failed(win, 'failed-open', e));
+		}
+	}
+	catch (e) {
+		report.failed(win, 'failed-open', e);
+	}
 }
 
 /**
@@ -483,6 +507,8 @@ const OPTIONAL_HOOKS = ['undoClose', 'duplicate', 'refocus'];
  */
 function restoreLate(win) {
 	if (!_appStartup) return;
+	// Log-only: restore runs as Zotero starts, not on a click, and a notice
+	// about a tab nobody has asked for yet would be noise on every launch.
 	graphTab.restoreMissing(win).catch(e => Zotero.logError(e));
 }
 

@@ -485,6 +485,22 @@ zotero-citation-graph-export-legend-edges = Kanten, nach stärkstem Beleg
 zotero-citation-graph-export-saved = { $file } gespeichert
 zotero-citation-graph-export-failed = Der Graph konnte nicht exportiert werden.
 
+## Wenn etwas fehlschlägt, worum du gebeten hast.
+#
+# lib/report.js meldet jeden Fehler einmal, dort, wo man gerade hinschaut: vor
+# der Graphseite als kleiner Hinweis in der Ecke des Zotero-Fensters (Titel:
+# notice-title), im Graph-Tab auf der Statuszeile, im Infobereich neben dem
+# Graphen als Zeile im Bereich. { $message } ist der Fehlertext selbst und
+# meist englisch.
+
+zotero-citation-graph-notice-title = Zitationsgraph
+zotero-citation-graph-failed-open = Der Graph konnte nicht geöffnet werden: { $message }
+zotero-citation-graph-failed-page = Der Graph konnte nicht geladen werden: { $message }
+zotero-citation-graph-failed-action = Das ist fehlgeschlagen: { $message }
+zotero-citation-graph-failed-new-collection = Die Sammlung konnte nicht angelegt werden: { $message }
+zotero-citation-graph-failed-search = Die Suche ist fehlgeschlagen: { $message }
+zotero-citation-graph-failed-item = Dieser Eintrag konnte nicht angezeigt werden: { $message }
+
 ## Die Seite des Plugins in Zoteros Einstellungen.
 
 zotero-citation-graph-prefs-title = Zitationsgraph

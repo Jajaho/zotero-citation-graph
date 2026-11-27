@@ -609,6 +609,24 @@ zotero-citation-graph-export-legend-edges = Edges, by strongest evidence
 zotero-citation-graph-export-saved = Saved { $file }
 zotero-citation-graph-export-failed = The graph could not be exported.
 
+## When something the user asked for fails.
+#
+# lib/report.js says each failure once, where the user is looking. Before there
+# is a graph page -- the context menu entries, New Collection in the add dialog,
+# the Advanced Search pane -- it is a small notice in the corner of Zotero's
+# window, headed by notice-title. In a graph tab it is the status line, and in
+# the item pane beside the graph a line in the pane. { $message } is the error's
+# own text, which comes from Zotero or from the code that failed and is usually
+# English whatever the locale.
+
+zotero-citation-graph-notice-title = Citation Graph
+zotero-citation-graph-failed-open = Could not open the graph: { $message }
+zotero-citation-graph-failed-page = Could not load the graph: { $message }
+zotero-citation-graph-failed-action = That did not work: { $message }
+zotero-citation-graph-failed-new-collection = Could not create the collection: { $message }
+zotero-citation-graph-failed-search = Could not search: { $message }
+zotero-citation-graph-failed-item = Could not show this item: { $message }
+
 ## The plugin's page in Zotero's Settings window.
 #
 # The title is the pane's name in the Settings sidebar and its heading. The

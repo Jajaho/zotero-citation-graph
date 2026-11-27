@@ -27,6 +27,7 @@ let searchPane = require('./searchPane.js');
 let exportFile = require('./exportFile.js');
 let l10n = require('./l10n.js');
 let trace = require('./trace.js');
+let report = require('./report.js');
 let { normDoi } = require('../citation-graph/core/normalize.js');
 let { externalKey } = require('../citation-graph/core/types.js');
 let { QUOTA, BAD_KEY } = require('../citation-graph/enrich/openalex.js');
@@ -485,7 +486,7 @@ function openScope(win, scope, options, config, { index = null, view = null } = 
 
 	trace.log(`opened a graph tab for ${scopeSummary(scope)}  strip=[${stripSummary(win)}]`);
 	mount(win, id, container, scope, config, options, view)
-		.catch(e => Zotero.logError(e));
+		.catch(e => report.failed(onPage(win, id), 'failed-page', e));
 }
 
 /** What a scope is, in one word and a number, for the lifecycle log. */
@@ -587,7 +588,8 @@ async function reopen(win, tab, tabIndex) {
 		return true;
 	}
 	catch (e) {
-		Zotero.logError(e);
+		// Undo Close Tab, from the tab menu or the keyboard: asked for.
+		report.failed(win, 'failed-open', e);
 		return false;
 	}
 }
@@ -610,7 +612,8 @@ async function duplicate(win, tab, tabIndex, config) {
 		});
 	}
 	catch (e) {
-		Zotero.logError(e);
+		// Duplicate Tab, from the tab menu: asked for.
+		report.failed(win, 'failed-open', e);
 	}
 }
 
@@ -655,6 +658,8 @@ function watchCollections() {
 					if (!c || !changed.has(c.id)) continue;
 					let count = entry.built ? entry.built.state.items.length : null;
 					try {
+						// Log-only: nobody asked for this rename -- the collection was
+						// renamed elsewhere -- and a stale title is all it costs.
 						Promise.resolve(entry.win.Zotero_Tabs.rename(entry.tabID, tabTitle(entry.scope, count)))
 							.catch(e => Zotero.logError(e));
 					}
@@ -710,6 +715,8 @@ function restoreMissing(win) {
 	// the same session would each claim entries the other was still adding, and
 	// a caller awaiting the second would return before the first had finished.
 	// Chaining also means a second pass simply finds everything claimed.
+	// Log-only: this runs as Zotero starts, before anyone has clicked anything,
+	// and a notice on launch about a tab nobody asked for would be noise.
 	restoring_ = restoring_.then(() => restorePass(win)).catch(e => Zotero.logError(e));
 	return restoring_;
 }
@@ -775,7 +782,10 @@ async function load(win, tab, config) {
 		]);
 	}
 	catch (e) {
-		Zotero.logError(e);
+		// A restored tab the user has just selected, which will now stay
+		// empty. Over the window, not on the page: this is before there is
+		// one, and before the tab is in open_ for onPage() to find.
+		report.failed(win, 'failed-page', e);
 	}
 }
 
@@ -932,7 +942,11 @@ function mount(win, tabID, container, scope, config, options, view) {
 						return runBuild(tabID);
 					})
 					.catch((e) => {
-						Zotero.logError(e);
+						// The page never came up, or came up and could not be
+						// talked to: the graph the user asked for is not coming.
+						// Said on its status line if it has one, and over the
+						// window if not -- see report.failed().
+						report.failed(onPage(win, tabID), 'failed-page', e);
 						resolve();
 					});
 			}
@@ -994,7 +1008,7 @@ async function ready(win, tabID, cw, scope) {
 		catch (e) {
 			return;
 		}
-		handleMessage(win, tabID, scope, msg).catch(e => Zotero.logError(e));
+		handleMessage(win, tabID, scope, msg).catch(e => report.failed(onPage(win, tabID), 'failed-action', e));
 	});
 
 	// The tab's own settings, after the listener rather than with the strings
@@ -1015,7 +1029,7 @@ async function ready(win, tabID, cw, scope) {
  * menu are meant to end in the same dialog.
  */
 function fromPane(win, tabID, scope) {
-	return msg => handleMessage(win, tabID, scope, msg).catch(e => Zotero.logError(e));
+	return msg => handleMessage(win, tabID, scope, msg).catch(e => report.failed(onPage(win, tabID), 'failed-action', e));
 }
 
 async function handleMessage(win, tabID, scope, msg) {
@@ -1322,9 +1336,9 @@ async function runBuild(tabID) {
 		await buildPhases(entry, alive);
 	}
 	catch (e) {
-		// Nothing above this catches: mount() and the message handler log a
-		// rejection and move on, which left the status line on whatever phase
-		// threw and the page waiting for a payload that was never coming.
+		// Nothing above this settles the page: mount() and the message handler
+		// only report a rejection, which left the page waiting for a payload
+		// that was never coming.
 		Zotero.logError(e);
 		if (alive()) buildFailed(entry, e);
 	}
@@ -1445,7 +1459,11 @@ function stopBuild(entry) {
 function buildFailed(entry, e) {
 	let message = e && e.message ? e.message : String(e);
 	settle(entry, { failed: message });
-	send(entry, 'zgSetStatus', l10n.t('build-failed', { message }));
+	// In the line's error state, as any other failure the user started is.
+	// Said while the bar is still up -- runBuild()'s finally takes it down --
+	// so what zgSetError answers is not asked: the bar coming down is what
+	// shows it.
+	send(entry, 'zgSetError', l10n.t('build-failed', { message }));
 }
 
 /**
@@ -2581,7 +2599,8 @@ function retitle(entry, count) {
 	try {
 		// rename() is async, so its rejection needs catching on the promise as
 		// well as here. A tab that keeps a stale count in the strip is worth a
-		// line in the log and nothing more, either way.
+		// line in the log and nothing more, either way: log-only, because the
+		// build asked for the rename, not the user.
 		Promise.resolve(entry.win.Zotero_Tabs.rename(entry.tabID, tabTitle(entry.scope, count)))
 			.catch(e => Zotero.logError(e));
 	}
@@ -2824,6 +2843,9 @@ function watchChrome(win) {
 		let id = Zotero.Prefs.registerObserver('zoteroCitationGraph.openalex.apiKey', () => {
 			if (!pref('openalex.apiKey')) return;
 			for (let [tabID, entry] of [...open_]) {
+				// Log-only: a pref observer, which may be continuing tabs in
+				// windows nobody is looking at, and runBuild() and runLookup()
+				// already put their own failures on each tab's status line.
 				if (entry.quota) resumeAfterQuota(tabID).catch(e => Zotero.logError(e));
 			}
 		});
@@ -2854,15 +2876,53 @@ function watchChrome(win) {
 	};
 }
 
+/** @returns {Boolean} whether the page took it -- false for a page that has
+ *  not loaded, or has no such function. See onPage(). */
 function send(entry, fn, value) {
+	return ask(entry, fn, value) !== NOT_SENT;
+}
+
+const NOT_SENT = Symbol('not sent');
+
+/** send(), and what the page answered -- NOT_SENT when it was never asked. */
+function ask(entry, fn, value) {
 	let cw = entry.browser.contentWindow;
-	if (!cw || !cw.wrappedJSObject[fn]) return;
+	if (!cw || !cw.wrappedJSObject[fn]) return NOT_SENT;
 	try {
-		cw.wrappedJSObject[fn](typeof value === 'string' ? value : JSON.stringify(value));
+		return cw.wrappedJSObject[fn](typeof value === 'string' ? value : JSON.stringify(value));
 	}
 	catch (e) {
+		// Log-only: a page function that threw is the page's own failure, and
+		// this is the call every failure is said through -- it cannot report
+		// through itself.
 		Zotero.logError(e);
+		return NOT_SENT;
 	}
+}
+
+/**
+ * A graph tab's status line, as somewhere lib/report.js can say a failure.
+ *
+ * By tab id rather than by entry, because the failures this is for come late.
+ * mount() registers the entry before anything in it can reject, so a failure
+ * that finds no entry is one whose tab was closed in the meantime -- nobody is
+ * waiting on it, the log already has it, and a notice about a tab the user
+ * just closed would be a false alarm. A page that never published zgSetError
+ * -- one that never loaded, the commonest way for a mount to fail -- is the
+ * case for the notice over the window instead, and so is a page whose line is
+ * hidden behind a build's bar: zgSetError answers false then.
+ */
+function onPage(win, tabID) {
+	return {
+		win,
+		say: (text) => {
+			let entry = open_.get(tabID);
+			if (!entry) return true;
+			if (!entry.browser) return false;
+			let answer = ask(entry, 'zgSetError', text);
+			return answer !== NOT_SENT && answer !== false;
+		},
+	};
 }
 
 /** Progress fires per item; the bridge does not need 400 crossings a second. */

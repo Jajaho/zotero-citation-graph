@@ -3349,7 +3349,7 @@ async function until(what, test, ms = 2000) {
  * Only for checkAlone(): the build it starts reads the shared Zotero stub
  * across every one of its awaits.
  */
-async function fakeLiveTab({ collection, absent = [] } = {}) {
+async function fakeLiveTab({ collection, absent = [], answers = {} } = {}) {
 	const graphTab = require_('./lib/graphTab.js');
 	const { made, win, element } = fakeMainWindow();
 	let loaded = null;
@@ -3371,6 +3371,8 @@ async function fakeLiveTab({ collection, absent = [] } = {}) {
 			}
 			catch (e) { /* bare text */ }
 			calls.push({ fn: name, value });
+			// What the page answers, for the few calls whose answer chrome reads.
+			return answers[name];
 		}),
 	});
 	const doc = {};
@@ -3578,6 +3580,342 @@ check('the item menu offers a graph of the papers selected, and only of those', 
 	if (!fireMenu('main/library/collection', {
 		collectionTreeRows: [inCollection, inCollection],
 	}).el.hidden) throw new Error('the collection entry answered a multi-selection');
+});
+
+// --- failures the user started (#32) -----------------------------------------
+
+/**
+ * #26 was a menu entry that threw on its first line on the Zotero 11 beta, and
+ * the only trace of it was in the error console: users could say no more than
+ * "nothing happens". Both entries now hand a failure to report.failed(), with
+ * the window the click came from -- which is where the notice goes up.
+ *
+ * Alone, because it puts a throwing graphTab.open() in place for the length of
+ * an await, and other checks open real tabs through it.
+ */
+checkAlone('a menu entry whose graph fails to open says so, over the window it was clicked in', async () => {
+	await restoreReady;
+	const graphTab = require_('./lib/graphTab.js');
+	const report = require_('./lib/report.js');
+	const inCollection = { isCollection: () => true, isFeedsOrFeed: () => false, ref: COLLECTION };
+	const paper = { key: 'AAAAAAAA', libraryID: 1, deleted: false, parentItem: null, isRegularItem: () => true };
+	const told = [];
+	const real = { open: graphTab.open, openSelection: graphTab.openSelection, failed: report.failed };
+	// What 0.78.2 did on Gecko 153: the window was undefined, and the first
+	// thing open() touched on it threw.
+	graphTab.open = async () => { throw new Error('win is undefined'); };
+	graphTab.openSelection = async () => { throw new Error('win is undefined'); };
+	report.failed = (where, what, error) => { told.push({ where, what, error }); };
+	try {
+		const win = { name: 'the window' };
+		fireMenu('main/library/collection', { collectionTreeRows: [inCollection] }, win).command();
+		fireMenu('main/library/item', { collectionTreeRows: [inCollection], items: [paper] }, win).command();
+		await until('both entries reported their failure', () => told.length >= 2);
+		if (told.length !== 2) throw new Error('reported ' + told.length + ' times');
+		for (const t of told) {
+			if (t.where !== win) throw new Error('reported over ' + JSON.stringify(t.where) + ', not the menu\'s window');
+			if (t.what !== 'failed-open') throw new Error('said ' + t.what);
+			if (!/win is undefined/.test(t.error && t.error.message)) throw new Error('lost the error: ' + t.error);
+		}
+
+		// And a throw before there is any promise at all -- reading the row the
+		// menu was opened on -- is the same click doing nothing.
+		told.length = 0;
+		const unreadable = {
+			isFeedsOrFeed: () => false,
+			isCollection: () => { throw new Error('row is gone'); },
+		};
+		fireMenu('main/library/item', { collectionTreeRows: [unreadable], items: [paper] }, win).command();
+		if (told.length !== 1 || told[0].where !== win || !/row is gone/.test(told[0].error.message)) {
+			throw new Error('a synchronous throw was not reported: ' + JSON.stringify(told.map(t => t.error && t.error.message)));
+		}
+	}
+	finally {
+		Object.assign(graphTab, { open: real.open, openSelection: real.openSelection });
+		report.failed = real.failed;
+	}
+});
+
+/**
+ * report.failed() itself: always the log, then one notice -- over the window it
+ * was given, on the surface it was given, or over the window behind a surface
+ * that could not say it. And not the same notice twice in a row: an action that
+ * fails on every slider tick is one failure to the person moving the slider.
+ */
+checkAlone('report.failed() logs, then tells the user once, where they are looking', async () => {
+	await l10nReady;
+	const report = require_('./lib/report.js');
+	const logged = [];
+	const toasts = [];
+	const realLog = Zotero.logError;
+	const realPW = Zotero.ProgressWindow;
+	Zotero.logError = e => logged.push(e);
+	Zotero.ProgressWindow = function (opts) {
+		const toast = { opts, headline: null, lines: [], shown: false, closeIn: null };
+		toasts.push(toast);
+		this.changeHeadline = (text) => { toast.headline = text; };
+		this.addDescription = (text) => { toast.lines.push(text); };
+		this.show = () => { toast.shown = true; };
+		this.startCloseTimer = (ms) => { toast.closeIn = ms; };
+	};
+	try {
+		report.reset();
+		const win = { openDialog() {}, closed: false };
+		const said = report.failed(win, 'failed-open', new Error('win is undefined'));
+		if (said !== 'Could not open the graph: win is undefined') throw new Error('said ' + said);
+		if (logged.length !== 1 || logged[0].message !== 'win is undefined') throw new Error('not logged first');
+		if (toasts.length !== 1) throw new Error(toasts.length + ' notices');
+		const [toast] = toasts;
+		if (toast.opts.window !== win) throw new Error('the notice was not over the menu\'s window');
+		if (!toast.opts.closeOnClick || !toast.shown || !(toast.closeIn > 0)) throw new Error('not a notice that goes away: ' + JSON.stringify(toast));
+		if (toast.headline !== 'Citation Graph') throw new Error('headline: ' + toast.headline);
+		if (toast.lines.join() !== said) throw new Error('line: ' + toast.lines.join());
+
+		// The same failure again straight away is the same notice, not a second.
+		report.failed(win, 'failed-open', new Error('win is undefined'));
+		if (toasts.length !== 1) throw new Error('the same failure stacked a second notice');
+		if (logged.length !== 2) throw new Error('a repeat was not logged');
+		// But only for a burst: tried again a few seconds later -- after the
+		// notice was clicked away, say -- it is said again.
+		const realClock = report.clock;
+		const later = Date.now() + report.BURST_MS + 1;
+		report.clock = () => later;
+		try {
+			report.failed(win, 'failed-open', new Error('win is undefined'));
+		}
+		finally {
+			report.clock = realClock;
+		}
+		if (toasts.length !== 2) throw new Error('a retry after the burst was swallowed');
+		toasts.pop();
+		if (report.BURST_MS > 2000) throw new Error('the burst is ' + report.BURST_MS + 'ms, which swallows a retry');
+
+		// No usable window -- #26 exactly -- leaves ProgressWindow to find the
+		// main window itself, rather than handing it something to throw on.
+		report.reset();
+		report.failed(undefined, 'failed-open', new Error('x'));
+		if ('window' in toasts[1].opts) throw new Error('handed ProgressWindow a window it cannot use');
+
+		// A surface that can say it is the only place it is said.
+		report.reset();
+		const lines = [];
+		report.failed({ win, say: t => { lines.push(t); return true; } }, 'failed-action', new Error('boom'));
+		if (lines.join() !== 'That did not work: boom') throw new Error('surface: ' + lines.join());
+		if (toasts.length !== 2) throw new Error('a failure said on the page also went up as a notice');
+
+		// One that cannot -- a page that never loaded -- falls back to its window.
+		report.failed({ win, say: () => false }, 'failed-page', new Error('graph page never published zgSetData'));
+		if (toasts.length !== 3 || toasts[2].opts.window !== win) throw new Error('a failure nobody could see stayed unseen');
+
+		// And nothing about telling can throw back into the catch it was called from.
+		report.reset();
+		Zotero.ProgressWindow = function () { throw new Error('no ProgressWindow'); };
+		report.failed(win, 'failed-search', 'a string, not an Error');
+		report.failed({ win, say: () => { throw new Error('page gone'); } }, 'failed-item', null);
+	}
+	finally {
+		Zotero.logError = realLog;
+		Zotero.ProgressWindow = realPW;
+		report.reset();
+	}
+});
+
+/**
+ * Every catch in addon/lib and bootstrap.js that only logs, and why it only
+ * logs.
+ *
+ * A catch that logs and says nothing is right for work nobody asked for at
+ * that moment, and was wrong for #26, where it hid a menu entry that did
+ * nothing. So each one left is listed here by file and enclosing function --
+ * with how many that function has, and the reason they stay quiet; a new one
+ * fails until it is either routed through report.failed() or listed here with
+ * its own reason. An entry that no longer matches what is there fails too, so
+ * the list cannot go stale.
+ *
+ * "Only logs" is a handler whose whole body is Zotero.logError() of what it
+ * caught, give or take a `return` and comments, in any of the three places a
+ * handler sits: `try {} catch (e) {}`, `.catch(handler)`, and
+ * `.then(null, handler)`.
+ */
+const LOG_ONLY_CATCHES = [
+	// Startup, shutdown and window lifecycle: nobody has clicked anything, and
+	// a notice on every launch about a tab nobody asked for would be noise.
+	{ file: 'bootstrap.js', fn: 'onMainWindowLoad', n: 1, reason: 'per-window setup as a window opens' },
+	{ file: 'bootstrap.js', fn: 'onMainWindowUnload', n: 1, reason: 'per-window teardown as a window closes' },
+	{ file: 'bootstrap.js', fn: 'shutdown', n: 1, reason: 'the plugin going away' },
+	{ file: 'lib/main.js', fn: 'startup', n: 1, reason: 'Settings pane registration at startup' },
+	{ file: 'lib/main.js', fn: 'shutdown', n: 1, reason: 'unregistering the menus as the plugin goes away' },
+	{ file: 'lib/main.js', fn: 'restoreLate', n: 1, reason: 'tab restore at startup' },
+	{ file: 'lib/prefsPane.js', fn: 'unregister', n: 1, reason: 'unregistering the Settings pane as the plugin goes away' },
+	{ file: 'lib/graphTab.js', fn: 'restoreMissing', n: 1, reason: 'tab restore at startup, the same pass as restoreLate()' },
+	{ file: 'lib/graphTab.js', fn: 'restorePass', n: 1, reason: 'reading session.json at startup' },
+	{ file: 'lib/graphTab.js', fn: 'restore', n: 1, reason: 'core\'s session restore hook, at startup' },
+	{ file: 'lib/graphTab.js', fn: 'dropEntry', n: 3, reason: 'teardown of a tab that has been closed: nobody is waiting on it' },
+	{ file: 'lib/nodeMenu.js', fn: 'close', n: 1, reason: 'taking a menu down, which is going away either way' },
+	// Work the user did not ask for at that moment, whose failure costs a
+	// detail and not the thing asked for.
+	{ file: 'lib/graphTab.js', fn: 'watchCollections', n: 3, reason: 'tab rename after a collection was renamed elsewhere, and the observer around it: a stale title is the whole cost' },
+	{ file: 'lib/graphTab.js', fn: 'retitle', n: 2, reason: 'tab rename the build asked for: a stale count in the strip is the whole cost' },
+	{ file: 'lib/graphTab.js', fn: 'watchChrome', n: 4, reason: 'following the colour scheme, the font size, the density and the API key pref; the builds a key resumes put their own failures on the status line' },
+	{ file: 'lib/graphTab.js', fn: 'refocus', n: 1, reason: 'putting the keyboard focus back in the page: the tab works without it' },
+	{ file: 'lib/graphTab.js', fn: 'saveTabData', n: 1, reason: 'persisting the tab\'s settings for the next session: the graph on screen is unaffected' },
+	{ file: 'lib/graphTab.js', fn: 'setPref', n: 1, reason: 'remembering the add dialog\'s last tag for next time' },
+	{ file: 'lib/graphTab.js', fn: 'emptyReason', n: 1, reason: 'a subcollection count for a hint: a hint not offered, not a failed build' },
+	{ file: 'lib/graphTab.js', fn: 'scopeNames', n: 2, reason: 'collection names for a node: fewer names, not a failed build' },
+	{ file: 'lib/graphTab.js', fn: 'heldByDoi', n: 1, reason: 'a library lookup that cannot be made answers "not held", and the add goes on and says how it went' },
+	{ file: 'lib/graphTab.js', fn: 'addByDoi', n: 1, reason: 'the tag after an add: the paper is in the library either way, and the add reports itself on the status line' },
+	{ file: 'lib/graphTab.js', fn: 'ask', n: 1, reason: 'a page function that threw: this is the call every failure is said through, so it cannot report through itself' },
+	{ file: 'lib/searchPane.js', fn: 'refresh', n: 1, reason: 'the search re-run after a rebuild: the rebuild asked, and pressing Search again goes through report.failed()' },
+	{ file: 'lib/addDialog.js', fn: 'open', n: 2, reason: 'watching for a tab switch to close the dialog: a dialog that cannot watch the tabs still works' },
+	{ file: 'lib/metadataCache.js', fn: 'flush', n: 1, reason: 'a background cache write: the next build looks it up again' },
+	{ file: 'lib/pdfLinkCache.js', fn: 'flush', n: 1, reason: 'a background cache write: the next build reads the PDFs again' },
+	{ file: 'lib/zoteroAdapter.js', fn: 'collectionItems', n: 1, reason: 'subcollections that cannot be listed: the collection itself is still graphed' },
+	{ file: 'lib/zoteroAdapter.js', fn: 'selectionItems', n: 1, reason: 'an item whose collections cannot be read is still graphed, without a colour' },
+	{ file: 'lib/main.js', fn: 'graphableKeys', n: 1, reason: 'one row of a selection that cannot be read is left out of the menu, not a menu that throws while it is built' },
+	{ file: 'lib/tabContext.js', fn: 'holds', n: 1, reason: 'answering core\'s "select this": a graph that cannot be asked hands the request back to core, which answers it' },
+	{ file: 'lib/tabContext.js', fn: 'graphRow', n: 1, reason: 'the row core\'s menus read: core\'s own answer stands in, poorer and not wrong' },
+	// Parts of core's UI that a Zotero might build differently, each of which
+	// has a fallback that still works.
+	{ file: 'lib/itemPane.js', fn: 'setBatchCollapsible', n: 1, reason: 'pinning the info section open while batch editing: the pane works without it' },
+	{ file: 'lib/itemPane.js', fn: 'ensureMessage', n: 1, reason: 'core\'s message pane: a pane that cannot show a count still shows papers' },
+	{ file: 'lib/itemPane.js', fn: 'ensureBatchPrompt', n: 1, reason: 'the batch-edit offer: its caller falls back to the plain count' },
+	{ file: 'lib/itemPane.js', fn: 'ensureNote', n: 1, reason: 'the note editor: a pane that cannot show notes still shows papers' },
+	{ file: 'lib/itemPane.js', fn: 'showFailure', n: 1, reason: 'the line that says a draw failed: answering false sends report.failed() on to the notice' },
+	{ file: 'lib/splitPane.js', fn: 'changed', n: 1, reason: 'telling a listener the panel moved: the panel did move' },
+	{ file: 'lib/splitPane.js', fn: 'collapsed', n: 1, reason: 'asking core whether the pane is collapsed: answered "no", which shows it' },
+	{ file: 'lib/splitPane.js', fn: 'saveWidth', n: 1, reason: 'remembering the panel width for next time' },
+];
+
+/**
+ * Where a handler only logs: the index of each one in `src`.
+ *
+ * Read by bracket-matching rather than by one regex, because the forms are
+ * many and the bodies nest. Strings and comments are not parsed -- good
+ * enough for this code base, and the self-check below says when it is not.
+ */
+function quietCatches(src) {
+	const sites = [];
+	const close = (from, open, shut) => {
+		let depth = 1;
+		let i = from;
+		for (; i < src.length && depth; i++) {
+			if (src[i] === open) depth++;
+			else if (src[i] === shut) depth--;
+		}
+		return i - 1;
+	};
+	const onlyLogs = (body, v) => {
+		const stmts = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+			.split(';').map(s => s.trim()).filter(Boolean);
+		const logs = s => new RegExp('^Zotero\\.logError\\(\\s*' + v + '\\s*\\)$').test(s);
+		return stmts.some(logs) && stmts.every(s => logs(s) || /^return\b/.test(s));
+	};
+	const handlerOnlyLogs = (h) => {
+		h = h.trim();
+		if (/^Zotero\.logError(?:\.bind\([\s\S]*\))?$/.test(h)) return true;
+		let m = h.match(/^(?:async\s*)?\(?\s*(\w+)\s*\)?\s*=>\s*([\s\S]*)$/)
+			|| h.match(/^(?:async\s+)?function\s*\w*\s*\(\s*(\w+)\s*\)\s*([\s\S]*)$/);
+		if (!m) return false;
+		let body = m[2].trim();
+		if (body.startsWith('{') && body.endsWith('}')) return onlyLogs(body.slice(1, -1), m[1]);
+		return onlyLogs(body, m[1]);
+	};
+	// Splits a call's arguments at its top-level commas.
+	const args = (text) => {
+		const out = [];
+		let depth = 0;
+		let start = 0;
+		for (let i = 0; i < text.length; i++) {
+			const c = text[i];
+			if ('([{'.includes(c)) depth++;
+			else if (')]}'.includes(c)) depth--;
+			else if (c === ',' && depth === 0) {
+				out.push(text.slice(start, i));
+				start = i + 1;
+			}
+		}
+		out.push(text.slice(start));
+		return out;
+	};
+
+	for (const m of src.matchAll(/\bcatch\s*\(\s*(\w+)\s*\)\s*\{/g)) {
+		const from = m.index + m[0].length;
+		if (onlyLogs(src.slice(from, close(from, '{', '}')), m[1])) sites.push(m.index);
+	}
+	for (const m of src.matchAll(/\.(catch|then)\(/g)) {
+		const from = m.index + m[0].length;
+		const a = args(src.slice(from, close(from, '(', ')')));
+		if (m[1] === 'catch' && a.length === 1 && handlerOnlyLogs(a[0])) sites.push(m.index);
+		if (m[1] === 'then' && a.length === 2 && /^\s*(?:null|undefined)\s*$/.test(a[0]) && handlerOnlyLogs(a[1])) sites.push(m.index);
+	}
+	return sites.sort((x, y) => x - y);
+}
+
+/** The function or method a line is in: the nearest declaration above it at
+ *  the top level or one tab in (an object literal's methods, as main.js has). */
+function enclosingFunction(lines, at) {
+	const decl = /^\t?(?:async\s+)?(?:function\s*\*?\s*)?(\w+)\s*\([^)]*\)\s*\{\s*$/;
+	for (let i = at; i >= 0; i--) {
+		const m = lines[i].match(decl);
+		if (m && !['if', 'for', 'while', 'switch', 'catch', 'with'].includes(m[1])) return m[1];
+	}
+	return null;
+}
+
+check('every catch in addon/lib that only logs is one the list says may stay quiet', () => {
+	// The scanner first, against the forms it is meant to see: a guard that
+	// has gone blind passes everything.
+	const quiet = [
+		'p.catch(e => Zotero.logError(e));',
+		'p.catch((err) => Zotero.logError(err));',
+		'p.catch(e => { Zotero.logError(e); });',
+		'p.catch(e => {\n\t// why\n\tZotero.logError(e);\n\treturn null;\n});',
+		'p.catch(function (e) { Zotero.logError(e); });',
+		'p.catch(Zotero.logError);',
+		'p.catch(Zotero.logError.bind(Zotero));',
+		'p\n\t\t.catch(e =>\n\t\t\tZotero.logError(e));',
+		'p.then(null, e => Zotero.logError(e));',
+		'p.then(undefined, (e) => { Zotero.logError(e); });',
+		'try {\n\tgo();\n}\ncatch (e) {\n\tZotero.logError(e);\n}',
+		'try { go(); } catch (e) { /* why */ Zotero.logError(e); return false; }',
+	];
+	for (const f of quiet) {
+		if (quietCatches(f).length !== 1) throw new Error('the scanner misses ' + JSON.stringify(f));
+	}
+	const loud = [
+		"p.catch(e => report.failed(win, 'failed-open', e));",
+		'p.catch(e => { Zotero.logError(e); status(String(e)); });',
+		'p.then(ok, e => Zotero.logError(e));',
+		'try { go(); } catch (e) { /* going away anyway */ }',
+		"try { go(); } catch (e) { report.failed(win, 'failed-open', e); }",
+	];
+	for (const f of loud) {
+		if (quietCatches(f).length) throw new Error('the scanner sees a catch that does more than log: ' + JSON.stringify(f));
+	}
+
+	const files = fs.readdirSync(path.join(addonDir, 'lib')).filter(f => f.endsWith('.js')).sort()
+		.map(f => 'lib/' + f).concat(['bootstrap.js']);
+	const found = [];
+	for (const file of files) {
+		const src = fs.readFileSync(path.join(addonDir, file), 'utf8');
+		const lines = src.split('\n');
+		for (const at of quietCatches(src)) {
+			const line = src.slice(0, at).split('\n').length - 1;
+			found.push({ file, fn: enclosingFunction(lines, line), line: line + 1 });
+		}
+	}
+	const problems = [];
+	for (const site of found) {
+		if (!LOG_ONLY_CATCHES.some(a => a.file === site.file && a.fn === site.fn)) {
+			problems.push(`${site.file}:${site.line} in ${site.fn}() only logs -- route it through report.failed(), or list it with its reason`);
+		}
+	}
+	for (const allowed of LOG_ONLY_CATCHES) {
+		const n = found.filter(s => s.file === allowed.file && s.fn === allowed.fn).length;
+		if (n !== allowed.n) problems.push(`${allowed.file} ${allowed.fn}(): listed with ${allowed.n}, found ${n}`);
+		if (!allowed.reason) problems.push(`${allowed.file} ${allowed.fn}(): no reason given`);
+	}
+	if (problems.length) throw new Error(problems.length + ' problem(s): ' + problems.join('\n\t'));
 });
 
 const t1 = check('a graph tab is still in the strip when Zotero.Session reads it', async () => {
@@ -3862,6 +4200,133 @@ checkAlone('a graph of a library whose items are not loaded yet waits for them',
 	}
 });
 
+/**
+ * A page action that throws in chrome is said on that tab's status line, in
+ * its error state -- not in a notice over the window, which is for failures
+ * with no page to say them on, and not only in the error console, which is
+ * where #26 went.
+ */
+checkAlone('a page action that fails says so on its tab\'s status line', async () => {
+	await l10nReady;
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection([paper]) });
+	await tab.built();
+
+	const realSearch = Zotero.Search;
+	const realPW = Zotero.ProgressWindow;
+	let notices = 0;
+	Zotero.ProgressWindow = function () { notices++; throw new Error('no notice expected'); };
+	Zotero.Search = function () { throw new Error('search index is gone'); };
+	try {
+		tab.emit({ type: 'quick-search', text: 'graphene', seq: 1 });
+		const said = await until('the failure on the status line', () => tab.sent('zgSetError').pop());
+		if (said !== 'That did not work: search index is gone') throw new Error('said ' + JSON.stringify(said));
+		if (notices) throw new Error('a failure with a page to say it on also went up as a notice');
+	}
+	finally {
+		Zotero.Search = realSearch;
+		Zotero.ProgressWindow = realPW;
+	}
+});
+
+/**
+ * While a build's bar stands in for the status line, the line is hidden and a
+ * failure written to it is a failure nobody sees -- until the build's own next
+ * status writes over it. The page says so (zgSetError answers false), and the
+ * failure goes up as a notice over the window instead.
+ */
+checkAlone('a page action that fails while a build is showing progress goes up as a notice', async () => {
+	await l10nReady;
+	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
+	stubLibrary({ 1: paper });
+	stubCollections();
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	const tab = await fakeLiveTab({ collection: liveCollection([paper]), answers: { zgSetError: false } });
+	await tab.built();
+
+	const report = require_('./lib/report.js');
+	const realSearch = Zotero.Search;
+	const realPW = Zotero.ProgressWindow;
+	const toasts = [];
+	Zotero.ProgressWindow = function (opts) {
+		const toast = { opts, lines: [] };
+		toasts.push(toast);
+		this.changeHeadline = () => {};
+		this.addDescription = (text) => { toast.lines.push(text); };
+		this.show = () => {};
+		this.startCloseTimer = () => {};
+	};
+	Zotero.Search = function () { throw new Error('search index is gone'); };
+	// A window ProgressWindow can open over, which the fake one is not.
+	tab.win.openDialog = () => {};
+	report.reset();
+	try {
+		tab.emit({ type: 'quick-search', text: 'graphene', seq: 1 });
+		await until('the failure as a notice', () => toasts.length);
+		if (toasts[0].opts.window !== tab.win) throw new Error('the notice was not over the tab\'s window');
+		if (toasts[0].lines.join() !== 'That did not work: search index is gone') throw new Error('said ' + toasts[0].lines.join());
+		if (!tab.sent('zgSetError').length) throw new Error('the page was not asked first');
+	}
+	finally {
+		Zotero.Search = realSearch;
+		Zotero.ProgressWindow = realPW;
+		report.reset();
+	}
+});
+
+/**
+ * The page's half: zgSetError says whether the line can be seen, and a failure
+ * comes off the line at the user's next action -- a red "That did not work"
+ * left beside an action that then worked says the wrong thing about it. What
+ * the page tells chrome on its own (settings saved, the pick restated on a
+ * slider tick) is not an action, and leaves it up.
+ */
+check('a failure on the status line says whether it is seen, and goes at the next action', () => {
+	const classes = new Set();
+	const elStatus = {
+		hidden: false,
+		textContent: '',
+		classList: {
+			toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); },
+			remove: (c) => { classes.delete(c); },
+		},
+	};
+	const sent = [];
+	const page = liftPage({
+		functions: ['sayFailure', 'statusLine', 'endFailure', 'emit'],
+		consts: ['PASSIVE_MESSAGES'],
+		globals: {
+			elStatus, hint: '', failure: null,
+			window: { dispatchEvent: e => sent.push(JSON.parse(e.detail).type) },
+			CustomEvent: class { constructor(type, init) { this.detail = init.detail; } },
+		},
+	});
+	if (page.sayFailure('That did not work: boom') !== true) throw new Error('a visible line said it was not seen');
+	if (!classes.has('failed') || elStatus.textContent !== 'That did not work: boom') throw new Error('not in its error state');
+
+	page.emit({ type: 'view' });
+	page.emit({ type: 'item-pane-show' });
+	if (!classes.has('failed') || !elStatus.textContent) throw new Error('the page\'s own reports took the failure down');
+
+	page.emit({ type: 'rebuild' });
+	if (classes.has('failed') || elStatus.textContent) throw new Error('the next action left the failure up: ' + elStatus.textContent);
+	if (sent.join() !== 'view,item-pane-show,rebuild') throw new Error('the messages themselves: ' + sent.join());
+
+	// Behind a build's bar the line is hidden: said, and answered false.
+	elStatus.hidden = true;
+	if (page.sayFailure('That did not work: boom') !== false) throw new Error('a hidden line claimed to be seen');
+
+	// And the hint, if one is waiting, is what an emptied line goes back to.
+	elStatus.hidden = false;
+	page.hint = 'Click a node to isolate it';
+	page.sayFailure('That did not work: boom');
+	page.emit({ type: 'export' });
+	if (elStatus.textContent !== page.hint) throw new Error('an emptied line showed ' + JSON.stringify(elStatus.textContent));
+});
+
 checkAlone('a build that throws says why, and leaves the page a finished graph', async () => {
 	await l10nReady;
 	const paper = fakeZoteroItem({ key: 'AAAAAAAA', id: 1, getAttachments: () => [], getCollections: () => [7] });
@@ -3883,7 +4348,8 @@ checkAlone('a build that throws says why, and leaves the page a finished graph',
 	const payload = await tab.built();
 	if (payload.meta.failed !== 'disk on fire') throw new Error('meta: ' + JSON.stringify(payload.meta));
 	if (payload.items.length || payload.edges.length) throw new Error('a failed first build drew something');
-	const said = tab.sent('zgSetStatus').pop();
+	// In the line's error state, as every failure the user started is (#32).
+	const said = tab.sent('zgSetError').pop();
 	if (!/disk on fire/.test(said) || !/^Could not build/.test(said)) throw new Error('the status line said: ' + said);
 
 	// And the tab is let go of: the next build is an ordinary one.
@@ -7013,6 +7479,8 @@ function referencedIds() {
 		'lib/main.js',
 		'lib/prefsPane.js',
 		'lib/exportFile.js',
+		'lib/searchPane.js',
+		'lib/report.js',
 	].map(f => fs.readFileSync(path.join(addonDir, f), 'utf8'));
 
 	const idLike = /'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g;
@@ -7021,6 +7489,12 @@ function referencedIds() {
 		// land -- an id asked for by another name, and still asked for.
 		for (const call of src.matchAll(/\b(?:t|tr|attr|word)\(([^)]*)\)/g)) {
 			for (const s of call[1].matchAll(idLike)) ids.add(s[1]);
+		}
+		// So is report.failed(where, 'failed-...', e), which formats the id it
+		// is given -- and whose `where` is often a call of its own, so the id is
+		// read from the rest of the line rather than up to the first ')'.
+		for (const call of src.matchAll(/\bfailed\([^\n]*?'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g)) {
+			ids.add(call[1]);
 		}
 	}
 	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
@@ -11464,6 +11938,77 @@ checkAlone('the item pane draws the newest pick, however slowly an older one res
 	// The old pick used to land last and be drawn over the click.
 	if (drawn.join(' ') !== '4') throw new Error('drew ' + drawn.join(' '));
 	if (entry.itemPane.wantedIDs !== '4') throw new Error('wants ' + entry.itemPane.wantedIDs);
+});
+
+/**
+ * A draw that throws says so in the pane, where the paper would have been --
+ * the click asked for something, and an unchanged pane is "nothing happens"
+ * again. The words land a moment after the page, so the live region reads
+ * them, and reads them again for a second failure.
+ *
+ * And it is tried again only when something new asks: the page restates the
+ * selection on every slider tick, and a paper that cannot be drawn was drawn,
+ * failed and logged again on each one.
+ */
+checkAlone('an item pane that cannot draw a paper says so in the pane, and tries again only when asked anew', async () => {
+	await l10nReady;
+	const itemPane = require_('./lib/itemPane.js');
+	let broken = true;
+	let attempts = 0;
+	const drawn = [];
+	const { made, win, element } = fakeWindow(async (el) => {
+		attempts++;
+		if (broken) throw new Error('section exploded');
+		drawn.push(el.item.id);
+	});
+	const entry = fakeEntry(win, element, 'tab-32a');
+	const paper = id => ({ id, libraryID: 1, parentItem: false, deleted: false, isNote: () => false, isRegularItem: () => true });
+	Zotero.Libraries = { get: () => ({ editable: true }) };
+	Zotero.Prefs = { get: () => 400, set: () => {} };
+	Zotero.Items = itemsByID(paper);
+	const realPW = Zotero.ProgressWindow;
+	const realLog = Zotero.logError;
+	let notices = 0;
+	let logged = 0;
+	Zotero.ProgressWindow = function () { notices++; throw new Error('no notice expected'); };
+	Zotero.logError = () => { logged++; };
+	const SAID = 'Could not show this item: section exploded';
+	const settle = () => new Promise(r => setTimeout(r, 150));
+	try {
+		await itemPane.show(entry, [1]);
+		const deck = made.find(el => el.localName === 'deck');
+		const failure = entry.itemPane.failure;
+		if (!failure || deck.selectedPanel !== failure.box) throw new Error('the pane did not say anything');
+		if (failure.box.attrs.role !== 'status') throw new Error('not read out: role=' + failure.box.attrs.role);
+		// The page first, the words after it.
+		if (failure.line.textContent) throw new Error('the words arrived with the page: ' + failure.line.textContent);
+		await settle();
+		if (failure.line.textContent !== SAID) throw new Error('said ' + failure.line.textContent);
+		if (notices) throw new Error('a failure the pane could say also went up as a notice');
+
+		// Slider ticks: the same selection, restated. Not drawn again.
+		for (let i = 0; i < 5; i++) await itemPane.show(entry, [1], { inView: 10 + i });
+		if (attempts !== 1 || logged !== 1) throw new Error(`a restated selection was drawn ${attempts} times and logged ${logged}`);
+
+		// Core asking to see it is a retry -- and a second failure is read out
+		// again: emptied, then said.
+		await itemPane.show(entry, [1], { expand: true });
+		if (attempts !== 2) throw new Error('core asking to see it was not a retry');
+		if (failure.line.textContent) throw new Error('a repeated failure was not emptied first, so it would not be read again');
+		await settle();
+		if (failure.line.textContent !== SAID) throw new Error('the second failure said ' + failure.line.textContent);
+
+		// A different paper is drawn as ever, and coming back is a retry.
+		broken = false;
+		await itemPane.show(entry, [2]);
+		await itemPane.show(entry, [1]);
+		if (drawn.join() !== '2,1') throw new Error('drew ' + drawn.join());
+		if (deck.selectedPanel !== entry.itemPane.details) throw new Error('the failure outstayed a draw that worked');
+	}
+	finally {
+		Zotero.ProgressWindow = realPW;
+		Zotero.logError = realLog;
+	}
 });
 
 checkAlone('core asking to see an item lifts the gap list that was pinned over the pane', async () => {

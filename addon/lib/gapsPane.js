@@ -244,15 +244,11 @@ function ensure(entry) {
  * itemPane.show() makes for its own `expand`.
  */
 function open(entry, tell) {
-	let gaps;
-	try {
-		gaps = ensure(entry);
-	}
-	catch (e) {
-		// A pane that cannot show this list is still a pane that shows papers.
-		Zotero.logError(e);
-		return;
-	}
+	// Not caught here. A pane that cannot show this list is still a pane that
+	// shows papers -- nothing below has touched it yet -- but the list was
+	// asked for, and graphTab's message handler is what says on the status
+	// line that it is not coming (report.failed()).
+	let gaps = ensure(entry);
 	if (!gaps) return;
 
 	// Which page of the deck is up is CHROME's fact, not the page's, and this is
