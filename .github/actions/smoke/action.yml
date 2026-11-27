@@ -9,10 +9,14 @@
 # version. That is the point: #26 broke when the 11 beta moved to a new Gecko,
 # with no change on our side, and nothing noticed until a user did.
 #
-# Callers give the step 20 minutes. The smoke run itself is cut off after 12
-# (SMOKE_MINUTES), well inside that, so a hang ends as a failed step and the
-# summary and the report upload below still run. A step or job timeout would
-# cancel the whole action and skip them.
+# Time. run.js launches Zotero once per shipped locale (two today). A pass
+# takes about 30 s on a desktop; a run in which every case waits out its 30 s
+# took 4.5 minutes (0.78.2 on the 11 beta). run.js stops itself after 15
+# minutes (--timeout 900) and still writes its report; `timeout` cuts it off
+# after 17 (SMOKE_MINUTES) in case it hangs past that. Callers give the step
+# 25 minutes, so a hang ends as a failed step and the summary and the report
+# upload below still run: a step or job timeout would cancel the whole action
+# and skip them.
 name: Smoke test
 description: Run tools/smoke/run.js against a built XPI in Zotero's current release or beta build.
 
@@ -86,7 +90,7 @@ runs:
         REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
         XVFB: ${{ inputs.xvfb }}
         XPI_DIR: ${{ inputs.xpi-dir }}
-        SMOKE_MINUTES: '12'
+        SMOKE_MINUTES: '17'
       run: |
         set -euo pipefail
         xpis=("$XPI_DIR"/*.xpi)
@@ -98,7 +102,7 @@ runs:
         rm -rf "$RUNNER_TEMP/smoke-xpi"
         mkdir -p "$RUNNER_TEMP/smoke-xpi"
         cp "${xpis[0]}" "$copy"
-        cmd=(npm run smoke -- --zotero "$ZOTERO" --xpi "$copy" --report "$REPORT")
+        cmd=(npm run smoke -- --zotero "$ZOTERO" --xpi "$copy" --report "$REPORT" --timeout 900)
         if [ "$XVFB" = true ]; then cmd=(xvfb-run --auto-servernum "${cmd[@]}" --headed); fi
         rc=0
         timeout --kill-after=30s "${SMOKE_MINUTES}m" "${cmd[@]}" || rc=$?
@@ -107,29 +111,17 @@ runs:
         fi
         exit "$rc"
 
-    # Which Zotero it ran on belongs on the run's page: the channel names no
-    # version, and next week's run may meet a different one.
+    # Which Zotero it ran on, each locale's cases and the allow.json entries
+    # belong on the run's page: the channel names no version, and next
+    # week's run may meet a different one. tools/smoke/summary.js says so
+    # when there is no report, and never fails.
     - name: Summary
       if: ${{ !cancelled() && steps.zotero.outcome == 'success' }}
       shell: bash
       env:
         CHANNEL: ${{ inputs.channel }}
-        VERSION: ${{ steps.zotero.outputs.version }}
-        GECKO: ${{ steps.zotero.outputs.gecko }}
-        OUTCOME: ${{ steps.smoke.outcome }}
         REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
-      run: |
-        {
-          echo "### Smoke test on Zotero $VERSION ($CHANNEL, Gecko $GECKO): $OUTCOME"
-          if [ -f "$REPORT" ]; then
-            node -e '
-              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-              for (const c of r.cases || []) console.log(`- ${c.ok ? "pass" : "FAIL"} ${c.name} (${c.ms} ms)${c.error ? ": " + c.error : ""}`);
-              const n = (k) => { const v = (r.console || {})[k]; return Array.isArray(v) ? v.length : Number(v) || 0; };
-              console.log(`\nconsole: ${n("errors")} errors, ${n("warnings")} warnings, ${n("ignored")} ignored`);
-            ' "$REPORT" || true
-          fi
-        } >> "$GITHUB_STEP_SUMMARY"
+      run: node tools/smoke/summary.js "$REPORT" --channel "$CHANNEL" >> "$GITHUB_STEP_SUMMARY" || true
 
     # Whatever report there is, also from a run that timed out.
     - name: Upload the smoke report

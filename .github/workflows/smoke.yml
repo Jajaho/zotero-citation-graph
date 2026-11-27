@@ -37,7 +37,7 @@ jobs:
   smoke:
     name: Smoke (${{ matrix.channel }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     strategy:
       # Each channel's answer is worth having on its own: a beta failure must
       # not cancel the release run, nor the other way round.
@@ -75,7 +75,7 @@ jobs:
 
       - name: Smoke test on Zotero's ${{ matrix.channel }} channel
         uses: ./.github/actions/smoke
-        timeout-minutes: 20
+        timeout-minutes: 25
         with:
           channel: ${{ matrix.channel }}
           xpi-dir: under-test/dist

@@ -50,7 +50,7 @@ jobs:
       # must not turn main red for a fix the release needs.
       - name: Smoke test on Zotero's release channel
         uses: ./.github/actions/smoke
-        timeout-minutes: 20
+        timeout-minutes: 25
         with:
           channel: release
 

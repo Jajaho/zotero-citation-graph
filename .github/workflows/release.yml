@@ -131,7 +131,7 @@ jobs:
       - name: Smoke test on Zotero's release channel
         if: hashFiles('.github/actions/smoke/action.yml') != ''
         uses: ./.github/actions/smoke
-        timeout-minutes: 20
+        timeout-minutes: 25
         env:
           GH_TOKEN: ''
         with:
