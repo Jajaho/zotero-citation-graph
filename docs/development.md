@@ -2242,7 +2242,7 @@ Copy `zotero.sqlite` before pointing the CLI at it — Zotero holds a write lock
 ```bash
 npm run smoke                                   # build, verify, test dist/<name>-<version>.xpi
 npm run smoke -- --xpi path/to/some.xpi         # test that file as it is
-npm run smoke -- --zotero "C:/path/to/zotero.exe" --report out.json --headed --timeout 300
+npm run smoke -- --zotero "C:/path/to/zotero.exe" --report out.json --headed --timeout 900
 ```
 
 `npm test` runs against hand-written Gecko mocks, and a mock can make the same wrong assumption
@@ -2255,49 +2255,68 @@ left their only trace.
 What it does (`tools/smoke/run.js`):
 
 1. Builds and verifies the XPI, unless `--xpi` names one.
-2. Makes a throwaway profile and data directory under the OS temp directory, and copies the XPI
+2. Runs everything below once per locale the XPI ships (`locale/<code>/` in the archive), with
+   `intl.locale.requested` pinned to it. Zotero 10 parses only the window locale's `.ftl`, so a
+   Fluent error in the German file can't show up in an English run.
+3. Makes a throwaway profile and data directory under the OS temp directory, and copies the XPI
    in as `extensions/<id>.xpi`. A sideload, not Marionette's `Addon:Install`, so the plugin
    starts with Zotero and before the main window, as it does for users. `tools/smoke/helper/`
    is installed beside it as a proxy file.
-3. Starts Zotero headless (`--headed` to watch) with `--marionette` on a free port, so it can
+4. Starts Zotero headless (`--headed` to watch) with `--marionette` on a free port, so it can
    run beside your own Zotero and beside other runs. Your Zotero, profile and data directory are
    never touched.
-4. Creates a collection "Smoke" with three journal articles, without DOIs or attachments.
-5. Opens the collection menu, the item menu over one item and the item menu over three, the way
-   a right-click does, and fires the plugin's entry. Each must open a graph tab whose `#status`
-   leaves "Loading…" within 30 s. Then it disables and re-enables the add-on.
-6. Fails on any console **error** whose source or text points at the XPI, at
-   `resource://zotero-citation-graph/`, or at `zotero-citation-graph.ftl`, and on any HTTP
-   request the plugin makes to a host other than this machine. The plugin's warnings are printed
-   but don't fail the run. Zotero's own errors are counted in the report and otherwise ignored.
-7. Writes the report (`smoke-report.json` unless `--report` says otherwise), stops Zotero and
-   deletes the profile and data directory, also on a failure, a timeout or Ctrl+C. Exits 1 on
-   failure.
+5. Waits for the plugin to finish starting: its `startup()` settled, as Zotero tells its plugin
+   observers.
+6. Creates a collection "Smoke" with three journal articles, without DOIs or attachments.
+7. Opens the collection menu, the item menu over one item and the item menu over three, the way
+   a right-click does, and fires the plugin's entry. Each must open a graph tab within 30 s whose
+   stats line counts the papers it was asked for ("3 / 3 items", in the page's own words, so in
+   any locale), and whose `#status` is neither "Loading…" nor marked `failed`. Then it disables
+   and re-enables the add-on and fires the collection entry once more.
+8. Writes the report (`smoke-report.json` unless `--report` says otherwise), stops Zotero and
+   deletes the profile and data directory, also on a failure, a timeout, a crash or Ctrl+C
+   (press it twice to skip the cleanup). Exits 1 on failure.
+
+The verdict:
+
+- Any console **error or warning** that names the plugin fails the run: its id, its menu ids, its
+  `.ftl` files, the XPI, or `resource://zotero-citation-graph/`, in the message's text, its
+  source, or its stack. The stack matters because a core API that throws under the plugin
+  reports a core file as the source. That was #26's kind of error.
+- Any HTTP request to a host other than this machine fails the run. A request is also marked
+  `ours` when the graph page's principal or one of the plugin's files is on it, but Zotero's own
+  requests fail too: the profile switches off everything a fresh Zotero fetched by itself (the
+  retractions list, the streaming server, update and blocklist checks), so a new one is a new
+  default to switch off in `smokePrefs()`.
+- Messages that name the plugin and that the helper had to drop from its buffer fail the run too.
+  The helper never drops them below a cap of 50,000.
+- Zotero's own errors are counted in the report and otherwise ignored. Errors with no source at
+  all, such as `uncaught exception: undefined`, are listed as "unattributed", with whatever stack
+  they carry, and don't fail the run.
+
+`tools/smoke/allow.json` lists the exceptions, each with a reason, as `{ "match": "<substring>",
+"reason": "…" }` or `{ "regex": "<pattern>", "reason": "…" }`. An entry is matched against a
+message's text, source and stack, or against a request's URL. Allowed messages are still printed,
+under "allowed", so they stay visible.
 
 The report is read by CI, so its shape is fixed:
 `{ ok, zotero: { path, version, gecko }, xpi, cases: [{ name, ok, ms, error? }], console: {
 errors, warnings, ignored }, network: [{ ours, method, url, ... }] }`, plus a top-level `error`
-when the run could not finish.
+when the run could not finish. Other fields are additions: `runs` (one per locale), and
+`allowed`, `unattributed` and the drop counts under `console`.
 
-An error the plugin cannot avoid goes in `tools/smoke/allow.json` as `{ "match": "<substring of
-the source or text>", "reason": "<why it is fine>" }`. The list starts empty, and every entry
-needs a reason.
-
-The helper (`tools/smoke/helper/`, never shipped) does three things Zotero doesn't:
+The helper (`tools/smoke/helper/`, never shipped) does what Zotero doesn't:
 
 - It sends `browser-idle-startup-tasks-finished` once the main window has loaded. Marionette
-  waits for that Firefox notification before it opens a session, and Zotero never sends it.
+  waits for that Firefox notification before it opens a session, and Zotero on Windows never
+  sends it.
 - It keeps every console message from its own startup on, plus the backlog from before it, and
-  `console.*` calls, which never reach the console service.
-- It records every HTTP request to a host other than localhost, with its principals and the
-  files on the JS stack when it was opened.
-
-A request is the plugin's (`ours: true`) when the graph page's `resource://` principal is on it,
-or when one of the plugin's files was on the stack when it was opened. Only those fail the run.
-Zotero's own requests are listed with `ours: false`. The profile switches off what a fresh Zotero
-fetches by itself (the retractions list, the streaming server, update and blocklist checks), so
-that list stays short. If a new Zotero adds a request, find the pref that stops it and add it to
-`smokePrefs()`.
+  `console.*` calls, which never reach the console service, each with its stack. It wraps
+  `Zotero.logError` and `Zotero.warn`, passing the call straight through, to keep the stacks
+  that `Zotero.log()` throws away.
+- It records every HTTP request to a host other than localhost, with its principals and the JS
+  stack when it was opened.
+- It records when each plugin's `startup()` and `shutdown()` have settled.
 
 Starting and stopping Zotero (`tools/lib/zotero-launch.js`) and the Marionette client
 (`tools/lib/marionette.js`) are shared with the rendering benchmark. On Windows, Zotero is

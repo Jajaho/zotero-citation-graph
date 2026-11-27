@@ -8,7 +8,7 @@
 			"id": "zg-smoke-helper@jajaho.dev",
 			"update_url": "https://127.0.0.1/never-updated.json",
 			"strict_min_version": "7.0",
-			"strict_max_version": "12.*"
+			"strict_max_version": "99.*"
 		}
 	}
 }

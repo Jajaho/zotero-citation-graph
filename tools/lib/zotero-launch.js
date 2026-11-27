@@ -93,7 +93,13 @@ function installProxy(profile, dir) {
 /** Zotero's binary: `override` if given, else the usual install locations. */
 function findZotero(override) {
 	if (override) {
-		if (!fs.existsSync(override)) throw new Error('no Zotero at ' + override);
+		let stat = null;
+		try { stat = fs.statSync(override); }
+		catch (e) { /* reported below */ }
+		if (!stat) throw new Error('no Zotero at ' + override);
+		// A directory "exists" too, and spawning one fails with an EACCES that
+		// says nothing about which argument was wrong.
+		if (!stat.isFile()) throw new Error(override + ' is not a file: pass the Zotero binary itself');
 		return override;
 	}
 	const candidates = {
@@ -137,11 +143,29 @@ function freePort() {
  * stopByProfile() finds it by its command line instead.
  */
 function spawnApp(binary, args, { env = {}, stdio = ['ignore', 'pipe', 'pipe'] } = {}) {
+	// null in `env` takes a variable out of the inherited environment: a
+	// MOZ_HEADLESS left in the shell would otherwise override --headed.
+	const merged = Object.assign({}, process.env);
+	for (const [k, v] of Object.entries(env)) {
+		if (v == null) delete merged[k];
+		else merged[k] = v;
+	}
 	return spawn(binary, args, {
 		stdio,
-		env: Object.assign({}, process.env, env),
+		env: merged,
 		detached: process.platform !== 'win32',
 	});
+}
+
+/**
+ * The last resort, for process.on('exit'), where nothing asynchronous runs:
+ * SIGKILL to the process group spawnApp() made. Off Windows only -- there the
+ * group is the handle; on Windows an attached child goes with the console.
+ */
+function killGroupSync(child) {
+	if (process.platform === 'win32' || !child || !child.pid) return;
+	try { process.kill(-child.pid, 'SIGKILL'); }
+	catch (e) { /* already gone */ }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -214,15 +238,16 @@ async function stopGroup(child, profile) {
 
 /** rmSync, a few times: Windows keeps a dead process's files locked a moment. */
 async function removeDir(dir) {
-	if (!dir) return;
+	if (!dir) return true;
 	for (let i = 0; i < 10; i++) {
-		try { fs.rmSync(dir, { recursive: true, force: true }); return; }
+		try { fs.rmSync(dir, { recursive: true, force: true }); return true; }
 		catch (e) { await sleep(500); }
 	}
 	console.error('  could not delete ' + dir);
+	return false;
 }
 
 module.exports = {
 	makeProfile, zoteroPrefs, installProxy, findZotero, freePort, spawnApp,
-	stopByProfile, removeDir, pstr,
+	stopByProfile, killGroupSync, removeDir, pstr,
 };

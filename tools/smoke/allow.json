@@ -1,1 +1,14 @@
-[]
+[
+	{
+		"match": "Plugin zotero-citation-graph@jajaho.dev is missing bootstrap method 'onMainWindowLoad'",
+		"reason": "tracked in #34; remove when fixed"
+	},
+	{
+		"match": "MenuAPI: Can't remove unknown option 'zotero-citation-graph-",
+		"reason": "tracked in #34; remove when fixed"
+	},
+	{
+		"regex": "^Missing resource in locale [^:]+: zotero-citation-graph\\.ftl$",
+		"reason": "tracked in #34; remove when fixed"
+	}
+]
