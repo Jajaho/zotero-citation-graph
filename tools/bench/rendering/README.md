@@ -237,11 +237,13 @@ under test, and `zotero-runner/`, which
 3. posts the results to `serve.js` when the page's title says it is done.
 
 When the results arrive, `run.js` ends every process whose command line names
-that profile, and nothing else, then deletes the profile and the data
-directory.
+that profile (off Windows, the process group it started), and nothing else,
+then deletes the profile and the data directory. Starting and stopping live in
+`tools/lib/zotero-launch.js`, shared with the smoke test.
 
-Two Zotero details shaped it. Marionette cannot be used: its session waits for
-`browser-idle-startup-tasks-finished`, which Zotero never sends. And Zotero
+Two Zotero details shaped it. Marionette is not used: its session waits for
+`browser-idle-startup-tasks-finished`, which Zotero never sends on its own
+(the smoke test's `tools/smoke/helper/` sends it on Zotero's behalf). And Zotero
 starts add-ons one at a time, waiting for each `startup()`, so the runner
 returns at once and works in the background — otherwise it would hold back the
 plugin whose page it is waiting for.

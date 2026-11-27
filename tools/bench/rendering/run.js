@@ -21,7 +21,7 @@
  * No browser-driver dependency. The page is served over http by serve.js and
  * posts its results back to it, which is all the channel a benchmark needs.
  * The one question a page cannot answer -- was the canvas on the GPU -- goes to
- * Firefox over marionette.js, sixty lines of our own, and to Zotero through
+ * Firefox over tools/lib/marionette.js, a page of our own, and to Zotero through
  * the runner add-on in zotero-runner/.
  *
  * Usage:
@@ -69,10 +69,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const net = require('net');
-const { spawn, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { serve } = require('./serve.js');
-const { chromeEval } = require('./marionette.js');
+const { chromeEval } = require('../../lib/marionette.js');
+const launch = require('../../lib/zotero-launch.js');
+const { freePort, stopByProfile, removeDir, pstr } = launch;
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes('--' + name);
@@ -125,34 +126,11 @@ function findFirefox() {
 }
 
 /**
- * A throwaway profile.
- *
- * A fresh one per run so an extension, a stale cache or a leftover pref from
- * the user's own browsing cannot move a number -- and so that running this
- * never touches the profile they actually browse with.
+ * A throwaway profile (tools/lib/zotero-launch.js) with this run's graphics
+ * prefs in it.
  */
 function makeProfile(extra = []) {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zg-bench-'));
-	fs.writeFileSync(path.join(dir, 'user.js'), [
-		'user_pref("browser.shell.checkDefaultBrowser", false);',
-		'user_pref("browser.startup.homepage_override.mstone", "ignore");',
-		'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
-		'user_pref("toolkit.telemetry.enabled", false);',
-		'user_pref("app.update.enabled", false);',
-		'user_pref("browser.sessionstore.resume_from_crash", false);',
-		// The benchmark measures frames. A tab that is throttled because the
-		// window is not focused would measure the throttling.
-		'user_pref("dom.min_background_timeout_value", 4);',
-		'user_pref("privacy.reduceTimerPrecision", false);',
-		'user_pref("dom.animations.mainthread-synchronization-with-geometric-animations", true);',
-		// A real window that something else covers is "occluded", and Gecko
-		// stops painting it. A forty-minute sweep in a window you then work
-		// over would measure the throttle. Off, it paints regardless.
-		'user_pref("widget.windows.window_occlusion_tracking.enabled", false);',
-		...gfxPrefs(),
-		...extra,
-	].join('\n') + '\n');
-	return dir;
+	return launch.makeProfile([...gfxPrefs(), ...extra], 'zg-bench-');
 }
 
 /** --canvas software: Gecko's accelerated canvas off, everything else as it
@@ -181,67 +159,6 @@ function timing() {
 		return t;
 	}
 	return flag('gpu') || opt('app', 'firefox') === 'zotero' ? 'interval' : 'readback';
-}
-
-const pstr = (s) => JSON.stringify(String(s));
-
-/** A free loopback port, for Marionette. */
-function freePort() {
-	return new Promise((resolve, reject) => {
-		const s = net.createServer();
-		s.unref();
-		s.on('error', reject);
-		s.listen(0, '127.0.0.1', () => {
-			const { port } = s.address();
-			s.close(() => resolve(port));
-		});
-	});
-}
-
-/**
- * End every process started with this profile, and only those.
- *
- * child.kill() is not enough. The Microsoft Store's firefox.exe is a launcher
- * that starts the real browser and exits, and Zotero on Windows runs a launcher
- * process above the browser process. Either way the PID we hold is not the
- * process holding the window. The profile path is unique to this run, so a
- * browser process that has it on its command line is ours.
- *
- * A browser process, by name, and never the PowerShell doing the stopping. Its
- * own command line carries the profile path too, being the filter, and the
- * first version matched itself: depending on process order it ended itself
- * before it reached the browser, and a Zotero from one run went on
- * benchmarking for half an hour under the next.
- *
- * Content processes do not carry the profile path; they exit with the parent.
- * Afterwards the browser is asked for again, and a survivor is reported.
- */
-function stopByProfile(child, profile) {
-	try { child.kill(); } catch (e) { /* already gone */ }
-	if (process.platform !== 'win32') return;
-	const marker = path.basename(profile).replace(/'/g, "''");
-	const ours = "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID"
-		+ " -and $_.Name -match '^(firefox|zotero)\\.exe$' -and $_.CommandLine -like '*" + marker + "*' }";
-	for (let attempt = 0; attempt < 3; attempt++) {
-		try {
-			const left = execFileSync('powershell', ['-NoProfile', '-Command',
-				ours + " | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };"
-				+ ' Start-Sleep -Milliseconds 500; @(' + ours + ').Count'],
-			{ encoding: 'utf8', timeout: 60000 }).trim();
-			if (left === '0') return;
-		}
-		catch (e) { /* try again */ }
-	}
-	console.error('\n  could not stop the browser started with ' + profile
-		+ ' -- end it by hand before the next run, or it will compete with it');
-}
-
-/** rmSync, a few times: Windows keeps a dead process's files locked a moment. */
-async function removeDir(dir) {
-	for (let i = 0; i < 10; i++) {
-		try { fs.rmSync(dir, { recursive: true, force: true }); return; }
-		catch (e) { await new Promise((r) => setTimeout(r, 500)); }
-	}
 }
 
 /* ------------------------------------------------------------------ *
@@ -771,10 +688,7 @@ async function launchFirefox(server, q) {
 	console.log('\n  ' + binary);
 	console.log('  ' + url);
 
-	const child = spawn(binary, args, {
-		stdio: ['ignore', 'pipe', 'pipe'],
-		env: Object.assign({}, process.env, { MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: '1' }),
-	});
+	const child = launch.spawnApp(binary, args, { env: { MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: '1' } });
 	let stderr = '';
 	child.stderr.on('data', (d) => { stderr += d; });
 	return {
@@ -786,26 +700,10 @@ async function launchFirefox(server, q) {
 			catch (e) { return { error: 'Marionette: ' + e.message }; }
 		},
 		async stop() {
-			stopByProfile(child, profile);
+			await stopByProfile(child, profile);
 			await removeDir(profile);
 		},
 	};
-}
-
-function findZotero() {
-	const override = opt('zotero', process.env.ZOTERO_BIN);
-	if (override) {
-		if (!fs.existsSync(override)) throw new Error('no Zotero at ' + override);
-		return override;
-	}
-	const candidates = {
-		win32: ['C:\\Program Files\\Zotero\\zotero.exe', 'C:\\Program Files (x86)\\Zotero\\zotero.exe',
-			path.join(os.homedir(), 'AppData\\Local\\Zotero\\zotero.exe')],
-		darwin: ['/Applications/Zotero.app/Contents/MacOS/zotero'],
-		linux: ['/usr/lib/zotero/zotero', '/opt/zotero/zotero', path.join(os.homedir(), 'Zotero_linux-x86_64/zotero')],
-	}[process.platform] || [];
-	for (const p of candidates) if (fs.existsSync(p)) return p;
-	throw new Error('could not find Zotero. Pass --zotero <path> or set ZOTERO_BIN.');
 }
 
 /**
@@ -816,41 +714,26 @@ function findZotero() {
  * the profile would otherwise default to.
  *
  * The plugin under test and the runner add-on are installed as proxy files
- * (see tools/install-dev.ps1 for why each detail is the way it is): a file
- * named for the add-on id whose first line is the directory, UTF-8, no BOM.
- * A fresh profile has no extensions.lastAppBuildId, so Zotero scans them.
+ * (installProxy() in tools/lib/zotero-launch.js).
  */
 async function launchZotero(server, q, addonRoot) {
-	const binary = findZotero();
-	const pluginId = JSON.parse(fs.readFileSync(path.join(addonRoot, 'manifest.json'), 'utf8'))
-		.applications.zotero.id;
-	const runnerDir = path.join(__dirname, 'zotero-runner');
-	const runnerId = JSON.parse(fs.readFileSync(path.join(runnerDir, 'manifest.json'), 'utf8'))
-		.applications.zotero.id;
+	const binary = launch.findZotero(opt('zotero', process.env.ZOTERO_BIN));
 
 	q.set('report', 'window');
 	const page = 'resource://zotero-citation-graph/content/bench/bench.html?' + q;
 	const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zg-bench-data-'));
 	const profile = makeProfile([
-		'user_pref("extensions.zotero.useDataDir", true);',
-		'user_pref("extensions.zotero.dataDir", ' + pstr(dataDir) + ');',
-		'user_pref("extensions.zotero.firstRun2", false);',
-		'user_pref("extensions.zotero.firstRunGuidance", false);',
-		'user_pref("extensions.zotero.sync.autoSync", false);',
-		'user_pref("extensions.zotero.automaticScraperUpdates", false);',
-		'user_pref("extensions.autoDisableScopes", 0);',
+		...launch.zoteroPrefs(dataDir),
 		'user_pref("extensions.zgbench.page", ' + pstr(page) + ');',
 		'user_pref("extensions.zgbench.sink", ' + pstr('http://127.0.0.1:' + server.port) + ');',
 	]);
-	const ext = path.join(profile, 'extensions');
-	fs.mkdirSync(ext);
-	fs.writeFileSync(path.join(ext, pluginId), addonRoot, { encoding: 'utf8' });
-	fs.writeFileSync(path.join(ext, runnerId), runnerDir, { encoding: 'utf8' });
+	launch.installProxy(profile, addonRoot);
+	launch.installProxy(profile, path.join(__dirname, 'zotero-runner'));
 
 	console.log('\n  ' + binary);
 	console.log('  ' + page);
 
-	const child = spawn(binary, ['-no-remote', '-profile', profile], { stdio: ['ignore', 'pipe', 'pipe'] });
+	const child = launch.spawnApp(binary, ['-no-remote', '-profile', profile]);
 	let stderr = '';
 	child.stderr.on('data', (d) => { stderr += d; });
 	return {
@@ -858,7 +741,7 @@ async function launchZotero(server, q, addonRoot) {
 		// Posted by the runner before it opens the page; see zotero-runner/.
 		async gfx() { return null; },
 		async stop() {
-			stopByProfile(child, profile);
+			await stopByProfile(child, profile);
 			await removeDir(profile);
 			await removeDir(dataDir);
 		},
@@ -892,6 +775,11 @@ async function main() {
 	const runner = app === 'zotero'
 		? await launchZotero(server, q, addon.root)
 		: await launchFirefox(server, q);
+	// Off Windows the app has a process group of its own (spawnApp), which a
+	// Ctrl+C here no longer reaches, so it is stopped on the way out instead.
+	process.once('SIGINT', () => {
+		runner.stop().finally(() => process.exit(130));
+	});
 
 	const timer = setTimeout(() => {
 		const err = runner.stderr();
