@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Citation Graph for Zotero"
+abstract: "A Zotero plugin that draws an interactive, force-directed citation graph of your library. Offline by default, free and open source."
+authors:
+  - family-names: Holz
+    given-names: Jakob
+repository-code: "https://github.com/Jajaho/zotero-citation-graph"
+license: AGPL-3.0-or-later
+keywords:
+  - Zotero
+  - Zotero plugin
+  - citation graph
+  - citation network
+  - literature review
+  - bibliometrics
