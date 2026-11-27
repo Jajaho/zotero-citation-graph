@@ -10,7 +10,7 @@
 [![Smoke](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/smoke.yml/badge.svg?branch=main&event=schedule)](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/smoke.yml)
 [![Release](https://img.shields.io/github/v/release/Jajaho/zotero-citation-graph)](https://github.com/Jajaho/zotero-citation-graph/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Jajaho/zotero-citation-graph/total)](https://github.com/Jajaho/zotero-citation-graph/releases)
-![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936)
+![Zotero 10–11](https://img.shields.io/badge/Zotero-10%E2%80%9311-CC2936)
 [![License: AGPL-3.0](https://img.shields.io/github/license/Jajaho/zotero-citation-graph)](LICENSE)
 
 <img src="docs/media/trailer-studio.gif" width="880" alt="A Zotero collection's citation graph rising out of the Zotero window, then zooming in, lighting up one paper's citations, and listing the works the collection cites but does not hold">
