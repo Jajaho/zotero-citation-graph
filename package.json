@@ -21,6 +21,7 @@
     "bench-ref:library": "node tools/bench/referencing/score-library.js",
     "bench-ref:library-key": "node tools/bench/referencing/build-library-key.js",
     "bench-ref:misses": "node tools/bench/referencing/explain-misses.js",
+    "smoke": "node tools/smoke/run.js",
     "bench": "node tools/bench/rendering/run.js",
     "bench:report": "node tools/bench/rendering/run.js --md",
     "bench:sweep": "node tools/bench/rendering/run.js --matrix --md",

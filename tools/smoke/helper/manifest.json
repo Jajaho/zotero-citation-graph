@@ -1,0 +1,14 @@
+{
+	"manifest_version": 2,
+	"name": "Citation Graph smoke-test helper",
+	"version": "1.0.0",
+	"description": "Development only. Lets Marionette open a session in Zotero and records the console and outgoing requests for tools/smoke/run.js.",
+	"applications": {
+		"zotero": {
+			"id": "zg-smoke-helper@jajaho.dev",
+			"update_url": "https://127.0.0.1/never-updated.json",
+			"strict_min_version": "7.0",
+			"strict_max_version": "12.*"
+		}
+	}
+}

@@ -10,3 +10,6 @@ CLAUDE.md
 /tools/bench/referencing/baseline-library.json
 /tools/bench/referencing/REPORT-library.md
 /tools/bench/referencing/REPORT-library-misses.md
+
+# npm run smoke writes its report here unless told otherwise.
+/smoke-report.json
