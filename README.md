@@ -7,6 +7,7 @@
 **A force-directed citation graph for your Zotero library — offline by default, FOSS, and native to Zotero.**
 
 [![CI](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/ci.yml)
+[![Smoke](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/smoke.yml/badge.svg?branch=main&event=schedule)](https://github.com/Jajaho/zotero-citation-graph/actions/workflows/smoke.yml)
 [![Release](https://img.shields.io/github/v/release/Jajaho/zotero-citation-graph)](https://github.com/Jajaho/zotero-citation-graph/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Jajaho/zotero-citation-graph/total)](https://github.com/Jajaho/zotero-citation-graph/releases)
 ![Zotero 10+](https://img.shields.io/badge/Zotero-10+-CC2936)
@@ -239,4 +240,4 @@ This plugin is independent and is not affiliated with, endorsed by, or sponsored
 - My special thanks go to my friends and fellow contributors to this project:
     - Victor Joss, Sofia Navas Gohlke and Alina Niggli for participating in a usability study.
     - Felix Schlegel for contributing valuable feedback.
-    - Christian Holme for contributing to the offline strategies.
+    - Kristian Holme for contributing to the offline strategies.
