@@ -7299,8 +7299,76 @@ function readLocale(code) {
 	return fs.readFileSync(path.join(localeDir, code, FTL_NAME), 'utf8');
 }
 
-check('ftl.js reads values, attributes and continuation lines', () => {
-	const m = Ftl.parse([
+// Fluent's own two halves: the runtime the plugin ships, which ftl.js formats
+// with, and the reference parser, which is test-only and reads the files with
+// the grammar Zotero's own bundle reads them with.
+const FluentRuntime = require(path.join(addonDir, 'content/vendor/fluent-bundle.js'));
+const FluentSyntax = require(path.join(__dirname, 'vendor/fluent-syntax.js'));
+
+function shippedLocales() {
+	return fs.readdirSync(localeDir)
+		.filter(d => fs.existsSync(path.join(localeDir, d, FTL_NAME)))
+		.sort();
+}
+
+/**
+ * What the reference parser could not read in `source`, one line per problem:
+ * where, its error code and message, and the line itself. Empty for a file
+ * Zotero's Fluent reads in full -- every Junk entry is a message Gecko logs a
+ * parser error for and drops from the window's bundle (#27).
+ */
+function junkIn(source) {
+	const lines = source.split('\n');
+	const problems = [];
+	for (const entry of FluentSyntax.parse(source, { withSpans: true }).body) {
+		if (entry.type !== 'Junk') continue;
+		for (const a of entry.annotations) {
+			const at = (a.span || entry.span).start;
+			const line = source.slice(0, at).split('\n').length;
+			problems.push('line ' + line + ': ' + a.code + ' ' + a.message + '  | ' + lines[line - 1].trim());
+		}
+	}
+	return problems;
+}
+
+/** The variables each en-US message uses, by full id, from the reference
+ *  parser's tree -- attributes' included under their message. */
+function variablesByMessage() {
+	const out = new Map();
+	class Vars extends FluentSyntax.Visitor {
+		constructor() {
+			super();
+			this.names = new Set();
+		}
+		visitVariableReference(node) {
+			this.names.add(node.id.name);
+		}
+	}
+	for (const entry of FluentSyntax.parse(readLocale('en-US'), {}).body) {
+		if (entry.type !== 'Message') continue;
+		const v = new Vars();
+		v.visit(entry);
+		out.set(entry.id.name, [...v.names]);
+	}
+	return out;
+}
+
+check('the vendored Fluent files are the published builds, unmodified', () => {
+	// Each starts with a header naming the package and the sha256 of the
+	// package's own index.js; everything after it has to still be that file,
+	// so an edit made here cannot pass for upstream code.
+	for (const file of [path.join(addonDir, 'content/vendor/fluent-bundle.js'), path.join(__dirname, 'vendor/fluent-syntax.js')]) {
+		const src = fs.readFileSync(file, 'utf8');
+		const end = src.indexOf('\n */\n');
+		const want = end < 0 ? null : src.slice(0, end).match(/sha256 of index\.js: ([0-9a-f]{64})/);
+		if (!want) throw new Error(path.basename(file) + ' has no header recording its sha256');
+		const got = require('crypto').createHash('sha256').update(src.slice(end + 5)).digest('hex');
+		if (got !== want[1]) throw new Error(path.basename(file) + ' is ' + got + ', its header says ' + want[1]);
+	}
+});
+
+check('ftl.js lists values and attributes, and formats them through Fluent', () => {
+	const src = [
 		'# a comment',
 		'thing = plain',
 		'',
@@ -7308,45 +7376,110 @@ check('ftl.js reads values, attributes and continuation lines', () => {
 		'    .label = An attribute',
 		'wrapped = this one was too long',
 		'    for a single line',
-	].join('\n'));
+		'chip = Isolated: { $count ->',
+		'        [one] { $count } paper',
+		'       *[other] { $count } papers',
+		'    } · depth { $depth }',
+		'after = after',
+	].join('\n');
+	const m = Ftl.parse(src);
 	if (m.thing !== 'plain') throw new Error('value: ' + JSON.stringify(m.thing));
 	if (m['other.label'] !== 'An attribute') throw new Error('attribute: ' + JSON.stringify(m['other.label']));
 	// A message that carries only attributes has no value of its own.
-	if ('other' in m) throw new Error('stored an empty value for an attribute-only message');
-	if (m.wrapped !== 'this one was too long for a single line') {
-		throw new Error('continuation: ' + JSON.stringify(m.wrapped));
-	}
+	if ('other' in m) throw new Error('listed an empty value for an attribute-only message');
+	// A select's lines stay with it, as written.
+	if (!/^Isolated: \{ \$count ->\n[\s\S]*\n {4}\} · depth \{ \$depth \}$/.test(m.chip)) throw new Error('select: ' + JSON.stringify(m.chip));
+	if (m.after !== 'after') throw new Error('the next message was swallowed: ' + JSON.stringify(m.after));
+
+	const b = Ftl.bundle(src, 'en-US', '');
+	if (b.t('thing') !== 'plain') throw new Error('t: ' + b.t('thing'));
+	if (b.t('other.label') !== 'An attribute' || !b.has('other.label')) throw new Error('attribute: ' + b.t('other.label'));
+	if (b.has('other') || b.t('other') !== 'other') throw new Error('an attribute-only message reads as a value');
+	if (b.t('no-such') !== 'no-such') throw new Error('a missing id: ' + b.t('no-such'));
+	// Fluent keeps a wrapped line's break. No shipped string has one; the check
+	// over every message below keeps it that way.
+	if (b.t('wrapped') !== 'this one was too long\nfor a single line') throw new Error('wrapped: ' + JSON.stringify(b.t('wrapped')));
+	const chip = n => b.t('chip', { count: n, depth: 2 });
+	if (chip(1) !== 'Isolated: 1 paper · depth 2') throw new Error('one: ' + chip(1));
+	if (chip(3) !== 'Isolated: 3 papers · depth 2') throw new Error('other: ' + chip(3));
+	// format() reads parse()'s text as the bundle reads the file.
+	if (Ftl.format(m.chip, { count: 1, depth: 2 }, 'en-US') !== chip(1)) throw new Error('format: ' + Ftl.format(m.chip, { count: 1, depth: 2 }, 'en-US'));
+	// And the prefix is the file's, not the caller's.
+	if (Ftl.bundle('zg-x = X', 'en-US', 'zg-').t('x') !== 'X') throw new Error('prefix');
 });
 
-check('ftl.js substitutes variables and leaves what it cannot read', () => {
-	if (Ftl.format('cited by { $count } here', { count: 3 }) !== 'cited by 3 here') {
-		throw new Error('substitution');
-	}
-	// A missing variable is a hole, not a crash.
-	if (Ftl.format('a { $missing }b', {}) !== 'a b') throw new Error('missing variable');
+check('ftl.js shows what it cannot fill, and reports it once per message', () => {
+	const said = [];
+	const b = Ftl.bundle([
+		'sub = cited by { $count } here',
+		'hole = a { $missing }b',
+		'edge = { ", or " }',
+		'func = { SOMEFUNC() }',
+		'ref = see { nothing-here }',
+	].join('\n'), 'en-US', '', e => said.push(e.message));
+	if (b.t('sub', { count: 3 }) !== 'cited by 3 here') throw new Error('substitution: ' + b.t('sub', { count: 3 }));
+	// No bidi isolation marks around what was filled in: a canvas draws them.
+	if (/[\u2068\u2069]/.test(b.t('sub', { count: 3 }))) throw new Error('isolation marks');
+	// A missing variable is a hole that names itself, not an empty string --
+	// and null or undefined is missing too.
+	if (b.t('hole', {}) !== 'a {$missing}b') throw new Error('missing variable: ' + b.t('hole', {}));
+	if (b.t('hole', { missing: null }) !== 'a {$missing}b') throw new Error('null variable: ' + b.t('hole', { missing: null }));
 	// Quoted literals are how a pattern keeps its edge whitespace.
-	if (Ftl.format('{ ", or " }', {}) !== ', or ') throw new Error('quoted literal');
-	// Anything else survives verbatim, so a broken string is visible.
-	if (Ftl.format('{ SOMEFUNC() }', {}) !== '{ SOMEFUNC() }') throw new Error('unknown placeable');
+	if (b.t('edge') !== ', or ') throw new Error('quoted literal: ' + JSON.stringify(b.t('edge')));
+	// What cannot be resolved stays visible.
+	if (b.t('func') !== '{SOMEFUNC()}') throw new Error('unknown function: ' + b.t('func'));
+	if (b.t('ref') !== 'see {nothing-here}') throw new Error('unknown message: ' + b.t('ref'));
+	// Sixty tooltips a second must not mean sixty reports.
+	for (let i = 0; i < 5; i++) b.t('hole', {});
+	const holes = said.filter(s => /\bhole\b/.test(s));
+	if (holes.length !== 1 || !/Unknown variable: \$missing/.test(holes[0])) throw new Error(JSON.stringify(said));
+	if (!said.some(s => /Unknown function: SOMEFUNC/.test(s))) throw new Error('the unknown function went unreported: ' + JSON.stringify(said));
+	if (said.some(s => /\bsub\b|\bedge\b/.test(s))) throw new Error('reported a string that formatted cleanly: ' + JSON.stringify(said));
+	// A reporter that throws does not take the string with it.
+	const angry = Ftl.bundle('x = { $y }', 'en-US', '', () => { throw new Error('boom'); });
+	if (angry.t('x') !== '{$y}') throw new Error('a throwing reporter: ' + angry.t('x'));
 });
 
-check('ftl.js picks plural variants by CLDR category', () => {
-	const p = '{ $n -> [one] { $n } edge *[other] { $n } edges }';
-	if (Ftl.format(p, { n: 1 }, 'en-US') !== '1 edge') throw new Error('one');
-	if (Ftl.format(p, { n: 4 }, 'en-US') !== '4 edges') throw new Error('other');
+check('ftl.js picks plural variants by CLDR category, and prints numbers as written', () => {
+	const sel = (variants) => ['p = { $n ->'].concat(variants.map(v => '    ' + v), ['}']).join('\n');
+	const en = Ftl.bundle(sel(['[one] { $n } edge', '*[other] { $n } edges']), 'en-US', '');
+	if (en.t('p', { n: 1 }) !== '1 edge') throw new Error('one: ' + en.t('p', { n: 1 }));
+	if (en.t('p', { n: 4 }) !== '4 edges') throw new Error('other: ' + en.t('p', { n: 4 }));
+	// A number passed as a string selects as the number does.
+	if (en.t('p', { n: '1' }) !== '1 edge') throw new Error('"1": ' + en.t('p', { n: '1' }));
 	// An exact key beats the category it would otherwise fall into.
-	const z = '{ $n -> [0] none *[other] { $n } of them }';
-	if (Ftl.format(z, { n: 0 }, 'en-US') !== 'none') throw new Error('exact key');
-	if (Ftl.format(z, { n: 2 }, 'en-US') !== '2 of them') throw new Error('default variant');
+	const z = Ftl.bundle(sel(['[0] none', '*[other] { $n } of them']), 'en-US', '');
+	if (z.t('p', { n: 0 }) !== 'none') throw new Error('exact key: ' + z.t('p', { n: 0 }));
+	if (z.t('p', { n: 2 }) !== '2 of them') throw new Error('default variant: ' + z.t('p', { n: 2 }));
 	// Polish has a third form; the selector must be able to reach it.
-	const pl = '{ $n -> [one] jedna *[few] kilka *[other] wiele }';
-	if (Ftl.format(pl, { n: 1 }, 'pl') !== 'jedna') throw new Error('pl one');
+	const pl = Ftl.bundle(sel(['[one] jedna', '[few] kilka', '*[other] wiele']), 'pl', '');
+	const got = [1, 3, 5, 22].map(n => pl.t('p', { n })).join(' ');
+	if (got !== 'jedna kilka wiele kilka') throw new Error('pl: ' + got);
+	// A year is a number, and grouping would print 2.013; nor does a German
+	// bundle turn the decimal point into a comma behind a caller's back.
+	const de = Ftl.bundle('y = ab { $year }, { $x }, { $big }\nn = { NUMBER($n) }', 'de-DE', '');
+	if (de.t('y', { year: 2013, x: 1234.5, big: 21000 }) !== 'ab 2013, 1234.5, 21000') throw new Error('as written: ' + de.t('y', { year: 2013, x: 1234.5, big: 21000 }));
+	// A string that asks for the locale's number format gets it.
+	if (de.t('n', { n: 21000 }) !== '21.000') throw new Error('NUMBER(): ' + de.t('n', { n: 21000 }));
+});
+
+check('the runtime and ftl.js load as plain page scripts, in graph.html\'s order', () => {
+	// No module, no require: what the graph page has. ftl.js has to find the
+	// runtime as window.FluentBundle and publish itself as window.ZGFtl.
+	const ctx = vm.createContext({});
+	ctx.window = ctx;
+	for (const f of ['vendor/fluent-bundle.js', 'ftl.js']) {
+		vm.runInContext(fs.readFileSync(path.join(addonDir, 'content', f), 'utf8'), ctx, { filename: f });
+	}
+	if (!ctx.ZGFtl || typeof ctx.ZGFtl.bundle !== 'function') throw new Error('no window.ZGFtl');
+	const b = ctx.ZGFtl.bundle(readLocale('en-US'), 'en-US', PREFIX);
+	if (b.t('stats-edges', { count: 1 }) !== '1 edge' || b.t('stats-edges', { count: 2 }) !== '2 edges') {
+		throw new Error('the page formats ' + b.t('stats-edges', { count: 1 }));
+	}
 });
 
 check('every shipped locale is declared in lib/l10n.js and vice versa', () => {
-	const onDisk = fs.readdirSync(localeDir)
-		.filter(d => fs.existsSync(path.join(localeDir, d, FTL_NAME)))
-		.sort();
+	const onDisk = shippedLocales();
 	const src = fs.readFileSync(path.join(addonDir, 'lib/l10n.js'), 'utf8');
 	const m = src.match(/const LOCALES = \[([^\]]*)\]/);
 	if (!m) throw new Error('could not find LOCALES in lib/l10n.js');
@@ -7356,9 +7489,132 @@ check('every shipped locale is declared in lib/l10n.js and vice versa', () => {
 	}
 });
 
+/**
+ * Zotero loads these files into its own Fluent bundle too, and Gecko logs a
+ * parser error for every message its parser cannot read and drops it: the
+ * one-line selects of #27 were 41 of them per window, while the plugin's own
+ * reader took them happily. This is Fluent's reference parser over every
+ * shipped locale, so the files are checked against the grammar itself.
+ */
+check('every shipped locale parses with Fluent\'s reference parser, with no Junk', () => {
+	// The check can see what it is for: a one-line select is Junk.
+	if (!junkIn('a = { $n -> [one] x *[other] y }\n').length) throw new Error('the reference parser took a one-line select');
+	const problems = [];
+	for (const code of shippedLocales()) {
+		for (const p of junkIn(readLocale(code))) problems.push(code + ' ' + p);
+	}
+	if (problems.length) throw new Error(problems.length + ' problem(s):\n    ' + problems.join('\n    '));
+});
+
+check('the runtime, the reference parser and ftl.js find the same messages in every locale', () => {
+	const keysOf = (id, hasValue, attrs) => (hasValue ? [id] : []).concat(attrs.map(a => id + '.' + a));
+	for (const code of shippedLocales()) {
+		const source = readLocale(code);
+		const ref = FluentSyntax.parse(source, {}).body.filter(e => e.type === 'Message');
+		const run = new FluentRuntime.FluentResource(source).body.filter(e => !e.id.startsWith('-'));
+		// 310 when this was written; fewer than a hundred is a file that stopped
+		// reading, not a smaller plugin.
+		if (ref.length < 100) throw new Error(code + ': the reference parser found only ' + ref.length + ' messages');
+		const refIds = ref.map(m => m.id.name).sort();
+		const runIds = run.map(m => m.id).sort();
+		if (JSON.stringify(refIds) !== JSON.stringify(runIds)) {
+			throw new Error(code + ': reference ' + refIds.filter(id => !runIds.includes(id))
+				+ ' / runtime ' + runIds.filter(id => !refIds.includes(id)));
+		}
+		// And down to the attributes, which is what ftl.js's own listing is
+		// checked against: it is the one that is not a real parser.
+		const refKeys = ref.flatMap(m => keysOf(m.id.name, !!m.value, m.attributes.map(a => a.id.name))).sort();
+		const runKeys = run.flatMap(m => keysOf(m.id, m.value !== null, Object.keys(m.attributes))).sort();
+		const listed = Object.keys(Ftl.parse(source)).sort();
+		if (JSON.stringify(refKeys) !== JSON.stringify(runKeys)) throw new Error(code + ': the parsers disagree on attributes');
+		if (JSON.stringify(listed) !== JSON.stringify(runKeys)) {
+			throw new Error(code + ': ftl.js lists ' + listed.filter(k => !runKeys.includes(k))
+				+ ' and misses ' + runKeys.filter(k => !listed.includes(k)));
+		}
+	}
+});
+
+check('every message in every locale formats cleanly for representative arguments', () => {
+	// Each message gets the variables its en-US original uses, at counts that
+	// reach every plural form English and German have and at counts large
+	// enough for NUMBER() to group, and both platforms' $mod. Clean means: no formatting error, no line break, no isolation mark,
+	// and format() over ftl.js's listing says what the bundle says.
+	const vars = variablesByMessage();
+	const problems = [];
+	for (const code of shippedLocales()) {
+		const source = readLocale(code);
+		const listed = Ftl.parse(source);
+		for (const mac of [false, true]) {
+			const b = Ftl.bundle(source, code, PREFIX, e => problems.push(code + ': ' + e.message));
+			b.shareModifier(mac);
+			const mod = b.t(mac ? 'key-mod-mac' : 'key-mod');
+			for (const key of Object.keys(listed)) {
+				const id = key.slice(PREFIX.length);
+				const names = vars.get(key.replace(/\..*$/, '')) || [];
+				for (const n of [0, 1, 2, 5, 21, 1000, 1234, 21000]) {
+					const args = Object.fromEntries(names.map(v => [v, n]));
+					const out = b.t(id, args);
+					if (out === id) problems.push(code + ': ' + key + ' did not format');
+					if (/[\n\u2068\u2069]/.test(out)) problems.push(code + ': ' + key + ' says ' + JSON.stringify(out));
+					const again = Ftl.format(listed[key], Object.assign({ mod }, args), code);
+					if (again !== out) problems.push(code + ': ' + key + ' formats as ' + JSON.stringify(again) + ' from its listing, ' + JSON.stringify(out) + ' from the bundle');
+				}
+			}
+		}
+	}
+	if (problems.length) throw new Error(problems.length + ' problem(s):\n    ' + [...new Set(problems)].slice(0, 40).join('\n    '));
+});
+
+/**
+ * Counts reached the strings pre-formatted: toLocaleString(), in whatever
+ * locale the runtime had, so a German "1.000" looked like the number one and
+ * picked [one] -- "1.000 Zitation insgesamt" -- and NUMBER() had nothing it
+ * could read. Callers now pass numbers, and the messages that want a large
+ * count grouped say so with NUMBER(), in the bundle's own locale.
+ */
+check('large counts are grouped by NUMBER() in the strings\' locale, and pick the plural', () => {
+	const en = pageStrings('en-US');
+	const de = pageStrings('de-DE');
+	const want = [
+		[en('tooltip-citations-total', { count: 1234 }), '1,234 citations total'],
+		[de('tooltip-citations-total', { count: 1234 }), '1.234 Zitationen insgesamt'],
+		// A thousand is plural in German, however it is printed.
+		[de('tooltip-citations-total', { count: 1000 }), '1.000 Zitationen insgesamt'],
+		[de('tooltip-citations-total', { count: 1 }), '1 Zitation insgesamt'],
+		[en('progress-count', { done: 1234, total: 21000 }), '1,234 / 21,000'],
+		[de('progress-count', { done: 1234, total: 21000 }), '1.234 / 21.000'],
+		[en('tooltip-cited-global', { count: 3904 }), '3,904 worldwide'],
+		[de('tooltip-cited-global', { count: 3904 }), '3.904 weltweit'],
+		[de('tooltip-cited-here', { count: 1000 }), 'Hier von 1.000 Einträgen zitiert'],
+		// And a number the message does not ask to group stays as it is: a year.
+		[en('chip-or-later', { year: 2013 }), 'is 2013 or later'],
+		[de('stats-edges', { count: 21000 }), '21000 Kanten'],
+	];
+	for (const [got, expected] of want) {
+		if (got !== expected) throw new Error(JSON.stringify(got) + ', not ' + JSON.stringify(expected));
+	}
+
+	// A string is a number only when it is plain digits. A grouped one is a
+	// string -- "1.000" is a thousand in German and one in English, and
+	// nothing here can tell which -- so it never selects [one].
+	const sel = Ftl.bundle(['p = { $n ->', '    [one] one', '   *[other] many', '}'].join('\n'), 'de-DE', '', () => {});
+	const picks = ['1', '1.000', '1,234', '1 000'].map(n => sel.t('p', { n })).join(' ');
+	if (picks !== 'one many many many') throw new Error('picks: ' + picks);
+
+	// No caller hands the strings a pre-formatted number any more.
+	const sources = ['content/graph.js', 'content/nodeFilters.js', 'lib/gapsPane.js', 'lib/graphTab.js',
+		'lib/itemPane.js', 'lib/splitPane.js', 'lib/addDialog.js', 'lib/main.js', 'lib/prefsPane.js', 'lib/exportFile.js'];
+	for (const f of sources) {
+		const src = fs.readFileSync(path.join(addonDir, f), 'utf8');
+		for (const call of src.matchAll(/\b(?:t|tr|attr|word|l10n\.t)\((?:[^()]|\([^()]*\))*\)/g)) {
+			if (/toLocaleString|NumberFormat/.test(call[0])) throw new Error(f + ': ' + call[0]);
+		}
+	}
+});
+
 check('every locale carries the same message list as en-US', () => {
 	const base = Object.keys(Ftl.parse(readLocale('en-US'))).sort();
-	const others = fs.readdirSync(localeDir).filter(d => d !== 'en-US');
+	const others = shippedLocales().filter(d => d !== 'en-US');
 	for (const code of others) {
 		const got = Object.keys(Ftl.parse(readLocale(code))).sort();
 		const missing = base.filter(id => !got.includes(id));
@@ -7368,77 +7624,6 @@ check('every locale carries the same message list as en-US', () => {
 				+ ', extra ' + JSON.stringify(extra));
 		}
 	}
-});
-
-/**
- * Zotero loads these files into its own Fluent bundle too, and Fluent's grammar
- * wants every variant of a select, and the brace closing it, on a line of its
- * own. ftl.js reads a select on one line just as happily, so a one-line select
- * looked fine everywhere this plugin formats it while Gecko logged a parser
- * error for every one -- 41 of them per window -- and left the message out of
- * the bundle. This is that grammar rule, checked over every shipped locale.
- */
-check('every select in every locale is laid out the way Fluent parses it', () => {
-	const problems = [];
-	for (const code of fs.readdirSync(localeDir)) {
-		const file = path.join(localeDir, code, FTL_NAME);
-		if (!fs.existsSync(file)) continue;
-		const src = fs.readFileSync(file, 'utf8');
-		let depth = 0;
-		let line = 1;
-		let lineStart = 0;
-		const selects = []; // the brace depth each open select lives at
-		const atLineStart = i => /^[ \t]*$/.test(src.slice(lineStart, i));
-		const flag = what => problems.push(code + ':' + line + ' ' + what);
-		for (let i = 0; i < src.length; i++) {
-			const c = src[i];
-			const inSelect = selects.length && selects[selects.length - 1] === depth;
-			if (c === '\n') {
-				line++;
-				lineStart = i + 1;
-			}
-			else if (c === '#' && depth === 0 && atLineStart(i)) {
-				// A comment: skip to its end, since prose may say "->" or "[one]".
-				const nl = src.indexOf('\n', i);
-				i = (nl === -1 ? src.length : nl) - 1;
-			}
-			else if (c === '{') depth++;
-			else if (c === '}') {
-				if (inSelect) {
-					if (!atLineStart(i)) flag('a select\'s closing brace shares its line');
-					selects.pop();
-				}
-				depth--;
-			}
-			else if (c === '-' && src[i + 1] === '>' && depth > 0) {
-				const nl = src.indexOf('\n', i);
-				if (src.slice(i + 2, nl === -1 ? src.length : nl).trim() !== '') {
-					flag('a variant follows "->" on the same line');
-				}
-				selects.push(depth);
-				i++;
-			}
-			else if (inSelect && (c === '*' || (c === '[' && src[i - 1] !== '*')) && !atLineStart(i)) {
-				if (c === '[' || src[i + 1] === '[') flag('a variant does not start its own line');
-			}
-		}
-	}
-	if (problems.length) throw new Error(problems.length + ' problem(s):\n    ' + problems.join('\n    '));
-});
-
-check('ftl.js reads a select laid out over several lines', () => {
-	const src = [
-		'a = Isolated: { $count ->',
-		'        [one] { $count } paper',
-		'       *[other] { $count } papers',
-		'    } · depth { $depth }',
-		'b = after',
-	].join('\n');
-	const m = Ftl.parse(src);
-	const t = (n) => Ftl.format(m.a, { count: n, depth: 2 }, 'en-US');
-	if (t(1) !== 'Isolated: 1 paper · depth 2') throw new Error('one: ' + t(1));
-	if (t(3) !== 'Isolated: 3 papers · depth 2') throw new Error('other: ' + t(3));
-	if (m.b !== 'after') throw new Error('the next message was swallowed: ' + m.b);
 });
 
 check('every locale fills the same variables as en-US', () => {
@@ -7452,7 +7637,8 @@ check('every locale fills the same variables as en-US', () => {
 		const got = Ftl.parse(readLocale(code));
 		for (const id of Object.keys(base)) {
 			// A translation that drops a variable loses the number it was there
-			// to show; one that invents a variable renders an empty hole.
+			// to show; one that invents a variable shows as {$name} on screen,
+			// and logs an error for it.
 			if (got[id] != null && vars(got[id]) !== vars(base[id])) {
 				throw new Error(code + '/' + id + ': ' + JSON.stringify(vars(got[id]))
 					+ ' vs ' + JSON.stringify(vars(base[id])));
@@ -7557,10 +7743,12 @@ check('lib/l10n.js resolves a locale, formats, and hands the page its source', a
 });
 
 /** t() over one locale's file, the way the page formats: the id back when the
- *  file has no such message, so a missing one is visible. */
+ *  file has no such message, so a missing one is visible, and $mod shared as
+ *  l10n.js shares it -- Ctrl, since these run as no Mac. */
 function pageStrings(code) {
-	const messages = Ftl.parse(readLocale(code));
-	return (id, args) => (PREFIX + id in messages ? Ftl.format(messages[PREFIX + id], args || {}, code) : id);
+	const bundle = Ftl.bundle(readLocale(code), code, PREFIX);
+	bundle.shareModifier(false);
+	return (id, args) => bundle.t(id, args);
 }
 
 /** Just enough of an element for the page functions that build rows. */
@@ -7739,10 +7927,10 @@ check('the legend names an item type as Zotero does, and colours it by its id', 
 check('a node\'s tooltip is a card of what it is, who wrote it where, and how much it is cited', () => {
 	const lift = (code) => liftPage({
 		functions: ['itemTooltip', 'ghostTooltip', 'tipCard', 'tipCount', 'tipCounts', 'creatorList', 'escapeHtml'],
-		globals: { t: pageStrings(code), isPinned: n => !!n.pin },
+		globals: { t: pageStrings(code), isPinned: n => !!n.pin, ZGL10n: { locale: () => code } },
 	});
 	const page = lift('en-US');
-	const grouped = (3904).toLocaleString();
+	const grouped = '3,904';
 
 	const held = page.itemTooltip({
 		name: 'Spin <i>readout</i> & noise', creators: ['Mwangi'], year: 1992,
@@ -7780,10 +7968,12 @@ check('a node\'s tooltip is a card of what it is, who wrote it where, and how mu
 		throw new Error('a named outside reference is not headed by its title');
 	}
 
-	// Every locale's sentence has to keep the number where the page can find it.
+	// Every locale's sentence has to keep the number where the page can find
+	// it, grouped as that locale groups it -- by NUMBER() in the message.
 	for (const code of fs.readdirSync(localeDir)) {
 		const line = lift(code).itemTooltip({ name: 'T', creators: [], inDeg: 5, citedByGlobal: 3904 });
-		if (!line.includes('<b>5</b>') || !line.includes('<b>' + grouped + '</b>')) {
+		const groupedHere = (3904).toLocaleString(code);
+		if (!line.includes('<b>5</b>') || !line.includes('<b>' + groupedHere + '</b>')) {
 			throw new Error(code + ': a count is not set apart in ' + line);
 		}
 	}
@@ -8982,7 +9172,7 @@ check('the bar offers the item pane before a node has been clicked', () => {
 check('the page loads its string modules before anything that draws', () => {
 	const html = fs.readFileSync(path.join(addonDir, 'content/graph.html'), 'utf8');
 	const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
-	for (const [before, after] of [['ftl.js', 'l10n.js'], ['l10n.js', 'graph.js'],
+	for (const [before, after] of [['vendor/fluent-bundle.js', 'ftl.js'], ['ftl.js', 'l10n.js'], ['l10n.js', 'graph.js'],
 		['l10n.js', 'nodeFilters.js']]) {
 		if (order.indexOf(before) < 0 || order.indexOf(after) < 0) {
 			throw new Error('missing script: ' + before + ' or ' + after);

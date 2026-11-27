@@ -521,7 +521,7 @@ function subtitle(g) {
 	if (g.creators && g.creators.length) bits.push(creatorList(g.creators));
 	if (g.year) bits.push(g.year);
 	if (g.citedByGlobal != null) {
-		bits.push(l10n.t('tooltip-citations-total', { count: g.citedByGlobal.toLocaleString() }));
+		bits.push(l10n.t('tooltip-citations-total', { count: g.citedByGlobal }));
 	}
 	// One subfield leaning on it is a hole in that subfield and can be named as
 	// one; several leaning on it is common ground, which is a different kind of

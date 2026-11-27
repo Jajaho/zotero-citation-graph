@@ -126,6 +126,11 @@ function main() {
 	if (!names.includes('THIRD-PARTY-NOTICES.md')) {
 		problems.push('THIRD-PARTY-NOTICES.md is missing -- the bundled MIT code needs its notice');
 	}
+	// Fluent's runtime is what every string is formatted with, on both sides of
+	// the bridge: without it the page has no strings and chrome cannot start.
+	if (!names.includes('content/vendor/fluent-bundle.js')) {
+		problems.push('content/vendor/fluent-bundle.js is missing -- nothing could format a string');
+	}
 
 	// Every entry must actually decompress and match its CRC. This is the check
 	// that catches a packer bug rather than a packaging-list bug.

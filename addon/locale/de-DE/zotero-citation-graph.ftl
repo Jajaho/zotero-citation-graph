@@ -1,8 +1,9 @@
 # Citation Graph for Zotero -- deutsche Übersetzung.
 #
 # Siehe locale/en-US/zotero-citation-graph.ftl für die Quelle und für die Regeln: eine
-# Nachricht pro Zeile, Variablen als { $name }, Plurale als Selektor. Deutsch
-# hat dieselben zwei CLDR-Kategorien wie Englisch (one, other).
+# Nachricht pro Zeile, Variablen als { $name }, Plurale als Selektor, dessen
+# Varianten und schließende Klammer je eine eigene Zeile haben. Deutsch hat
+# dieselben zwei CLDR-Kategorien wie Englisch (one, other).
 #
 # Die Seitenleiste schreibt wie Zotero: jede Beschriftung beginnt groß, im
 # Englischen die Abschnittstitel zudem in Title Case.
@@ -156,7 +157,7 @@ zotero-citation-graph-status-dropping-names = Nachgeschlagene Angaben werden ver
 zotero-citation-graph-bad-payload = Ungültige Daten: { $message }
 
 zotero-citation-graph-progress-step = Schritt { $step } von { $steps } · { $text }
-zotero-citation-graph-progress-count = { $done } / { $total }
+zotero-citation-graph-progress-count = { NUMBER($done) } / { NUMBER($total) }
 zotero-citation-graph-progress-stop = Stoppen
 zotero-citation-graph-progress-stop-hint = Diesen Aufbau stoppen und behalten, was er bisher gefunden hat
 
@@ -216,17 +217,18 @@ zotero-citation-graph-color-unknown-type = (Unbekannte Art)
 # Der Tooltip eines Knotens ist eine Karte mit bis zu drei Zeilen: der Titel;
 # wer, wann und wo, mit „ · “ verbunden; und die Zahlen, ebenso verbunden.
 zotero-citation-graph-tooltip-not-in-collection = Nicht in diesem Graphen
-# Die Zahl setzt die Seite fett: { $count } in jeder Variante behalten, die
-# eine Zahl zeigt.
+# Die Zahl setzt die Seite fett: { NUMBER($count) } in jeder Variante
+# behalten, die eine Zahl zeigt. NUMBER() gruppiert die Ziffern deutsch (3.904);
+# der Selektor bleibt $count.
 zotero-citation-graph-tooltip-cited-here = { $count ->
         [0] Hier von keinem Eintrag zitiert
-        [one] Hier von { $count } Eintrag zitiert
-       *[other] Hier von { $count } Einträgen zitiert
+        [one] Hier von { NUMBER($count) } Eintrag zitiert
+       *[other] Hier von { NUMBER($count) } Einträgen zitiert
     }
-zotero-citation-graph-tooltip-cited-global = { $count } weltweit
+zotero-citation-graph-tooltip-cited-global = { NUMBER($count) } weltweit
 zotero-citation-graph-tooltip-citations-total = { $count ->
-        [one] { $count } Zitation insgesamt
-       *[other] { $count } Zitationen insgesamt
+        [one] { NUMBER($count) } Zitation insgesamt
+       *[other] { NUMBER($count) } Zitationen insgesamt
     }
 zotero-citation-graph-tooltip-pinned = angeheftet
 zotero-citation-graph-tooltip-et-al = { $names } u. a.

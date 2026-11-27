@@ -1794,7 +1794,8 @@ addon/
     nodeScale.js         node sizing maths; pure, so npm test can assert the curve
     nodeLinks.js         where a node points on the web; pure, same reason
     nodeFilters.js       the mask grammar, matching and completions; pure, same reason
-    ftl.js               a Fluent subset, shared with lib/l10n.js; pure, same reason
+    ftl.js               formats strings with @fluent/bundle, shared with lib/l10n.js; pure, same reason
+    vendor/fluent-bundle.js  vendored UMD of Fluent's runtime (global `FluentBundle`)
     l10n.js              the page's strings, pushed over the bridge as .ftl source
     lib/force-graph.min.js   vendored UMD (global `ForceGraph`)
   citation-graph/        the derivation library, shared verbatim with the CLI
@@ -1836,10 +1837,11 @@ tools/
   `[ChromeOnly]`, and `document.l10n` — if a `resource://` content document gets one at all —
   formats asynchronously, which a canvas tooltip accessor cannot wait for. So chrome reads the
   `.ftl` for the resolved locale and hands the page its **source text**, over the same bridge as
-  everything else; `content/ftl.js` formats it synchronously on both sides. One source of truth,
-  no async in a render path, nothing that depends on privilege the page does not have.
-  The subset is variables and plural selectors — no message references, no nested selectors, no
-  functions. Static markup carries `data-zg-str` / `-title` / `-placeholder` / `-aria-label`
+  everything else; `content/ftl.js` formats it synchronously on both sides with `@fluent/bundle`,
+  Fluent's own runtime, which needs neither privilege nor async. One source of truth, no async in a
+  render path, nothing that depends on privilege the page does not have. The files are therefore
+  full Fluent, and `npm test` reads them with the reference parser (`tools/vendor/fluent-syntax.js`)
+  as well, the grammar Zotero's own bundle applies to them. Static markup carries `data-zg-str` / `-title` / `-placeholder` / `-aria-label`
   attributes and keeps its English as the fallback, so a page whose strings never arrive is still
   a usable panel. `npm test` checks every id the source asks for against `en-US`, every other
   locale against `en-US`'s message list and variables, and `LOCALES` in `lib/l10n.js` against the
@@ -2251,12 +2253,14 @@ BibTeX is ISC). It is this repository's own copying that decides it.
 
 Third-party material, and the notices their licences require, are in
 [`addon/THIRD-PARTY-NOTICES.md`](../addon/THIRD-PARTY-NOTICES.md) — which ships
-inside the XPI, because MIT and ISC both require the notice to travel with the
+inside the XPI, because MIT, ISC and Apache-2.0 all require the notice to travel with the
 distribution. In short:
 
 | What | Where | Licence |
 |---|---|---|
 | force-graph 1.51.4 + its bundled d3 modules | `addon/content/lib/force-graph.min.js` | MIT / ISC |
+| @fluent/bundle 0.19.1, Fluent's runtime | `addon/content/vendor/fluent-bundle.js` | Apache-2.0, © Mozilla Foundation and others |
+| @fluent/syntax 0.19.0, tests only, not shipped | `tools/vendor/fluent-syntax.js` | Apache-2.0, © Mozilla Foundation and others |
 | Sixteen Zotero menu icons | `addon/content/icons.js` | AGPL-3.0, © Corporation for Digital Scholarship |
 | Everything else | | AGPL-3.0-or-later, © 2026 Jakob Holz |
 

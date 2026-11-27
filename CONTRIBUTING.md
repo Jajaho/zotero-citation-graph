@@ -24,6 +24,12 @@ line, `id = text`. Every id is prefixed `zotero-citation-graph-`, because Zotero
 loads a plugin's `.ftl` into the main window's own bundle alongside core's
 strings and every other plugin's.
 
+The plugin formats them with Fluent's own JavaScript runtime,
+[`@fluent/bundle`](https://github.com/projectfluent/fluent.js/tree/main/fluent-bundle),
+so the whole [Fluent syntax](https://projectfluent.org/fluent/guide/) is
+available, and `npm test` reads every file with Fluent's reference parser,
+which is the grammar Zotero's own Fluent applies to the same file.
+
 ### Adding a language
 
 1. Copy `addon/locale/en-US/zotero-citation-graph.ftl` to
@@ -36,10 +42,12 @@ strings and every other plugin's.
    ```
    This is needed for the translation to take effect in Zotero.
 4. Run `npm test`. It checks that every shipped locale is declared in
-   `l10n.js` and vice versa, that every locale carries the same message list as
-   `en-US`, and that every message fills the same variables as its `en-US`
-   original. A translation that drops a message or a `{ $variable }` fails the
-   suite.
+   `l10n.js` and vice versa, that the file parses with Fluent's reference
+   parser without errors, that every locale carries the same message list as
+   `en-US`, that every message fills the same variables as its `en-US`
+   original, and that every message formats without errors. A translation
+   that drops a message or a `{ $variable }`, or that Fluent cannot read,
+   fails the suite; a syntax error is reported with its line.
 5. Open a pull request against `dev`, saying which Zotero version and OS you
    tried it on. Zotero picks the locale through
    `Utilities.Internal.resolveLocale`, so exact tag → same language → `en-US`;
@@ -48,9 +56,9 @@ strings and every other plugin's.
 
 ### Rules the file has to keep
 
-- **One message per line**, plural selectors aside (see below). A wrapped line
-  is joined back with a space, which is right for prose and wrong for anything
-  that meant to keep a line break.
+- **One message per line**, plural selectors aside (see below). Fluent keeps
+  the line break of a wrapped line, and every string in the plugin is drawn as
+  a single line, so `npm test` fails a message that formats with one.
 - **Keep the ids.** Call sites look messages up by id; changing one removes the
   string from the UI.
 - **Keep the variables.** `{ $count }`, `{ $shown }`, `{ $total }` and friends
@@ -66,13 +74,22 @@ strings and every other plugin's.
   ```
   The starred variant is the default and must be present. Languages with more
   than two categories may add `[few]`, `[many]` and so on. Each variant and the
-  closing brace go on a line of their own: Zotero also loads the file into its
-  own Fluent bundle, which rejects a selector written on one line. `npm test`
-  checks this.
-- **The graph page formats these with a Fluent subset**
-  ([`addon/content/ftl.js`](addon/content/ftl.js)). Variables and plural
-  selectors work; message references, nested selectors and functions do not.
-  Do not reach for them.
+  closing brace go on a line of their own: that is Fluent's grammar, and a
+  selector written on one line is a syntax error, which Zotero logs and which
+  drops the message. `npm test` reports it with its line.
+- **Numbers arrive as numbers.** A plain `{ $count }` prints the digits as
+  they are (`2013`, `21000`), which is right for years. `{ NUMBER($count) }`
+  prints them in your language's own number format (`21,000` in English,
+  `21.000` in German). The messages that show large counts already do this:
+  `progress-count`, `tooltip-cited-here`, `tooltip-cited-global` and
+  `tooltip-citations-total`. Keep `NUMBER()` where the source has it, and keep
+  the selector itself a plain `$count`: `{ $count -> … }`.
+- **The rest of Fluent works too** — nested selectors, message references,
+  terms — if your language needs it. Any id you add, a term's (`-name`)
+  included, must carry the `zotero-citation-graph-` prefix
+  (`-zotero-citation-graph-brand`), because Zotero loads the file into a
+  bundle shared by the whole window, alongside core's strings and every other
+  plugin's.
 - **Do not translate the English fallbacks in markup.** Static elements in
   `addon/content/graph.html` carry `data-zg-str="<id without the prefix>"` and an
   English body as the fallback shown before the bundle resolves. The translation

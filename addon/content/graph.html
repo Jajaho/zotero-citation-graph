@@ -1022,9 +1022,11 @@
 	<!-- Every script is a same-origin resource:// URL, so no inline script is
 	     needed and every CSP configuration in Zotero 7-11 allows them. -->
 	<script src="lib/force-graph.min.js"></script>
-	<!-- Strings before anything that draws with them: ftl.js is the reader,
+	<!-- Strings before anything that draws with them: vendor/fluent-bundle.js
+	     is Fluent's own runtime, ftl.js adapts it to the plugin's callers, and
 	     l10n.js publishes window.zgSetStrings for chrome to push the .ftl
 	     source into. -->
+	<script src="vendor/fluent-bundle.js"></script>
 	<script src="ftl.js"></script>
 	<script src="l10n.js"></script>
 	<!-- Zotero's own menu icons, inlined: chrome:// is out of reach from a

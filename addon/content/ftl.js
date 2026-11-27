@@ -1,5 +1,6 @@
 /**
- * A small Fluent reader, shared by both sides of the bridge.
+ * The plugin's strings, formatted by Fluent's own runtime on both sides of the
+ * bridge.
  *
  * The plugin's strings live in addon/locale/<locale>/zotero-citation-graph.ftl, which is
  * where Zotero already looks: plugins.js registerLocales() reads every .ftl
@@ -7,58 +8,219 @@
  * fallback chain (exact locale -> same language -> en-US). That machinery is
  * what renders the collection menu's label, and it is not duplicated here.
  *
- * What IS duplicated is the reading of a pattern, and for one reason: the graph
- * page runs with an ordinary content principal inside a <browser type="content">.
- * The Localization constructor is [ChromeOnly], and document.l10n -- if a
+ * What IS duplicated is the formatting, and for one reason: the graph page runs
+ * with an ordinary content principal inside a <browser type="content">. The
+ * Localization constructor is [ChromeOnly], and document.l10n -- if a
  * resource:// content document gets one at all -- formats asynchronously, which
  * a canvas tooltip accessor called sixty times a second cannot wait for. So
  * chrome reads the .ftl for the resolved locale, hands the source across the
  * bridge as a string like every other payload, and both sides format from it
- * synchronously through this module. One source of truth, no async in a render
- * path, and nothing that depends on privilege the page does not have.
+ * synchronously through this module.
  *
- * The subset is deliberately small -- it is a plugin's UI strings, not a
- * localisation runtime:
+ * That constraint rules out Gecko's Fluent, not Fluent: @fluent/bundle, the
+ * official JavaScript implementation (vendor/fluent-bundle.js), formats
+ * synchronously and needs no privilege. This file only adapts it to what the
+ * callers have always asked for. The .ftl files are therefore full Fluent --
+ * selects, nested selects, message references, NUMBER() -- and `npm test`
+ * checks them with the reference parser (tools/vendor/fluent-syntax.js), the
+ * grammar Zotero's own bundle reads the same files with.
  *
- *     id = plain text
- *     id = a { $variable } in it
- *     id = { $count ->
- *             [one] one thing
- *            *[other] { $count } things
- *         }
- *     id =
- *         .attribute = for XUL, stored as "id.attribute"
- *     id = { " leading and trailing space is quoted " }
+ * What this adds on top of a FluentBundle:
  *
- * Write a select over several lines, as above, even though this reader would
- * take it on one: Zotero loads the same files into its own Fluent bundle, whose
- * grammar wants each variant and the closing brace on a line of their own, and
- * logs a parser error and drops the message otherwise. `npm test` checks this.
+ *   - Ids are asked for without the plugin's prefix, and an attribute as
+ *     "id.attribute"; see bundle().
+ *   - A missing id comes back as the id itself, and a missing variable as
+ *     `{$name}`: either is visible on screen, which is the point.
+ *   - Formatting errors go to a reporter, once per message, instead of being
+ *     thrown or dropped.
+ *   - Callers pass numbers as numbers, never pre-formatted. A number prints
+ *     as String() prints it unless the message asks for { NUMBER($x) }, which
+ *     groups it in the bundle's locale (1,234 / 1.234); see value(). Today
+ *     progress-count, tooltip-cited-here, tooltip-cited-global and
+ *     tooltip-citations-total ask for it.
+ *   - No bidi isolation marks: the strings are drawn on a canvas and into
+ *     chrome text, where FSI/PDI would show as boxes or stray spacing.
  *
- * Not supported, and not needed by this plugin: message and term references,
- * selectors nested inside a variant, functions (NUMBER, DATETIME), and multiline
- * patterns that mean to keep their line breaks. A placeable this cannot read is
- * left in the output verbatim, so it shows up as `{ whatever }` on screen rather
- * than silently becoming an empty string.
- *
- * Dual-mode: a plain <script> in the graph page (window.ZGFtl) and a CommonJS
- * module in the chrome sandbox (lib/l10n.js requires it). Same file either way,
- * the way nodeFilters.js is the same file under Zotero and under Node.
+ * Dual-mode: a plain <script> in the graph page (window.ZGFtl, after
+ * vendor/fluent-bundle.js has set window.FluentBundle) and a CommonJS module in
+ * the chrome sandbox (lib/l10n.js requires it, and it requires the runtime).
+ * Same file either way, the way nodeFilters.js is the same file under Zotero
+ * and under Node.
  */
 (function (root, factory) {
 	'use strict';
-	var api = factory();
-	if (typeof module !== 'undefined' && module.exports) module.exports = api;
-	else root.ZGFtl = api;
-}(typeof window !== 'undefined' ? window : this, function () {
+	if (typeof module !== 'undefined' && module.exports) {
+		module.exports = factory(require('./vendor/fluent-bundle.js'));
+	}
+	else root.ZGFtl = factory(root.FluentBundle);
+}(typeof window !== 'undefined' ? window : this, function (Fluent) {
 	'use strict';
 
+	var FluentBundle = Fluent.FluentBundle;
+	var FluentResource = Fluent.FluentResource;
+	var FluentNumber = Fluent.FluentNumber;
+	var FluentType = Fluent.FluentType;
+
+	/** Where errors go when a caller names nowhere else. */
+	function consoleReport(e) {
+		if (typeof console !== 'undefined' && console.error) console.error(e);
+	}
+
 	/**
-	 * Source text to { id: pattern }.
+	 * The locale list for a FluentBundle, which is what its Intl.PluralRules
+	 * are built for. No locale means the runtime's own; a malformed one means
+	 * English rules rather than a RangeError out of every select.
+	 */
+	function localesFor(locale) {
+		if (!locale) return [];
+		try {
+			return Intl.getCanonicalLocales(locale);
+		}
+		catch (e) {
+			return ['en-US'];
+		}
+	}
+
+	// Parsed sources, newest last. A handful, because the same file is turned
+	// into a bundle by both l10n modules and by every check that tests one; the
+	// point is that nothing parses a source twice in a row.
+	var _compiled = new Map();
+	var COMPILED_MAX = 8;
+
+	/**
+	 * A FluentBundle for `source`, parsed once.
 	 *
-	 * Attributes are flattened into the same map under "id.attribute", which is
-	 * all this needs them for -- nothing here ever asks for a message and its
-	 * attributes as one object.
+	 * The runtime's parser skips what it cannot read, as Gecko's does: a broken
+	 * message is missing from the bundle, so its id shows on screen. `npm test`
+	 * is where a broken message is reported, by the reference parser.
+	 */
+	function compile(source, locale, report) {
+		var key = (locale || '') + '\u0000' + source;
+		var hit = _compiled.get(key);
+		if (hit) {
+			// Refresh its place, so the eviction below takes the stalest.
+			_compiled.delete(key);
+			_compiled.set(key, hit);
+			return hit;
+		}
+		var fb = new FluentBundle(localesFor(locale), { useIsolating: false });
+		var errors = fb.addResource(new FluentResource(source));
+		// A duplicate id: the first definition wins, which a translator who
+		// meant the second would never find out about otherwise.
+		for (var i = 0; i < errors.length; i++) safely(report, errors[i]);
+		_compiled.set(key, fb);
+		if (_compiled.size > COMPILED_MAX) _compiled.delete(_compiled.keys().next().value);
+		return fb;
+	}
+
+	function safely(report, e) {
+		try {
+			(report || consoleReport)(e);
+		}
+		catch (ignored) {
+			// A reporter that throws must not take the string down with it.
+		}
+	}
+
+	/** toString() for a number as its caller wrote it. See value(). */
+	function asWritten() {
+		return this.text;
+	}
+
+	// A string of plain ASCII digits is taken for the number it spells, so "3"
+	// picks a plural variant the way 3 does. Nothing with a separator in it:
+	// "1.000" is a thousand in German and one in English, and a string a
+	// caller has already formatted is not a number this can know.
+	var DIGITS = /^[0-9]+$/;
+
+	/**
+	 * One argument, as the runtime is to see it.
+	 *
+	 * A number stays a FluentNumber, so a select still picks its variant by the
+	 * locale's CLDR plural rules -- but it prints as String() prints it, not as
+	 * Intl.NumberFormat would. Years are numbers here ("is 2013 or later"), and
+	 * grouping would print 2,013. Where a count reads better grouped, the
+	 * message says so with NUMBER($count), which Fluent formats in the bundle's
+	 * locale -- so callers pass the number, never toLocaleString(), which would
+	 * group it in whatever locale the runtime happens to have and leave
+	 * nothing for a select or NUMBER() to read.
+	 *
+	 * Anything else that is not a string is printed with String() too, as it
+	 * always was, rather than becoming a "type not supported" hole.
+	 */
+	function value(v) {
+		if (typeof v === 'string') {
+			if (!DIGITS.test(v)) return v;
+			var s = new FluentNumber(Number(v));
+			s.text = v;
+			s.toString = asWritten;
+			return s;
+		}
+		if (typeof v === 'number') {
+			var n = new FluentNumber(v);
+			n.text = String(v);
+			n.toString = asWritten;
+			return n;
+		}
+		if (v instanceof FluentType) return v;
+		return String(v);
+	}
+
+	/**
+	 * The arguments for one call: shared ones first, the caller's over them.
+	 *
+	 * A null or undefined argument is left out, so the runtime reports it as
+	 * missing and prints `{$name}` -- a hole that says which variable it is,
+	 * rather than an empty string that says nothing.
+	 */
+	function fill(args, shared) {
+		var out = Object.create(null);
+		var name;
+		if (shared) for (name in shared) if (shared[name] != null) out[name] = value(shared[name]);
+		if (args) {
+			for (name in args) {
+				if (args[name] == null) delete out[name];
+				else out[name] = value(args[name]);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Format one pattern, reporting what went wrong at most once per `key`.
+	 *
+	 * The runtime never throws here when given an errors array: it formats what
+	 * it can -- `{$count}` for a missing variable, `{NAME()}` for an unknown
+	 * function -- and lists the rest. Those reach the reporter once per message,
+	 * because a tooltip formats sixty times a second and one bad string would
+	 * otherwise fill the console.
+	 */
+	function run(fb, pattern, args, key, seen, report) {
+		var errors = [];
+		var out = fb.formatPattern(pattern, args, errors);
+		if (errors.length && !seen.has(key)) {
+			seen.add(key);
+			var why = [];
+			for (var i = 0; i < errors.length; i++) why.push(errors[i] && errors[i].message);
+			safely(report, new Error('Fluent: ' + key
+				+ (fb.locales.length ? ' (' + fb.locales.join(', ') + ')' : '') + ': ' + why.join('; ')));
+		}
+		return out;
+	}
+
+	/**
+	 * Source text to { id: pattern source }, attributes as "id.attribute".
+	 *
+	 * Not used to format anything: bundle() formats from the runtime's own
+	 * parse. This is a view of the file for checks that read the strings as a
+	 * translator wrote them -- which variables a message uses, whether it names
+	 * a key -- and the text it returns is what format() accepts.
+	 *
+	 * It splits the file at the lines that start an entry or an attribute and
+	 * keeps each pattern's lines as written, so a multi-line select stays one.
+	 * A message with no value of its own, one that exists only to carry
+	 * attributes, is not listed under its bare id. `npm test` checks that this
+	 * lists exactly the messages and attributes the runtime does.
 	 */
 	function parse(source) {
 		var out = Object.create(null);
@@ -68,10 +230,10 @@
 		var buf = [];
 
 		function flush() {
-			// A message with no value of its own -- one that exists only to carry
-			// attributes -- is not stored, so asking for it reads as missing
-			// rather than as the empty string.
-			if (key !== null && buf.length) out[key] = buf.join('\n');
+			if (key !== null) {
+				var text = buf.join('\n').replace(/\s+$/, '');
+				if (/\S/.test(text)) out[key] = text;
+			}
 			key = null;
 			buf = [];
 		}
@@ -79,146 +241,73 @@
 		for (var i = 0; i < lines.length; i++) {
 			var line = lines[i];
 			var m;
-			// Comments and blank lines end whatever was being collected: in
-			// Fluent a pattern cannot have a hole in it.
-			if (/^\s*$/.test(line) || /^\s*#/.test(line)) {
+			if ((m = line.match(/^([A-Za-z][\w-]*) *= *(.*)$/))) {
 				flush();
-				continue;
+				base = key = m[1];
+				buf.push(m[2]);
 			}
-			if ((m = line.match(/^([A-Za-z][\w-]*)\s*=[ \t]*(.*)$/))) {
-				flush();
-				base = m[1];
-				key = m[1];
-				if (m[2] !== '') buf.push(m[2]);
-				continue;
-			}
-			if (base !== null && (m = line.match(/^[ \t]+\.([A-Za-z][\w-]*)\s*=[ \t]*(.*)$/))) {
+			else if (base !== null && (m = line.match(/^ *\.([A-Za-z][\w-]*) *= *(.*)$/))) {
 				flush();
 				key = base + '.' + m[1];
-				if (m[2] !== '') buf.push(m[2]);
-				continue;
+				buf.push(m[2]);
 			}
-			// A continuation: a translator's wrapped line. Joined with a space
-			// rather than a newline, because every pattern in this plugin is one
-			// line of prose that happened to be too long for the file.
-			if (key !== null && /^[ \t]/.test(line)) {
-				buf.push(line.trim());
-				continue;
+			// Fluent continues a pattern on an indented or blank line, and on
+			// one that starts a variant or closes a select.
+			else if (base !== null && /^(?: |[}[*]|$)/.test(line)) {
+				buf.push(line);
 			}
-			flush();
+			// Anything else at the start of a line -- a comment, a term -- ends
+			// the entry.
+			else {
+				flush();
+				base = null;
+			}
 		}
 		flush();
-
-		// Re-join wrapped lines. Done here rather than in flush() so the buffer
-		// stays a plain list of lines while it is being collected.
-		for (var id in out) out[id] = out[id].split('\n').join(' ');
 		return out;
 	}
 
-	/** The index of the '}' closing the '{' at `start`, or -1. */
-	function closing(s, start) {
-		var depth = 0;
-		for (var i = start; i < s.length; i++) {
-			if (s[i] === '{') depth++;
-			else if (s[i] === '}' && --depth === 0) return i;
-		}
-		return -1;
-	}
-
-	function format(pattern, args, locale) {
-		var s = String(pattern == null ? '' : pattern);
-		var out = '';
-		var i = 0;
-		while (i < s.length) {
-			if (s[i] !== '{') {
-				out += s[i++];
-				continue;
-			}
-			var end = closing(s, i);
-			if (end < 0) {
-				// An unbalanced brace is a broken translation, not a reason to
-				// lose the rest of the string.
-				out += s.slice(i);
-				break;
-			}
-			out += placeable(s.slice(i + 1, end), args || {}, locale);
-			i = end + 1;
-		}
-		return out;
-	}
-
-	function placeable(inner, args, locale) {
-		var s = inner.trim();
-		var m;
-		if ((m = s.match(/^\$([A-Za-z][\w-]*)\s*->\s*([\s\S]*)$/))) {
-			return select(args[m[1]], m[2], args, locale);
-		}
-		if ((m = s.match(/^\$([A-Za-z][\w-]*)$/))) {
-			return args[m[1]] == null ? '' : String(args[m[1]]);
-		}
-		// The Fluent way to write a pattern whose edges are whitespace, which
-		// the file format would otherwise trim away.
-		if ((m = s.match(/^"([\s\S]*)"$/))) return m[1];
-		return '{' + inner + '}';
-	}
+	// format()'s parsed patterns, by locale and text, and the ones already
+	// reported. Both are emptied together at PATTERNS_MAX, so a caller feeding
+	// format() ever-new text cannot grow either without bound; a pattern
+	// reported before the reset may be reported once more after it.
+	var _patterns = new Map();
+	var PATTERNS_MAX = 500;
+	var _patternsSeen = new Set();
 
 	/**
-	 * Pick a variant for `value`.
+	 * Format one pattern's source text, as parse() returns it.
 	 *
-	 * An exact key wins over a plural category, so `[0] nothing yet` can special-
-	 * case a count that the CLDR category `other` would otherwise swallow. The
-	 * starred variant is the fallback, which Fluent requires every selector to
-	 * have -- but a file missing one still resolves to something rather than
-	 * throwing, since a translation error must not take the UI down.
+	 * For checks and one-off strings; a caller formatting the same file over
+	 * and over wants bundle(), which parses it once. A pattern the runtime
+	 * cannot read comes back as written, so it is visible, and is reported.
 	 */
-	function select(value, body, args, locale) {
-		var variants = [];
-		var re = /(\*)?\[[ \t]*([^\]]*?)[ \t]*\]/g;
-		var m;
-		var last = null;
-		while ((m = re.exec(body))) {
-			if (last) last.text = body.slice(last.at, m.index);
-			last = { def: !!m[1], key: m[2], at: re.lastIndex, text: '' };
-			variants.push(last);
-		}
-		if (last) last.text = body.slice(last.at);
-		if (!variants.length) return '';
-
-		var want = value == null ? '' : String(value);
-		var pick = null;
-		for (var i = 0; i < variants.length && !pick; i++) {
-			if (variants[i].key === want) pick = variants[i];
-		}
-		if (!pick) {
-			var cat = category(value, locale);
-			for (var j = 0; j < variants.length && !pick; j++) {
-				if (variants[j].key === cat) pick = variants[j];
+	function format(pattern, args, locale) {
+		var text = String(pattern == null ? '' : pattern);
+		var key = (locale || '') + '\u0000' + text;
+		var hit = _patterns.get(key);
+		if (!hit) {
+			// A line the pattern continues on has to be indented to be one.
+			var src = 'x =' + (text.charAt(0) === '\n' ? '' : ' ')
+				+ text.replace(/\n(?=[^ \n])/g, '\n ') + '\n';
+			var fb = new FluentBundle(localesFor(locale), { useIsolating: false });
+			fb.addResource(new FluentResource(src));
+			var msg = fb.getMessage('x');
+			hit = { fb: fb, value: msg && msg.value };
+			if (_patterns.size >= PATTERNS_MAX) {
+				_patterns.clear();
+				_patternsSeen.clear();
 			}
+			_patterns.set(key, hit);
 		}
-		for (var k = 0; k < variants.length && !pick; k++) {
-			if (variants[k].def) pick = variants[k];
-		}
-		if (!pick) pick = variants[0];
-		return format(pick.text.trim(), args, locale);
-	}
-
-	var _rules = Object.create(null);
-
-	/** The CLDR plural category, so a translator can write the forms their own
-	 *  language needs rather than the two English happens to have. */
-	function category(value, locale) {
-		if (value == null || value === '' || !isFinite(value)) return null;
-		var key = locale || '';
-		if (!(key in _rules)) {
-			try {
-				_rules[key] = new Intl.PluralRules(locale || undefined);
+		if (!hit.value) {
+			if (!_patternsSeen.has(text)) {
+				_patternsSeen.add(text);
+				safely(null, new Error('Fluent: cannot parse ' + JSON.stringify(text)));
 			}
-			catch (e) {
-				_rules[key] = null;
-			}
+			return text;
 		}
-		if (!_rules[key]) return Number(value) === 1 ? 'one' : 'other';
-		return _rules[key].select(Number(value));
+		return run(hit.fb, hit.value, fill(args, null), text, _patternsSeen, null);
 	}
 
 	/**
@@ -233,16 +322,36 @@
 	 * A missing id comes back as the id itself. Blank would hide the mistake at
 	 * exactly the moment it matters; the id on screen says which string is
 	 * missing and from which file.
+	 *
+	 * `report`, if given, receives an Error for each message that formatted
+	 * with errors, once per message; without it they go to console.error.
 	 */
-	function bundle(source, locale, prefix) {
-		var messages = parse(source);
+	function bundle(source, locale, prefix, report) {
+		var src = String(source == null ? '' : source);
+		var fb = compile(src, locale, report);
 		var pre = prefix || '';
 		var shared = null;
+		var seen = new Set();
+		var messages = null;
+
+		/** The runtime's pattern for "id" or "id.attribute", or null. */
+		function lookup(key) {
+			var dot = key.indexOf('.');
+			var msg = fb.getMessage(dot < 0 ? key : key.slice(0, dot));
+			if (!msg) return null;
+			if (dot < 0) return msg.value;
+			return msg.attributes[key.slice(dot + 1)] || null;
+		}
+
 		var api = {
 			locale: locale || null,
-			messages: messages,
+			/** parse() of the source, for reading; worked out when first asked. */
+			get messages() {
+				if (!messages) messages = parse(src);
+				return messages;
+			},
 			has: function (id) {
-				return (pre + id) in messages;
+				return lookup(pre + id) !== null;
 			},
 			/**
 			 * A variable every message may use without its caller passing it.
@@ -264,14 +373,12 @@
 				api.share('mod', api.has(id) ? api.t(id) : (mac ? '⌘' : 'Ctrl'));
 			},
 			t: function (id, args) {
-				var pattern = messages[pre + id];
-				if (pattern == null) return id;
-				if (!shared) return format(pattern, args, locale);
-				var all = Object.create(null);
-				var name;
-				for (name in shared) all[name] = shared[name];
-				if (args) for (name in args) all[name] = args[name];
-				return format(pattern, all, locale);
+				var key = pre + id;
+				var pattern = lookup(key);
+				if (pattern === null) return id;
+				// A plain string has nothing to fill, and is most of the file.
+				if (typeof pattern === 'string') return fb.formatPattern(pattern);
+				return run(fb, pattern, fill(args, shared), key, seen, report);
 			},
 		};
 		return api;

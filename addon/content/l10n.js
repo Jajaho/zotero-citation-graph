@@ -40,7 +40,7 @@
 
 	/**
 	 * One string. `args` fills the pattern's variables and picks its plural
-	 * variant; see content/ftl.js for the subset supported.
+	 * variant; content/ftl.js formats it with Fluent's own runtime.
 	 */
 	function t(id, args) {
 		if (!bundle) return id;

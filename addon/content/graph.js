@@ -1264,8 +1264,9 @@
 		elProgressRoom.textContent = (labels || [String(p.text == null ? '' : p.text)])
 			.map((text, i) => (steps > 1 ? t('progress-step', { step: i + 1, steps, text }) : text))
 			.join('\n');
-		let room = COUNT_ROOM.toLocaleString();
-		elProgressCountRoom.textContent = t('progress-count', { done: room, total: room });
+		// Numbers, not strings: progress-count groups them with NUMBER(), in
+		// the strings' own locale.
+		elProgressCountRoom.textContent = t('progress-count', { done: COUNT_ROOM, total: COUNT_ROOM });
 
 		// Its own width first, or what is read is the last build's.
 		elProgress.style.width = '';
@@ -1314,10 +1315,7 @@
 			return;
 		}
 		let done = Math.max(0, Math.min(Number(p.done), Number(p.total)));
-		let count = t('progress-count', {
-			done: done.toLocaleString(),
-			total: Number(p.total).toLocaleString(),
-		});
+		let count = t('progress-count', { done, total: Number(p.total) });
 		let percent = Math.round(100 * done / Number(p.total));
 		elProgressCount.textContent = count;
 		elProgressFill.style.width = percent + '%';
@@ -1757,21 +1755,24 @@
 	/**
 	 * A count in a sentence the locale owns, with the number set apart.
 	 *
-	 * The sentence is formatted with the bare number, which is what picks its
-	 * plural, and the number is then found in it and written the way the
-	 * reader's locale groups its digits, in bold. A sentence with no number in
-	 * it -- "no paper here cites it" -- is returned as it is.
+	 * The sentence is formatted with the number itself, which is what picks its
+	 * plural, and the message groups its digits with NUMBER() in the strings'
+	 * own locale. The number is then found in it as it was printed there --
+	 * grouped that way, or as written by a translation that did not ask for
+	 * NUMBER() -- and set in bold. A sentence with no number in it -- "no paper
+	 * here cites it" -- is returned as it is.
 	 *
 	 * Handed the sentence rather than its id, so that the t() that asks for it
 	 * is written out where npm test's scan for unused messages can see it.
 	 */
 	function tipCount(sentence, n) {
 		let text = escapeHtml(sentence);
-		let plain = String(n);
-		let at = text.indexOf(plain);
-		if (at < 0) return text;
-		return text.slice(0, at) + '<b>' + escapeHtml(Number(n).toLocaleString()) + '</b>'
-			+ text.slice(at + plain.length);
+		for (let shown of [Number(n).toLocaleString(ZGL10n.locale() || undefined), String(n)]) {
+			let mark = escapeHtml(shown);
+			let at = text.indexOf(mark);
+			if (at >= 0) return text.slice(0, at) + '<b>' + mark + '</b>' + text.slice(at + mark.length);
+		}
+		return text;
 	}
 
 	/**
@@ -7716,7 +7717,7 @@
 		if (x.year) sub.push(x.year);
 		sub.push(t('tooltip-cited-here', { count: n.inDeg }));
 		if (x.citedByGlobal != null) {
-			sub.push(t('tooltip-citations-total', { count: x.citedByGlobal.toLocaleString() }));
+			sub.push(t('tooltip-citations-total', { count: x.citedByGlobal }));
 		}
 		// The DOI is the thing actually being added, so show it verbatim -- but
 		// only when there IS one. A `ref:` node's id is a slug of its own title

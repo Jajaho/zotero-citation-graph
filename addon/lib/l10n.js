@@ -11,9 +11,10 @@
  * handing the graph page the source it formats from.
  *
  * It reads the .ftl itself rather than going through Localization, so that both
- * sides of the bridge run the same reader over the same text: a string that
- * renders one way in the panel and another way on the status line would be a
- * bug nobody would think to look for. content/ftl.js documents the subset.
+ * sides of the bridge format the same text with the same runtime -- Fluent's
+ * own, @fluent/bundle, through content/ftl.js: a string that renders one way in
+ * the panel and another way on the status line would be a bug nobody would
+ * think to look for. content/ftl.js says why the page cannot use Gecko's.
  *
  * Loaded once, at startup, before any tab can exist -- so everything below is
  * synchronous at its call sites.
@@ -87,7 +88,7 @@ async function load(rootURI) {
 			let source = await Zotero.File.getResourceAsync(rootURI + 'locale/' + locale + '/' + FILE);
 			_locale = locale;
 			_source = source;
-			_bundle = Ftl.bundle(source, locale, PREFIX);
+			_bundle = Ftl.bundle(source, locale, PREFIX, report);
 			_bundle.shareModifier(isMac());
 			return;
 		}
@@ -97,7 +98,13 @@ async function load(rootURI) {
 	}
 	// Everything below still answers; t() gives back ids, which is visible and
 	// says exactly what failed.
-	_bundle = Ftl.bundle('', FALLBACK, PREFIX);
+	_bundle = Ftl.bundle('', FALLBACK, PREFIX, report);
+}
+
+/** Where a string that formatted with errors is reported -- once per message,
+ *  by ftl.js -- so a broken translation reaches the Error Console. */
+function report(e) {
+	Zotero.logError(e);
 }
 
 /** One string. `args` fills variables and picks plural variants. */
@@ -107,7 +114,7 @@ function t(id, args) {
 }
 
 /** A message's attribute -- `.label` on the menu entry, and nothing else so
- *  far. Attributes are flattened to "id.attribute"; see content/ftl.js. */
+ *  far. content/ftl.js answers for one as "id.attribute". */
 function attr(id, name, args) {
 	return t(id + '.' + name, args);
 }

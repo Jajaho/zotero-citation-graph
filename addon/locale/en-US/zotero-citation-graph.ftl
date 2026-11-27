@@ -5,11 +5,12 @@
 # plugin's. Both sides of the bridge prepend the prefix themselves, so call
 # sites read t('legend-outside') while the file keeps the qualified name.
 #
-# The graph page formats these with content/ftl.js, a Fluent subset. Variables
-# and plural selectors work; message references, nested selectors and functions
-# do not. Keep each message on one line -- a wrapped line is joined back with a
-# space, which is right for prose and wrong for anything that meant to keep a
-# line break.
+# This is full Fluent: both sides of the bridge format it with @fluent/bundle,
+# Fluent's own runtime (content/ftl.js), and `npm test` reads it with Fluent's
+# reference parser, the grammar Zotero's own bundle reads it with. Keep each
+# message's text on one line: Fluent keeps a wrapped line's break, and every
+# string here is drawn as a single line. A select is the exception: each
+# variant and the closing brace go on a line of their own.
 #
 # Adding a locale: create locale/<code>/zotero-citation-graph.ftl and add <code> to
 # LOCALES in lib/l10n.js. `npm test` checks the two against each other, and
@@ -212,7 +213,7 @@ zotero-citation-graph-bad-payload = Bad payload: { $message }
 # and $steps which phase of how many; a build of one phase shows $text alone.
 # The count is of whatever the phase counts -- papers, mostly.
 zotero-citation-graph-progress-step = Step { $step } of { $steps } · { $text }
-zotero-citation-graph-progress-count = { $done } / { $total }
+zotero-citation-graph-progress-count = { NUMBER($done) } / { NUMBER($total) }
 zotero-citation-graph-progress-stop = Stop
 zotero-citation-graph-progress-stop-hint = Stop this build and keep what it has found so far
 
@@ -301,18 +302,19 @@ zotero-citation-graph-color-unknown-type = (Unknown type)
 # reference's second line starts with tooltip-not-in-collection.
 zotero-citation-graph-tooltip-not-in-collection = Not in this graph
 # The number is set in bold by the page, which finds it in the sentence: keep
-# { $count } in every variant that has a number to show.
+# { NUMBER($count) } in every variant that has a number to show. NUMBER() groups
+# the digits the way this locale does (3,904); the selector stays $count.
 zotero-citation-graph-tooltip-cited-here = { $count ->
         [0] No paper here cites it
-        [one] { $count } paper here cites it
-       *[other] { $count } papers here cite it
+        [one] { NUMBER($count) } paper here cites it
+       *[other] { NUMBER($count) } papers here cite it
     }
-zotero-citation-graph-tooltip-cited-global = { $count } worldwide
+zotero-citation-graph-tooltip-cited-global = { NUMBER($count) } worldwide
 # The gap list's line for the same count, which has no "here" beside it to be
 # read against.
 zotero-citation-graph-tooltip-citations-total = { $count ->
-        [one] { $count } citation total
-       *[other] { $count } citations total
+        [one] { NUMBER($count) } citation total
+       *[other] { NUMBER($count) } citations total
     }
 zotero-citation-graph-tooltip-pinned = pinned
 zotero-citation-graph-tooltip-et-al = { $names } et al.
