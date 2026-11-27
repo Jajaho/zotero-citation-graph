@@ -81,6 +81,11 @@ zotero-citation-graph-size-by = Node size
 zotero-citation-graph-size-by-here = Cited here
 zotero-citation-graph-size-by-global = Global citations
 
+zotero-citation-graph-layout = Layout
+zotero-citation-graph-layout-even = Even
+zotero-citation-graph-layout-classic = Classic
+zotero-citation-graph-layout-hint = Even spaces every paper about the same distance from its neighbours. Classic is the layout before 0.79.0: tight clusters, unconnected papers in a ring around them.
+
 zotero-citation-graph-link-pull = Edge pull
 zotero-citation-graph-link-pull-hint = How hard a link pulls its two nodes together. Lower spreads a crowded graph out.
 

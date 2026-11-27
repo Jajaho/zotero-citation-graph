@@ -13119,7 +13119,7 @@ check('a node with the button down on it is not saved as a pin', () => {
 		isolateDepth: 1, colorEdges: true, edgeTips: true, disabledVia: new Set(), groups: [],
 		panelBox: { filters: () => [] }, minCitesAsked: () => 2,
 	};
-	for (const name of ['elLinkPull', 'elCenterPull', 'elGroupPull', 'elPinPull', 'elDragAlpha', 'elSettle', 'elHold', 'elPerf',
+	for (const name of ['elLayout', 'elLinkPull', 'elCenterPull', 'elGroupPull', 'elPinPull', 'elDragAlpha', 'elSettle', 'elHold', 'elPerf',
 		'elAutobuild', 'elHideIsolated', 'elHideGhostNames', 'elSizeBy', 'elColorBy', 'elMinConf']) globals[name] = input();
 	const page = liftPage({ functions: ['snapshotView', 'pinnedByUser', 'isPinned'], consts: ['VIEW_VERSION', 'SECTIONS'], globals });
 	const ids = () => page.snapshotView().pins.map(p => p.id).join(' ');

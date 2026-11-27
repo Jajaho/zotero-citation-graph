@@ -74,6 +74,8 @@
 	 *  edges to pull. Worth remembering across windows for the same reason the
 	 *  collapsed panel is -- it is a setting about this screen, not this graph. */
 	const PULL_KEY = 'zg.link.pull';
+	/** And for which layout they like, even or classic. */
+	const LAYOUT_KEY = 'zg.layout';
 	/** And for how hard the middle of the canvas holds on. */
 	const CENTER_KEY = 'zg.center.pull';
 	/** And for how hard an anchor pulls what it names. It was the anchor's own
@@ -823,6 +825,7 @@
 	let elRefStrings = el('ref-strings');
 	let elColorBy = el('color-by');
 	let elSizeBy = el('size-by');
+	let elLayout = el('layout');
 	let elLinkPull = el('link-pull');
 	let elPullValue = el('pull-value');
 	let elCenterPull = el('center-pull');
@@ -3598,7 +3601,7 @@
 			// in and reprices them rather than replacing them -- the arrows,
 			// curvature and endpoint resolution all belong to the link force.
 			fg.d3Force('link').strength(linkStrength).distance(linkDistance);
-			fg.d3Force('charge').strength(CHARGE);
+			fg.d3Force('charge').strength(charge());
 		}
 
 		// The pane can be resized without a window resize event -- a Zotero
@@ -3997,7 +4000,24 @@
 	 */
 	const LINK_GAP = 47;
 
+	/**
+	 * The layout before 0.79.0, kept in the panel's Layout menu: a light pull
+	 * on linked papers, a firm one on orphans, force-graph's own charge and
+	 * link length, grouped papers left to their anchor alone, and an anchor
+	 * pull not scaled by PULL.
+	 */
+	const CLASSIC = { pull: 0.02, orphan: 0.15, charge: -30, distance: 30 };
+
+	function classic() {
+		return elLayout.value === 'classic';
+	}
+
+	function charge() {
+		return classic() ? CLASSIC.charge : CHARGE;
+	}
+
 	function linkDistance(l) {
+		if (classic()) return CLASSIC.distance;
 		return LINK_GAP + nodeRadius(l.source) + nodeRadius(l.target);
 	}
 
@@ -4024,8 +4044,14 @@
 			// outward push of everyone else's charge, so a node it skipped was
 			// shoved out past its flag unless the anchor out-pulled the centre;
 			// kept, the anchor alone says where the node goes.
-			let k = PULL * scale * alpha;
+			let old = classic();
 			for (let n of nodes) {
+				let k = PULL;
+				if (old) {
+					if (groupOf.has(n.id)) continue;
+					k = n.deg ? CLASSIC.pull : CLASSIC.orphan;
+				}
+				k *= scale * alpha;
 				n.vx -= n.x * k;
 				n.vy -= n.y * k;
 			}
@@ -4087,11 +4113,12 @@
 		let nodes = [];
 		function force(alpha) {
 			if (!groupOf.size) return;
+			let m = (classic() ? 1 : PULL) * alpha;
 			for (let n of nodes) {
 				let at = groupOf.get(n.id);
 				if (!at) continue;
-				n.vx += (at.x - n.x) * at.k * PULL * alpha;
-				n.vy += (at.y - n.y) * at.k * PULL * alpha;
+				n.vx += (at.x - n.x) * at.k * m;
+				n.vy += (at.y - n.y) * at.k * m;
 			}
 		}
 		force.initialize = ns => {
@@ -4434,6 +4461,15 @@
 	function applyCenterPull() {
 		elCenterValue.textContent = centerScale().toFixed(2);
 		if (!fg) return;
+		reheat();
+	}
+
+	/** The pulls read the menu every tick; charge and link length are cached
+	 *  by d3, so those are handed over again. */
+	function applyLayout() {
+		if (!fg) return;
+		fg.d3Force('charge').strength(charge());
+		fg.d3Force('link').distance(linkDistance);
 		reheat();
 	}
 
@@ -8161,6 +8197,10 @@
 		applyLinkPull();
 		remember(PULL_KEY, elLinkPull.value);
 	});
+	elLayout.addEventListener('change', () => {
+		applyLayout();
+		remember(LAYOUT_KEY, elLayout.value);
+	});
 	// Same again for the middle of the canvas: layout, not data.
 	elCenterPull.addEventListener('input', () => {
 		applyCenterPull();
@@ -9156,6 +9196,7 @@
 			sections,
 			sideOpen: !elFrame.classList.contains('side-closed'),
 			sideWidth,
+			layout: elLayout.value,
 			linkPull: Number(elLinkPull.value),
 			centerPull: Number(elCenterPull.value),
 			groupPull: Number(elGroupPull.value),
@@ -9243,6 +9284,8 @@
 		if (bool(view.sideOpen) !== null) setSideOpen(view.sideOpen);
 		else remeasure();
 
+		selectIfOffered(elLayout, view.layout);
+		applyLayout();
 		setRange(elLinkPull, view.linkPull);
 		applyLinkPull();
 		setRange(elCenterPull, view.centerPull);
@@ -9468,6 +9511,11 @@
 		hideSearch();
 		closeGroup();
 	});
+
+	try {
+		selectIfOffered(elLayout, window.localStorage.getItem(LAYOUT_KEY));
+	}
+	catch (e) { /* see remember() */ }
 
 	try {
 		let saved = window.localStorage.getItem(PULL_KEY);

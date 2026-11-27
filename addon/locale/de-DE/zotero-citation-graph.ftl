@@ -51,6 +51,11 @@ zotero-citation-graph-size-by = Knotengröße
 zotero-citation-graph-size-by-here = Hier zitiert
 zotero-citation-graph-size-by-global = Zitationen weltweit
 
+zotero-citation-graph-layout = Layout
+zotero-citation-graph-layout-even = Gleichmäßig
+zotero-citation-graph-layout-classic = Klassisch
+zotero-citation-graph-layout-hint = Gleichmäßig hält jeden Eintrag etwa gleich weit von seinen Nachbarn entfernt. Klassisch ist das Layout vor 0.79.0: dichte Cluster, unverbundene Einträge in einem Ring darum.
+
 zotero-citation-graph-link-pull = Kantenzug
 zotero-citation-graph-link-pull-hint = Wie stark eine Kante ihre beiden Knoten zusammenzieht. Niedriger zieht einen dichten Graphen auseinander.
 

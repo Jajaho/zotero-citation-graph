@@ -806,6 +806,13 @@ lose: papers stop sitting near what they cite. At 0 the orphans drift off again,
 which is the honest answer to asking for no centre pull; turned up, the whole
 graph gathers into a tighter disc.
 
+**`layout`** picks between that even layout and **classic**, the one before
+0.79.0: `CLASSIC` in `graph.js` holds its numbers (pull 0.02 on linked papers,
+0.15 on orphans, charge −30, links 30 long), grouped papers skip the centre pull
+and anchors pull unscaled. The pulls read the menu every tick; charge and link
+length are cached by d3, so `applyLayout()` hands them over again and reheats.
+It is remembered like the sliders and saved with the tab.
+
 **`group pull`** scales how hard every group anchor pulls the papers its masks
 name — see *Groups* below for what an anchor is. It sat on each flag's own card
 once, one answer per anchor. That sounded like the finer control and read as the

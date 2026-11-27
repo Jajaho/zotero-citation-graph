@@ -410,6 +410,14 @@
 						</button>
 						<div class="section-body" id="sec-forces-body">
 							<div class="group">
+								<!-- The even layout since 0.79.0, or the one before it. -->
+								<label id="layout-label" data-zg-title="layout-hint" title="Even spaces every paper about the same distance from its neighbours. Classic is the layout before 0.79.0: tight clusters, unconnected papers in a ring around them.">
+									<span data-zg-str="layout">Layout</span>
+									<select id="layout">
+										<option value="even" data-zg-str="layout-even">Even</option>
+										<option value="classic" data-zg-str="layout-classic">Classic</option>
+									</select>
+								</label>
 								<!-- A dense collection packs into balls because every edge pulls
 								     at full strength; slackening the edges lets charge repulsion
 								     win and the clusters open up far enough to read. -->
