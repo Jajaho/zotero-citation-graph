@@ -9,7 +9,9 @@
  * allow.json entries are listed even on a pass: they are known bugs (#34)
  * that only stay visible if something keeps showing them.
  *
- * Usage: node tools/smoke/summary.js <report.json> [--channel <name>]
+ * Usage: node tools/smoke/summary.js <report.json> [--label <which Zotero>]
+ *        --label is shown as given, e.g. "beta channel"; --channel beta is
+ *        the same as --label "beta channel".
  * Prints to stdout. A report that is missing or unreadable is said so, not
  * thrown: the summary step must never be what fails a job.
  */
@@ -17,9 +19,12 @@
 const fs = require('fs');
 
 const argv = process.argv.slice(2);
-const reportPath = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--channel');
-const ci = argv.indexOf('--channel');
-const channel = ci === -1 ? null : argv[ci + 1];
+const valueOf = (name) => {
+	const i = argv.indexOf('--' + name);
+	return i === -1 ? null : argv[i + 1];
+};
+const reportPath = argv.find((a, i) => !a.startsWith('--') && !['--channel', '--label'].includes(argv[i - 1]));
+const label = valueOf('label') || (valueOf('channel') && valueOf('channel') + ' channel');
 
 /** One line of message text, safe inside a Markdown code span. */
 function code(s, max = 200) {
@@ -53,7 +58,7 @@ function render(r) {
 	const list = (k) => (Array.isArray(con[k]) ? con[k] : []);
 	const count = (k) => (Array.isArray(con[k]) ? con[k].length : Number(con[k]) || 0);
 
-	const about = [channel && channel + ' channel', z.gecko && 'Gecko ' + z.gecko].filter(Boolean);
+	const about = [label, z.gecko && 'Gecko ' + z.gecko].filter(Boolean);
 	out.push('### Smoke test on Zotero ' + (z.version || '?') + (about.length ? ' (' + about.join(', ') + ')' : '')
 		+ ': ' + (r.ok ? 'PASS' : 'FAIL'));
 	out.push('');
@@ -113,7 +118,7 @@ try {
 	text = render(JSON.parse(fs.readFileSync(reportPath, 'utf8')));
 }
 catch (e) {
-	text = '### Smoke test' + (channel ? ' (' + channel + ' channel)' : '') + ': no readable report\n\n'
+	text = '### Smoke test' + (label ? ' (' + label + ')' : '') + ': no readable report\n\n'
 		+ code(e.message, 400) + '\n\nThe run ended before it wrote one; see the step\'s log.';
 }
 process.stdout.write(text + '\n');

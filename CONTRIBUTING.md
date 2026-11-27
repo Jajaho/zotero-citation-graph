@@ -5,14 +5,37 @@ Bug reports, pull requests and translations are all welcome. Work happens on
 
 ## Supported Zotero versions
 
-`strict_max_version` in [`addon/manifest.json`](addon/manifest.json) may only
-cover a Zotero major version while its smoke job passes. The smoke test loads
-the built XPI into a real Zotero; what it checks is described in
+The plugin's range is set in [`addon/manifest.json`](addon/manifest.json):
+`strict_min_version` and `strict_max_version`. Both ends are tested. The smoke
+test loads the built XPI into a real Zotero; what it checks is described in
 [`docs/development.md`](docs/development.md).
-[`smoke.yml`](.github/workflows/smoke.yml) runs it weekly on Zotero's current
-release and beta builds, and CI and the release workflow run it on the release
-build. When a channel's job fails, fix the plugin, or lower
+[`smoke.yml`](.github/workflows/smoke.yml) runs it weekly on:
+
+- the oldest Zotero the plugin accepts: the release that `strict_min_version`
+  names (`10.0.0` is Zotero's build `10.0`);
+- the current release;
+- the current beta;
+- the current dev build. This job only warns: its failure doesn't fail the run.
+
+CI and the release workflow run it on the current release and on the oldest
+accepted version.
+
+`strict_max_version` may only cover a Zotero major version while its smoke job
+passes. Zotero ignores `strict_max_version` on beta and dev builds, so the beta
+job already tests the next major before the manifest accepts it. Raise
+`strict_max_version` to that major once its beta passes, in `updates.json` as
+well as in the manifest. When a job fails, fix the plugin, or lower
 `strict_max_version` below that Zotero major version until it passes.
+
+A cap doesn't strand users. When someone updates Zotero past it, Zotero
+disables the plugin but keeps it installed and keeps checking `updates.json`
+for it once a day. As soon as `updates.json` has a version whose range includes
+their Zotero, Zotero installs it and the plugin comes back. For users who
+already have the newest version, raising its `strict_max_version` in
+`updates.json` is enough: Zotero raises it on the installed copy.
+
+Raise `strict_min_version` only to a Zotero that was actually released: the
+minimum job fails when zotero.org has no build of that version.
 
 The release workflow attaches the XPI only after the smoke test passes, so a
 failure there, even one on Zotero's side such as a download that did not come
@@ -21,8 +44,10 @@ run, or run the Release workflow by hand with the tag. Both are safe to repeat:
 the attach step uploads only a missing asset and never replaces one.
 
 To run it locally, build the XPI and point the smoke test at a Zotero.
-`fetch-zotero.js` downloads the current build of a channel into a cache
-directory and prints the binary's path:
+`fetch-zotero.js` downloads a Zotero into a cache directory and prints the
+binary's path. `--channel release|beta|dev` gets that channel's current build,
+`--version min` the oldest version the manifest accepts, and `--version 10.0.7`
+that release:
 
 ```
 npm run build

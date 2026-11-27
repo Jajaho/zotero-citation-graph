@@ -7,13 +7,25 @@
  * The smoke test (tools/smoke/run.js) needs a Zotero to load the XPI into, and
  * the point of running it on a schedule is to meet the next Zotero before our
  * users do: #26 broke when the 11 beta moved to a new Gecko, with no change on
- * our side. So this takes whatever zotero.org hands out today for the channel,
- * not a pinned version.
+ * our side. So by default this takes whatever zotero.org hands out today for
+ * the channel, not a pinned version: release, beta, or dev, which runs ahead
+ * of beta.
+ *
+ * The other end of the range is pinned. --version min fetches the oldest
+ * Zotero the plugin's manifest accepts (applications.zotero.strict_min_version):
+ * the point releases of one major share their Gecko, and the risk sits at the
+ * floor, where an API that a later point release added breaks everyone below
+ * it. Zotero names a major's first build "10.0", not "10.0.0", so a version
+ * ending in ".0" is also tried without it. --version 10.0.7 fetches that
+ * build. Pinned builds never change, so a cached one is used without asking
+ * zotero.org first.
  *
  * Where it comes from. zotero.org/download/client/dl?channel=&platform= answers
  * with a 302 to download.zotero.org/client/<channel>/<version>/<file>, which is
  * how the download page's own buttons work. The version is read from that URL
  * before anything is downloaded, so a cached copy of the same build is reused.
+ * A pinned build is fetched from download.zotero.org/client/release/<version>/
+ * <file> directly, which answers 403 for a version zotero.org never released.
  * Platforms used here (checked 2026-11-27):
  *   linux-x86_64  Zotero-<v>_linux-x86_64.tar.xz
  *   win-x64-zip   Zotero-<v>_win-x64.zip, the portable build: the same files
@@ -43,7 +55,10 @@
  * are a crashed run's and are removed. The archive is deleted after unpacking.
  */
 
-const USAGE = `Usage: node tools/smoke/fetch-zotero.js --channel release|beta
+const USAGE = `Usage: node tools/smoke/fetch-zotero.js --channel release|beta|dev
+       node tools/smoke/fetch-zotero.js --version min|<release, e.g. 10.0.7>
+         [--manifest <path>]      for --version min: the manifest.json whose
+                                  strict_min_version to use (addon/manifest.json)
          [--platform linux|win]   default, and the only one allowed: this machine's
          [--dir <cache>]          default: <tmp>/zg-zotero
          [--fresh]                download again even if this build is cached
@@ -75,7 +90,10 @@ const opt = (name, dflt) => {
 	return v;
 };
 
-const CHANNELS = ['release', 'beta'];
+const CHANNELS = ['release', 'beta', 'dev'];
+
+// A pinned release, named the way zotero.org names its release builds.
+const RELEASE_VERSION = /^\d+(\.\d+){1,3}$/;
 
 // What zotero.org calls each platform, what it hands out, what the binary in
 // it is called, and the only host that can unpack and run it.
@@ -140,6 +158,58 @@ async function resolve(channel, platform) {
 		throw permanent('unexpected build name in ' + url.href);
 	}
 	return { url: url.href, version, file };
+}
+
+/**
+ * The names a pinned release may be published under: the version as given,
+ * then with trailing ".0"s dropped down to major.minor. strict_min_version
+ * "10.0.0" is Zotero's build "10.0".
+ */
+function spellings(version) {
+	const out = [version];
+	let v = version;
+	while (/^\d+\.\d+\.\d+/.test(v) && v.endsWith('.0')) {
+		v = v.slice(0, -2);
+		out.push(v);
+	}
+	return out;
+}
+
+const pinnedBuild = (v, platform) => {
+	const file = 'Zotero-' + v + PLATFORMS[platform].suffix;
+	return {
+		url: 'https://download.zotero.org/client/release/' + encodeURIComponent(v) + '/' + encodeURIComponent(file),
+		version: v,
+		file,
+	};
+};
+
+/**
+ * Finds a pinned release on download.zotero.org. zotero.org's redirect only
+ * knows each channel's current build. A 403 or 404 means no such build, and
+ * the next spelling is tried.
+ */
+async function resolvePinned(version, platform, fromManifest) {
+	const tried = [];
+	for (const v of spellings(version)) {
+		const build = pinnedBuild(v, platform);
+		const res = await fetch(build.url, { method: 'HEAD', redirect: 'error' });
+		if (res.ok) return build;
+		if (res.status >= 500 || res.status === 429) throw new Error(build.url + ' answered ' + res.status);
+		tried.push(v + ' (' + res.status + ')');
+	}
+	throw permanent('zotero.org has no ' + platform + ' release build of ' + version + '; tried '
+		+ tried.join(', ') + (fromManifest ? '. strict_min_version has to name a Zotero that was released.' : ''));
+}
+
+/** strict_min_version from a manifest.json: the oldest Zotero the plugin accepts. */
+function minimumVersion(manifestPath) {
+	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	const v = manifest.applications?.zotero?.strict_min_version;
+	if (!v || !RELEASE_VERSION.test(v)) {
+		throw permanent(manifestPath + ' has no applications.zotero.strict_min_version of the form 10.0.0 (it has ' + v + ')');
+	}
+	return v;
 }
 
 /** Streams the URL to a file and checks it got as many bytes as were announced. */
@@ -335,8 +405,18 @@ async function main() {
 	if (process.platform === 'darwin') {
 		throw new Error('macOS is not supported: Zotero ships a .dmg there. Pass your own Zotero to the smoke test with --zotero.');
 	}
-	const channel = opt('channel', null);
-	if (!CHANNELS.includes(channel)) throw new Error('--channel is ' + CHANNELS.join(' or ') + ', not ' + channel + '\n\n' + USAGE);
+	let version = opt('version', null);
+	const channel = opt('channel', version ? 'release' : null);
+	if (!CHANNELS.includes(channel)) throw new Error('--channel is ' + CHANNELS.join(', ') + ', not ' + channel + '\n\n' + USAGE);
+	if (version) {
+		if (channel !== 'release') throw new Error('--version pins a release build; leave out --channel ' + channel);
+		if (version === 'min') {
+			const manifest = path.resolve(opt('manifest', path.join(__dirname, '..', '..', 'addon', 'manifest.json')));
+			version = minimumVersion(manifest);
+			log('the oldest Zotero ' + manifest + ' accepts: ' + version);
+		}
+		else if (!RELEASE_VERSION.test(version)) throw new Error('--version is min or a release such as 10.0.7, not ' + version);
+	}
 	const platform = opt('platform', process.platform === 'win32' ? 'win' : 'linux');
 	if (!PLATFORMS[platform]) throw new Error('--platform is ' + Object.keys(PLATFORMS).join(' or ') + ', not ' + platform);
 	// The build is unpacked with this machine's tar and then run here, so it
@@ -349,9 +429,18 @@ async function main() {
 	fs.mkdirSync(cache, { recursive: true });
 	removeStale(cache);
 
-	const build = await retry('asking zotero.org for the ' + channel + ' build', () => resolve(channel, platform));
-	log(channel + ' (' + platform + '): ' + build.url);
-	const name = build.file.replace(/\.(tar\.xz|zip)$/, '');
+	const dirName = (b) => b.file.replace(/\.(tar\.xz|zip)$/, '');
+	let build;
+	if (version) {
+		// A pinned build never changes, so a cached copy under any of its
+		// names is the build itself, and needs no request.
+		build = !flag('fresh') && spellings(version).map((v) => pinnedBuild(v, platform))
+			.find((b) => fs.existsSync(path.join(cache, dirName(b), 'fetched.json')));
+		build ||= await retry('asking download.zotero.org for Zotero ' + version, () => resolvePinned(version, platform, opt('version') === 'min'));
+	}
+	else build = await retry('asking zotero.org for the ' + channel + ' build', () => resolve(channel, platform));
+	log((version ? 'Zotero ' + build.version : channel) + ' (' + platform + '): ' + build.url);
+	const name = dirName(build);
 	const target = path.join(cache, name);
 	const marker = path.join(target, 'fetched.json');
 

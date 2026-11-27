@@ -111,7 +111,8 @@ jobs:
 
       # Never attach a build that fails in Zotero itself. #26 and #27 both
       # shipped with errors that only a real Zotero's console showed (#30).
-      # The release channel, because that is what this asset's users run.
+      # Zotero's current release, which most of this asset's users run, and
+      # the oldest Zotero its manifest accepts, which some still do.
       # GH_TOKEN, which can write this repository's releases, is emptied for
       # the step, and the checkout above left no token in .git/config, so
       # nothing the smoke run starts can reach it. The smoke run tests a copy
@@ -129,13 +130,25 @@ jobs:
       # hand on one of them says so and goes on to the attach step, which
       # still never touches an asset that is already there.
       - name: Smoke test on Zotero's release channel
+        id: smoke_release
         if: hashFiles('.github/actions/smoke/action.yml') != ''
         uses: ./.github/actions/smoke
         timeout-minutes: 25
         env:
           GH_TOKEN: ''
         with:
-          channel: release
+          zotero: release
+
+      # Also when only the release run failed, so one run gives both answers.
+      # The attach below still needs both to pass.
+      - name: Smoke test on the oldest Zotero the plugin accepts
+        if: ${{ (success() || steps.smoke_release.outcome == 'failure') && hashFiles('.github/actions/smoke/action.yml') != '' }}
+        uses: ./.github/actions/smoke
+        timeout-minutes: 25
+        env:
+          GH_TOKEN: ''
+        with:
+          zotero: min
 
       - name: Note a tag without a smoke test
         if: hashFiles('.github/actions/smoke/action.yml') == ''

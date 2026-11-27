@@ -1,13 +1,20 @@
-# Load the built XPI into Zotero's current build for a channel, drive its menus,
-# and fail on the plugin's console errors (tools/smoke/run.js, issue #30).
+# Load the built XPI into a Zotero build, drive its menus, and fail on the
+# plugin's console errors (tools/smoke/run.js, issue #30).
 #
 # One action so that ci.yml, release.yml and smoke.yml run the same thing: the
 # same libraries, the same Zotero download, the same report. It expects the XPI
 # to be built and checked by the caller already, alone in xpi-dir.
 #
-# Zotero is whatever zotero.org hands out for the channel today, not a pinned
-# version. That is the point: #26 broke when the 11 beta moved to a new Gecko,
-# with no change on our side, and nothing noticed until a user did.
+# Which Zotero (the zotero input):
+#   release, beta, dev  whatever zotero.org hands out for that channel today,
+#                       not a pinned version. That is the point: #26 broke when
+#                       the 11 beta moved to a new Gecko, with no change on our
+#                       side, and nothing noticed until a user did.
+#   min                 the oldest Zotero the plugin accepts: the release build
+#                       named by strict_min_version in the manifest input. The
+#                       point releases of one major share their Gecko; the risk
+#                       is at the floor, where an API a later point release
+#                       added would break everyone below it.
 #
 # Time. run.js launches Zotero once per shipped locale (two today). A pass
 # takes about 30 s on a desktop; a run in which every case waits out its 30 s
@@ -18,12 +25,16 @@
 # upload below still run: a step or job timeout would cancel the whole action
 # and skip them.
 name: Smoke test
-description: Run tools/smoke/run.js against a built XPI in Zotero's current release or beta build.
+description: Run tools/smoke/run.js against a built XPI in a Zotero channel's current build, or in the oldest Zotero the plugin accepts.
 
 inputs:
-  channel:
-    description: Zotero channel to fetch, release or beta
+  zotero:
+    description: Which Zotero to fetch, release, beta or dev (that channel's current build) or min (strict_min_version's release)
     required: true
+  manifest:
+    description: For zotero min, the manifest.json whose strict_min_version names the build
+    required: false
+    default: addon/manifest.json
   xpi-dir:
     description: Directory holding the one built XPI to test
     required: false
@@ -77,8 +88,16 @@ runs:
       id: zotero
       shell: bash
       env:
-        CHANNEL: ${{ inputs.channel }}
-      run: node tools/smoke/fetch-zotero.js --channel "$CHANNEL" --dir "$RUNNER_TEMP/zotero"
+        ZOTERO: ${{ inputs.zotero }}
+        MANIFEST: ${{ inputs.manifest }}
+      run: |
+        set -euo pipefail
+        case "$ZOTERO" in
+          release|beta|dev) which=(--channel "$ZOTERO") ;;
+          min) which=(--version min --manifest "$MANIFEST") ;;
+          *) echo "::error::the zotero input is release, beta, dev or min, not $ZOTERO"; exit 1 ;;
+        esac
+        node tools/smoke/fetch-zotero.js "${which[@]}" --dir "$RUNNER_TEMP/zotero"
 
     # The smoke run gets a copy of the XPI, outside the workspace, so nothing
     # it does can change or add to the directory the caller attaches from.
@@ -87,7 +106,7 @@ runs:
       shell: bash
       env:
         ZOTERO: ${{ steps.zotero.outputs.binary }}
-        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
+        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.zotero }}.json
         XVFB: ${{ inputs.xvfb }}
         XPI_DIR: ${{ inputs.xpi-dir }}
         SMOKE_MINUTES: '17'
@@ -112,22 +131,22 @@ runs:
         exit "$rc"
 
     # Which Zotero it ran on, each locale's cases and the allow.json entries
-    # belong on the run's page: the channel names no version, and next
-    # week's run may meet a different one. tools/smoke/summary.js says so
+    # belong on the run's page: a channel names no version, and next week's
+    # run may meet a different one. tools/smoke/summary.js says so
     # when there is no report, and never fails.
     - name: Summary
       if: ${{ !cancelled() && steps.zotero.outcome == 'success' }}
       shell: bash
       env:
-        CHANNEL: ${{ inputs.channel }}
-        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
-      run: node tools/smoke/summary.js "$REPORT" --channel "$CHANNEL" >> "$GITHUB_STEP_SUMMARY" || true
+        LABEL: ${{ inputs.zotero == 'min' && 'the oldest Zotero the plugin accepts' || format('{0} channel', inputs.zotero) }}
+        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.zotero }}.json
+      run: node tools/smoke/summary.js "$REPORT" --label "$LABEL" >> "$GITHUB_STEP_SUMMARY" || true
 
     # Whatever report there is, also from a run that timed out.
     - name: Upload the smoke report
       if: ${{ !cancelled() && steps.smoke.outcome == 'failure' }}
       uses: actions/upload-artifact@v4
       with:
-        name: smoke-report-${{ inputs.channel }}-attempt-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
+        name: smoke-report-${{ inputs.zotero }}-attempt-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/smoke-report-${{ inputs.zotero }}.json
         if-no-files-found: warn

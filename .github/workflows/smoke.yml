@@ -1,10 +1,20 @@
-# Weekly smoke test against Zotero's current release and beta builds.
+# Weekly smoke test against Zotero's current release, beta and dev builds, and
+# the oldest Zotero the plugin accepts.
 #
 # Zotero can break the plugin without a commit on our side: #26 broke when the
 # Zotero 11 beta moved to Gecko 153, while the manifest already claimed 11, and
 # nothing ran on 11 until a user reported it on the forums. So once a week this
 # builds main and loads it into whatever zotero.org hands out on each channel.
-# A beta failure is the early warning; a release failure is a user-facing bug.
+# A release failure is a user-facing bug; a beta failure is the early warning.
+# Zotero ignores strict_max_version on beta and dev builds, so the beta job also
+# tests the next major before the manifest admits it: its passing is what lets
+# strict_max_version go up (CONTRIBUTING.md, Supported Zotero versions).
+#
+# dev runs ahead of beta and breaks for reasons of its own, so its job only
+# warns: it fails in its own row and in the run's summary, but the run stays
+# green and sends no email. The minimum job pins the release that
+# strict_min_version names in the ref's manifest, because that is where an API
+# the plugin started using too early would show.
 #
 # GitHub emails the repository's owner when a scheduled run fails. Scheduled
 # workflows run from the default branch's copy of this file, and GitHub turns
@@ -35,15 +45,16 @@ permissions:
 
 jobs:
   smoke:
-    name: Smoke (${{ matrix.channel }})
+    name: Smoke (${{ matrix.zotero }})
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    continue-on-error: ${{ matrix.zotero == 'dev' }}
     strategy:
-      # Each channel's answer is worth having on its own: a beta failure must
+      # Each Zotero's answer is worth having on its own: a beta failure must
       # not cancel the release run, nor the other way round.
       fail-fast: false
       matrix:
-        channel: [release, beta]
+        zotero: [min, release, beta, dev]
     steps:
       # The test: the commit this workflow runs from. Neither checkout keeps
       # a token in .git/config: the job runs a Zotero downloaded from outside,
@@ -73,9 +84,10 @@ jobs:
         working-directory: under-test
         run: node tools/verify-xpi.js
 
-      - name: Smoke test on Zotero's ${{ matrix.channel }} channel
+      - name: Smoke test on Zotero (${{ matrix.zotero }})
         uses: ./.github/actions/smoke
         timeout-minutes: 25
         with:
-          channel: ${{ matrix.channel }}
+          zotero: ${{ matrix.zotero }}
           xpi-dir: under-test/dist
+          manifest: under-test/addon/manifest.json
