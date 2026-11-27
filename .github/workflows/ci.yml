@@ -39,6 +39,17 @@ jobs:
       - name: Check the XPI is loadable
         run: node tools/verify-xpi.js
 
+      # Load it into Zotero's current release and drive the menus (#30): the
+      # same check release.yml makes before attaching, here on every push to
+      # main, so a broken build shows before a release is cut from it. The
+      # beta channel is smoke.yml's weekly job: a beta that breaks something
+      # must not turn main red for a fix the release needs.
+      - name: Smoke test on Zotero's release channel
+        uses: ./.github/actions/smoke
+        timeout-minutes: 20
+        with:
+          channel: release
+
       # The published checksum is the whole point: a user has to be able to
       # rebuild the tag and get the same bytes. Building twice and comparing
       # proves the packer is not smuggling in a timestamp or a directory order.

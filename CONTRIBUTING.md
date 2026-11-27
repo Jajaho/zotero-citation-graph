@@ -3,6 +3,30 @@
 Bug reports, pull requests and translations are all welcome. Work happens on
 `dev`; `main` is what CI gates.
 
+## Supported Zotero versions
+
+`strict_max_version` in [`addon/manifest.json`](addon/manifest.json) may only
+cover a Zotero major version while its smoke job passes. The smoke test loads
+the built XPI into a real Zotero, drives the menus and fails on any console
+error from the plugin's files. [`smoke.yml`](.github/workflows/smoke.yml) runs
+it weekly on Zotero's current release and beta builds, and CI and the release
+workflow run it on the release build. When a channel's job fails, fix the
+plugin, or lower `strict_max_version` below that Zotero major version until it
+passes.
+
+To run it locally, build the XPI and point the smoke test at a Zotero.
+`fetch-zotero.js` downloads the current build of a channel into a cache
+directory and prints the binary's path:
+
+```
+npm run build
+node tools/smoke/fetch-zotero.js --channel beta
+npm run smoke -- --zotero <binary> --xpi dist/<name>.xpi --report smoke-report.json
+```
+
+It runs headless in a throwaway profile and data directory, so it never
+touches the Zotero you use.
+
 ## Translations
 
 The plugin ships `en-US` and `de-DE`. Adding a language is the most useful

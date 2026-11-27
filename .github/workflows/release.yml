@@ -100,6 +100,29 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV, `ASSET=${assetName(version)}\n`);
           '
 
+      # Never attach a build that fails in Zotero itself. #26 and #27 both
+      # shipped with errors that only a real Zotero's console showed (#30).
+      # The release channel, because that is what this asset's users run.
+      # GH_TOKEN is emptied for the step: it can write to this repository's
+      # releases, and Zotero, a binary from outside, has no use for it.
+      #
+      # Tags from before the smoke test (v0.78.4 and older) have no
+      # .github/actions/smoke and were released without it. Running this by
+      # hand on one of them says so and goes on to the attach step, which
+      # still never touches an asset that is already there.
+      - name: Smoke test on Zotero's release channel
+        if: hashFiles('.github/actions/smoke/action.yml') != ''
+        uses: ./.github/actions/smoke
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ''
+        with:
+          channel: release
+
+      - name: Note a tag without a smoke test
+        if: hashFiles('.github/actions/smoke/action.yml') == ''
+        run: echo "::warning::$TAG predates the smoke test (issue #30); it is attached without one"
+
       # Never overwrite an asset that is already there. If it holds the same
       # bytes there is nothing to do. If it holds different bytes, something
       # other than the tag produced it, and that is for a person to look at.

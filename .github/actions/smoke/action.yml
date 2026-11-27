@@ -1,0 +1,119 @@
+# Load the built XPI into Zotero's current build for a channel, drive its menus,
+# and fail on the plugin's console errors (tools/smoke/run.js, issue #30).
+#
+# One action so that ci.yml, release.yml and smoke.yml run the same thing: the
+# same libraries, the same Zotero download, the same report. It expects the XPI
+# to be built and checked by the caller already, alone in xpi-dir.
+#
+# Zotero is whatever zotero.org hands out for the channel today, not a pinned
+# version. That is the point: #26 broke when the 11 beta moved to a new Gecko,
+# with no change on our side, and nothing noticed until a user did.
+name: Smoke test
+description: Run tools/smoke/run.js against a built XPI in Zotero's current release or beta build.
+
+inputs:
+  channel:
+    description: Zotero channel to fetch, release or beta
+    required: true
+  xpi-dir:
+    description: Directory holding the one built XPI to test
+    required: false
+    default: dist
+  xvfb:
+    # The switch. Headless Gecko has no display at all; if Zotero's context
+    # menus turn out to need one, set this default to 'true' and every smoke
+    # job runs Zotero headed under a virtual X server instead.
+    description: Run Zotero headed under xvfb-run instead of headless
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: The Zotero version the smoke test ran on
+    value: ${{ steps.zotero.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # What Zotero's ELF files link against outside their own directory (readelf
+    # NEEDED over the Linux tarball of 10.0.8 and 11.0-beta.6, both the same
+    # list), under Ubuntu 24.04's package names. The runner image has most of
+    # them already, for its own Firefox; installing a present package is a
+    # no-op, and naming them all means a leaner image cannot fail the job with
+    # "libasound.so.2: cannot open shared object file", which is what a
+    # missing one looks like. libc6, libstdc++6 and libgcc-s1 are left out:
+    # nothing on Ubuntu runs without them.
+    - name: Install the libraries Zotero links against
+      shell: bash
+      env:
+        XVFB: ${{ inputs.xvfb }}
+      run: |
+        set -euo pipefail
+        packages=(
+          libasound2t64 libatk1.0-0t64 libcairo-gobject2 libcairo2 libdbus-1-3
+          libfontconfig1 libfreetype6 libgdk-pixbuf-2.0-0 libglib2.0-0t64
+          libgtk-3-0t64 libpango-1.0-0 libpangocairo-1.0-0 libx11-6 libx11-xcb1
+          libxcb-shm0 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6
+          libxfixes3 libxi6 libxrandr2 libxrender1
+        )
+        if [ "$XVFB" = true ]; then packages+=(xvfb xauth); fi
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends "${packages[@]}"
+
+    - name: Fetch Zotero
+      id: zotero
+      shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+      run: node tools/smoke/fetch-zotero.js --channel "$CHANNEL" --dir "$RUNNER_TEMP/zotero"
+
+    - name: Smoke test
+      id: smoke
+      shell: bash
+      env:
+        ZOTERO: ${{ steps.zotero.outputs.binary }}
+        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
+        XVFB: ${{ inputs.xvfb }}
+        XPI_DIR: ${{ inputs.xpi-dir }}
+      run: |
+        set -euo pipefail
+        xpis=("$XPI_DIR"/*.xpi)
+        if [ "${#xpis[@]}" -ne 1 ] || [ ! -f "${xpis[0]}" ]; then
+          echo "::error::expected exactly one XPI in $XPI_DIR, found: ${xpis[*]}"
+          exit 1
+        fi
+        cmd=(npm run smoke -- --zotero "$ZOTERO" --xpi "${xpis[0]}" --report "$REPORT")
+        if [ "$XVFB" = true ]; then cmd=(xvfb-run --auto-servernum "${cmd[@]}" --headed); fi
+        "${cmd[@]}"
+
+    # Which Zotero it ran on belongs on the run's page: the channel names no
+    # version, and next week's run may meet a different one.
+    - name: Summary
+      if: always() && steps.zotero.outcome == 'success'
+      shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        VERSION: ${{ steps.zotero.outputs.version }}
+        GECKO: ${{ steps.zotero.outputs.gecko }}
+        OUTCOME: ${{ steps.smoke.outcome }}
+        REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
+      run: |
+        {
+          echo "### Smoke test on Zotero $VERSION ($CHANNEL, Gecko $GECKO): $OUTCOME"
+          if [ -f "$REPORT" ]; then
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              for (const c of r.cases || []) console.log(`- ${c.ok ? "pass" : "FAIL"} ${c.name} (${c.ms} ms)${c.error ? ": " + c.error : ""}`);
+              const n = (k) => { const v = (r.console || {})[k]; return Array.isArray(v) ? v.length : Number(v) || 0; };
+              console.log(`\nconsole: ${n("errors")} errors, ${n("warnings")} warnings, ${n("ignored")} ignored`);
+            ' "$REPORT" || true
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload the smoke report
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: smoke-report-${{ inputs.channel }}-attempt-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
+        if-no-files-found: warn

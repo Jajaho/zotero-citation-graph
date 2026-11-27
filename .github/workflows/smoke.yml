@@ -1,0 +1,73 @@
+# Weekly smoke test against Zotero's current release and beta builds.
+#
+# Zotero can break the plugin without a commit on our side: #26 broke when the
+# Zotero 11 beta moved to Gecko 153, while the manifest already claimed 11, and
+# nothing ran on 11 until a user reported it on the forums. So once a week this
+# builds main and loads it into whatever zotero.org hands out on each channel.
+# A beta failure is the early warning; a release failure is a user-facing bug.
+#
+# GitHub emails the repository's owner when a scheduled run fails. Scheduled
+# workflows run from the default branch's copy of this file, and GitHub turns
+# the schedule off after 60 days without activity in the repository.
+#
+# Run it by hand to test another ref. The ref only decides which plugin is
+# built; the smoke test itself is always this commit's. An older ref has no
+# tools/smoke/ at all, or an older one, and the question is whether that
+# plugin works, not whether its tooling does. The 0.78.2 commit (ffa844e) is
+# expected to fail on the beta channel (issue #26).
+name: Smoke
+
+on:
+  schedule:
+    # Mondays, 04:23 UTC: off the hour, when scheduled runs queue the longest.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref whose plugin to build and test (branch, tag or commit)
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Each channel's answer is worth having on its own: a beta failure must
+      # not cancel the release run, nor the other way round.
+      fail-fast: false
+      matrix:
+        channel: [release, beta]
+    steps:
+      # The test: the commit this workflow runs from.
+      - uses: actions/checkout@v4
+
+      # The plugin under test. A schedule has no inputs, so it builds main.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+          path: under-test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # With the ref's own packer and verifier, so the XPI is the one that ref
+      # released, byte for byte.
+      - name: Build XPI
+        working-directory: under-test
+        run: npm run build
+
+      - name: Check the XPI is loadable
+        working-directory: under-test
+        run: node tools/verify-xpi.js
+
+      - name: Smoke test on Zotero's ${{ matrix.channel }} channel
+        uses: ./.github/actions/smoke
+        with:
+          channel: ${{ matrix.channel }}
+          xpi-dir: under-test/dist
