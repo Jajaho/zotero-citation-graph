@@ -3304,7 +3304,22 @@ function fakeTabs(element) {
 function fakeMainWindow() {
 	const { made, win, element } = fakeWindow();
 	win.Zotero_Tabs = fakeTabs(element);
-	win.MozXULElement = { insertFTLIfNeeded() {} };
+	// The <link rel="localization"> Gecko's insertFTLIfNeeded() adds, and the one
+	// selector that looks it up again.
+	const links = () => made.filter(el => el.localName === 'link' && !el.removed);
+	win.MozXULElement = {
+		insertFTLIfNeeded(href) {
+			if (links().some(l => l.getAttribute('href') === href)) return;
+			const link = element('link');
+			link.setAttribute('rel', 'localization');
+			link.setAttribute('href', href);
+		},
+	};
+	win.document.querySelector = (sel) => {
+		const m = sel.match(/^link\[rel="localization"\]\[href="([^"]+)"\]$/);
+		if (!m) throw new Error('fake querySelector does not know ' + sel);
+		return links().find(l => l.getAttribute('rel') === 'localization' && l.getAttribute('href') === m[1]) || null;
+	};
 	return { made, win, element };
 }
 
@@ -3434,9 +3449,22 @@ function stubLibrary(byID = {}) {
  */
 const restoreReady = (async () => {
 	await l10nReady;
+	// As core keeps a menu: under its plugin-namespaced id, which registerMenu()
+	// returns and unregisterMenu() takes (pluginAPIBase.mjs). The bare menuID is
+	// an unknown option there, logged and left alone.
 	Zotero.MenuManager = {
-		registerMenu(options) { MENUS.set(options.target, options); },
-		unregisterMenu() {},
+		registerMenu(options) {
+			const key = options.pluginID + '-' + options.menuID;
+			if (MENU_KEYS.has(key)) return false;
+			MENU_KEYS.add(key);
+			MENUS.set(options.target, options);
+			return key;
+		},
+		unregisterMenu(key) {
+			if (MENU_KEYS.delete(key)) return true;
+			MENU_UNKNOWN.push(key);
+			return false;
+		},
 	};
 	Zotero.getMainWindows = () => [];
 	await require_('./lib/main.js').startup(CFG);
@@ -3444,6 +3472,9 @@ const restoreReady = (async () => {
 
 /** target -> the MenuOptions startup() handed Zotero.MenuManager. */
 const MENUS = new Map();
+/** The keys Zotero.MenuManager holds, and every key it was asked to drop but did not hold. */
+const MENU_KEYS = new Set();
+const MENU_UNKNOWN = [];
 
 /**
  * A menu entry, driven the way MenuManager drives it: a <menuitem> standing in
@@ -3959,6 +3990,32 @@ const t2 = check('the plugin going away takes its tabs out of the session with i
 	if (win.Zotero_Tabs.getState().some(t => /^graph/.test(t.type))) {
 		throw new Error('a graph tab survived the plugin being removed');
 	}
+});
+
+// Issue #34: disabling the plugin logged "MenuAPI: Can't remove unknown option"
+// for both menus, and "Missing resource in locale ..." for its .ftl.
+checkAlone('disabling the plugin takes out its menus, by the keys MenuManager gave, and its .ftl link', async () => {
+	const main = require_('./lib/main.js');
+	const { win } = fakeMainWindow();
+	// What makes shutdown() count it as a main window to tear down.
+	win.ZoteroPane = {};
+	stubCollections();
+	Zotero.Prefs = { get: () => null, set: () => {} };
+	Zotero.getMainWindows = () => [win];
+	const link ='link[rel="localization"][href="zotero-citation-graph.ftl"]';
+
+	main.registerMenu();
+	main.registerItemMenu();
+	main.onMainWindowLoad(win);
+	if (MENU_KEYS.size !== 2) throw new Error('expected 2 menus registered, got ' + [...MENU_KEYS]);
+	if (!win.document.querySelector(link)) throw new Error('onMainWindowLoad added no .ftl link');
+	const unknownBefore = MENU_UNKNOWN.length;
+
+	await main.shutdown(4); // ADDON_DISABLE
+	if (MENU_KEYS.size) throw new Error('menus left registered: ' + [...MENU_KEYS]);
+	const unknown = MENU_UNKNOWN.slice(unknownBefore);
+	if (unknown.length) throw new Error('asked to drop menus it never registered: ' + unknown);
+	if (win.document.querySelector(link)) throw new Error('the .ftl link outlived the plugin');
 });
 
 const t3 = check('a restored graph tab comes back unloaded, in place, and builds on select', async () => {

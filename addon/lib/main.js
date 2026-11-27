@@ -30,6 +30,7 @@ const REASON_APP_SHUTDOWN = 2;
 // up -- enabled, installed, upgraded -- happens in a session already running.
 const REASON_APP_STARTUP = 1;
 const TAB_ICON_STYLE_ID = 'zotero-citation-graph-tab-icon-style';
+const FTL_FILE = 'zotero-citation-graph.ftl';
 
 /**
  * The graph tab's icon.
@@ -61,6 +62,11 @@ let _appStartup = true;
 
 // Takes graphTab's collection observer back out. See startup().
 let _unwatchCollections = null;
+
+// What registerMenu() returned, which is what unregisterMenu() takes: MenuManager
+// keeps a menu under its plugin-namespaced id, not the menuID it was given
+// (pluginAPIBase.mjs _namespacedMainKey), and a bare menuID is an unknown option.
+let _menuKeys = [];
 
 module.exports = {
 	// Reached from the Settings pane's inline handlers, which run in the
@@ -123,9 +129,11 @@ module.exports = {
 					+ `  strip=[${graphTab.stripSummary(win)}]`);
 			}
 		}
-		for (let id of [MENU_ID, ITEM_MENU_ID]) {
+		for (let key of _menuKeys.splice(0)) {
+			// false: that registration was refused, so there is nothing to take out.
+			if (!key) continue;
 			try {
-				Zotero.MenuManager.unregisterMenu(id);
+				Zotero.MenuManager.unregisterMenu(key);
 			}
 			catch (e) {
 				Zotero.logError(e);
@@ -171,7 +179,7 @@ module.exports = {
 		// core's menuManager.js), so the plugin has to load its own strings or
 		// the menu label renders blank.
 		try {
-			win.MozXULElement.insertFTLIfNeeded('zotero-citation-graph.ftl');
+			win.MozXULElement.insertFTLIfNeeded(FTL_FILE);
 		}
 		catch (e) {
 			console.log('insertFTLIfNeeded failed, falling back to a literal label: ' + e);
@@ -202,7 +210,7 @@ module.exports = {
 	},
 
 	registerMenu() {
-		Zotero.MenuManager.registerMenu({
+		_menuKeys.push(Zotero.MenuManager.registerMenu({
 			menuID: MENU_ID,
 			pluginID: _config.pluginID,
 			target: 'main/library/collection',
@@ -236,7 +244,7 @@ module.exports = {
 					}),
 				},
 			],
-		});
+		}));
 	},
 
 	/**
@@ -253,7 +261,7 @@ module.exports = {
 	 * where the collection entry sits -- the icon is what carries it.
 	 */
 	registerItemMenu() {
-		Zotero.MenuManager.registerMenu({
+		_menuKeys.push(Zotero.MenuManager.registerMenu({
 			menuID: ITEM_MENU_ID,
 			pluginID: _config.pluginID,
 			target: 'main/library/item',
@@ -281,7 +289,7 @@ module.exports = {
 					}),
 				},
 			],
-		});
+		}));
 	},
 };
 
@@ -567,6 +575,12 @@ function removeWindowIntegration(win) {
 
 	let style = win.document.getElementById(TAB_ICON_STYLE_ID);
 	if (style) style.remove();
+
+	// The link onMainWindowLoad's insertFTLIfNeeded() added. Zotero takes the
+	// plugin's .ftl out of the L10nRegistry right after shutdown, and a window
+	// still linking it logs "Missing resource" for every locale it falls back on.
+	let ftl = win.document.querySelector(`link[rel="localization"][href="${FTL_FILE}"]`);
+	if (ftl) ftl.remove();
 
 	let hooks = win.Zotero_Tabs && win.Zotero_Tabs.tabHooks;
 	if (!hooks) return;
