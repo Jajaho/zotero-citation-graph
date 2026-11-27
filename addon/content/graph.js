@@ -3594,10 +3594,11 @@
 			// chrome may have set before there was an engine to set them on --
 			// so they are pushed here rather than assumed to be defaults.
 			perfEngine();
-			// force-graph registers 'link' itself, so this reaches in and
-			// reprices it rather than replacing it -- the arrows, curvature and
-			// endpoint resolution all belong to that force.
-			fg.d3Force('link').strength(linkStrength);
+			// force-graph registers 'link' and 'charge' itself, so this reaches
+			// in and reprices them rather than replacing them -- the arrows,
+			// curvature and endpoint resolution all belong to the link force.
+			fg.d3Force('link').strength(linkStrength).distance(linkDistance);
+			fg.d3Force('charge').strength(CHARGE);
 		}
 
 		// The pane can be resized without a window resize event -- a Zotero
@@ -3690,12 +3691,14 @@
 	 *  nothing structural   Repaint in place. Node objects are mutated by
 	 *                       render(), so new names and new tooltips are already
 	 *                       on them; all that is missing is a redraw.
-	 *  radii changed        Re-register the collision force, which caches the
-	 *                       radii it was built with, and reheat. Sizing by
-	 *                       global citations is the case that matters: the
-	 *                       counts arrive with the looked-up names and every
-	 *                       circle changes size, so the layout genuinely has to
-	 *                       resolve overlaps that did not exist before.
+	 *  radii changed        Hand the link force its distances again and
+	 *                       re-register the collision force, both of which
+	 *                       cache the radii they were built with, and reheat.
+	 *                       Sizing by global citations is the case that
+	 *                       matters: the counts arrive with the looked-up
+	 *                       names and every circle changes size, so the
+	 *                       layout genuinely has to resolve overlaps that did
+	 *                       not exist before.
 	 *  nodes or edges       The real thing.
 	 */
 	function updateGraph(nodes, links) {
@@ -3724,7 +3727,7 @@
 		// Either of the two below sets the layout going, and it will say when it
 		// has stopped. Until its first tick nothing else knows it is about to
 		// move -- see firstFit(), which must not frame a graph on its way out.
-		if (movedStructure || (movedRadii && PERF.collide)) engineDue = true;
+		if (movedStructure || movedRadii) engineDue = true;
 
 		if (movedStructure) {
 			// With the engine off this IS the burst, run against the forces as
@@ -3740,14 +3743,10 @@
 		// and the ends are already resolved. See structureSig() for the one
 		// kind of link that is not the same object twice.
 		if (movedRadii) {
-			// Only the collision force caches radii, so with it switched off
-			// there is nothing to rebuild and nothing to reheat FOR -- a
-			// repaint is the whole of what changed.
-			if (!PERF.collide) {
-				repaint();
-				return;
-			}
-			fg.d3Force('collide', collide());
+			// Two forces cache radii: the link force in its distances, and the
+			// collision force, when it is on.
+			fg.d3Force('link').distance(linkDistance);
+			if (PERF.collide) fg.d3Force('collide', collide());
 			reheat();
 			return;
 		}
@@ -3968,17 +3967,41 @@
 	 * nothing on an individual node. A node with no edges therefore feels only
 	 * charge repulsion, which is purely outward, and drifts away forever.
 	 *
-	 * Connected nodes get a light pull (their links already hold them, and a
-	 * hard pull would crush the layout into a disc); unconnected ones get a
-	 * firm one, which parks them in a ring at the edge of the graph instead of
-	 * off screen. The panel scales both together, so the ratio between them --
-	 * which is what keeps orphans in a ring rather than in the middle -- is not
-	 * something the slider can get wrong.
+	 * The same spring on every node, linked or not. Against a 1/r repulsion a
+	 * linear pull to one point settles into a disc of even density -- the
+	 * Obsidian look, every paper about as far from its nearest neighbour as any
+	 * other. It used to be a light pull on linked papers and a firm one on
+	 * orphans, meant to park them in a ring at the rim; on a few hundred
+	 * papers that ring sat so far out that fitting it to the window shrank the
+	 * linked graph to a blob in the middle.
+	 *
+	 * Stiff, with CHARGE to match, because a weak pair never gets there: the
+	 * layout cools before the forces have evened anything out. Spacing goes by
+	 * their ratio -- about 47 graph units here -- and evenness by their size.
+	 * Stiffer than this buys no more evenness and lets the links lose: papers
+	 * stop sitting near the ones they cite, and the layout takes longer.
+	 * Measured on 60 to 1000 papers; see CHARGE.
 	 */
-	const PULL = 0.02;
-	const PULL_ORPHAN = 0.15;
+	const PULL = 2;
 
-	/** The panel's multiplier over both. Read live rather than cached: unlike a
+	/** d3's many-body strength, force-graph's -30 left as it was until 0.79.0.
+	 *  Paired with PULL, which explains both. */
+	const CHARGE = -1200;
+
+	/**
+	 * How long a link wants to be: the even spacing PULL and CHARGE settle at,
+	 * clear of both circles, so a cited paper's edges are about as long as the
+	 * gap between any two neighbours and a big node does not swallow its
+	 * leaves. d3 caches it per link when the force initialises, so a change of
+	 * radii has to hand it back -- see updateGraph().
+	 */
+	const LINK_GAP = 47;
+
+	function linkDistance(l) {
+		return LINK_GAP + nodeRadius(l.source) + nodeRadius(l.target);
+	}
+
+	/** The panel's multiplier over PULL. Read live rather than cached: unlike a
 	 *  link strength, nothing downstream holds a copy of this. */
 	function centerScale() {
 		let v = Number(elCenterPull.value);
@@ -3997,13 +4020,12 @@
 			// zero there is nothing for the loop to add.
 			let scale = centerScale();
 			if (!scale) return;
+			// Grouped nodes too. Inside the disc this pull is what cancels the
+			// outward push of everyone else's charge, so a node it skipped was
+			// shoved out past its flag unless the anchor out-pulled the centre;
+			// kept, the anchor alone says where the node goes.
+			let k = PULL * scale * alpha;
 			for (let n of nodes) {
-				// A node with an anchor has somewhere to be, and the centre is
-				// not it. Left in, the two pulls would fight and park it short
-				// of the flag -- a group planted out at the rim would gather a
-				// cluster that visibly sags towards the middle.
-				if (groupOf.has(n.id)) continue;
-				let k = (n.deg ? PULL : PULL_ORPHAN) * scale * alpha;
 				n.vx -= n.x * k;
 				n.vy -= n.y * k;
 			}
@@ -4017,8 +4039,10 @@
 	/**
 	 * Pull every grouped node to the point its group was planted at.
 	 *
-	 * Firm by default, an order of magnitude past the centre pull, because this
-	 * is not a tendency but an instruction: the user said these papers belong
+	 * Measured in PULLs, so the slider keeps its meaning against the stiff
+	 * forces the even layout runs on: at 1 an anchor holds its papers as hard
+	 * as the centre holds everything else. Firm by default, because this is
+	 * not a tendency but an instruction: the user said these papers belong
 	 * here. It still competes with the links, which is the whole interest of it
 	 * -- a group that drags a paper away from its citations stretches the edges
 	 * between them, and how far they stretch is the picture being asked for. A
@@ -4050,11 +4074,12 @@
 	/**
 	 * The ceiling on the pull one node can feel from every anchor holding it.
 	 *
-	 * A node moves by k * (1 - velocityDecay) of the way to its target each
-	 * tick, and the engine runs at a decay of 0.3 -- so past about 1.4 the step
-	 * overshoots by more than the damping takes back and the node rings around
-	 * the flag forever instead of arriving. Capped on the sum rather than on
-	 * the slider, because it is the sum a node caught by several anchors feels.
+	 * In slider units, so a node feels at most PULL -- no more than the centre
+	 * pull every other node is settling under. A spring on its own, at the
+	 * engine's velocity decay of 0.3, diverges past about 4.9 per tick
+	 * instead of ringing down onto the flag; this keeps well short of that.
+	 * Capped on the sum rather than on the slider, because it is the sum a node
+	 * caught by several anchors feels.
 	 */
 	const GROUP_PULL_MAX = 1;
 
@@ -4065,8 +4090,8 @@
 			for (let n of nodes) {
 				let at = groupOf.get(n.id);
 				if (!at) continue;
-				n.vx += (at.x - n.x) * at.k * alpha;
-				n.vy += (at.y - n.y) * at.k * alpha;
+				n.vx += (at.x - n.x) * at.k * PULL * alpha;
+				n.vy += (at.y - n.y) * at.k * PULL * alpha;
 			}
 		}
 		force.initialize = ns => {
@@ -6765,10 +6790,8 @@
 	 * anchor gets a weight of its own back.
 	 *
 	 * With the slider at nothing every anchor is skipped outright rather than
-	 * recorded with a strength of zero, so its papers go back to feeling the
-	 * centre pull -- which centerPull() withholds from anything an anchor is
-	 * holding. A group that pulls nothing must leave nothing behind, or its
-	 * papers would be held by neither force and drift.
+	 * recorded with a strength of zero: a group that pulls nothing leaves
+	 * nothing behind.
 	 */
 	function assignGroups() {
 		let next = new Map();

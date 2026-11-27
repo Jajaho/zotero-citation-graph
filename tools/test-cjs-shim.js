@@ -8196,7 +8196,7 @@ check('the first finished graph is fitted once, and never over the reader\'s own
 		['the reframe button', "elReframe.addEventListener('click', reframeAsked)"],
 		['the canvas menu\'s reframe', 'run: reframeAsked,'],
 		['a finished payload on a resting layout', 'if (!engineLive && !engineDue) firstFit();'],
-		['an update that sets the layout going', 'if (movedStructure || (movedRadii && PERF.collide)) engineDue = true;'],
+		['an update that sets the layout going', 'if (movedStructure || movedRadii) engineDue = true;'],
 	]) {
 		if (!js.includes(needle)) throw new Error(what + ' is no longer wired to the first fit');
 	}

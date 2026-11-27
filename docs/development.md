@@ -787,13 +787,24 @@ repulsion and the centre pull.
 force-graph's own centring force only translates the whole cloud so its centroid
 sits at 0,0 — it exerts nothing on an individual node, so a paper nothing cites
 feels only charge repulsion, which is purely outward, and drifts away forever.
-Stopping that is what this force was added for. Connected nodes get a light pull
-(their links already hold them, and a hard one would crush the layout into a
-disc) and unconnected ones a pull several times firmer, which parks them in a
-ring at the edge of the graph instead of off screen; the slider scales both
-together, so the ratio that keeps orphans in that ring is not something it can
-get wrong. At 0 they drift off again, which is the honest answer to asking for no
-centre pull; turned up, the whole graph gathers into a tighter disc.
+Stopping that is what this force was added for. Every node gets the same linear
+spring (`PULL`, 2), grouped and orphaned alike, against a many-body charge of
+`CHARGE` (−1200, where force-graph's default is −30). A 1/r repulsion held by a
+linear pull settles into a disc of even density, so every paper ends up about as
+far from its nearest neighbour as any other: the Obsidian look. Links want to be
+`LINK_GAP` (47, the spacing that pair settles at) plus both radii long, so a
+paper's edges are about as long as the gap between neighbours.
+
+It used to be a light pull on linked papers and a firmer one on orphans, to park
+them in a ring at the rim. On a few hundred papers that ring sat so far out that
+fitting it to the window shrank the linked graph to a blob. The strength matters
+as well as the ratio: at −30 and 0.02 to 0.05 the layout cools before it has
+evened anything out. Measured on 60 to 1000 synthetic papers (Clark–Evans R, 1 for
+random scatter, 2.15 for a hex grid; an Obsidian vault scored 1.70): 0.65 to 1.31
+before, 1.76 to 2.0 now. Stiffer than this buys no more evenness, and the links
+lose: papers stop sitting near what they cite. At 0 the orphans drift off again,
+which is the honest answer to asking for no centre pull; turned up, the whole
+graph gathers into a tighter disc.
 
 **`group pull`** scales how hard every group anchor pulls the papers its masks
 name — see *Groups* below for what an anchor is. It sat on each flag's own card
@@ -2149,11 +2160,13 @@ tools/
   so re-matching an anchor costs no rebuild. Each anchor carries its own strength, so what the map
   holds is a point *and* a `k`: two springs on one body are one spring at their weighted centre
   pulling as hard as the two together, which is both what the arithmetic gives and the honest
-  picture of belonging to both. The summed `k` is capped at 1 — a node moves `k * (1 - 0.3)` of the
-  way to its target each tick, so past about 1.4 the step overshoots by more than the velocity
-  decay takes back and the node rings around its flag forever. An anchor at zero strength is left
-  out of the map entirely rather than recorded with `k = 0`, because `centerPull()` withholds
-  itself from anything the map mentions and its papers would otherwise be held by neither force.
+  picture of belonging to both. `k` is in slider units and the force multiplies it by `PULL`, so
+  the slider keeps its meaning against the stiff layout forces. The summed `k` is capped at 1, so a
+  node feels at most `PULL`; a spring at the engine's velocity decay of 0.3 diverges only past
+  about 4.9 per tick. Grouped nodes still feel the centre pull: inside the disc it is what
+  cancels everyone else's charge, and a node it skipped was pushed out past its flag unless the
+  anchor out-pulled the centre. An anchor at zero strength is left out of the map entirely
+  rather than recorded with `k = 0`.
 - **Planting an anchor reheats; closing an empty card must not.** A group asks nodes to travel,
   sometimes the width of the graph, so `groupsChanged()` calls `d3ReheatSimulation()` outright
   rather than shedding down to a drop's alpha the way unpinning does. But it first compares the

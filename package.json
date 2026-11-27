@@ -1,6 +1,6 @@
 {
   "name": "zotero-citation-graph",
-  "version": "0.78.8",
+  "version": "0.79.0",
   "private": true,
   "description": "Force-directed citation graph for a Zotero collection",
   "license": "AGPL-3.0-or-later",
