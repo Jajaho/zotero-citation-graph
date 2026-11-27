@@ -26,7 +26,9 @@
 # plugin works, not whether its tooling does. A commit must be given as its
 # full 40-character SHA: actions/checkout takes anything shorter for a branch
 # name. The 0.78.2 commit, ffa844e761f8eeef1a566d7807bcca7ecb49bc65, has no
-# tag and is expected to fail on the beta channel (issue #26).
+# tag and is expected to fail on every channel: on Zotero 10 with the Fluent
+# parser errors (#27), and on Zotero 11 with the menu entries doing nothing
+# as well (#26).
 name: Smoke
 
 on:
