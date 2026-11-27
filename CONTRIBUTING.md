@@ -7,12 +7,18 @@ Bug reports, pull requests and translations are all welcome. Work happens on
 
 `strict_max_version` in [`addon/manifest.json`](addon/manifest.json) may only
 cover a Zotero major version while its smoke job passes. The smoke test loads
-the built XPI into a real Zotero, drives the menus and fails on any console
-error from the plugin's files. [`smoke.yml`](.github/workflows/smoke.yml) runs
-it weekly on Zotero's current release and beta builds, and CI and the release
-workflow run it on the release build. When a channel's job fails, fix the
-plugin, or lower `strict_max_version` below that Zotero major version until it
-passes.
+the built XPI into a real Zotero; what it checks is described in
+[`docs/development.md`](docs/development.md).
+[`smoke.yml`](.github/workflows/smoke.yml) runs it weekly on Zotero's current
+release and beta builds, and CI and the release workflow run it on the release
+build. When a channel's job fails, fix the plugin, or lower
+`strict_max_version` below that Zotero major version until it passes.
+
+The release workflow attaches the XPI only after the smoke test passes, so a
+failure there, even one on Zotero's side such as a download that did not come
+through, leaves the release without its XPI. Use *Re-run failed jobs* on that
+run, or run the Release workflow by hand with the tag. Both are safe to repeat:
+the attach step uploads only a missing asset and never replaces one.
 
 To run it locally, build the XPI and point the smoke test at a Zotero.
 `fetch-zotero.js` downloads the current build of a channel into a cache
@@ -24,8 +30,8 @@ node tools/smoke/fetch-zotero.js --channel beta
 npm run smoke -- --zotero <binary> --xpi dist/<name>.xpi --report smoke-report.json
 ```
 
-It runs headless in a throwaway profile and data directory, so it never
-touches the Zotero you use.
+`fetch-zotero.js` handles Linux and Windows. On macOS, pass the path of a
+Zotero you have installed to `--zotero` instead.
 
 ## Translations
 

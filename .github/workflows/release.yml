@@ -39,9 +39,16 @@ jobs:
       REPO: ${{ github.repository }}
     steps:
       # Build what the tag names, not whatever branch the run happens to start on.
+      #
+      # persist-credentials: false keeps the token out of .git/config. This
+      # job's token can write releases, and the smoke test below runs npm, the
+      # plugin and a Zotero downloaded from outside; none of them needs it, and
+      # no step here uses git with credentials. The steps that talk to GitHub
+      # pass GH_TOKEN to gh and curl themselves.
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -61,6 +68,7 @@ jobs:
       - name: Check the XPI is loadable
         run: node tools/verify-xpi.js
 
+      # The digest is kept as XPI_SHA256, for the check before the attach.
       - name: Build again and compare
         run: |
           set -euo pipefail
@@ -73,6 +81,7 @@ jobs:
             exit 1
           fi
           echo "reproducible: $first"
+          echo "XPI_SHA256=$second" >> "$GITHUB_ENV"
 
       # The asset has to be at the URL updates.json gives Zotero. Check that
       # before uploading, so a link pointing at a different name fails here
@@ -103,8 +112,17 @@ jobs:
       # Never attach a build that fails in Zotero itself. #26 and #27 both
       # shipped with errors that only a real Zotero's console showed (#30).
       # The release channel, because that is what this asset's users run.
-      # GH_TOKEN is emptied for the step: it can write to this repository's
-      # releases, and Zotero, a binary from outside, has no use for it.
+      # GH_TOKEN, which can write this repository's releases, is emptied for
+      # the step, and the checkout above left no token in .git/config, so
+      # nothing the smoke run starts can reach it. The smoke run tests a copy
+      # of the XPI outside dist/, and the step after it checks dist/ again.
+      #
+      # This blocks the attach on anything that fails the smoke job, the
+      # apt mirror and zotero.org included, while updates.json may already
+      # send update checks to the missing asset. To recover: "Re-run failed
+      # jobs" on this run, or run this workflow by hand with the tag. Both are
+      # safe at any time: the attach step uploads only when the asset is
+      # missing, and never replaces one.
       #
       # Tags from before the smoke test (v0.78.4 and older) have no
       # .github/actions/smoke and were released without it. Running this by
@@ -122,6 +140,23 @@ jobs:
       - name: Note a tag without a smoke test
         if: hashFiles('.github/actions/smoke/action.yml') == ''
         run: echo "::warning::$TAG predates the smoke test (issue #30); it is attached without one"
+
+      # What gets attached is what was built and compared above, and nothing
+      # else: dist/ must still hold that one XPI and no other file.
+      - name: Check dist/ still holds the XPI that was built
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(ls -A dist)
+          if [ "${#files[@]}" -ne 1 ] || [[ "${files[0]}" != *.xpi ]]; then
+            echo "::error::dist/ should hold exactly the one XPI, but holds: ${files[*]}"
+            exit 1
+          fi
+          got=$(sha256sum "dist/${files[0]}" | cut -d' ' -f1)
+          if [ "$got" != "$XPI_SHA256" ]; then
+            echo "::error::dist/${files[0]} is $got now, but the build made $XPI_SHA256"
+            exit 1
+          fi
+          echo "unchanged since the build: ${files[0]} $got"
 
       # Never overwrite an asset that is already there. If it holds the same
       # bytes there is nothing to do. If it holds different bytes, something

@@ -13,8 +13,10 @@
 # Run it by hand to test another ref. The ref only decides which plugin is
 # built; the smoke test itself is always this commit's. An older ref has no
 # tools/smoke/ at all, or an older one, and the question is whether that
-# plugin works, not whether its tooling does. The 0.78.2 commit (ffa844e) is
-# expected to fail on the beta channel (issue #26).
+# plugin works, not whether its tooling does. A commit must be given as its
+# full 40-character SHA: actions/checkout takes anything shorter for a branch
+# name. The 0.78.2 commit, ffa844e761f8eeef1a566d7807bcca7ecb49bc65, has no
+# tag and is expected to fail on the beta channel (issue #26).
 name: Smoke
 
 on:
@@ -24,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Git ref whose plugin to build and test (branch, tag or commit)
+        description: Git ref whose plugin to build and test (branch, tag or full 40-character commit SHA)
         required: false
         default: main
 
@@ -43,14 +45,19 @@ jobs:
       matrix:
         channel: [release, beta]
     steps:
-      # The test: the commit this workflow runs from.
+      # The test: the commit this workflow runs from. Neither checkout keeps
+      # a token in .git/config: the job runs a Zotero downloaded from outside,
+      # and nothing in it uses git with credentials.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # The plugin under test. A schedule has no inputs, so it builds main.
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || 'main' }}
           path: under-test
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -68,6 +75,7 @@ jobs:
 
       - name: Smoke test on Zotero's ${{ matrix.channel }} channel
         uses: ./.github/actions/smoke
+        timeout-minutes: 20
         with:
           channel: ${{ matrix.channel }}
           xpi-dir: under-test/dist

@@ -8,6 +8,11 @@
 # Zotero is whatever zotero.org hands out for the channel today, not a pinned
 # version. That is the point: #26 broke when the 11 beta moved to a new Gecko,
 # with no change on our side, and nothing noticed until a user did.
+#
+# Callers give the step 20 minutes. The smoke run itself is cut off after 12
+# (SMOKE_MINUTES), well inside that, so a hang ends as a failed step and the
+# summary and the report upload below still run. A step or job timeout would
+# cancel the whole action and skip them.
 name: Smoke test
 description: Run tools/smoke/run.js against a built XPI in Zotero's current release or beta build.
 
@@ -43,6 +48,9 @@ runs:
     # "libasound.so.2: cannot open shared object file", which is what a
     # missing one looks like. libc6, libstdc++6 and libgcc-s1 are left out:
     # nothing on Ubuntu runs without them.
+    #
+    # Acquire::Retries because a mirror that hiccups would otherwise fail the
+    # job, and in release.yml a failed job means no XPI attached.
     - name: Install the libraries Zotero links against
       shell: bash
       env:
@@ -57,9 +65,10 @@ runs:
           libxfixes3 libxi6 libxrandr2 libxrender1
         )
         if [ "$XVFB" = true ]; then packages+=(xvfb xauth); fi
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq --no-install-recommends "${packages[@]}"
+        sudo apt-get -o Acquire::Retries=3 update -qq
+        sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends "${packages[@]}"
 
+    # fetch-zotero.js retries zotero.org and the download itself.
     - name: Fetch Zotero
       id: zotero
       shell: bash
@@ -67,6 +76,8 @@ runs:
         CHANNEL: ${{ inputs.channel }}
       run: node tools/smoke/fetch-zotero.js --channel "$CHANNEL" --dir "$RUNNER_TEMP/zotero"
 
+    # The smoke run gets a copy of the XPI, outside the workspace, so nothing
+    # it does can change or add to the directory the caller attaches from.
     - name: Smoke test
       id: smoke
       shell: bash
@@ -75,6 +86,7 @@ runs:
         REPORT: ${{ runner.temp }}/smoke-report-${{ inputs.channel }}.json
         XVFB: ${{ inputs.xvfb }}
         XPI_DIR: ${{ inputs.xpi-dir }}
+        SMOKE_MINUTES: '12'
       run: |
         set -euo pipefail
         xpis=("$XPI_DIR"/*.xpi)
@@ -82,14 +94,23 @@ runs:
           echo "::error::expected exactly one XPI in $XPI_DIR, found: ${xpis[*]}"
           exit 1
         fi
-        cmd=(npm run smoke -- --zotero "$ZOTERO" --xpi "${xpis[0]}" --report "$REPORT")
+        copy="$RUNNER_TEMP/smoke-xpi/$(basename "${xpis[0]}")"
+        rm -rf "$RUNNER_TEMP/smoke-xpi"
+        mkdir -p "$RUNNER_TEMP/smoke-xpi"
+        cp "${xpis[0]}" "$copy"
+        cmd=(npm run smoke -- --zotero "$ZOTERO" --xpi "$copy" --report "$REPORT")
         if [ "$XVFB" = true ]; then cmd=(xvfb-run --auto-servernum "${cmd[@]}" --headed); fi
-        "${cmd[@]}"
+        rc=0
+        timeout --kill-after=30s "${SMOKE_MINUTES}m" "${cmd[@]}" || rc=$?
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+          echo "::error::the smoke test did not finish within $SMOKE_MINUTES minutes"
+        fi
+        exit "$rc"
 
     # Which Zotero it ran on belongs on the run's page: the channel names no
     # version, and next week's run may meet a different one.
     - name: Summary
-      if: always() && steps.zotero.outcome == 'success'
+      if: ${{ !cancelled() && steps.zotero.outcome == 'success' }}
       shell: bash
       env:
         CHANNEL: ${{ inputs.channel }}
@@ -110,8 +131,9 @@ runs:
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
+    # Whatever report there is, also from a run that timed out.
     - name: Upload the smoke report
-      if: failure()
+      if: ${{ !cancelled() && steps.smoke.outcome == 'failure' }}
       uses: actions/upload-artifact@v4
       with:
         name: smoke-report-${{ inputs.channel }}-attempt-${{ github.run_attempt }}
